@@ -47,6 +47,8 @@ func (a *App) startup(ctx context.Context) {
 		a.manager.Register(providers.NewZapretMacOSProvider(assets.BinDir))
 	}
 
+	a.setupTray()
+
 	runtime.LogInfo(ctx, "UNBOUND initialized successfully")
 }
 
