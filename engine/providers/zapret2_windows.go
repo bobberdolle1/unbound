@@ -183,14 +183,48 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 	
 	e.cmd = exec.Command(winwsPath, args...)
 	e.cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	
+	stdout, _ := e.cmd.StdoutPipe()
+	stderr, _ := e.cmd.StderrPipe()
 
 	e.addLog(fmt.Sprintf("[%s] Starting with profile: %s", e.Name(), profileName))
+	e.addLog(fmt.Sprintf("Command: %s %v", winwsPath, args))
 
 	if err := e.cmd.Start(); err != nil {
 		e.status = StatusError
 		e.addLog("Launch Error: " + err.Error())
 		return err
 	}
+
+	go func() {
+		buf := make([]byte, 1024)
+		for {
+			n, err := stdout.Read(buf)
+			if n > 0 {
+				e.mu.Lock()
+				e.addLog("[STDOUT] " + string(buf[:n]))
+				e.mu.Unlock()
+			}
+			if err != nil {
+				break
+			}
+		}
+	}()
+
+	go func() {
+		buf := make([]byte, 1024)
+		for {
+			n, err := stderr.Read(buf)
+			if n > 0 {
+				e.mu.Lock()
+				e.addLog("[STDERR] " + string(buf[:n]))
+				e.mu.Unlock()
+			}
+			if err != nil {
+				break
+			}
+		}
+	}()
 
 	e.status = StatusRunning
 	e.currentProfile = profileName
