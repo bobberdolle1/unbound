@@ -1,0 +1,20 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "unbound",
+  "outputfilename": "unbound",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "UNBOUND Team",
+    "email": "dev@unbound.local"
+  },
+  "info": {
+    "companyName": "UNBOUND",
+    "productName": "UNBOUND",
+    "productVersion": "1.0.0",
+    "copyright": "Copyright © 2024 UNBOUND Team",
+    "comments": "Ultimate DPI bypass engine combining Zapret 2, GoodbyeDPI, and cross-platform support"
+  }
+}
