@@ -50,8 +50,8 @@ luaLib := filepath.ToSlash(absLuaLib)
 luaAntiDpi := filepath.ToSlash(absLuaAntiDpi)
 
 args := []string{
-"--lua=" + luaLib,
-"--lua=" + luaAntiDpi,
+"--lua-init=@" + luaLib,
+"--lua-init=@" + luaAntiDpi,
 }
 args = append(args, profile.Args...)
 

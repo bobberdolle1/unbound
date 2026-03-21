@@ -35,6 +35,7 @@ export default function App() {
   const [scanLogs, setScanLogs] = useState<string[]>([]);
   const [isLogExpanded, setIsLogExpanded] = useState<boolean>(false);
   const [isScanning, setIsScanning] = useState<boolean>(false);
+  const [scanCancelled, setScanCancelled] = useState<boolean>(false);
   const [isEditorOpen, setIsEditorOpen] = useState<boolean>(false);
   const [scriptContent, setScriptContent] = useState<string>('');
   const [pingData, setPingData] = useState<{active: boolean, latency: number, status: string, certValid?: boolean}>({active: false, latency: 0, status: 'stopped'});
@@ -112,6 +113,7 @@ export default function App() {
 
   const handleAutoTune = async () => {
     setIsScanning(true);
+    setScanCancelled(false);
     setScanLogs([]);
     setIsLogExpanded(true);
     try {
@@ -124,6 +126,12 @@ export default function App() {
     } finally {
       setIsScanning(false);
     }
+  };
+
+  const handleCancelScan = () => {
+    setScanCancelled(true);
+    setIsScanning(false);
+    setScanLogs(prev => [...prev, "Auto-Tune cancelled by user"]);
   };
 
   const handleOpenEditor = async () => {
@@ -155,10 +163,10 @@ export default function App() {
   return (
     <div className="h-screen w-screen bg-zinc-950 flex flex-col font-sans text-zinc-100 overflow-hidden relative selection:bg-cyan-500/30">
       
-      {/* Background ambient glow based on status */}
+      {/* Background ambient glow - subtle */}
       <div className={cn(
-        "absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] rounded-full blur-[100px] opacity-10 pointer-events-none transition-all duration-1000",
-        isConnected ? "bg-emerald-500/30" : isScanning ? "bg-amber-500/15" : "bg-zinc-800/30"
+        "absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full blur-[120px] opacity-0 pointer-events-none transition-all duration-1000",
+        isConnected ? "opacity-5 bg-emerald-500" : isScanning ? "opacity-3 bg-amber-500" : "opacity-0"
       )} />
 
       {/* Header */}
@@ -240,10 +248,10 @@ export default function App() {
         {/* Massive Button Container */}
         <div className="relative flex items-center justify-center shrink-0">
           
-          {/* Ambient glow around button */}
+          {/* Ambient glow around button - more subtle */}
           <div className={cn(
             "absolute w-[200px] h-[200px] rounded-full blur-[60px] opacity-0 pointer-events-none transition-all duration-700",
-            isConnected ? "opacity-30 bg-emerald-500/50" : "opacity-0"
+            isConnected ? "opacity-10 bg-emerald-500" : "opacity-0"
           )} />
           
           {/* Scanning Ring */}
@@ -318,19 +326,19 @@ export default function App() {
           <div className="w-px bg-white/10 shrink-0 self-stretch my-1" />
 
           <button
-            onClick={handleAutoTune}
-            disabled={isConnected || isScanning}
+            onClick={isScanning ? handleCancelScan : handleAutoTune}
+            disabled={isConnected}
             className={cn(
               "flex flex-col items-center justify-center p-3 rounded-xl transition-all duration-300 min-w-[80px] shrink-0",
               isScanning 
-                ? "bg-amber-500/20 text-amber-400 cursor-wait shadow-[0_0_15px_rgba(245,158,11,0.2)]" 
+                ? "bg-red-500/20 text-red-400 hover:bg-red-500/30 shadow-[0_0_15px_rgba(239,68,68,0.3)]" 
                 : isConnected
                   ? "opacity-30 cursor-not-allowed text-zinc-500"
                   : "bg-white/5 hover:bg-white/10 text-cyan-400 hover:text-cyan-300 hover:shadow-[0_0_15px_rgba(6,182,212,0.2)]"
             )}
           >
             <Radar className={cn("w-5 h-5 mb-1.5", isScanning ? "animate-spin" : "")} />
-            <span className="text-[9px] font-bold tracking-widest uppercase text-center">Auto-Tune</span>
+            <span className="text-[9px] font-bold tracking-widest uppercase text-center">{isScanning ? 'Cancel' : 'Auto-Tune'}</span>
           </button>
         </div>
       </div>
