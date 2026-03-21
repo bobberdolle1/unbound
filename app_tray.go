@@ -1,34 +1,38 @@
 package main
 
 import (
-	"github.com/wailsapp/wails/v2/pkg/menu"
-	"github.com/wailsapp/wails/v2/pkg/menu/keys"
+	"github.com/getlantern/systray"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 func (a *App) setupTray() {
-	systray := menu.NewMenu()
+	go systray.Run(a.onTrayReady, a.onTrayExit)
+}
 
-	showItem := systray.AddText("Show", keys.CmdOrCtrl("s"), func(_ *menu.CallbackData) {
-		runtime.WindowShow(a.ctx)
-	})
+func (a *App) onTrayReady() {
+	systray.SetTitle("ClearFlow")
+	systray.SetTooltip("ClearFlow Unbound Engine")
 
-	hideItem := systray.AddText("Hide", keys.CmdOrCtrl("h"), func(_ *menu.CallbackData) {
-		runtime.WindowHide(a.ctx)
-	})
-
+	mShow := systray.AddMenuItem("Show ClearFlow", "Show application window")
 	systray.AddSeparator()
+	mQuit := systray.AddMenuItem("Quit", "Stop engine and quit application")
 
-	statusItem := systray.AddText("Status: Stopped", nil, nil)
-	statusItem.Disabled = true
+	go func() {
+		for {
+			select {
+			case <-mShow.ClickedCh:
+				runtime.WindowShow(a.ctx)
+			case <-mQuit.ClickedCh:
+				a.manager.Stop()
+				systray.Quit()
+				runtime.Quit(a.ctx)
+			}
+		}
+	}()
+}
 
-	systray.AddSeparator()
-
-	systray.AddText("Quit", keys.CmdOrCtrl("q"), func(_ *menu.CallbackData) {
-		runtime.Quit(a.ctx)
-	})
-
-	runtime.MenuSetApplicationMenu(a.ctx, systray)
+func (a *App) onTrayExit() {
+	// Cleanup if needed
 }
 
 func (a *App) HideToTray() {

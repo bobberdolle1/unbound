@@ -11,7 +11,7 @@ const (
 	StatusError    Status = "Error"
 )
 
-// BypassProvider - это унифицированный интерфейс для любого движка обхода (Zapret, GoodbyeDPI и т.д.)
+// BypassProvider - это унифицированный интерфейс для любого движка обхода (Zapret и т.д.)
 type BypassProvider interface {
 	Name() string
 	CheckPrivileges() (bool, error)

@@ -3,14 +3,14 @@ package main
 import (
 	"context"
 	"fmt"
-	"runtime"
+	stdruntime "runtime"
 	"time"
 
 	"unbound/engine"
 	"unbound/engine/providers"
 	"unbound/engine/tester"
 
-	"github.com/wailsapp/wails/v2/pkg/runtime"
+	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 type App struct {
@@ -29,27 +29,19 @@ func (a *App) startup(ctx context.Context) {
 
 	assets, err := engine.ExtractAssets()
 	if err != nil {
-		runtime.LogErrorf(ctx, "Failed to extract assets: %v", err)
+		wailsruntime.LogErrorf(ctx, "Failed to extract assets: %v", err)
 		return
 	}
 
 	if err := providers.ValidateBinaries(assets.BinDir); err != nil {
-		runtime.LogWarningf(ctx, "Binary validation warning: %v", err)
+		wailsruntime.LogWarningf(ctx, "Binary validation warning: %v", err)
 	}
 
-	switch runtime.GOOS {
-	case "windows":
-		a.manager.Register(providers.NewGoodbyeDPIProvider(assets.BinDir))
-		a.manager.Register(providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir))
-	case "linux":
-		a.manager.Register(providers.NewZapretLinuxProvider(assets.BinDir))
-	case "darwin":
-		a.manager.Register(providers.NewZapretMacOSProvider(assets.BinDir))
-	}
+	registerOSProviders(a, assets)
 
 	a.setupTray()
 
-	runtime.LogInfo(ctx, "UNBOUND initialized successfully")
+	wailsruntime.LogInfo(ctx, "UNBOUND initialized successfully")
 }
 
 func (a *App) shutdown(ctx context.Context) {
@@ -75,7 +67,7 @@ func (a *App) StartEngine(engineName string, profileName string) error {
 
 	err = a.manager.Start(a.ctx, engineName, profileName)
 	if err == nil {
-		runtime.EventsEmit(a.ctx, "status_changed", a.manager.GetStatus())
+		wailsruntime.EventsEmit(a.ctx, "status_changed", a.manager.GetStatus())
 	}
 	return err
 }
@@ -83,7 +75,7 @@ func (a *App) StartEngine(engineName string, profileName string) error {
 func (a *App) StopEngine() error {
 	err := a.manager.Stop()
 	if err == nil {
-		runtime.EventsEmit(a.ctx, "status_changed", a.manager.GetStatus())
+		wailsruntime.EventsEmit(a.ctx, "status_changed", a.manager.GetStatus())
 	}
 	return err
 }
@@ -98,8 +90,8 @@ func (a *App) GetLogs() []string {
 
 func (a *App) GetSystemInfo() map[string]string {
 	return map[string]string{
-		"os":   runtime.GOOS,
-		"arch": runtime.GOARCH,
+		"os":   stdruntime.GOOS,
+		"arch": stdruntime.GOARCH,
 	}
 }
 
@@ -131,6 +123,27 @@ func (a *App) TestProfile(engineName string, profileName string) (string, error)
 	return fmt.Sprintf("Score: %d/600\n\n%s", score, output), nil
 }
 
+func (a *App) AutoTune() string {
+	wailsruntime.LogInfo(a.ctx, "Starting Auto-Tune...")
+	
+	updateLog := func(msg string) {
+		wailsruntime.EventsEmit(a.ctx, "autotune_log", msg)
+	}
+
+	profile, err := engine.RunAutoTune(a.ctx, updateLog)
+	if err != nil {
+		updateLog("Auto-Tune failed: " + err.Error())
+		return "Failed"
+	}
+
+	a.StopEngine()
+	// Sleep briefly before starting main engine to ensure ports are completely free
+	time.Sleep(1 * time.Second)
+	a.StartEngine("Zapret 2 (winws)", profile.Name)
+
+	return profile.Name
+}
+
 func (a *App) AutoSelectProfile(engineName string) (string, error) {
 	hasPriv, err := a.manager.CheckPrivileges()
 	if err != nil {
@@ -149,11 +162,11 @@ func (a *App) AutoSelectProfile(engineName string) (string, error) {
 	bestScore := -1
 
 	for _, profile := range profiles {
-		runtime.LogInfof(a.ctx, "Testing profile: %s", profile)
+		wailsruntime.LogInfof(a.ctx, "Testing profile: %s", profile)
 
 		err := a.manager.Start(a.ctx, engineName, profile)
 		if err != nil {
-			runtime.LogErrorf(a.ctx, "Failed to start %s: %v", profile, err)
+			wailsruntime.LogErrorf(a.ctx, "Failed to start %s: %v", profile, err)
 			continue
 		}
 
@@ -164,7 +177,7 @@ func (a *App) AutoSelectProfile(engineName string) (string, error) {
 		cancel()
 
 		score := tester.CalculateScore(results)
-		runtime.LogInfof(a.ctx, "Profile %s score: %d", profile, score)
+		wailsruntime.LogInfof(a.ctx, "Profile %s score: %d", profile, score)
 
 		a.manager.Stop()
 		time.Sleep(1 * time.Second)
@@ -180,4 +193,21 @@ func (a *App) AutoSelectProfile(engineName string) (string, error) {
 	}
 
 	return bestProfile, nil
+}
+
+func (a *App) SaveCustomScript(scriptContent string) error {
+	if err := engine.SaveCustomScript(scriptContent); err != nil {
+		wailsruntime.LogErrorf(a.ctx, "Failed to save custom script: %v", err)
+		return err
+	}
+	wailsruntime.LogInfo(a.ctx, "Custom Lua script saved successfully")
+	return nil
+}
+
+func (a *App) LoadCustomScript() (string, error) {
+	content, err := engine.LoadCustomScript()
+	if err != nil {
+		wailsruntime.LogWarningf(a.ctx, "Custom script load warning: %v", err)
+	}
+	return content, nil
 }

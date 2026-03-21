@@ -13,8 +13,7 @@ func ValidateBinaries(binPath string) error {
 	switch runtime.GOOS {
 	case "windows":
 		requiredFiles = []string{
-			"goodbyedpi.exe",
-			"winws2.exe",
+			"nfqws.exe",
 			"WinDivert.dll",
 			"WinDivert64.sys",
 		}

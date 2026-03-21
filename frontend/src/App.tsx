@@ -1,11 +1,29 @@
 import { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Play, Square, Zap, Settings, Terminal, TrendingUp, Minimize2, Activity } from 'lucide-react';
+import { Power, Terminal, Shield, ShieldAlert, Minimize2, ChevronUp, ChevronDown, Radar, Globe, Code } from 'lucide-react';
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
 
 // @ts-ignore
-import { GetEngineNames, GetProfiles, StartEngine, StopEngine, GetLogs, TestProfile, AutoSelectProfile, HideToTray } from '../wailsjs/go/main/App';
+import { GetEngineNames, GetProfiles, StartEngine, StopEngine, GetLogs, HideToTray, AutoTune, SaveCustomScript, LoadCustomScript } from '../wailsjs/go/main/App';
 // @ts-ignore
 import { EventsOn } from '../wailsjs/runtime/runtime';
+
+const formatLog = (log: string) => {
+  let formatted = log;
+  if (formatted.includes('[STDOUT]')) formatted = formatted.replace('[STDOUT]', '').trim();
+  if (formatted.includes('[STDERR]')) formatted = formatted.replace('[STDERR]', '').trim();
+  
+  if (formatted.includes('--filter-tcp')) return "Configuring network packet filters...";
+  if (formatted.includes('--lua=')) return "Loading DPI bypass logic...";
+  if (formatted.includes('Command:')) return "Starting engine core...";
+  if (formatted.toLowerCase().includes('windivert error') || formatted.toLowerCase().includes('binding failure')) return "Driver error. Ensure no conflicting bypass tools are active.";
+  
+  return formatted;
+};
 
 export default function App() {
   const [engines, setEngines] = useState<string[]>([]);
@@ -14,10 +32,11 @@ export default function App() {
   const [selectedProfile, setSelectedProfile] = useState<string>('');
   const [status, setStatus] = useState<string>('Stopped');
   const [logs, setLogs] = useState<string[]>([]);
-  const [testing, setTesting] = useState(false);
-  const [autoSelecting, setAutoSelecting] = useState(false);
-  const [testResult, setTestResult] = useState<string>('');
-  const [showTestModal, setShowTestModal] = useState(false);
+  const [scanLogs, setScanLogs] = useState<string[]>([]);
+  const [isLogExpanded, setIsLogExpanded] = useState<boolean>(false);
+  const [isScanning, setIsScanning] = useState<boolean>(false);
+  const [isEditorOpen, setIsEditorOpen] = useState<boolean>(false);
+  const [scriptContent, setScriptContent] = useState<string>('');
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -29,244 +48,346 @@ export default function App() {
     EventsOn('status_changed', (newStatus: string) => {
       setStatus(newStatus);
     });
+
+    EventsOn('autotune_log', (msg: string) => {
+      setScanLogs(prev => [...prev, msg]);
+      setIsLogExpanded(true);
+    });
     
     const interval = setInterval(() => {
-      GetLogs().then((l: string[]) => setLogs(l || []));
+      if (!isScanning) {
+        GetLogs().then((l: string[]) => setLogs(l || []));
+      }
     }, 500);
     
     return () => clearInterval(interval);
-  }, []);
+  }, [isScanning]);
 
   useEffect(() => {
     if (selectedEngine) {
       GetProfiles(selectedEngine).then((p: string[]) => {
         setProfiles(p || []);
-        if (p && p.length > 0) setSelectedProfile(p[0]);
+        if (p && p.length > 0 && !selectedProfile) setSelectedProfile(p[0]);
       });
     }
   }, [selectedEngine]);
 
   useEffect(() => {
-    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [logs]);
+    if (isLogExpanded) {
+      logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logs, scanLogs, isLogExpanded, isScanning]);
 
-  const handleStart = async () => {
-    try {
-      await StartEngine(selectedEngine, selectedProfile);
-    } catch (err: any) {
-      alert('Error: ' + (err.message || err));
+  const toggleConnection = async () => {
+    if (status === 'Running' || status === 'Starting') {
+      try {
+        await StopEngine();
+      } catch (err: any) {
+        console.error('Error stopping:', err);
+      }
+    } else {
+      try {
+        await StartEngine(selectedEngine, selectedProfile);
+      } catch (err: any) {
+        console.error('Error starting:', err);
+      }
     }
   };
 
-  const handleStop = async () => {
+  const handleAutoTune = async () => {
+    setIsScanning(true);
+    setScanLogs([]);
+    setIsLogExpanded(true);
     try {
-      await StopEngine();
-    } catch (err: any) {
-      alert('Error: ' + (err.message || err));
+      const bestProfile = await AutoTune();
+      if (bestProfile && bestProfile !== "Failed") {
+        setSelectedProfile(bestProfile);
+      }
+    } catch (err) {
+      console.error('AutoTune error:', err);
+    } finally {
+      setIsScanning(false);
     }
   };
 
-  const handleTest = async () => {
-    setTesting(true);
-    setTestResult('');
-    setShowTestModal(true);
+  const handleOpenEditor = async () => {
+    setIsEditorOpen(true);
     try {
-      const result = await TestProfile(selectedEngine, selectedProfile);
-      setTestResult(result);
-    } catch (err: any) {
-      setTestResult('Error: ' + (err.message || err));
+      const content = await LoadCustomScript();
+      setScriptContent(content);
+    } catch (err) {
+      console.error('Failed to load custom script:', err);
     }
-    setTesting(false);
   };
 
-  const handleAutoSelect = async () => {
-    setAutoSelecting(true);
-    setTestResult('Testing all profiles...');
-    setShowTestModal(true);
+  const handleSaveScript = async () => {
     try {
-      const best = await AutoSelectProfile(selectedEngine);
-      setSelectedProfile(best);
-      setTestResult(`✓ Best profile selected: ${best}`);
-    } catch (err: any) {
-      setTestResult('Error: ' + (err.message || err));
+      await SaveCustomScript(scriptContent);
+      setIsEditorOpen(false);
+      setSelectedProfile('Custom Profile');
+    } catch (err) {
+      console.error('Failed to save custom script:', err);
     }
-    setAutoSelecting(false);
   };
 
-  const isRunning = status === 'Running';
-  const isStarting = status === 'Starting';
+  const isConnected = status === 'Running';
+  const isConnecting = status === 'Starting';
+  const disableMain = isConnecting || isScanning;
+
+  const displayLogs = isScanning ? scanLogs : logs;
 
   return (
-    <div className="h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900 flex flex-col select-none text-white">
-      {/* Title Bar */}
-      <div className="bg-black/80 backdrop-blur-xl border-b border-gray-800 px-4 py-2 flex items-center justify-between" style={{ WebkitAppRegion: 'drag' } as any}>
-        <div className="flex items-center gap-2">
-          <Zap className="w-5 h-5 text-blue-500" />
-          <span className="text-sm font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">UNBOUND</span>
+    <div className="h-screen w-screen bg-zinc-950 flex flex-col font-sans text-zinc-100 overflow-hidden relative selection:bg-cyan-500/30">
+      
+      {/* Background ambient glow based on status */}
+      <div className={cn(
+        "absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full blur-[120px] opacity-20 pointer-events-none transition-all duration-1000",
+        isConnected ? "bg-emerald-500/40" : isScanning ? "bg-amber-500/20" : "bg-zinc-800/50"
+      )} />
+
+      {/* Header */}
+      <div 
+        className="h-16 flex items-center justify-between px-6 border-b border-white/5 bg-zinc-950/40 backdrop-blur-xl z-10 shrink-0"
+        style={{ WebkitAppRegion: 'drag' } as any}
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-xl bg-zinc-800 flex items-center justify-center border border-white/10 shadow-lg">
+            <Globe className="w-4 h-4 text-zinc-400" />
+          </div>
+          <div>
+            <h1 className="text-sm font-bold tracking-widest text-white/90">UNBOUND</h1>
+            <p className="text-[9px] text-zinc-500 font-bold tracking-widest uppercase">CLEARFLOW ENGINE</p>
+          </div>
         </div>
-        <div className="flex items-center gap-1" style={{ WebkitAppRegion: 'no-drag' } as any}>
-          <button onClick={() => HideToTray()} className="p-1.5 hover:bg-gray-800 rounded transition-colors">
-            <Minimize2 className="w-4 h-4 text-gray-400" />
+
+        <div className="flex items-center gap-4" style={{ WebkitAppRegion: 'no-drag' } as any}>
+          {/* Status Badge */}
+          <div className={cn(
+            "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold tracking-widest border transition-all duration-500 shadow-sm",
+            isConnected 
+              ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.2)]" 
+              : isScanning || isConnecting
+                ? "bg-amber-500/10 text-amber-400 border-amber-500/30 shadow-[0_0_10px_rgba(245,158,11,0.2)] animate-pulse"
+                : "bg-red-500/10 text-red-400 border-red-500/30 shadow-[0_0_10px_rgba(239,68,68,0.2)]"
+          )}>
+            {isConnected ? <Shield className="w-3.5 h-3.5" /> : isScanning ? <Radar className="w-3.5 h-3.5 animate-spin" /> : <ShieldAlert className="w-3.5 h-3.5" />}
+            {isScanning ? 'SCANNING' : status.toUpperCase()}
+          </div>
+
+          <button 
+            onClick={handleOpenEditor} 
+            className="p-1.5 rounded-lg hover:bg-white/10 transition-colors text-zinc-400 hover:text-cyan-400"
+            title="Advanced Lua Editor"
+          >
+            <Code className="w-4 h-4" />
+          </button>
+
+          <button onClick={() => HideToTray()} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors text-zinc-400 hover:text-white">
+            <Minimize2 className="w-4 h-4" />
           </button>
         </div>
       </div>
 
-      <div className="flex-1 flex overflow-hidden">
-        {/* Left Panel - Controls */}
-        <div className="w-80 bg-black/40 backdrop-blur-xl border-r border-gray-800 flex flex-col">
-          {/* Status */}
-          <div className="p-4 border-b border-gray-800">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">Status</span>
-              <div className="flex items-center gap-2">
-                {isRunning && <Activity className="w-4 h-4 text-green-400 animate-pulse" />}
-                <span className={`text-sm font-semibold ${isRunning ? 'text-green-400' : isStarting ? 'text-yellow-400' : 'text-gray-500'}`}>
-                  {status}
-                </span>
+      {/* Main Hero Section */}
+      <div className="flex-1 flex flex-col items-center justify-center gap-10 relative min-h-0 z-10 p-4">
+        
+        {/* Massive Button Container */}
+        <div className="relative flex items-center justify-center shrink-0">
+          
+          {/* Scanning Ring */}
+          {isScanning && (
+            <div className="absolute w-[180px] h-[180px] rounded-full border-2 border-transparent border-t-amber-500/80 border-r-amber-500/20 animate-spin z-0" style={{ animationDuration: '1.5s' }} />
+          )}
+
+          <button
+            onClick={toggleConnection}
+            disabled={disableMain}
+            style={{ WebkitAppRegion: 'no-drag' } as any}
+            className={cn(
+              "relative group rounded-full w-40 h-40 flex flex-col items-center justify-center shrink-0 transition-all duration-700 delay-75 z-10 p-4",
+              isConnected 
+                ? "bg-zinc-950 glow-on border border-emerald-500/50" 
+                : "bg-zinc-900/80 backdrop-blur-md border border-white/5 shadow-[0_0_40px_rgba(0,0,0,0.5)]",
+              disableMain && !isConnected ? "opacity-50 cursor-not-allowed scale-95" : "hover:border-white/10 hover:scale-105 active:scale-95"
+            )}
+          >
+            {/* Inner background gradient */}
+            <div className={cn(
+              "absolute inset-3 rounded-full transition-all duration-700 z-0",
+              isConnected ? "bg-gradient-to-b from-emerald-900/20 to-cyan-900/20" : "bg-gradient-to-b from-white/5 to-transparent"
+            )} />
+
+            <Power className={cn(
+              "w-12 h-12 mb-2 z-10 transition-all duration-700 shrink-0",
+              isConnected ? "text-emerald-400 drop-shadow-[0_0_15px_rgba(16,185,129,0.8)]" : "text-zinc-500 group-hover:text-zinc-300"
+            )} />
+            
+            <span className={cn(
+              "text-[10px] font-black tracking-[0.1em] z-10 transition-all duration-700 mt-1 text-center w-full break-words px-1 leading-tight",
+              isConnected ? "text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400" : "text-zinc-500 group-hover:text-zinc-300"
+            )}>
+              {isConnected ? 'CONNECTED' : isConnecting ? 'CONNECTING' : 'TAP TO CONNECT'}
+            </span>
+          </button>
+        </div>
+
+        {/* Profile Card */}
+        <div 
+          className="flex flex-row items-stretch justify-between w-full max-w-[400px] bg-white/5 border border-white/10 rounded-2xl p-4 backdrop-blur-xl shadow-xl transition-all duration-500 gap-4"
+          style={{ WebkitAppRegion: 'no-drag' } as any}
+        >
+          <div className="flex flex-col overflow-hidden flex-1 justify-center">
+            <span className="text-[10px] text-zinc-400 font-bold tracking-widest uppercase mb-1 flex items-center gap-2">
+              <Shield className="w-3 h-3 text-cyan-500" />
+              Active Strategy
+            </span>
+            <div className="relative w-full">
+              <select 
+                value={selectedProfile} 
+                onChange={(e) => setSelectedProfile(e.target.value)} 
+                disabled={isConnected || disableMain || !selectedEngine}
+                className="bg-transparent border-none text-zinc-100 text-sm font-semibold tracking-wide outline-none appearance-none cursor-pointer disabled:opacity-70 truncate w-full hover:text-cyan-100 transition-colors pr-6"
+              >
+                {profiles.map(p => <option key={p} value={p} className="bg-zinc-900 text-sm">{p}</option>)}
+              </select>
+              {/* Dropdown indicator */}
+              <div className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none opacity-50">
+                <ChevronDown className="w-4 h-4" />
               </div>
             </div>
           </div>
 
-          {/* Controls */}
-          <div className="flex-1 overflow-auto p-4 space-y-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider">Engine</label>
-              <select 
-                value={selectedEngine} 
-                onChange={(e) => setSelectedEngine(e.target.value)} 
-                disabled={isRunning} 
-                className="w-full bg-gray-800/70 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-              >
-                {engines.map(e => <option key={e} value={e}>{e}</option>)}
-              </select>
-            </div>
+          <div className="w-px bg-white/10 shrink-0 self-stretch my-1" />
 
-            <div>
-              <label className="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider">Profile</label>
-              <select 
-                value={selectedProfile} 
-                onChange={(e) => setSelectedProfile(e.target.value)} 
-                disabled={isRunning || !selectedEngine} 
-                className="w-full bg-gray-800/70 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-              >
-                {profiles.map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <button 
-                onClick={handleAutoSelect} 
-                disabled={!selectedEngine || isRunning || autoSelecting} 
-                className="bg-purple-600/90 hover:bg-purple-600 disabled:bg-gray-700/50 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3 py-2 rounded-lg text-xs font-medium transition-all flex items-center justify-center gap-1.5"
-              >
-                <TrendingUp className="w-3.5 h-3.5" />
-                {autoSelecting ? 'Testing...' : 'Auto'}
-              </button>
-              <button 
-                onClick={handleTest} 
-                disabled={!selectedEngine || !selectedProfile || testing} 
-                className="bg-blue-600/90 hover:bg-blue-600 disabled:bg-gray-700/50 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3 py-2 rounded-lg text-xs font-medium transition-all flex items-center justify-center gap-1.5"
-              >
-                <Settings className="w-3.5 h-3.5" />
-                {testing ? 'Testing...' : 'Test'}
-              </button>
-            </div>
-          </div>
-
-          {/* Start/Stop Button */}
-          <div className="p-4 border-t border-gray-800">
-            {!isRunning ? (
-              <button 
-                onClick={handleStart} 
-                disabled={!selectedEngine || !selectedProfile || isStarting} 
-                className="w-full bg-gradient-to-r from-green-600 to-green-500 hover:from-green-500 hover:to-green-400 disabled:from-gray-700 disabled:to-gray-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-3 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 shadow-lg"
-              >
-                <Play className="w-5 h-5" />
-                {isStarting ? 'Starting...' : 'Start Engine'}
-              </button>
-            ) : (
-              <button 
-                onClick={handleStop} 
-                className="w-full bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white px-4 py-3 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 shadow-lg"
-              >
-                <Square className="w-5 h-5" />
-                Stop Engine
-              </button>
+          <button
+            onClick={handleAutoTune}
+            disabled={isConnected || isScanning}
+            className={cn(
+              "flex flex-col items-center justify-center p-3 rounded-xl transition-all duration-300 min-w-[80px] shrink-0",
+              isScanning 
+                ? "bg-amber-500/20 text-amber-400 cursor-wait shadow-[0_0_15px_rgba(245,158,11,0.2)]" 
+                : isConnected
+                  ? "opacity-30 cursor-not-allowed text-zinc-500"
+                  : "bg-white/5 hover:bg-white/10 text-cyan-400 hover:text-cyan-300 hover:shadow-[0_0_15px_rgba(6,182,212,0.2)]"
             )}
-          </div>
-        </div>
-
-        {/* Right Panel - Logs */}
-        <div className="flex-1 flex flex-col bg-black/20">
-          <div className="bg-black/40 backdrop-blur-xl border-b border-gray-800 px-4 py-2.5 flex items-center gap-2">
-            <Terminal className="w-4 h-4 text-gray-400" />
-            <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">Engine Logs</span>
-            <div className="flex-1" />
-            <span className="text-xs text-gray-600">{logs.length} lines</span>
-          </div>
-          <div className="flex-1 overflow-auto p-4">
-            <div className="space-y-0.5 font-mono text-xs">
-              {logs.length === 0 ? (
-                <div className="text-gray-600 text-center py-8">No logs yet. Start an engine to see output.</div>
-              ) : (
-                logs.map((log, i) => {
-                  const isError = log.includes('Error') || log.includes('STDERR') || log.includes('failed');
-                  const isSuccess = log.includes('ACTIVE') || log.includes('SUCCESS') || log.includes('✓');
-                  const isWarning = log.includes('Warning') || log.includes('warning');
-                  
-                  return (
-                    <div 
-                      key={i} 
-                      className={`px-2 py-0.5 rounded ${
-                        isError ? 'text-red-400 bg-red-950/20' : 
-                        isSuccess ? 'text-green-400 bg-green-950/20' : 
-                        isWarning ? 'text-yellow-400 bg-yellow-950/20' : 
-                        'text-gray-400 hover:bg-gray-800/30'
-                      }`}
-                    >
-                      {log}
-                    </div>
-                  );
-                })
-              )}
-              <div ref={logsEndRef} />
-            </div>
-          </div>
+          >
+            <Radar className={cn("w-5 h-5 mb-1.5", isScanning ? "animate-spin" : "")} />
+            <span className="text-[9px] font-bold tracking-widest uppercase text-center">Auto-Tune</span>
+          </button>
         </div>
       </div>
 
-      {/* Test Results Modal */}
-      <AnimatePresence>
-        {showTestModal && (
-          <motion.div 
-            initial={{ opacity: 0 }} 
-            animate={{ opacity: 1 }} 
-            exit={{ opacity: 0 }} 
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" 
-            onClick={() => setShowTestModal(false)}
-          >
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }} 
-              animate={{ scale: 1, opacity: 1 }} 
-              exit={{ scale: 0.9, opacity: 0 }} 
-              onClick={(e) => e.stopPropagation()} 
-              className="bg-gray-900 border border-gray-800 rounded-xl p-6 max-w-2xl w-full max-h-[80vh] overflow-auto shadow-2xl"
-            >
-              <h3 className="text-lg font-bold text-white mb-4">Test Results</h3>
-              {testing || autoSelecting ? (
-                <div className="flex flex-col items-center justify-center py-12">
-                  <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4" />
-                  <p className="text-gray-400">Testing profile performance...</p>
-                </div>
-              ) : (
-                <pre className="bg-black/50 border border-gray-800 rounded-lg p-4 text-sm text-gray-300 whitespace-pre-wrap font-mono">
-                  {testResult || 'No results yet'}
-                </pre>
-              )}
-            </motion.div>
-          </motion.div>
+      {/* Bottom Terminal Logs */}
+      <div 
+        className={cn(
+          "bg-zinc-950/90 backdrop-blur-2xl border-t border-white/5 flex flex-col transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] shrink-0 z-20 shadow-[0_-10px_40px_rgba(0,0,0,0.3)]",
+          isLogExpanded ? "h-64" : "h-12"
         )}
-      </AnimatePresence>
+        style={{ WebkitAppRegion: 'no-drag' } as any}
+      >
+        <div 
+          className="flex items-center justify-between px-6 py-3 cursor-pointer hover:bg-white/5 transition-colors group h-12"
+          onClick={() => setIsLogExpanded(!isLogExpanded)}
+        >
+          <div className="flex items-center gap-3">
+            <Terminal className="w-4 h-4 text-zinc-500 group-hover:text-cyan-500 transition-colors" />
+            <span className="text-[10px] font-bold text-zinc-400 group-hover:text-zinc-300 uppercase tracking-widest transition-colors">
+              {isScanning ? 'Telemetry: Auto-Tune' : 'Telemetry: Engine'}
+            </span>
+          </div>
+          <div className="flex items-center gap-4">
+            <span className="text-[9px] text-zinc-500 font-mono tracking-widest bg-black/60 px-2 py-1 rounded border border-white/5">{displayLogs.length} LOGS</span>
+            {isLogExpanded ? <ChevronDown className="w-4 h-4 text-zinc-500" /> : <ChevronUp className="w-4 h-4 text-zinc-500" />}
+          </div>
+        </div>
+
+        <div className={cn(
+          "flex-1 overflow-y-auto px-6 pb-4 font-mono text-[10px] leading-[1.6] transition-opacity duration-300",
+          isLogExpanded ? "opacity-100" : "opacity-0 hidden"
+        )}>
+          {displayLogs.length === 0 ? (
+            <div className="text-zinc-600 h-full flex items-center justify-center font-medium tracking-widest">AWAITING TELEMETRY STREAM...</div>
+          ) : (
+            <div className="space-y-[3px]">
+              {displayLogs.map((rawLog, i) => {
+                const log = formatLog(rawLog);
+                const lowerLog = log.toLowerCase();
+                const isError = lowerLog.includes('error') || lowerLog.includes('fail') || lowerLog.includes('unexpected') || lowerLog.includes('cannot') || lowerLog.includes('invalid') || lowerLog.includes('unknown');
+                const isSuccess = lowerLog.includes('active') || lowerLog.includes('success') || lowerLog.includes('✓') || lowerLog.includes('start');
+                
+                return (
+                  <div 
+                    key={i} 
+                    className={cn(
+                      "pl-3 border-l py-0.5 break-words",
+                      isError ? "border-red-500/50 text-red-400 bg-red-500/5 rounded-r" : 
+                      isSuccess ? "border-emerald-500/50 text-emerald-400 bg-emerald-500/5 rounded-r" : 
+                      "border-white/10 text-zinc-400 hover:bg-white/5 rounded-r transition-colors"
+                    )}
+                  >
+                    <span className="text-zinc-600 mr-3 select-none">[{new Date().toLocaleTimeString([], {hour12: false, hour: '2-digit', minute: '2-digit', second:'2-digit'})}]</span>
+                    <span>{log}</span>
+                  </div>
+                );
+              })}
+              <div ref={logsEndRef} />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Advanced Lua Editor Modal */}
+      {isEditorOpen && (
+        <div 
+          className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md"
+          onClick={() => setIsEditorOpen(false)}
+        >
+          <div 
+            className="w-[90%] max-w-4xl h-[80%] bg-zinc-900/95 border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-zinc-950/50 backdrop-blur-xl">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-cyan-500/10 flex items-center justify-center border border-cyan-500/30">
+                  <Code className="w-4 h-4 text-cyan-400" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold tracking-widest text-white/90">ADVANCED LUA EDITOR</h2>
+                  <p className="text-[9px] text-zinc-500 font-bold tracking-widest uppercase">Custom DPI Bypass Strategy</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Editor Area */}
+            <div className="flex-1 p-6 overflow-hidden flex flex-col">
+              <textarea
+                value={scriptContent}
+                onChange={(e) => setScriptContent(e.target.value)}
+                className="flex-1 w-full bg-zinc-900/80 border border-white/10 rounded-xl p-4 text-emerald-400 font-mono text-sm leading-relaxed resize-none focus:outline-none focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/20 transition-all scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-zinc-900"
+                placeholder="-- Enter your custom Zapret Lua bypass strategy here..."
+                spellCheck={false}
+              />
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-white/10 bg-zinc-950/50 backdrop-blur-xl">
+              <button
+                onClick={() => setIsEditorOpen(false)}
+                className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white text-xs font-bold tracking-widest uppercase transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveScript}
+                className="px-4 py-2 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400 hover:text-cyan-300 border border-cyan-500/30 text-xs font-bold tracking-widest uppercase transition-all shadow-[0_0_15px_rgba(6,182,212,0.2)]"
+              >
+                Save & Apply
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

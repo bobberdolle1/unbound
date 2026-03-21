@@ -6,14 +6,30 @@ package providers
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"golang.org/x/sys/windows"
 )
+
+const (
+	configDirName    = "Unbound"
+	customScriptName = "custom_profile.lua"
+)
+
+func getCustomScriptPath() (string, error) {
+	userConfigDir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	configPath := filepath.Join(userConfigDir, configDirName)
+	return filepath.Join(configPath, customScriptName), nil
+}
 
 type Zapret2WindowsProvider struct {
 	status         Status
@@ -66,97 +82,83 @@ func (e *Zapret2WindowsProvider) GetProfiles() []string {
 		"Discord Voice Optimized",
 		"YouTube QUIC Aggressive",
 		"Telegram API Bypass",
-		"Flowseal Legacy (Discord/YT)", 
 		"Fake TLS & QUIC", 
-		"Split & Disorder",
 		"Multi-Strategy Chaos",
+		"Standard Split",
+		"Fake Packets + BadSeq",
+		"Disorder",
+		"Split Handshake",
+		"Flowseal Legacy",
+		"Custom Profile",
 	}
 }
 
 func (e *Zapret2WindowsProvider) getProfileArgs(profileName string) []string {
-	luaLib := filepath.ToSlash(filepath.Join(e.luaDir, "zapret-lib.lua"))
-	luaAntiDpi := filepath.ToSlash(filepath.Join(e.luaDir, "zapret-antidpi.lua"))
+	absLuaLib, _ := filepath.Abs(filepath.Join(e.luaDir, "zapret-lib.lua"))
+	absLuaAntiDpi, _ := filepath.Abs(filepath.Join(e.luaDir, "zapret-antidpi.lua"))
+	
+	luaLib := filepath.ToSlash(absLuaLib)
+	luaAntiDpi := filepath.ToSlash(absLuaAntiDpi)
 
+	// Correct Zapret 2 Syntax for filtering
 	args := []string{
-		"--wf-tcp-empty=1",
-		"--lua-init=@" + luaLib,
-		"--lua-init=@" + luaAntiDpi,
+		"--filter-tcp=80,443",
+		"--filter-udp=50000-65535",
+		"--lua=\"" + luaLib + "\"",
+		"--lua=\"" + luaAntiDpi + "\"",
 	}
 
 	switch profileName {
 	case "Unbound Ultimate (God Mode)":
-		// Comprehensive filter for almost all blocked services in RU (2026)
-		// TCP: 80 (HTTP), 443 (HTTPS), 5222/5223/5228/4244 (Telegram/WhatsApp API)
-		// UDP: 443 (QUIC), 3478 (STUN/Calls), 50000-65535 (Discord Voice)
-		args = append([]string{"--wf-tcp-out=80,443,5222,5223,5228,4244", "--wf-udp-out=443,3478,50000-65535"}, args...)
-		args = append(args,
-			// HTTPS (YouTube, Discord API, General Web)
-			"--filter-tcp=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=split:pos=1", "--new",
-			// HTTP (General Web)
-			"--filter-tcp=80", "--lua-desync=fake:blob=fake_default_http:tcp_md5", "--new",
-			// Custom TCP APIs (Telegram, WhatsApp)
-			"--filter-tcp=5222,5223,5228,4244", "--lua-desync=split:pos=2", "--lua-desync=disorder", "--new",
-			// QUIC (YouTube Fast, Discord)
-			"--filter-udp=443", "--filter-l7=quic", "--payload=quic_initial", "--lua-desync=fake:blob=fake_default_quic:repeats=10", "--new",
-			// Discord Voice & STUN
-			"--filter-udp=3478,50000-65535", "--lua-desync=fake:blob=fake_default_quic:repeats=6",
-		)
+		args = append(args, "--filter-tcp=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=split:pos=1", "--new")
+		args = append(args, "--filter-udp=443", "--filter-l7=quic", "--payload=quic_initial", "--lua-desync=fake:blob=fake_default_quic:repeats=10", "--new")
+		args = append(args, "--filter-udp=3478,50000-65535", "--lua-desync=fake:blob=fake_default_quic:repeats=6")
 
 	case "Discord Voice Optimized":
-		args = append([]string{"--wf-tcp-out=443", "--wf-udp-out=443,3478,50000-65535"}, args...)
-		args = append(args,
-			"--filter-tcp=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=split:pos=1", "--new",
-			"--filter-udp=443", "--filter-l7=quic", "--payload=quic_initial", "--lua-desync=fake:blob=fake_default_quic:repeats=10", "--new",
-			"--filter-udp=3478", "--lua-desync=fake:blob=fake_default_quic:repeats=8", "--new",
-			"--filter-udp=50000-65535", "--lua-desync=fake:blob=fake_default_quic:repeats=8",
-		)
+		args = append(args, "--filter-tcp=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=split:pos=1", "--new")
+		args = append(args, "--filter-udp=443,3478,50000-65535", "--lua-desync=fake:blob=fake_default_quic:repeats=10")
 
 	case "YouTube QUIC Aggressive":
-		args = append([]string{"--wf-tcp-out=80,443", "--wf-udp-out=443"}, args...)
-		args = append(args,
-			"--filter-tcp=80", "--lua-desync=fake:blob=fake_default_http:tcp_md5", "--lua-desync=split:pos=method+2", "--new",
-			"--filter-tcp=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=multisplit:pos=1,midsld", "--new",
-			"--filter-udp=443", "--filter-l7=quic", "--payload=quic_initial", "--lua-desync=fake:blob=fake_default_quic:repeats=12", "--lua-desync=udplen:increment=2",
-		)
+		args = append(args, "--filter-tcp=80,443", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=multisplit:pos=1,midsld", "--new")
+		args = append(args, "--filter-udp=443", "--filter-l7=quic", "--payload=quic_initial", "--lua-desync=fake:blob=fake_default_quic:repeats=12")
 
 	case "Telegram API Bypass":
-		args = append([]string{"--wf-tcp-out=80,443,5222,5223,5228", "--wf-udp-out=443"}, args...)
-		args = append(args,
-			"--filter-tcp=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=split:pos=1", "--new",
-			"--filter-tcp=5222,5223,5228", "--lua-desync=split:pos=2", "--lua-desync=disorder", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--new",
-			"--filter-udp=443", "--filter-l7=quic", "--payload=quic_initial", "--lua-desync=fake:blob=fake_default_quic:repeats=8",
-		)
-
-	case "Flowseal Legacy (Discord/YT)":
-		args = append([]string{"--wf-tcp-out=80,443", "--wf-udp-out=443,50000-65535"}, args...)
-		args = append(args,
-			"--filter-tcp=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=split:pos=1", "--new",
-			"--filter-udp=443", "--filter-l7=quic", "--payload=quic_initial", "--lua-desync=fake:blob=fake_default_quic:repeats=6", "--new",
-			"--filter-udp=50000-65535", "--lua-desync=fake:blob=fake_default_quic:repeats=6",
-		)
+		args = append(args, "--filter-tcp=443,5222,5223,5228", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=split:pos=1", "--new")
+		args = append(args, "--filter-udp=443", "--lua-desync=fake:blob=fake_default_quic:repeats=8")
 
 	case "Fake TLS & QUIC":
-		args = append([]string{"--wf-tcp-out=80,443", "--wf-udp-out=443,50000-65535"}, args...)
-		args = append(args,
-			"--filter-tcp=80,443", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--new",
-			"--filter-udp=443,50000-65535", "--lua-desync=fake:blob=fake_default_quic:repeats=10",
-		)
-
-	case "Split & Disorder":
-		args = append([]string{"--wf-tcp-out=80,443", "--wf-udp-out=443"}, args...)
-		args = append(args,
-			"--filter-tcp=443", "--lua-desync=split:pos=2", "--lua-desync=disorder", "--new",
-			"--filter-udp=443", "--lua-desync=fake:blob=fake_default_quic",
-		)
+		args = append(args, "--filter-tcp=80,443", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--new")
+		args = append(args, "--filter-udp=443,50000-65535", "--lua-desync=fake:blob=fake_default_quic:repeats=10")
 
 	case "Multi-Strategy Chaos":
-		args = append([]string{"--wf-tcp-out=80,443", "--wf-udp-out=443,3478,50000-65535"}, args...)
-		args = append(args,
-			"--filter-tcp=80", "--lua-desync=fake:blob=fake_default_http:tcp_md5", "--lua-desync=multisplit:pos=method+2", "--lua-desync=disorder", "--new",
-			"--filter-tcp=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=multidisorder:pos=1,midsld", "--lua-desync=badseq", "--new",
-			"--filter-udp=443", "--filter-l7=quic", "--payload=quic_initial", "--lua-desync=fake:blob=fake_default_quic:repeats=10", "--lua-desync=udplen:increment=2", "--new",
-			"--filter-udp=3478,50000-65535", "--lua-desync=fake:blob=fake_default_quic:repeats=8",
-		)
+		args = append(args, "--filter-tcp=80,443", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=multidisorder:pos=1,midsld", "--lua-desync=badseq", "--new")
+		args = append(args, "--filter-udp=443", "--lua-desync=fake:blob=fake_default_quic:repeats=10", "--new")
+		args = append(args, "--filter-udp=3478,50000-65535", "--lua-desync=fake:blob=fake_default_quic:repeats=8")
+
+	case "Standard Split":
+		args = append(args, "--filter-tcp=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=split:pos=1", "--new")
+
+	case "Fake Packets + BadSeq":
+		args = append(args, "--filter-tcp=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=multidisorder:pos=1,midsld", "--lua-desync=badseq", "--new")
+
+	case "Disorder":
+		args = append(args, "--filter-tcp=443", "--lua-desync=split:pos=2", "--lua-desync=disorder", "--new")
+
+	case "Split Handshake":
+		args = append(args, "--filter-tcp=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=split:pos=midsld", "--new")
+
+	case "Flowseal Legacy":
+		args = append(args, "--filter-tcp=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=split:pos=1", "--new")
+		args = append(args, "--filter-udp=443", "--filter-l7=quic", "--payload=quic_initial", "--lua-desync=fake:blob=fake_default_quic:repeats=6", "--new")
+		args = append(args, "--filter-udp=50000-65535", "--lua-desync=fake:blob=fake_default_quic:repeats=6")
+	
+	case "Custom Profile":
+		customScriptPath, err := getCustomScriptPath()
+		if err == nil {
+			absCustomScript, _ := filepath.Abs(customScriptPath)
+			customScriptSlash := filepath.ToSlash(absCustomScript)
+			args = append(args, "--lua=\""+customScriptSlash+"\"")
+		}
 	}
 
 	return args
@@ -177,11 +179,12 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 	}
 
 	e.status = StatusStarting
-	winwsPath := filepath.Join(e.binPath, "winws2.exe")
+	winwsPath := filepath.Join(e.binPath, "nfqws.exe")
 
 	args := e.getProfileArgs(profileName)
 	
 	e.cmd = exec.Command(winwsPath, args...)
+	e.cmd.Dir = e.binPath
 	e.cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	
 	stdout, _ := e.cmd.StdoutPipe()
@@ -196,7 +199,12 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 		return err
 	}
 
+	var wg sync.WaitGroup
+	var lastStderr string
+
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		buf := make([]byte, 1024)
 		for {
 			n, err := stdout.Read(buf)
@@ -211,13 +219,23 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 		}
 	}()
 
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		buf := make([]byte, 1024)
 		for {
 			n, err := stderr.Read(buf)
 			if n > 0 {
+				msg := string(buf[:n])
 				e.mu.Lock()
-				e.addLog("[STDERR] " + string(buf[:n]))
+				e.addLog("[STDERR] " + msg)
+				lastStderr = msg
+				
+				// WinDivert Validation: Catch binding failures
+				lowerMsg := strings.ToLower(msg)
+				if strings.Contains(lowerMsg, "windivert") || strings.Contains(lowerMsg, "bind") || strings.Contains(lowerMsg, "failed to open") {
+					e.addLog("WinDivert Error/Binding Failure Detected in STDERR!")
+				}
 				e.mu.Unlock()
 			}
 			if err != nil {
@@ -232,16 +250,24 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 
 	go func() {
 		err := e.cmd.Wait()
+		wg.Wait() // wait for output streams to finish to capture full stderr
+		
 		e.mu.Lock()
 		defer e.mu.Unlock()
 		if e.currentProfile == profileName {
 			e.status = StatusStopped
 			if err != nil {
-				e.addLog("Engine stopped unexpectedly. Code: " + err.Error())
+				errorMsg := "Engine stopped unexpectedly. Code: " + err.Error()
+				if lastStderr != "" {
+					errorMsg += " | Details: " + strings.TrimSpace(lastStderr)
+				}
+				e.addLog(errorMsg)
 			} else {
 				e.addLog("Engine stopped gracefully.")
 			}
-			runtime.EventsEmit(ctx, "status_changed", e.status)
+			if ctx != context.Background() {
+				runtime.EventsEmit(ctx, "status_changed", e.status)
+			}
 		}
 	}()
 
@@ -253,9 +279,9 @@ func (e *Zapret2WindowsProvider) Stop() error {
 	defer e.mu.Unlock()
 
 	if e.cmd != nil && e.cmd.Process != nil {
-		e.addLog("Terminating winws2 process...")
-		exec.Command("taskkill", "/F", "/T", "/IM", "winws2.exe").Run()
-		e.cmd.Process.Kill()
+		e.addLog("Terminating nfqws process tree...")
+		// Use Windows taskkill API to forcefully kill the entire nfqws process tree
+		exec.Command("taskkill", "/F", "/T", "/IM", "nfqws.exe").Run()
 		e.cmd = nil
 	}
 	e.status = StatusStopped
