@@ -211,3 +211,36 @@ func (a *App) LoadCustomScript() (string, error) {
 	}
 	return content, nil
 }
+
+func (a *App) GetCurrentPing() map[string]interface{} {
+	status := a.manager.GetStatus()
+	
+	if status != providers.StatusRunning {
+		return map[string]interface{}{
+			"active":  false,
+			"latency": 0,
+			"status":  "stopped",
+		}
+	}
+
+	testCtx, cancel := context.WithTimeout(a.ctx, 5*time.Second)
+	defer cancel()
+
+	result, err := engine.ProbeConnection(testCtx, "https://discord.com", nil)
+	
+	if err != nil || !result.Success {
+		return map[string]interface{}{
+			"active":  true,
+			"latency": 0,
+			"status":  "error",
+			"error":   result.Error,
+		}
+	}
+
+	return map[string]interface{}{
+		"active":    true,
+		"latency":   result.Latency.Milliseconds(),
+		"status":    "ok",
+		"certValid": result.CertValid,
+	}
+}

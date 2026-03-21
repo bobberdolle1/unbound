@@ -8,7 +8,7 @@ function cn(...inputs: ClassValue[]) {
 }
 
 // @ts-ignore
-import { GetEngineNames, GetProfiles, StartEngine, StopEngine, GetLogs, HideToTray, AutoTune, SaveCustomScript, LoadCustomScript } from '../wailsjs/go/main/App';
+import { GetEngineNames, GetProfiles, StartEngine, StopEngine, GetLogs, HideToTray, AutoTune, SaveCustomScript, LoadCustomScript, GetCurrentPing } from '../wailsjs/go/main/App';
 // @ts-ignore
 import { EventsOn } from '../wailsjs/runtime/runtime';
 
@@ -37,6 +37,7 @@ export default function App() {
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [isEditorOpen, setIsEditorOpen] = useState<boolean>(false);
   const [scriptContent, setScriptContent] = useState<string>('');
+  const [pingData, setPingData] = useState<{active: boolean, latency: number, status: string, certValid?: boolean}>({active: false, latency: 0, status: 'stopped'});
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -59,9 +60,24 @@ export default function App() {
         GetLogs().then((l: string[]) => setLogs(l || []));
       }
     }, 500);
+
+    const pingInterval = setInterval(() => {
+      if (status === 'Running') {
+        GetCurrentPing().then((data: any) => {
+          setPingData(data || {active: false, latency: 0, status: 'stopped'});
+        }).catch(() => {
+          setPingData({active: false, latency: 0, status: 'error'});
+        });
+      } else {
+        setPingData({active: false, latency: 0, status: 'stopped'});
+      }
+    }, 5000);
     
-    return () => clearInterval(interval);
-  }, [isScanning]);
+    return () => {
+      clearInterval(interval);
+      clearInterval(pingInterval);
+    };
+  }, [isScanning, status]);
 
   useEffect(() => {
     if (selectedEngine) {
@@ -161,6 +177,14 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-4" style={{ WebkitAppRegion: 'no-drag' } as any}>
+          {/* Live Ping Indicator */}
+          {pingData.active && pingData.status === 'ok' && (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold tracking-widest border bg-cyan-500/10 text-cyan-400 border-cyan-500/30 shadow-[0_0_10px_rgba(6,182,212,0.2)]">
+              <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_8px_rgba(6,182,212,0.8)]" />
+              {pingData.latency}ms
+            </div>
+          )}
+
           {/* Status Badge */}
           <div className={cn(
             "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold tracking-widest border transition-all duration-500 shadow-sm",

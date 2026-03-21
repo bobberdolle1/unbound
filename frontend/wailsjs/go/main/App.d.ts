@@ -5,6 +5,8 @@ export function AutoSelectProfile(arg1:string):Promise<string>;
 
 export function AutoTune():Promise<string>;
 
+export function GetCurrentPing():Promise<{[key: string]: any}>;
+
 export function GetEngineNames():Promise<Array<string>>;
 
 export function GetLogs():Promise<Array<string>>;

@@ -10,6 +10,10 @@ export function AutoTune() {
   return window['go']['main']['App']['AutoTune']();
 }
 
+export function GetCurrentPing() {
+  return window['go']['main']['App']['GetCurrentPing']();
+}
+
 export function GetEngineNames() {
   return window['go']['main']['App']['GetEngineNames']();
 }
