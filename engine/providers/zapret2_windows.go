@@ -101,6 +101,7 @@ func (e *Zapret2WindowsProvider) getProfileArgs(profileName string) []string {
 	luaAntiDpi := filepath.ToSlash(absLuaAntiDpi)
 
 	args := []string{
+		"--intercept=1",
 		"--lua-init=@" + luaLib,
 		"--lua-init=@" + luaAntiDpi,
 	}

@@ -50,6 +50,7 @@ luaLib := filepath.ToSlash(absLuaLib)
 luaAntiDpi := filepath.ToSlash(absLuaAntiDpi)
 
 args := []string{
+"--intercept=1",
 "--lua-init=@" + luaLib,
 "--lua-init=@" + luaAntiDpi,
 }
