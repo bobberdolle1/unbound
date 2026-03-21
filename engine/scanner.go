@@ -1,130 +1,137 @@
 package engine
 
 import (
-"context"
-"encoding/json"
-"errors"
-"fmt"
-"os"
-"os/exec"
-"path/filepath"
-"syscall"
-"time"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"syscall"
+	"time"
+	
+	"unbound/engine/providers"
 )
 
 var defaultTestTargets = []string{
-"https://discord.com",
-"https://googlevideo.com",
-"https://youtube.com",
+	"https://discord.com",
+	"https://googlevideo.com",
+	"https://youtube.com",
 }
 
 func RunAutoTune(ctx context.Context, updateLog func(string)) (Profile, error) {
-updateLog("Initializing Auto-Tune Scanner with Smart Prober...")
+	logAndUpdate := func(msg string) {
+		providers.WriteLog("[AUTO-TUNE] " + msg)
+		updateLog(msg)
+	}
+	
+	logAndUpdate("Initializing Auto-Tune Scanner with Smart Prober...")
 
-assets, err := ExtractAssets()
-if err != nil {
-updateLog("Failed to extract assets: " + err.Error())
-return Profile{}, err
-}
+	assets, err := ExtractAssets()
+	if err != nil {
+		logAndUpdate("Failed to extract assets: " + err.Error())
+		return Profile{}, err
+	}
 
-updateLog("Assets extracted successfully")
-updateLog("Loading available profiles...")
+	logAndUpdate("Assets extracted successfully")
+	logAndUpdate("Loading available profiles...")
 
-profiles := GetProfiles(assets.LuaDir)
-updateLog(fmt.Sprintf("Found %d profiles to test", len(profiles)))
+	profiles := GetProfiles(assets.LuaDir)
+	logAndUpdate(fmt.Sprintf("Found %d profiles to test", len(profiles)))
 
-updateLog("Starting profile tests with TLS certificate verification...")
+	logAndUpdate("Starting profile tests...")
 
-bestProfile := Profile{}
-bestScore := -1
-bestLatency := time.Duration(0)
+	bestProfile := Profile{}
+	bestScore := -1
+	bestLatency := time.Duration(0)
 
-for i, profile := range profiles {
-updateLog(fmt.Sprintf("Testing [%d/%d]: %s", i+1, len(profiles), profile.Name))
+	for i, profile := range profiles {
+		logAndUpdate(fmt.Sprintf("Testing [%d/%d]: %s", i+1, len(profiles), profile.Name))
 
-winwsPath := filepath.Join(assets.BinDir, "winws.exe")
-absLuaLib, _ := filepath.Abs(filepath.Join(assets.LuaDir, "zapret-lib.lua"))
-absLuaAntiDpi, _ := filepath.Abs(filepath.Join(assets.LuaDir, "zapret-antidpi.lua"))
+		winwsPath := filepath.Join(assets.BinDir, "winws.exe")
+		absLuaLib, _ := filepath.Abs(filepath.Join(assets.LuaDir, "zapret-lib.lua"))
+		absLuaAntiDpi, _ := filepath.Abs(filepath.Join(assets.LuaDir, "zapret-antidpi.lua"))
 
-luaLib := filepath.ToSlash(absLuaLib)
-luaAntiDpi := filepath.ToSlash(absLuaAntiDpi)
+		luaLib := filepath.ToSlash(absLuaLib)
+		luaAntiDpi := filepath.ToSlash(absLuaAntiDpi)
 
-args := []string{
-"--intercept=1",
-"--lua-init=@" + luaLib,
-"--lua-init=@" + luaAntiDpi,
-}
-args = append(args, profile.Args...)
+		args := []string{
+			"--intercept=1",
+			"--lua-init=@" + luaLib,
+			"--lua-init=@" + luaAntiDpi,
+		}
+		args = append(args, profile.Args...)
 
-cmd := exec.Command(winwsPath, args...)
-cmd.Dir = assets.BinDir
-cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		cmd := exec.Command(winwsPath, args...)
+		cmd.Dir = assets.BinDir
+		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 
-if err := cmd.Start(); err != nil {
-updateLog(fmt.Sprintf("Failed to start: %s", err.Error()))
-continue
-}
+		if err := cmd.Start(); err != nil {
+			logAndUpdate(fmt.Sprintf("Failed to start: %s", err.Error()))
+			continue
+		}
 
-updateLog("Waiting for WinDivert to bind (2s)...")
-time.Sleep(2 * time.Second)
+		logAndUpdate("Waiting for WinDivert to bind (2s)...")
+		time.Sleep(2 * time.Second)
 
-updateLog("Running TLS certificate verification probes...")
-probeCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-results := ProbeMultipleTargets(probeCtx, defaultTestTargets, nil)
-cancel()
+		logAndUpdate("Running connectivity probes...")
+		probeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		results := ProbeMultipleTargets(probeCtx, defaultTestTargets, nil)
+		cancel()
 
-successCount := 0
-totalLatency := time.Duration(0)
+		successCount := 0
+		totalLatency := time.Duration(0)
 
-for _, result := range results {
-if result.Success && result.CertValid {
-successCount++
-totalLatency += result.Latency
-updateLog(fmt.Sprintf("%s: %dms (Cert: %s)", result.URL, result.Latency.Milliseconds(), result.CertIssuer))
-} else {
-reason := result.Error
-if result.ConnectionRST {
-reason = "Connection RESET by DPI"
-} else if !result.CertValid {
-reason = fmt.Sprintf("Invalid cert from: %s", result.CertIssuer)
-}
-updateLog(fmt.Sprintf("%s: %s", result.URL, reason))
-}
-}
+		for _, result := range results {
+			if result.Success {
+				successCount++
+				totalLatency += result.Latency
+				logAndUpdate(fmt.Sprintf("%s: %dms ✓", result.URL, result.Latency.Milliseconds()))
+			} else {
+				logAndUpdate(fmt.Sprintf("%s: FAILED", result.URL))
+			}
+		}
 
-exec.Command("taskkill", "/F", "/T", "/IM", "winws.exe").Run()
-updateLog("Stopped engine")
-time.Sleep(1 * time.Second)
+		exec.Command("taskkill", "/F", "/T", "/IM", "winws.exe").Run()
+		logAndUpdate("Stopped engine")
+		time.Sleep(1 * time.Second)
 
-score := CalculateProbeScore(results)
-avgLatency := time.Duration(0)
-if successCount > 0 {
-avgLatency = totalLatency / time.Duration(successCount)
-}
+		score := CalculateProbeScore(results)
+		avgLatency := time.Duration(0)
+		if successCount > 0 {
+			avgLatency = totalLatency / time.Duration(successCount)
+		}
 
-updateLog(fmt.Sprintf("Score: %d | Success: %d/%d | Avg Latency: %dms", 
-score, successCount, len(defaultTestTargets), avgLatency.Milliseconds()))
+		logAndUpdate(fmt.Sprintf("Score: %d | Success: %d/%d | Avg Latency: %dms", 
+			score, successCount, len(defaultTestTargets), avgLatency.Milliseconds()))
 
-if score > bestScore || (score == bestScore && avgLatency < bestLatency) {
-bestScore = score
-bestProfile = profile
-bestLatency = avgLatency
-updateLog(fmt.Sprintf("New best profile!"))
-}
-}
+		if score > bestScore || (score == bestScore && avgLatency < bestLatency) {
+			bestScore = score
+			bestProfile = profile
+			bestLatency = avgLatency
+			logAndUpdate(fmt.Sprintf("New best profile!"))
+		}
+	}
 
-if bestScore <= 0 {
-updateLog("All profiles failed. Check network or DPI is too aggressive.")
-return Profile{}, errors.New("all profiles failed")
-}
+	if bestScore <= 0 {
+		logAndUpdate("All profiles failed. Selecting first profile as fallback...")
+		if len(profiles) > 0 {
+			bestProfile = profiles[0]
+			logAndUpdate(fmt.Sprintf("FALLBACK: %s", bestProfile.Name))
+		} else {
+			logAndUpdate("No profiles available.")
+			return Profile{}, errors.New("no profiles available")
+		}
+	} else {
+		logAndUpdate(fmt.Sprintf("WINNER: %s (Score: %d, Latency: %dms)", 
+			bestProfile.Name, bestScore, bestLatency.Milliseconds()))
+	}
+	logAndUpdate("Saving configuration...")
 
-updateLog(fmt.Sprintf("WINNER: %s (Score: %d, Latency: %dms)", 
-bestProfile.Name, bestScore, bestLatency.Milliseconds()))
-updateLog("Saving configuration...")
+	configData, _ := json.Marshal(map[string]string{"active_profile": bestProfile.Name})
+	os.WriteFile("config.json", configData, 0644)
 
-configData, _ := json.Marshal(map[string]string{"active_profile": bestProfile.Name})
-os.WriteFile("config.json", configData, 0644)
-
-updateLog("Auto-Tune completed successfully!")
-return bestProfile, nil
+	logAndUpdate("Auto-Tune completed successfully!")
+	return bestProfile, nil
 }

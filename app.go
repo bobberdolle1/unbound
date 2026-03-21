@@ -136,10 +136,13 @@ func (a *App) AutoTune() string {
 		return "Failed"
 	}
 
-	a.StopEngine()
-	// Sleep briefly before starting main engine to ensure ports are completely free
+	updateLog(fmt.Sprintf("Starting engine with profile: %s", profile.Name))
 	time.Sleep(1 * time.Second)
-	a.StartEngine("Zapret 2 (winws)", profile.Name)
+	
+	if err := a.StartEngine("Zapret 2 (winws)", profile.Name); err != nil {
+		updateLog("Failed to start engine: " + err.Error())
+		return "Failed"
+	}
 
 	return profile.Name
 }

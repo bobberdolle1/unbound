@@ -12,8 +12,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
-	"time"
-
+	
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"golang.org/x/sys/windows"
 )
@@ -22,54 +21,6 @@ const (
 	configDirName    = "Unbound"
 	customScriptName = "custom_profile.lua"
 )
-
-var logFile *os.File
-var logMutex sync.Mutex
-
-func initLogFile() error {
-	logMutex.Lock()
-	defer logMutex.Unlock()
-	
-	if logFile != nil {
-		return nil
-	}
-	
-	userConfigDir, err := os.UserConfigDir()
-	if err != nil {
-		return err
-	}
-	configPath := filepath.Join(userConfigDir, configDirName)
-	os.MkdirAll(configPath, 0755)
-	
-	logPath := filepath.Join(configPath, "unbound.log")
-	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		return err
-	}
-	
-	logFile = f
-	timestamp := time.Now().Format("2006-01-02 15:04:05")
-	logFile.WriteString(fmt.Sprintf("[%s] === UNBOUND SESSION STARTED ===\n", timestamp))
-	logFile.Sync()
-	return nil
-}
-
-func writeLog(msg string) {
-	if logFile == nil {
-		if err := initLogFile(); err != nil {
-			return
-		}
-	}
-	
-	logMutex.Lock()
-	defer logMutex.Unlock()
-	
-	if logFile != nil {
-		timestamp := time.Now().Format("2006-01-02 15:04:05")
-		logFile.WriteString(fmt.Sprintf("[%s] %s\n", timestamp, msg))
-		logFile.Sync()
-	}
-}
 
 func getCustomScriptPath() (string, error) {
 	userConfigDir, err := os.UserConfigDir()
@@ -91,7 +42,7 @@ type Zapret2WindowsProvider struct {
 }
 
 func NewZapret2WindowsProvider(binPath, luaDir string) BypassProvider {
-	initLogFile()
+	InitLogger()
 	return &Zapret2WindowsProvider{
 		status:  StatusStopped,
 		binPath: binPath,
@@ -217,15 +168,15 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	writeLog(fmt.Sprintf("START: Profile=%s, CurrentStatus=%s", profileName, e.status))
+	WriteLog(fmt.Sprintf("START: Profile=%s, CurrentStatus=%s", profileName, e.status))
 
 	if e.status == StatusRunning && e.currentProfile == profileName {
-		writeLog("START: Already running same profile, skipping")
+		WriteLog("START: Already running same profile, skipping")
 		return nil
 	}
 
 	if e.status == StatusRunning {
-		writeLog("START: Stopping previous profile")
+		WriteLog("START: Stopping previous profile")
 		e.mu.Unlock()
 		e.Stop()
 		e.mu.Lock()
@@ -235,7 +186,7 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 	winwsPath := filepath.Join(e.binPath, "winws.exe")
 
 	args := e.getProfileArgs(profileName)
-	writeLog(fmt.Sprintf("START: Command=%s Args=%v", winwsPath, args))
+	WriteLog(fmt.Sprintf("START: Command=%s Args=%v", winwsPath, args))
 	
 	e.cmd = exec.Command(winwsPath, args...)
 	e.cmd.Dir = e.binPath
@@ -250,11 +201,11 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 		e.status = StatusError
 		errMsg := "Launch Error: " + err.Error()
 		e.addLog(errMsg)
-		writeLog("START: " + errMsg)
+		WriteLog("START: " + errMsg)
 		return err
 	}
 
-	writeLog(fmt.Sprintf("START: Process started PID=%d", e.cmd.Process.Pid))
+	WriteLog(fmt.Sprintf("START: Process started PID=%d", e.cmd.Process.Pid))
 
 	var wg sync.WaitGroup
 	var lastStderr string
@@ -270,7 +221,7 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 				e.mu.Lock()
 				e.addLog(msg)
 				e.mu.Unlock()
-				writeLog("STDOUT: " + strings.TrimSpace(msg))
+				WriteLog("STDOUT: " + strings.TrimSpace(msg))
 			}
 			if err != nil {
 				break
@@ -290,11 +241,11 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 				e.addLog(msg)
 				lastStderr = msg
 				e.mu.Unlock()
-				writeLog("STDERR: " + strings.TrimSpace(msg))
+				WriteLog("STDERR: " + strings.TrimSpace(msg))
 				
 				lowerMsg := strings.ToLower(msg)
 				if strings.Contains(lowerMsg, "error") || strings.Contains(lowerMsg, "fail") {
-					writeLog("ERROR DETECTED: " + strings.TrimSpace(msg))
+					WriteLog("ERROR DETECTED: " + strings.TrimSpace(msg))
 				}
 			}
 			if err != nil {
@@ -306,7 +257,7 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 	e.status = StatusRunning
 	e.currentProfile = profileName
 	e.addLog("Engine is ACTIVE.")
-	writeLog("START: Engine status set to RUNNING")
+	WriteLog("START: Engine status set to RUNNING")
 
 	go func() {
 		err := e.cmd.Wait()
@@ -326,7 +277,7 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 				exitMsg = "Engine stopped gracefully"
 			}
 			e.addLog(exitMsg)
-			writeLog("WAIT: " + exitMsg)
+			WriteLog("WAIT: " + exitMsg)
 			
 			if ctx != context.Background() {
 				runtime.EventsEmit(ctx, "status_changed", e.status)
@@ -341,17 +292,17 @@ func (e *Zapret2WindowsProvider) Stop() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	writeLog("STOP: Called")
+	WriteLog("STOP: Called")
 
 	if e.cmd != nil && e.cmd.Process != nil {
 		e.addLog("Terminating winws process tree...")
-		writeLog(fmt.Sprintf("STOP: Killing PID=%d", e.cmd.Process.Pid))
+		WriteLog(fmt.Sprintf("STOP: Killing PID=%d", e.cmd.Process.Pid))
 		exec.Command("taskkill", "/F", "/T", "/IM", "winws.exe").Run()
 		e.cmd = nil
 	}
 	e.status = StatusStopped
 	e.currentProfile = ""
-	writeLog("STOP: Complete")
+	WriteLog("STOP: Complete")
 	return nil
 }
 
