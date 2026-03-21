@@ -39,6 +39,7 @@ export default function App() {
   const [isEditorOpen, setIsEditorOpen] = useState<boolean>(false);
   const [scriptContent, setScriptContent] = useState<string>('');
   const [pingData, setPingData] = useState<{active: boolean, latency: number, status: string, certValid?: boolean}>({active: false, latency: 0, status: 'stopped'});
+  const [isCheckingPing, setIsCheckingPing] = useState<boolean>(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -63,9 +64,14 @@ export default function App() {
     }, 500);
 
     const pingInterval = setInterval(() => {
-      if (status === 'Running') {
+      if (status === 'Running' && !isCheckingPing) {
         GetCurrentPing().then((data: any) => {
-          setPingData(data || {active: false, latency: 0, status: 'stopped'});
+          setPingData({
+            active: data?.active || false,
+            latency: data?.latency || 0,
+            status: data?.status || 'stopped',
+            certValid: data?.certValid
+          });
         }).catch(() => {
           setPingData({active: false, latency: 0, status: 'error'});
         });
@@ -78,7 +84,7 @@ export default function App() {
       clearInterval(interval);
       clearInterval(pingInterval);
     };
-  }, [isScanning, status]);
+  }, [isScanning, status, isCheckingPing]);
 
   useEffect(() => {
     if (selectedEngine) {
@@ -154,6 +160,23 @@ export default function App() {
     }
   };
 
+  const handleManualPingCheck = async () => {
+    setIsCheckingPing(true);
+    try {
+      const data = await GetCurrentPing();
+      setPingData({
+        active: data?.active || false,
+        latency: data?.latency || 0,
+        status: data?.status || 'stopped',
+        certValid: data?.certValid
+      });
+    } catch (err) {
+      setPingData({active: false, latency: 0, status: 'error'});
+    } finally {
+      setIsCheckingPing(false);
+    }
+  };
+
   const isConnected = status === 'Running';
   const isConnecting = status === 'Starting';
   const disableMain = isConnecting || isScanning;
@@ -175,9 +198,9 @@ export default function App() {
         style={{ WebkitAppRegion: 'drag' } as any}
       >
         <div className="flex items-center gap-3">
-          {/* Minimalist shield with lightning bolt */}
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center border border-cyan-400/30 shadow-lg relative">
-            <svg viewBox="0 0 24 24" className="w-5 h-5 text-white" fill="currentColor">
+          {/* Minimalist shield with lightning bolt - no background */}
+          <div className="w-8 h-8 flex items-center justify-center relative">
+            <svg viewBox="0 0 24 24" className="w-8 h-8 text-cyan-400" fill="currentColor">
               {/* Shield outline */}
               <path d="M12 2L4 5v6c0 5.5 3.8 10.7 8 12 4.2-1.3 8-6.5 8-12V5l-8-3z" fill="none" stroke="currentColor" strokeWidth="1.5"/>
               {/* Lightning bolt */}
@@ -192,12 +215,26 @@ export default function App() {
 
         <div className="flex items-center gap-4" style={{ WebkitAppRegion: 'no-drag' } as any}>
           {/* Live Ping Indicator */}
-          {pingData.active && pingData.status === 'ok' && (
+          {pingData.active && pingData.status === 'ok' && pingData.latency > 0 && (
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold tracking-widest border bg-cyan-500/10 text-cyan-400 border-cyan-500/30 shadow-[0_0_10px_rgba(6,182,212,0.2)]">
               <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_8px_rgba(6,182,212,0.8)]" />
               {pingData.latency}ms
             </div>
           )}
+
+          {/* Manual Ping Check Button */}
+          <button 
+            onClick={handleManualPingCheck}
+            disabled={isCheckingPing || status !== 'Running'}
+            className={cn(
+              "p-1.5 rounded-lg transition-colors",
+              isCheckingPing ? "text-cyan-400 animate-pulse" : "text-zinc-400 hover:text-cyan-400 hover:bg-white/10",
+              status !== 'Running' && "opacity-30 cursor-not-allowed"
+            )}
+            title="Check Connection Ping"
+          >
+            <Radar className={cn("w-4 h-4", isCheckingPing && "animate-spin")} />
+          </button>
 
           {/* Status Badge */}
           <div className={cn(

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"golang.org/x/sys/windows"
@@ -21,6 +22,54 @@ const (
 	configDirName    = "Unbound"
 	customScriptName = "custom_profile.lua"
 )
+
+var logFile *os.File
+var logMutex sync.Mutex
+
+func initLogFile() error {
+	logMutex.Lock()
+	defer logMutex.Unlock()
+	
+	if logFile != nil {
+		return nil
+	}
+	
+	userConfigDir, err := os.UserConfigDir()
+	if err != nil {
+		return err
+	}
+	configPath := filepath.Join(userConfigDir, configDirName)
+	os.MkdirAll(configPath, 0755)
+	
+	logPath := filepath.Join(configPath, "unbound.log")
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return err
+	}
+	
+	logFile = f
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	logFile.WriteString(fmt.Sprintf("[%s] === UNBOUND SESSION STARTED ===\n", timestamp))
+	logFile.Sync()
+	return nil
+}
+
+func writeLog(msg string) {
+	if logFile == nil {
+		if err := initLogFile(); err != nil {
+			return
+		}
+	}
+	
+	logMutex.Lock()
+	defer logMutex.Unlock()
+	
+	if logFile != nil {
+		timestamp := time.Now().Format("2006-01-02 15:04:05")
+		logFile.WriteString(fmt.Sprintf("[%s] %s\n", timestamp, msg))
+		logFile.Sync()
+	}
+}
 
 func getCustomScriptPath() (string, error) {
 	userConfigDir, err := os.UserConfigDir()
@@ -42,6 +91,7 @@ type Zapret2WindowsProvider struct {
 }
 
 func NewZapret2WindowsProvider(binPath, luaDir string) BypassProvider {
+	initLogFile()
 	return &Zapret2WindowsProvider{
 		status:  StatusStopped,
 		binPath: binPath,
@@ -108,45 +158,45 @@ func (e *Zapret2WindowsProvider) getProfileArgs(profileName string) []string {
 
 	switch profileName {
 	case "Unbound Ultimate (God Mode)":
-		args = append(args, "--wf-tcp-out=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=multisplit:pos=1", "--new")
+		args = append(args, "--wf-tcp-out=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls", "--lua-desync=multisplit:pos=1", "--new")
 		args = append(args, "--wf-udp-out=443", "--filter-l7=quic", "--payload=quic_initial", "--lua-desync=fake:blob=fake_default_quic:repeats=10", "--new")
 		args = append(args, "--wf-udp-out=3478,50000-65535", "--lua-desync=fake:blob=fake_default_quic:repeats=6")
 
 	case "Discord Voice Optimized":
-		args = append(args, "--wf-tcp-out=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=multisplit:pos=1", "--new")
+		args = append(args, "--wf-tcp-out=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls", "--lua-desync=multisplit:pos=1", "--new")
 		args = append(args, "--wf-udp-out=443,3478,50000-65535", "--lua-desync=fake:blob=fake_default_quic:repeats=10")
 
 	case "YouTube QUIC Aggressive":
-		args = append(args, "--wf-tcp-out=80,443", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=multisplit:pos=1,midsld", "--new")
+		args = append(args, "--wf-tcp-out=80,443", "--lua-desync=fake:blob=fake_default_tls", "--lua-desync=multisplit:pos=1,midsld", "--new")
 		args = append(args, "--wf-udp-out=443", "--filter-l7=quic", "--payload=quic_initial", "--lua-desync=fake:blob=fake_default_quic:repeats=12")
 
 	case "Telegram API Bypass":
-		args = append(args, "--wf-tcp-out=443,5222,5223,5228", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=multisplit:pos=1", "--new")
+		args = append(args, "--wf-tcp-out=443,5222,5223,5228", "--lua-desync=fake:blob=fake_default_tls", "--lua-desync=multisplit:pos=1", "--new")
 		args = append(args, "--wf-udp-out=443", "--lua-desync=fake:blob=fake_default_quic:repeats=8")
 
 	case "Fake TLS & QUIC":
-		args = append(args, "--wf-tcp-out=80,443", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--new")
+		args = append(args, "--wf-tcp-out=80,443", "--lua-desync=fake:blob=fake_default_tls", "--new")
 		args = append(args, "--wf-udp-out=443,50000-65535", "--lua-desync=fake:blob=fake_default_quic:repeats=10")
 
 	case "Multi-Strategy Chaos":
-		args = append(args, "--wf-tcp-out=80,443", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=multidisorder:pos=1,midsld", "--lua-desync=badseq", "--new")
+		args = append(args, "--wf-tcp-out=80,443", "--lua-desync=fake:blob=fake_default_tls", "--lua-desync=multidisorder:pos=1,midsld", "--new")
 		args = append(args, "--wf-udp-out=443", "--lua-desync=fake:blob=fake_default_quic:repeats=10", "--new")
 		args = append(args, "--wf-udp-out=3478,50000-65535", "--lua-desync=fake:blob=fake_default_quic:repeats=8")
 
 	case "Standard Split":
-		args = append(args, "--wf-tcp-out=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=multisplit:pos=1")
+		args = append(args, "--wf-tcp-out=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls", "--lua-desync=multisplit:pos=1")
 
 	case "Fake Packets + BadSeq":
-		args = append(args, "--wf-tcp-out=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=multidisorder:pos=1,midsld", "--lua-desync=badseq")
+		args = append(args, "--wf-tcp-out=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls", "--lua-desync=multidisorder:pos=1,midsld")
 
 	case "Disorder":
 		args = append(args, "--wf-tcp-out=443", "--lua-desync=multisplit:pos=2", "--lua-desync=disorder")
 
 	case "Split Handshake":
-		args = append(args, "--wf-tcp-out=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=multisplit:pos=midsld")
+		args = append(args, "--wf-tcp-out=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls", "--lua-desync=multisplit:pos=midsld")
 
 	case "Flowseal Legacy":
-		args = append(args, "--wf-tcp-out=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=multisplit:pos=1", "--new",
+		args = append(args, "--wf-tcp-out=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls", "--lua-desync=multisplit:pos=1", "--new",
 			"--wf-udp-out=443", "--filter-l7=quic", "--payload=quic_initial", "--lua-desync=fake:blob=fake_default_quic:repeats=6", "--new",
 			"--wf-udp-out=50000-65535", "--lua-desync=fake:blob=fake_default_quic:repeats=6")
 	
@@ -156,7 +206,7 @@ func (e *Zapret2WindowsProvider) getProfileArgs(profileName string) []string {
 			absCustomScript, _ := filepath.Abs(customScriptPath)
 			customScriptSlash := filepath.ToSlash(absCustomScript)
 			args = append(args, "--lua-init=@"+customScriptSlash)
-			args = append(args, "--wf-tcp-out=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=multisplit:pos=1")
+			args = append(args, "--wf-tcp-out=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls", "--lua-desync=multisplit:pos=1")
 		}
 	}
 
@@ -167,11 +217,15 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
+	writeLog(fmt.Sprintf("START: Profile=%s, CurrentStatus=%s", profileName, e.status))
+
 	if e.status == StatusRunning && e.currentProfile == profileName {
+		writeLog("START: Already running same profile, skipping")
 		return nil
 	}
 
 	if e.status == StatusRunning {
+		writeLog("START: Stopping previous profile")
 		e.mu.Unlock()
 		e.Stop()
 		e.mu.Lock()
@@ -181,6 +235,7 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 	winwsPath := filepath.Join(e.binPath, "winws.exe")
 
 	args := e.getProfileArgs(profileName)
+	writeLog(fmt.Sprintf("START: Command=%s Args=%v", winwsPath, args))
 	
 	e.cmd = exec.Command(winwsPath, args...)
 	e.cmd.Dir = e.binPath
@@ -190,13 +245,16 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 	stderr, _ := e.cmd.StderrPipe()
 
 	e.addLog(fmt.Sprintf("[%s] Starting with profile: %s", e.Name(), profileName))
-	e.addLog(fmt.Sprintf("Command: %s %v", winwsPath, args))
 
 	if err := e.cmd.Start(); err != nil {
 		e.status = StatusError
-		e.addLog("Launch Error: " + err.Error())
+		errMsg := "Launch Error: " + err.Error()
+		e.addLog(errMsg)
+		writeLog("START: " + errMsg)
 		return err
 	}
+
+	writeLog(fmt.Sprintf("START: Process started PID=%d", e.cmd.Process.Pid))
 
 	var wg sync.WaitGroup
 	var lastStderr string
@@ -208,9 +266,11 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 		for {
 			n, err := stdout.Read(buf)
 			if n > 0 {
+				msg := string(buf[:n])
 				e.mu.Lock()
-				e.addLog("[STDOUT] " + string(buf[:n]))
+				e.addLog(msg)
 				e.mu.Unlock()
+				writeLog("STDOUT: " + strings.TrimSpace(msg))
 			}
 			if err != nil {
 				break
@@ -227,15 +287,15 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 			if n > 0 {
 				msg := string(buf[:n])
 				e.mu.Lock()
-				e.addLog("[STDERR] " + msg)
+				e.addLog(msg)
 				lastStderr = msg
-				
-				// WinDivert Validation: Catch binding failures
-				lowerMsg := strings.ToLower(msg)
-				if strings.Contains(lowerMsg, "windivert") || strings.Contains(lowerMsg, "bind") || strings.Contains(lowerMsg, "failed to open") {
-					e.addLog("WinDivert Error/Binding Failure Detected in STDERR!")
-				}
 				e.mu.Unlock()
+				writeLog("STDERR: " + strings.TrimSpace(msg))
+				
+				lowerMsg := strings.ToLower(msg)
+				if strings.Contains(lowerMsg, "error") || strings.Contains(lowerMsg, "fail") {
+					writeLog("ERROR DETECTED: " + strings.TrimSpace(msg))
+				}
 			}
 			if err != nil {
 				break
@@ -246,24 +306,28 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 	e.status = StatusRunning
 	e.currentProfile = profileName
 	e.addLog("Engine is ACTIVE.")
+	writeLog("START: Engine status set to RUNNING")
 
 	go func() {
 		err := e.cmd.Wait()
-		wg.Wait() // wait for output streams to finish to capture full stderr
+		wg.Wait()
 		
 		e.mu.Lock()
 		defer e.mu.Unlock()
 		if e.currentProfile == profileName {
 			e.status = StatusStopped
+			exitMsg := "Engine stopped"
 			if err != nil {
-				errorMsg := "Engine stopped unexpectedly. Code: " + err.Error()
+				exitMsg = fmt.Sprintf("Engine stopped unexpectedly. Code: %v", err)
 				if lastStderr != "" {
-					errorMsg += " | Details: " + strings.TrimSpace(lastStderr)
+					exitMsg += " | Details: " + strings.TrimSpace(lastStderr)
 				}
-				e.addLog(errorMsg)
 			} else {
-				e.addLog("Engine stopped gracefully.")
+				exitMsg = "Engine stopped gracefully"
 			}
+			e.addLog(exitMsg)
+			writeLog("WAIT: " + exitMsg)
+			
 			if ctx != context.Background() {
 				runtime.EventsEmit(ctx, "status_changed", e.status)
 			}
@@ -277,14 +341,17 @@ func (e *Zapret2WindowsProvider) Stop() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
+	writeLog("STOP: Called")
+
 	if e.cmd != nil && e.cmd.Process != nil {
 		e.addLog("Terminating winws process tree...")
-		// Use Windows taskkill API to forcefully kill the entire winws process tree
+		writeLog(fmt.Sprintf("STOP: Killing PID=%d", e.cmd.Process.Pid))
 		exec.Command("taskkill", "/F", "/T", "/IM", "winws.exe").Run()
 		e.cmd = nil
 	}
 	e.status = StatusStopped
 	e.currentProfile = ""
+	writeLog("STOP: Complete")
 	return nil
 }
 
