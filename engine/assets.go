@@ -62,10 +62,10 @@ func ExtractAssets() (*AssetPaths, error) {
 	}
 
 	if runtime.GOOS == "windows" {
-		winwsPath := filepath.Join(binDir, "winws2.exe")
-		nfqwsPath := filepath.Join(binDir, "nfqws.exe")
-		if _, err := os.Stat(winwsPath); err == nil {
-			os.Rename(winwsPath, nfqwsPath)
+		winws2Path := filepath.Join(binDir, "winws2.exe")
+		winwsPath := filepath.Join(binDir, "winws.exe")
+		if _, err := os.Stat(winws2Path); err == nil {
+			os.Rename(winws2Path, winwsPath)
 		}
 	}
 
