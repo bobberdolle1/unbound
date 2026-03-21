@@ -134,21 +134,21 @@ func (e *Zapret2WindowsProvider) getProfileArgs(profileName string) []string {
 		args = append(args, "--filter-udp=3478,50000-65535", "--lua-desync=fake:blob=fake_default_quic:repeats=8")
 
 	case "Standard Split":
-		args = append(args, "--filter-tcp=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=split:pos=1", "--new")
+		args = append(args, "--filter-tcp=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=split:pos=1")
 
 	case "Fake Packets + BadSeq":
-		args = append(args, "--filter-tcp=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=multidisorder:pos=1,midsld", "--lua-desync=badseq", "--new")
+		args = append(args, "--filter-tcp=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=multidisorder:pos=1,midsld", "--lua-desync=badseq")
 
 	case "Disorder":
-		args = append(args, "--filter-tcp=443", "--lua-desync=split:pos=2", "--lua-desync=disorder", "--new")
+		args = append(args, "--filter-tcp=443", "--lua-desync=split:pos=2", "--lua-desync=disorder")
 
 	case "Split Handshake":
-		args = append(args, "--filter-tcp=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=split:pos=midsld", "--new")
+		args = append(args, "--filter-tcp=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=split:pos=midsld")
 
 	case "Flowseal Legacy":
-		args = append(args, "--filter-tcp=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=split:pos=1", "--new")
-		args = append(args, "--filter-udp=443", "--filter-l7=quic", "--payload=quic_initial", "--lua-desync=fake:blob=fake_default_quic:repeats=6", "--new")
-		args = append(args, "--filter-udp=50000-65535", "--lua-desync=fake:blob=fake_default_quic:repeats=6")
+		args = append(args, "--filter-tcp=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=split:pos=1", "--new",
+			"--filter-udp=443", "--filter-l7=quic", "--payload=quic_initial", "--lua-desync=fake:blob=fake_default_quic:repeats=6", "--new",
+			"--filter-udp=50000-65535", "--lua-desync=fake:blob=fake_default_quic:repeats=6")
 	
 	case "Custom Profile":
 		customScriptPath, err := getCustomScriptPath()
