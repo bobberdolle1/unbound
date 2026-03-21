@@ -167,8 +167,15 @@ export default function App() {
         style={{ WebkitAppRegion: 'drag' } as any}
       >
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl bg-zinc-800 flex items-center justify-center border border-white/10 shadow-lg">
-            <Globe className="w-4 h-4 text-zinc-400" />
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center border border-emerald-400/30 shadow-lg relative overflow-hidden">
+            {/* Cannabis leaf icon */}
+            <svg viewBox="0 0 24 24" className="w-5 h-5 text-white" fill="currentColor">
+              <path d="M12 2C12 2 10.5 4 10 6C9.5 8 10 10 10 10C10 10 8 9.5 6 10C4 10.5 2 12 2 12C2 12 4 13.5 6 14C8 14.5 10 14 10 14C10 14 9.5 16 10 18C10.5 20 12 22 12 22C12 22 13.5 20 14 18C14.5 16 14 14 14 14C14 14 16 14.5 18 14C20 13.5 22 12 22 12C22 12 20 10.5 18 10C16 9.5 14 10 14 10C14 10 14.5 8 14 6C13.5 4 12 2 12 2Z"/>
+            </svg>
+            {/* Z V letters overlay */}
+            <div className="absolute bottom-0 right-0 text-[6px] font-black text-cyan-400 leading-none pr-0.5 pb-0.5 drop-shadow-[0_0_2px_rgba(6,182,212,0.8)]">
+              ZV
+            </div>
           </div>
           <div>
             <h1 className="text-sm font-bold tracking-widest text-white/90">UNBOUND</h1>
