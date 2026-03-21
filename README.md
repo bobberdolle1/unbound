@@ -1,97 +1,159 @@
-# UNBOUND
+# 🚀 UNBOUND
 
-Ultimate DPI bypass engine combining Zapret 2, GoodbyeDPI, and cross-platform support.
+**Next-Gen GUI для Zapret 2 с Auto-Tune сканером и встроенным Lua редактором**
 
-## Features
+![Windows](https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)
+![Go](https://img.shields.io/badge/Go-00ADD8?style=for-the-badge&logo=go&logoColor=white)
+![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)
+![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)
 
-- **Multi-Engine Support**: Zapret (Linux/macOS/Windows), GoodbyeDPI (Windows)
-- **Cross-Platform**: Windows, Linux, macOS, Android (Magisk module)
-- **Modern UI**: React + TailwindCSS + Framer Motion
-- **Multiple Profiles**: Optimized for Discord, YouTube, Telegram, and more
+---
 
-## Platform Setup
+## 🎯 Что это?
 
-### Windows
-1. Download latest release
-2. Run as Administrator
-3. Select engine (GoodbyeDPI or Zapret 2) and profile
-4. Click Start
+**Unbound** — премиум GUI-обёртка для движка **Zapret 2** (nfqws.exe + WinDivert), которая автоматически подбирает оптимальную стратегию обхода DPI для вашего провайдера. Забудьте про консоль и ручной подбор параметров — просто нажмите **CONNECT**.
 
-### Linux
-```bash
-# Install dependencies
-sudo apt install libnetfilter-queue-dev iptables
+### ⚡ Ключевые фичи
 
-# Download nfqws from zapret releases
-# Place in engine/core_bin/linux/
+- **🧠 Smart Auto-Tune Scanner** — автоматически тестирует все профили и выбирает лучший для вашей сети
+- **📝 Advanced Lua Editor** — пишите и сохраняйте кастомные Zapret 2 скрипты прямо в приложении
+- **🎨 Premium Dark UI** — glassmorphic интерфейс с real-time телеметрией и динамической подсветкой статуса
+- **🔒 Zero-Zombie Engine** — корректное завершение WinDivert драйверов при закрытии/сворачивании в трей
+- **📊 Live Telemetry** — мониторинг работы движка в реальном времени с фильтрацией логов
 
-# Run with sudo
-sudo ./unbound
+---
+
+## 📥 Установка
+
+1. Скачайте `unbound.exe` из [Releases](https://github.com/bobberdolle1/unbound/releases/latest)
+2. Запустите **от имени администратора** (требуется для WinDivert)
+3. Нажмите кнопку **CONNECT** или запустите **Auto-Tune**
+
+> ⚠️ **Важно:** Закройте все другие DPI-bypass инструменты (GoodbyeDPI, Zapret CLI и т.д.) перед запуском Unbound
+
+---
+
+## 🎮 Как пользоваться
+
+### Быстрый старт
+1. Выберите профиль из списка (например, `Unbound Ultimate (God Mode)`)
+2. Нажмите большую кнопку **TAP TO CONNECT**
+3. Проверьте доступ к заблокированным ресурсам
+
+### Auto-Tune (рекомендуется)
+1. Нажмите кнопку **Auto-Tune** (иконка радара)
+2. Подождите 2-3 минуты, пока система протестирует все профили
+3. Unbound автоматически выберет и запустит лучший вариант
+
+### Advanced Lua Editor
+1. Нажмите иконку **Code** в правом верхнем углу
+2. Напишите свой Lua скрипт для Zapret 2
+3. Нажмите **Save & Apply** — профиль `Custom Profile` будет автоматически выбран
+4. Скрипт сохраняется в `%APPDATA%/Unbound/custom_profile.lua`
+
+---
+
+## 🛠️ Встроенные профили
+
+| Профиль | Описание |
+|---------|----------|
+| **Unbound Ultimate (God Mode)** | Универсальный профиль с агрессивным обходом TLS + QUIC |
+| **Discord Voice Optimized** | Оптимизирован для голосовых каналов Discord (UDP 3478, 50000-65535) |
+| **YouTube QUIC Aggressive** | Максимальная производительность для YouTube через QUIC |
+| **Telegram API Bypass** | Специально для Telegram (порты 5222, 5223, 5228) |
+| **Fake TLS & QUIC** | Базовая подмена TLS/QUIC пакетов |
+| **Multi-Strategy Chaos** | Комбинация fake, multidisorder и badseq |
+| **Standard Split** | Классический split на позиции 1 |
+| **Fake Packets + BadSeq** | Fake пакеты + некорректная последовательность |
+| **Disorder** | Перестановка фрагментов пакетов |
+| **Split Handshake** | Split на середине домена (midsld) |
+| **Flowseal Legacy** | Совместимость со старыми версиями Zapret |
+| **Custom Profile** | Ваш собственный Lua скрипт |
+
+---
+
+## 🏗️ Архитектура
+
+```
+Unbound (Wails v2)
+├── Go Backend
+│   ├── engine/
+│   │   ├── assets.go          # Embedded nfqws.exe + WinDivert + Lua scripts
+│   │   ├── config.go          # Persistent storage для custom scripts
+│   │   ├── scanner.go         # Auto-Tune логика
+│   │   ├── healthcheck.go     # Проверка доступности ресурсов
+│   │   └── providers/
+│   │       └── zapret2_windows.go  # Запуск nfqws.exe с WinDivert
+│   ├── app.go                 # Wails bindings
+│   └── app_windows.go         # System Tray интеграция
+│
+└── React Frontend (TypeScript + Tailwind)
+    └── src/
+        └── App.tsx            # Glassmorphic UI с real-time телеметрией
 ```
 
-### macOS
-```bash
-# Install dependencies
-brew install libnetfilter-queue
+---
 
-# Download nfqws from zapret releases
-# Place in engine/core_bin/macos/
+## 🔧 Сборка из исходников
 
-# Run with sudo
-sudo ./unbound
-```
-
-### Android (Magisk)
-1. Flash `android/magisk/unbound-magisk.zip` via Magisk Manager
-2. Configure via terminal: `su -c unbound-config`
-3. Reboot
-
-## Build from Source
-
-### Prerequisites
-- Go 1.23+
+### Требования
+- Go 1.21+
 - Node.js 18+
-- Wails v2: `go install github.com/wailsapp/wails/v2/cmd/wails@latest`
+- Wails CLI v2.11.0+
 
-### Build
+### Команды
 ```bash
-# Install frontend dependencies
-cd frontend && npm install && cd ..
+# Установка зависимостей
+go mod download
+cd frontend && npm install
 
-# Build for current platform
-wails build
+# Dev режим
+wails dev
 
-# Build for specific platform
-wails build -platform windows/amd64
-wails build -platform linux/amd64
-wails build -platform darwin/universal
+# Production сборка
+wails build -clean
 ```
 
-## Engines
+Готовый `unbound.exe` появится в `build/bin/`
 
-### Zapret (nfqws)
-Advanced DPI bypass using packet manipulation, NFQUEUE, and Lua scripting.
+---
 
-### GoodbyeDPI (Windows)
-WinDivert-based DPI bypass optimized for Windows.
+## 🐛 Troubleshooting
 
-## Profiles
+### "WinDivert Error/Binding Failure"
+- Закройте все другие DPI-bypass инструменты
+- Перезапустите Unbound от имени администратора
+- Проверьте, что WinDivert драйвер не заблокирован антивирусом
 
-- **Ultimate Bypass**: Multi-strategy for maximum compatibility
-- **Discord Voice Optimized**: Low-latency UDP optimization
-- **YouTube QUIC Aggressive**: QUIC/HTTP3 bypass
-- **Telegram API Bypass**: Optimized for Telegram protocols
-- **Standard HTTPS/QUIC**: Basic HTTPS + QUIC bypass
-- **HTTP + HTTPS Split**: Split packet strategy
+### "Administrator/root privileges required"
+- Запустите `unbound.exe` через ПКМ → "Запуск от имени администратора"
 
-## Credits
+### Профиль не работает
+- Попробуйте **Auto-Tune** — он автоматически найдёт рабочий вариант
+- Проверьте логи в нижней панели (Telemetry)
 
-- [Zapret](https://github.com/bol-van/zapret) by bol-van
-- [GoodbyeDPI](https://github.com/ValdikSS/GoodbyeDPI) by ValdikSS
-- Built with [Wails](https://wails.io)
+---
 
-## License
+## 📜 Лицензия
 
-MIT License - see LICENSE file
+MIT License — делайте что хотите, но без гарантий.
 
-**Note**: Zapret and GoodbyeDPI are separate projects with their own licenses.
+---
+
+## 🙏 Благодарности
+
+- **[Zapret](https://github.com/bol-van/zapret)** — за мощный DPI bypass движок
+- **[Wails](https://wails.io)** — за возможность писать desktop GUI на Go + React
+- **[WinDivert](https://reqrypt.org/windivert.html)** — за низкоуровневый перехват пакетов
+
+---
+
+## 🔗 Ссылки
+
+- [Releases](https://github.com/bobberdolle1/unbound/releases)
+- [Issues](https://github.com/bobberdolle1/unbound/issues)
+- [Zapret Documentation](https://github.com/bol-van/zapret)
+
+---
+
+**Made with 🔥 by bobberdolle1**
