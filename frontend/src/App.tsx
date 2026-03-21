@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Power, Terminal, Shield, ShieldAlert, Minimize2, ChevronUp, ChevronDown, Radar, Globe, Code } from 'lucide-react';
+import { Power, Terminal, Shield, ShieldAlert, Minimize2, ChevronUp, ChevronDown, Radar, Code } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 

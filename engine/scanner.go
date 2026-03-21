@@ -42,7 +42,7 @@ bestLatency := time.Duration(0)
 for i, profile := range profiles {
 updateLog(fmt.Sprintf("Testing [%d/%d]: %s", i+1, len(profiles), profile.Name))
 
-winwsPath := filepath.Join(assets.BinDir, "nfqws.exe")
+winwsPath := filepath.Join(assets.BinDir, "winws.exe")
 absLuaLib, _ := filepath.Abs(filepath.Join(assets.LuaDir, "zapret-lib.lua"))
 absLuaAntiDpi, _ := filepath.Abs(filepath.Join(assets.LuaDir, "zapret-antidpi.lua"))
 
@@ -91,7 +91,7 @@ updateLog(fmt.Sprintf("%s: %s", result.URL, reason))
 }
 }
 
-exec.Command("taskkill", "/F", "/T", "/IM", "nfqws.exe").Run()
+exec.Command("taskkill", "/F", "/T", "/IM", "winws.exe").Run()
 updateLog("Stopped engine")
 time.Sleep(1 * time.Second)
 

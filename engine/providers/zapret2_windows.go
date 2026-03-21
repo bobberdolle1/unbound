@@ -100,10 +100,9 @@ func (e *Zapret2WindowsProvider) getProfileArgs(profileName string) []string {
 	luaLib := filepath.ToSlash(absLuaLib)
 	luaAntiDpi := filepath.ToSlash(absLuaAntiDpi)
 
-	// Correct Zapret 2 Syntax for filtering
 	args := []string{
-		"--lua=\"" + luaLib + "\"",
-		"--lua=\"" + luaAntiDpi + "\"",
+		"--lua=" + luaLib,
+		"--lua=" + luaAntiDpi,
 	}
 
 	switch profileName {
@@ -155,7 +154,7 @@ func (e *Zapret2WindowsProvider) getProfileArgs(profileName string) []string {
 		if err == nil {
 			absCustomScript, _ := filepath.Abs(customScriptPath)
 			customScriptSlash := filepath.ToSlash(absCustomScript)
-			args = append(args, "--lua=\""+customScriptSlash+"\"")
+			args = append(args, "--lua="+customScriptSlash)
 			args = append(args, "--filter-tcp=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=split:pos=1")
 		}
 	}
@@ -178,7 +177,7 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 	}
 
 	e.status = StatusStarting
-	winwsPath := filepath.Join(e.binPath, "nfqws.exe")
+	winwsPath := filepath.Join(e.binPath, "winws.exe")
 
 	args := e.getProfileArgs(profileName)
 	
@@ -278,9 +277,9 @@ func (e *Zapret2WindowsProvider) Stop() error {
 	defer e.mu.Unlock()
 
 	if e.cmd != nil && e.cmd.Process != nil {
-		e.addLog("Terminating nfqws process tree...")
-		// Use Windows taskkill API to forcefully kill the entire nfqws process tree
-		exec.Command("taskkill", "/F", "/T", "/IM", "nfqws.exe").Run()
+		e.addLog("Terminating winws process tree...")
+		// Use Windows taskkill API to forcefully kill the entire winws process tree
+		exec.Command("taskkill", "/F", "/T", "/IM", "winws.exe").Run()
 		e.cmd = nil
 	}
 	e.status = StatusStopped
