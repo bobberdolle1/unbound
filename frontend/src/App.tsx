@@ -168,9 +168,24 @@ export default function App() {
       >
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center border border-emerald-400/30 shadow-lg relative overflow-hidden">
-            {/* Cannabis leaf icon */}
-            <svg viewBox="0 0 24 24" className="w-5 h-5 text-white" fill="currentColor">
-              <path d="M12 2C12 2 10.5 4 10 6C9.5 8 10 10 10 10C10 10 8 9.5 6 10C4 10.5 2 12 2 12C2 12 4 13.5 6 14C8 14.5 10 14 10 14C10 14 9.5 16 10 18C10.5 20 12 22 12 22C12 22 13.5 20 14 18C14.5 16 14 14 14 14C14 14 16 14.5 18 14C20 13.5 22 12 22 12C22 12 20 10.5 18 10C16 9.5 14 10 14 10C14 10 14.5 8 14 6C13.5 4 12 2 12 2Z"/>
+            {/* Realistic Cannabis leaf icon */}
+            <svg viewBox="0 0 32 32" className="w-5 h-5 text-white" fill="currentColor">
+              {/* Center main leaf */}
+              <path d="M16 4 C15.5 4 15 6 15 8 C15 10 15 12 15 14 L15 20 C15 20 15.5 18 16 18 C16.5 18 17 20 17 20 L17 14 C17 12 17 10 17 8 C17 6 16.5 4 16 4 Z" opacity="0.95"/>
+              
+              {/* Left side leaves */}
+              <path d="M15 10 C15 10 13 9.5 11 10 C9 10.5 7 11.5 6 13 C6 13 7.5 13.5 9 13.5 C10.5 13.5 12 13 13 12.5 C14 12 15 11 15 10 Z" opacity="0.9"/>
+              <path d="M15 12 C15 12 12.5 12 10.5 12.5 C8.5 13 6.5 14 5.5 15.5 C5.5 15.5 7 15.5 8.5 15.5 C10 15.5 11.5 15 12.5 14.5 C13.5 14 15 13 15 12 Z" opacity="0.85"/>
+              <path d="M15 14 C15 14 12 14.5 10 15.5 C8 16.5 6.5 17.5 6 19 C6 19 7.5 18.5 9 18 C10.5 17.5 12 17 13 16.5 C14 16 15 15 15 14 Z" opacity="0.8"/>
+              
+              {/* Right side leaves */}
+              <path d="M17 10 C17 10 19 9.5 21 10 C23 10.5 25 11.5 26 13 C26 13 24.5 13.5 23 13.5 C21.5 13.5 20 13 19 12.5 C18 12 17 11 17 10 Z" opacity="0.9"/>
+              <path d="M17 12 C17 12 19.5 12 21.5 12.5 C23.5 13 25.5 14 26.5 15.5 C26.5 15.5 25 15.5 23.5 15.5 C22 15.5 20.5 15 19.5 14.5 C18.5 14 17 13 17 12 Z" opacity="0.85"/>
+              <path d="M17 14 C17 14 20 14.5 22 15.5 C24 16.5 25.5 17.5 26 19 C26 19 24.5 18.5 23 18 C21.5 17.5 20 17 19 16.5 C18 16 17 15 17 14 Z" opacity="0.8"/>
+              
+              {/* Bottom small leaves */}
+              <path d="M15 16 C15 16 13.5 17 12 18.5 C10.5 20 9.5 21.5 9 23 C9 23 10 22 11.5 21 C13 20 14 19 14.5 18 C15 17 15 16 15 16 Z" opacity="0.75"/>
+              <path d="M17 16 C17 16 18.5 17 20 18.5 C21.5 20 22.5 21.5 23 23 C23 23 22 22 20.5 21 C19 20 18 19 17.5 18 C17 17 17 16 17 16 Z" opacity="0.75"/>
             </svg>
             {/* Z V letters overlay */}
             <div className="absolute bottom-0 right-0 text-[6px] font-black text-cyan-400 leading-none pr-0.5 pb-0.5 drop-shadow-[0_0_2px_rgba(6,182,212,0.8)]">
