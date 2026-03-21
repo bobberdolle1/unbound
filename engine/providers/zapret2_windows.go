@@ -101,8 +101,8 @@ func (e *Zapret2WindowsProvider) getProfileArgs(profileName string) []string {
 	luaAntiDpi := filepath.ToSlash(absLuaAntiDpi)
 
 	args := []string{
-		"--lua=" + luaLib,
-		"--lua=" + luaAntiDpi,
+		"--lua-init=@" + luaLib,
+		"--lua-init=@" + luaAntiDpi,
 	}
 
 	switch profileName {
@@ -154,7 +154,7 @@ func (e *Zapret2WindowsProvider) getProfileArgs(profileName string) []string {
 		if err == nil {
 			absCustomScript, _ := filepath.Abs(customScriptPath)
 			customScriptSlash := filepath.ToSlash(absCustomScript)
-			args = append(args, "--lua="+customScriptSlash)
+			args = append(args, "--lua-init=@"+customScriptSlash)
 			args = append(args, "--wf-tcp-out=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=multisplit:pos=1")
 		}
 	}
