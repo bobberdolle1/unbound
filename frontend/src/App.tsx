@@ -157,8 +157,8 @@ export default function App() {
       
       {/* Background ambient glow based on status */}
       <div className={cn(
-        "absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full blur-[120px] opacity-20 pointer-events-none transition-all duration-1000",
-        isConnected ? "bg-emerald-500/40" : isScanning ? "bg-amber-500/20" : "bg-zinc-800/50"
+        "absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] rounded-full blur-[100px] opacity-10 pointer-events-none transition-all duration-1000",
+        isConnected ? "bg-emerald-500/30" : isScanning ? "bg-amber-500/15" : "bg-zinc-800/30"
       )} />
 
       {/* Header */}
@@ -260,9 +260,9 @@ export default function App() {
           className="flex flex-row items-stretch justify-between w-full max-w-[400px] bg-white/5 border border-white/10 rounded-2xl p-4 backdrop-blur-xl shadow-xl transition-all duration-500 gap-4"
           style={{ WebkitAppRegion: 'no-drag' } as any}
         >
-          <div className="flex flex-col overflow-hidden flex-1 justify-center">
-            <span className="text-[10px] text-zinc-400 font-bold tracking-widest uppercase mb-1 flex items-center gap-2">
-              <Shield className="w-3 h-3 text-cyan-500" />
+          <div className="flex flex-col overflow-hidden flex-1 justify-center group">
+            <span className="text-[10px] text-zinc-400 font-bold tracking-widest uppercase mb-1 flex items-center gap-2 transition-colors duration-300 group-hover:text-cyan-400">
+              <Shield className="w-3 h-3 text-cyan-500 transition-transform duration-300 group-hover:scale-110" />
               Active Strategy
             </span>
             <div className="relative w-full">
@@ -270,12 +270,12 @@ export default function App() {
                 value={selectedProfile} 
                 onChange={(e) => setSelectedProfile(e.target.value)} 
                 disabled={isConnected || disableMain || !selectedEngine}
-                className="bg-transparent border-none text-zinc-100 text-sm font-semibold tracking-wide outline-none appearance-none cursor-pointer disabled:opacity-70 truncate w-full hover:text-cyan-100 transition-colors pr-6"
+                className="bg-transparent border-none text-zinc-100 text-sm font-semibold tracking-wide outline-none appearance-none cursor-pointer disabled:opacity-70 truncate w-full hover:text-cyan-100 transition-all duration-300 pr-6 hover:scale-[1.02]"
               >
                 {profiles.map(p => <option key={p} value={p} className="bg-zinc-900 text-sm">{p}</option>)}
               </select>
               {/* Dropdown indicator */}
-              <div className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none opacity-50">
+              <div className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none opacity-50 transition-transform duration-300 group-hover:translate-y-[-40%]">
                 <ChevronDown className="w-4 h-4" />
               </div>
             </div>
