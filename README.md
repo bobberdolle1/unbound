@@ -15,11 +15,14 @@
 
 ### ⚡ Ключевые фичи
 
-- **🧠 Smart Auto-Tune Scanner** — автоматически тестирует все профили и выбирает лучший для вашей сети
+- **🧠 Smart Auto-Tune Scanner** — автоматически тестирует все профили с TLS certificate verification для защиты от TSPU MITM
 - **📝 Advanced Lua Editor** — пишите и сохраняйте кастомные Zapret 2 скрипты прямо в приложении
-- **🎨 Premium Dark UI** — glassmorphic интерфейс с real-time телеметрией и динамической подсветкой статуса
+- **🎨 Premium Dark UI** — glassmorphic интерфейс с real-time телеметрией и live ping indicator
 - **🔒 Zero-Zombie Engine** — корректное завершение WinDivert драйверов при закрытии/сворачивании в трей
 - **📊 Live Telemetry** — мониторинг работы движка в реальном времени с фильтрацией логов
+- **🚀 Multi-Engine Support** — унифицированная архитектура для GoodbyeDPI, Zapret2, Zapret1
+- **🔐 Smart Prober** — детекция DPI interference через TLS handshake и TTFB измерения
+- **📡 Live Ping Indicator** — real-time отображение латентности соединения (обновление каждые 5с)
 
 ---
 
@@ -78,19 +81,32 @@
 Unbound (Wails v2)
 ├── Go Backend
 │   ├── engine/
+│   │   ├── engine.go          # Unified DPIEngine interface
+│   │   ├── prober.go          # Smart Prober with TLS cert verification
+│   │   ├── orchestrator.go    # Multi-engine orchestrator
 │   │   ├── assets.go          # Embedded nfqws.exe + WinDivert + Lua scripts
 │   │   ├── config.go          # Persistent storage для custom scripts
-│   │   ├── scanner.go         # Auto-Tune логика
+│   │   ├── scanner.go         # Auto-Tune с Smart Prober integration
 │   │   ├── healthcheck.go     # Проверка доступности ресурсов
 │   │   └── providers/
 │   │       └── zapret2_windows.go  # Запуск nfqws.exe с WinDivert
-│   ├── app.go                 # Wails bindings
+│   ├── app.go                 # Wails bindings + GetCurrentPing API
 │   └── app_windows.go         # System Tray интеграция
 │
 └── React Frontend (TypeScript + Tailwind)
     └── src/
-        └── App.tsx            # Glassmorphic UI с real-time телеметрией
+        └── App.tsx            # Glassmorphic UI с live ping indicator
 ```
+
+### 🔬 Smart Prober Technology
+
+Smart Prober использует многоуровневую проверку для детекции DPI interference:
+
+1. **TLS Handshake Verification** — проверка подлинности TLS сертификата
+2. **Certificate Chain Validation** — сравнение с известными CA (DigiCert, Let's Encrypt, Google Trust Services)
+3. **TTFB Measurement** — измерение Time-To-First-Byte как метрика качества
+4. **Connection Reset Detection** — детекция ECONNRESET от DPI
+5. **MITM Detection** — защита от TSPU certificate spoofing
 
 ---
 
