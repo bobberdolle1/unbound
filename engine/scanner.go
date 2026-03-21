@@ -15,84 +15,97 @@ import (
 )
 
 func RunAutoTune(ctx context.Context, updateLog func(string)) (Profile, error) {
+	updateLog("🔍 Initializing Auto-Tune Scanner...")
+	
 	assets, err := ExtractAssets()
 	if err != nil {
+		updateLog("❌ Failed to extract assets: " + err.Error())
 		return Profile{}, err
 	}
 
+	updateLog("✓ Assets extracted successfully")
+	updateLog("📋 Loading available profiles...")
+
 	profiles := GetProfiles(assets.LuaDir)
+	updateLog(fmt.Sprintf("✓ Found %d profiles to test", len(profiles)))
+	
 	winwsPath := filepath.Join(assets.BinDir, "nfqws.exe")
+	updateLog("🚀 Starting profile tests...")
 
-	for _, profile := range profiles {
-		updateLog("Testing profile: " + profile.Name)
+	for i, profile := range profiles {
+		updateLog(fmt.Sprintf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"))
+		updateLog(fmt.Sprintf("🧪 Testing [%d/%d]: %s", i+1, len(profiles), profile.Name))
 
-		// Create a temporary lua script for the profile
-		tmpLuaPath := filepath.Join(os.TempDir(), "autotune_profile.lua")
+		absLuaLib, _ := filepath.Abs(filepath.Join(assets.LuaDir, "zapret-lib.lua"))
+		absLuaAntiDpi, _ := filepath.Abs(filepath.Join(assets.LuaDir, "zapret-antidpi.lua"))
 		
-		// Ensure scanner.go actually writes the profile into a temporary .lua file
-		luaContent := fmt.Sprintf("-- Profile Strategy: %s\n", profile.Name)
-		err := os.WriteFile(tmpLuaPath, []byte(luaContent), 0644)
-		if err != nil {
-			updateLog("Failed to write lua file: " + err.Error())
-			continue
-		}
+		luaLib := filepath.ToSlash(absLuaLib)
+		luaAntiDpi := filepath.ToSlash(absLuaAntiDpi)
 
-		// Fixed Zapret 2 Syntax
 		args := []string{
-			"--filter-tcp=80,443", 
-			"--filter-udp=50000-65535",
-			"--lua=\"" + tmpLuaPath + "\"",
+			"--lua=\"" + luaLib + "\"",
+			"--lua=\"" + luaAntiDpi + "\"",
 		}
-		// Append profile specific flags
 		args = append(args, profile.Args...)
+
+		updateLog(fmt.Sprintf("   Command: nfqws.exe %v", args))
 
 		cmd := exec.Command(winwsPath, args...)
 		cmd.Dir = assets.BinDir
 		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 
 		if err := cmd.Start(); err != nil {
-			updateLog("Failed to start nfqws: " + err.Error())
+			updateLog("   ❌ Failed to start: " + err.Error())
 			continue
 		}
 
-		time.Sleep(1 * time.Second) // wait for WinDivert to bind
+		updateLog("   ⏳ Waiting for WinDivert to bind...")
+		time.Sleep(2 * time.Second)
 
-		// Ensure HTTP Client ignores TLS cert errors
 		client := &http.Client{
-			Timeout: 4 * time.Second,
+			Timeout: 5 * time.Second,
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 			},
 		}
 
 		urls := []string{"https://googlevideo.com", "https://discord.com"}
-		success := true
+		successCount := 0
+		
 		for _, u := range urls {
+			updateLog(fmt.Sprintf("   🌐 Testing: %s", u))
 			resp, err := client.Get(u)
 			if err != nil {
-				success = false
-				break
-			}
-			if resp != nil {
-				resp.Body.Close()
+				updateLog(fmt.Sprintf("   ⚠️  Failed: %s", err.Error()))
+			} else {
+				updateLog("   ✓ Success!")
+				successCount++
+				if resp != nil {
+					resp.Body.Close()
+				}
 			}
 		}
 
-		// kill process
 		exec.Command("taskkill", "/F", "/T", "/IM", "nfqws.exe").Run()
-		time.Sleep(1 * time.Second) // wait for kernel to free WinDivert handle
-		os.Remove(tmpLuaPath)
+		updateLog("   🛑 Stopped engine")
+		time.Sleep(1 * time.Second)
 
-		if success {
-			updateLog("Success! Profile selected: " + profile.Name)
-			// save to config.json
+		if successCount == len(urls) {
+			updateLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+			updateLog(fmt.Sprintf("🎉 WINNER: %s", profile.Name))
+			updateLog("💾 Saving configuration...")
+			
 			configData, _ := json.Marshal(map[string]string{"active_profile": profile.Name})
 			os.WriteFile("config.json", configData, 0644)
+			
+			updateLog("✅ Auto-Tune completed successfully!")
 			return profile, nil
 		} else {
-			updateLog("Failed: " + profile.Name)
+			updateLog(fmt.Sprintf("   ❌ Failed (%d/%d tests passed)", successCount, len(urls)))
 		}
 	}
 
+	updateLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	updateLog("❌ All profiles failed. Check your network connection.")
 	return Profile{}, errors.New("all profiles failed")
 }

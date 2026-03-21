@@ -102,8 +102,6 @@ func (e *Zapret2WindowsProvider) getProfileArgs(profileName string) []string {
 
 	// Correct Zapret 2 Syntax for filtering
 	args := []string{
-		"--filter-tcp=80,443",
-		"--filter-udp=50000-65535",
 		"--lua=\"" + luaLib + "\"",
 		"--lua=\"" + luaAntiDpi + "\"",
 	}
@@ -158,6 +156,7 @@ func (e *Zapret2WindowsProvider) getProfileArgs(profileName string) []string {
 			absCustomScript, _ := filepath.Abs(customScriptPath)
 			customScriptSlash := filepath.ToSlash(absCustomScript)
 			args = append(args, "--lua=\""+customScriptSlash+"\"")
+			args = append(args, "--filter-tcp=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=split:pos=1")
 		}
 	}
 
