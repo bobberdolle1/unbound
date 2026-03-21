@@ -175,30 +175,14 @@ export default function App() {
         style={{ WebkitAppRegion: 'drag' } as any}
       >
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center border border-emerald-400/30 shadow-lg relative overflow-hidden">
-            {/* Realistic Cannabis leaf icon */}
-            <svg viewBox="0 0 32 32" className="w-5 h-5 text-white" fill="currentColor">
-              {/* Center main leaf */}
-              <path d="M16 4 C15.5 4 15 6 15 8 C15 10 15 12 15 14 L15 20 C15 20 15.5 18 16 18 C16.5 18 17 20 17 20 L17 14 C17 12 17 10 17 8 C17 6 16.5 4 16 4 Z" opacity="0.95"/>
-              
-              {/* Left side leaves */}
-              <path d="M15 10 C15 10 13 9.5 11 10 C9 10.5 7 11.5 6 13 C6 13 7.5 13.5 9 13.5 C10.5 13.5 12 13 13 12.5 C14 12 15 11 15 10 Z" opacity="0.9"/>
-              <path d="M15 12 C15 12 12.5 12 10.5 12.5 C8.5 13 6.5 14 5.5 15.5 C5.5 15.5 7 15.5 8.5 15.5 C10 15.5 11.5 15 12.5 14.5 C13.5 14 15 13 15 12 Z" opacity="0.85"/>
-              <path d="M15 14 C15 14 12 14.5 10 15.5 C8 16.5 6.5 17.5 6 19 C6 19 7.5 18.5 9 18 C10.5 17.5 12 17 13 16.5 C14 16 15 15 15 14 Z" opacity="0.8"/>
-              
-              {/* Right side leaves */}
-              <path d="M17 10 C17 10 19 9.5 21 10 C23 10.5 25 11.5 26 13 C26 13 24.5 13.5 23 13.5 C21.5 13.5 20 13 19 12.5 C18 12 17 11 17 10 Z" opacity="0.9"/>
-              <path d="M17 12 C17 12 19.5 12 21.5 12.5 C23.5 13 25.5 14 26.5 15.5 C26.5 15.5 25 15.5 23.5 15.5 C22 15.5 20.5 15 19.5 14.5 C18.5 14 17 13 17 12 Z" opacity="0.85"/>
-              <path d="M17 14 C17 14 20 14.5 22 15.5 C24 16.5 25.5 17.5 26 19 C26 19 24.5 18.5 23 18 C21.5 17.5 20 17 19 16.5 C18 16 17 15 17 14 Z" opacity="0.8"/>
-              
-              {/* Bottom small leaves */}
-              <path d="M15 16 C15 16 13.5 17 12 18.5 C10.5 20 9.5 21.5 9 23 C9 23 10 22 11.5 21 C13 20 14 19 14.5 18 C15 17 15 16 15 16 Z" opacity="0.75"/>
-              <path d="M17 16 C17 16 18.5 17 20 18.5 C21.5 20 22.5 21.5 23 23 C23 23 22 22 20.5 21 C19 20 18 19 17.5 18 C17 17 17 16 17 16 Z" opacity="0.75"/>
+          {/* Minimalist shield with lightning bolt */}
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center border border-cyan-400/30 shadow-lg relative">
+            <svg viewBox="0 0 24 24" className="w-5 h-5 text-white" fill="currentColor">
+              {/* Shield outline */}
+              <path d="M12 2L4 5v6c0 5.5 3.8 10.7 8 12 4.2-1.3 8-6.5 8-12V5l-8-3z" fill="none" stroke="currentColor" strokeWidth="1.5"/>
+              {/* Lightning bolt */}
+              <path d="M13 3l-3 7h3l-1 8 5-9h-3l2-6z" fill="currentColor"/>
             </svg>
-            {/* Z V letters overlay */}
-            <div className="absolute bottom-0 right-0 text-[6px] font-black text-cyan-400 leading-none pr-0.5 pb-0.5 drop-shadow-[0_0_2px_rgba(6,182,212,0.8)]">
-              ZV
-            </div>
           </div>
           <div>
             <h1 className="text-sm font-bold tracking-widest text-white/90">UNBOUND</h1>
@@ -291,50 +275,43 @@ export default function App() {
           </button>
         </div>
 
-        {/* Profile Card */}
+        {/* Profile Card - improved layout */}
         <div 
-          className="flex flex-row items-stretch justify-between w-full max-w-[400px] bg-white/5 border border-white/10 rounded-2xl p-4 backdrop-blur-xl shadow-xl transition-all duration-500 gap-4"
+          className="flex flex-row items-center justify-between w-full max-w-[500px] bg-zinc-900/60 border border-white/10 rounded-2xl p-5 backdrop-blur-xl shadow-2xl transition-all duration-500 gap-4"
           style={{ WebkitAppRegion: 'no-drag' } as any}
         >
-          <div className="flex flex-col overflow-hidden flex-1 justify-center group">
-            <span className="text-[10px] text-zinc-400 font-bold tracking-widest uppercase mb-1 flex items-center gap-2 transition-colors duration-300 group-hover:text-cyan-400">
-              <Shield className="w-3 h-3 text-cyan-500 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-12" />
-              Active Strategy
-            </span>
-            <div className="relative w-full overflow-visible">
+          <div className="flex flex-col flex-1 min-w-0 group">
+            <div className="flex items-center gap-2 mb-2">
+              <Shield className="w-3.5 h-3.5 text-cyan-500 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-12" />
+              <span className="text-[10px] text-zinc-400 font-bold tracking-widest uppercase transition-colors duration-300 group-hover:text-cyan-400">
+                Active Strategy
+              </span>
+            </div>
+            <div className="relative w-full">
               <select 
                 value={selectedProfile} 
                 onChange={(e) => setSelectedProfile(e.target.value)} 
                 disabled={isConnected || disableMain || !selectedEngine}
-                className="bg-transparent border-none text-zinc-100 text-sm font-semibold tracking-wide outline-none appearance-none cursor-pointer disabled:opacity-70 w-full hover:text-cyan-100 transition-all duration-300 pr-6 hover:translate-x-1"
-                style={{
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  maxWidth: '100%'
-                }}
+                className="w-full bg-zinc-800/50 border border-white/10 rounded-lg px-3 py-2 text-zinc-100 text-sm font-semibold tracking-wide outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed hover:border-cyan-500/50 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 transition-all duration-300 appearance-none pr-8"
               >
-                {profiles.map(p => <option key={p} value={p} className="bg-zinc-900 text-sm">{p}</option>)}
+                {profiles.map(p => <option key={p} value={p} className="bg-zinc-900 text-sm py-2">{p}</option>)}
               </select>
-              {/* Dropdown indicator with animation */}
-              <div className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none opacity-50 transition-all duration-300 group-hover:opacity-100 group-hover:translate-y-[-40%]">
-                <ChevronDown className="w-4 h-4 group-hover:text-cyan-400 transition-colors" />
-              </div>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 pointer-events-none transition-colors group-hover:text-cyan-400" />
             </div>
           </div>
 
-          <div className="w-px bg-white/10 shrink-0 self-stretch my-1" />
+          <div className="w-px bg-white/10 self-stretch my-1" />
 
           <button
             onClick={isScanning ? handleCancelScan : handleAutoTune}
             disabled={isConnected}
             className={cn(
-              "flex flex-col items-center justify-center p-3 rounded-xl transition-all duration-300 min-w-[80px] shrink-0",
+              "flex flex-col items-center justify-center px-4 py-3 rounded-xl transition-all duration-300 min-w-[90px] shrink-0",
               isScanning 
                 ? "bg-red-500/20 text-red-400 hover:bg-red-500/30 shadow-[0_0_15px_rgba(239,68,68,0.3)]" 
                 : isConnected
                   ? "opacity-30 cursor-not-allowed text-zinc-500"
-                  : "bg-white/5 hover:bg-white/10 text-cyan-400 hover:text-cyan-300 hover:shadow-[0_0_15px_rgba(6,182,212,0.2)]"
+                  : "bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 hover:text-cyan-300 border border-cyan-500/30 hover:border-cyan-500/50 hover:shadow-[0_0_20px_rgba(6,182,212,0.3)]"
             )}
           >
             <Radar className={cn("w-5 h-5 mb-1.5", isScanning ? "animate-spin" : "")} />
