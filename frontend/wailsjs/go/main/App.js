@@ -26,8 +26,20 @@ export function ClearDiscordCache() {
   return window['go']['main']['App']['ClearDiscordCache']();
 }
 
+export function DisableAutoStart() {
+  return window['go']['main']['App']['DisableAutoStart']();
+}
+
+export function EnableAutoStart() {
+  return window['go']['main']['App']['EnableAutoStart']();
+}
+
 export function GenerateCustomBlob(arg1, arg2) {
   return window['go']['main']['App']['GenerateCustomBlob'](arg1, arg2);
+}
+
+export function GetAutoStartInfo() {
+  return window['go']['main']['App']['GetAutoStartInfo']();
 }
 
 export function GetBlobList() {
@@ -86,6 +98,10 @@ export function HideToTray() {
   return window['go']['main']['App']['HideToTray']();
 }
 
+export function IsAutoStartEnabled() {
+  return window['go']['main']['App']['IsAutoStartEnabled']();
+}
+
 export function LoadCustomScript() {
   return window['go']['main']['App']['LoadCustomScript']();
 }
@@ -108,6 +124,10 @@ export function SaveSettings(arg1) {
 
 export function ShowFromTray() {
   return window['go']['main']['App']['ShowFromTray']();
+}
+
+export function ShowNotification(arg1, arg2) {
+  return window['go']['main']['App']['ShowNotification'](arg1, arg2);
 }
 
 export function StartEngine(arg1, arg2) {

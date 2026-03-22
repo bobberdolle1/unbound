@@ -63,14 +63,6 @@ func ExtractAssets() (*AssetPaths, error) {
 		return nil, fmt.Errorf("failed to extract %s binaries: %w", runtime.GOOS, err)
 	}
 
-	if runtime.GOOS == "windows" {
-		winws2Path := filepath.Join(binDir, "winws2.exe")
-		winwsPath := filepath.Join(binDir, "winws.exe")
-		if _, err := os.Stat(winws2Path); err == nil {
-			os.Rename(winws2Path, winwsPath)
-		}
-	}
-
 	// Extract Lua scripts (platform independent)
 	if err := extract("lua_scripts", luaDir); err != nil {
 		return nil, fmt.Errorf("failed to extract lua scripts: %w", err)

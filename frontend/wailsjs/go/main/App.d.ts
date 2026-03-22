@@ -14,7 +14,13 @@ export function CleanOldTests(arg1:number):Promise<void>;
 
 export function ClearDiscordCache():Promise<void>;
 
+export function DisableAutoStart():Promise<void>;
+
+export function EnableAutoStart():Promise<void>;
+
 export function GenerateCustomBlob(arg1:string,arg2:string):Promise<string>;
+
+export function GetAutoStartInfo():Promise<Record<string, string>>;
 
 export function GetBlobList():Promise<Array<engine.BlobPayload>>;
 
@@ -44,6 +50,8 @@ export function GetTestHistory():Promise<Array<engine.TestSession>>;
 
 export function HideToTray():Promise<void>;
 
+export function IsAutoStartEnabled():Promise<boolean>;
+
 export function LoadCustomScript():Promise<string>;
 
 export function RunAdvancedTests(arg1:string,arg2:number):Promise<string>;
@@ -55,6 +63,8 @@ export function SaveCustomScript(arg1:string):Promise<void>;
 export function SaveSettings(arg1:engine.Settings):Promise<void>;
 
 export function ShowFromTray():Promise<void>;
+
+export function ShowNotification(arg1:string,arg2:string):Promise<void>;
 
 export function StartEngine(arg1:string,arg2:string):Promise<void>;
 
