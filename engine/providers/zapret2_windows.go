@@ -4,11 +4,14 @@
 package providers
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -44,19 +47,30 @@ type Zapret2WindowsProvider struct {
 	profileMap     map[string][]string
 	profileNames   []string
 	onStatusChange func(Status)
+	logFile        *os.File
+	engineReady    chan bool
 }
 
 func NewZapret2WindowsProvider(binPath, luaDir, listDir string, debugMode bool, gameFilter bool) *Zapret2WindowsProvider {
 	InitLogger()
+	
+	var logFile *os.File
+	if debugMode {
+		logPath := filepath.Join(os.TempDir(), "unbound_debug.log")
+		logFile, _ = os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	}
+	
 	return &Zapret2WindowsProvider{
-		status:     StatusStopped,
-		binPath:    binPath,
-		luaDir:     luaDir,
-		listDir:    listDir,
-		debugMode:  debugMode,
-		gameFilter: gameFilter,
-		profileMap: make(map[string][]string),
-		logs:       []string{"Zapret 2 Engine (Windows) initialized."},
+		status:      StatusStopped,
+		binPath:     binPath,
+		luaDir:      luaDir,
+		listDir:     listDir,
+		debugMode:   debugMode,
+		gameFilter:  gameFilter,
+		profileMap:  make(map[string][]string),
+		logs:        []string{"Zapret 2 Engine (Windows) initialized."},
+		logFile:     logFile,
+		engineReady: make(chan bool, 1),
 	}
 }
 
@@ -193,6 +207,7 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 		e.mu.Lock()
 	}
 
+	e.engineReady = make(chan bool, 1)
 	e.status = StatusStarting
 	winwsPath := filepath.Join(e.binPath, "winws2.exe")
 	args := e.getProfileArgsLocked(profileName)
@@ -214,37 +229,13 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		buf := make([]byte, 1024)
-		for {
-			n, err := stdout.Read(buf)
-			if n > 0 {
-				msg := string(buf[:n])
-				e.mu.Lock()
-				e.addLog(msg)
-				e.mu.Unlock()
-			}
-			if err != nil {
-				break
-			}
-		}
+		e.streamLogs(stdout, "STDOUT")
 	}()
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		buf := make([]byte, 1024)
-		for {
-			n, err := stderr.Read(buf)
-			if n > 0 {
-				msg := string(buf[:n])
-				e.mu.Lock()
-				e.addLog(msg)
-				e.mu.Unlock()
-			}
-			if err != nil {
-				break
-			}
-		}
+		e.streamLogs(stderr, "STDERR")
 	}()
 
 	e.status = StatusRunning
@@ -266,6 +257,43 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 	return nil
 }
 
+func (e *Zapret2WindowsProvider) streamLogs(reader io.Reader, source string) {
+	scanner := bufio.NewScanner(reader)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	
+	for scanner.Scan() {
+		line := scanner.Text()
+		timestamp := time.Now().Format("15:04:05.000")
+		logLine := fmt.Sprintf("[%s][%s] %s", timestamp, source, line)
+		
+		e.mu.Lock()
+		e.addLog(logLine)
+		
+		if e.logFile != nil {
+			e.logFile.WriteString(logLine + "\n")
+		}
+		
+		if strings.Contains(line, "winws2 started") || 
+		   strings.Contains(line, "filter initialized") ||
+		   strings.Contains(line, "WinDivert") {
+			select {
+			case e.engineReady <- true:
+			default:
+			}
+		}
+		e.mu.Unlock()
+	}
+}
+
+func (e *Zapret2WindowsProvider) WaitReady(timeout time.Duration) bool {
+	select {
+	case <-e.engineReady:
+		return true
+	case <-time.After(timeout):
+		return false
+	}
+}
+
 func (e *Zapret2WindowsProvider) Stop() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -276,6 +304,12 @@ func (e *Zapret2WindowsProvider) Stop() error {
 		exec.Command("taskkill", "/F", "/T", "/IM", "winws2.exe").Run()
 		e.cmd = nil
 	}
+	
+	if e.logFile != nil {
+		e.logFile.Close()
+		e.logFile = nil
+	}
+	
 	e.status = StatusStopped
 	e.currentProfile = ""
 	return nil

@@ -117,7 +117,7 @@ func RunAutoTune(ctx context.Context, updateLog func(string)) (Profile, error) {
 			current := atomic.AddInt32(&testedCount, 1)
 			logAndUpdate(fmt.Sprintf("Progress: [%d/%d] Testing: %s", current, totalProfiles, p.Name))
 
-			winwsPath := filepath.Join(assets.BinDir, "winws.exe")
+			winwsPath := filepath.Join(assets.BinDir, "winws2.exe")
 			absLuaLib, _ := filepath.Abs(filepath.Join(assets.LuaDir, "zapret-lib.lua"))
 			absLuaAntiDpi, _ := filepath.Abs(filepath.Join(assets.LuaDir, "zapret-antidpi.lua"))
 
@@ -125,7 +125,9 @@ func RunAutoTune(ctx context.Context, updateLog func(string)) (Profile, error) {
 			luaAntiDpi := filepath.ToSlash(absLuaAntiDpi)
 
 			args := []string{
-				"--intercept=1",
+				"--wf-l3=ipv4,ipv6",
+				"--wf-tcp-out=80,443,2053,2083,2087,2096,5222,5223,5228,8443,8888",
+				"--wf-udp-out=443,8888,50000-65535",
 				"--lua-init=@" + luaLib,
 				"--lua-init=@" + luaAntiDpi,
 			}
@@ -187,7 +189,7 @@ func RunAutoTune(ctx context.Context, updateLog func(string)) (Profile, error) {
 	wg.Wait()
 
 	// Kill any dangling processes just in case
-	exec.Command("taskkill", "/F", "/T", "/IM", "winws.exe").Run()
+	exec.Command("taskkill", "/F", "/T", "/IM", "winws2.exe").Run()
 
 	if bestScore <= 0 {
 		logAndUpdate("All profiles failed. Selecting first profile as fallback...")
