@@ -70,26 +70,26 @@ const DoodleSelect = ({ value, options, onChange, disabled, up }: { value: strin
     <div className="relative w-full" ref={dropdownRef}>
       <div 
         className={cn(
-          "w-full sketch-input px-4 py-3 text-gray-900 font-bold text-base flex items-center justify-between transition-all bg-white/80",
-          disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-white/90",
-          isOpen && "bg-white z-50 relative"
+          "w-full sketch-input px-4 py-3 text-gray-900 font-bold text-base flex items-center justify-between transition-all duration-200 bg-white/80",
+          disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-white hover:shadow-[3px_3px_0_rgba(0,0,0,0.8)] hover:scale-[1.01]",
+          isOpen && "bg-white z-50 relative shadow-[3px_3px_0_rgba(0,0,0,0.8)]"
         )}
         onClick={() => !disabled && setIsOpen(!isOpen)}
       >
         <span className="truncate">{value || 'Pick Strategy'}</span>
-        <span className="font-marker font-black text-xl">{isOpen ? 'x' : 'v'}</span>
+        <span className={cn("font-marker font-black text-xl transition-transform duration-200", isOpen && "rotate-180")}>{isOpen ? 'x' : 'v'}</span>
       </div>
       
       {isOpen && (
         <ul className={cn(
-          "absolute left-0 w-full z-[100] sketch-box max-h-48 overflow-y-auto py-2 shadow-[4px_4px_0_rgba(0,0,0,0.8)]",
+          "absolute left-0 w-full z-[100] sketch-box max-h-48 overflow-y-auto py-2 shadow-[4px_4px_0_rgba(0,0,0,0.8)] animate-in slide-in-from-top-2 fade-in duration-200",
           up ? "bottom-[calc(100%+8px)]" : "top-[calc(100%+8px)]"
         )}>
           {options.map((opt) => (
             <li 
               key={opt}
               className={cn(
-                "px-4 py-2 hover:bg-yellow-100 hover:text-yellow-900 cursor-pointer truncate font-bold text-base transition-colors",
+                "px-4 py-2 hover:bg-yellow-100 hover:text-yellow-900 cursor-pointer truncate font-bold text-base transition-all duration-150 hover:translate-x-1",
                 value === opt ? "bg-yellow-200 text-yellow-900" : "text-gray-800"
               )}
               onClick={() => {
@@ -107,12 +107,12 @@ const DoodleSelect = ({ value, options, onChange, disabled, up }: { value: strin
 };
 
 const DoodleCheckbox = ({ checked, onChange, id, label, desc }: { checked: boolean, onChange: () => void, id: string, label: string, desc: string }) => (
-  <div className="flex items-start gap-4 p-3 sketch-box cursor-pointer hover:bg-white transition-all" onClick={onChange}>
+  <div className="flex items-start gap-4 p-3 sketch-box cursor-pointer hover:bg-white hover:shadow-[2px_2px_0_rgba(0,0,0,0.6)] transition-all duration-150 hover:scale-[1.01]" onClick={onChange}>
     <div className={cn(
-      "w-7 h-7 flex-shrink-0 sketch-input flex items-center justify-center transition-all bg-white",
-      checked ? "text-green-600" : "text-transparent"
+      "w-7 h-7 flex-shrink-0 sketch-input flex items-center justify-center transition-all duration-200 bg-white",
+      checked ? "text-green-600 scale-110" : "text-transparent scale-100"
     )}>
-      {checked && <SketchyCheck className="w-5 h-5" />}
+      {checked && <SketchyCheck className="w-5 h-5 animate-in zoom-in duration-200" />}
     </div>
     <div className="flex flex-col pt-0.5">
       <span className="text-[17px] font-bold text-gray-900 leading-none">{label}</span>
@@ -379,7 +379,7 @@ export default function App() {
             onClick={toggleConnection}
             disabled={disableMain}
             className={cn(
-              "w-full py-4 text-2xl font-marker tracking-widest uppercase doodle-btn flex items-center justify-center gap-3",
+              "w-full py-4 text-2xl font-marker tracking-widest uppercase doodle-btn flex items-center justify-center gap-3 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]",
               isConnected && !disableMain ? "doodle-btn-red" : ""
             )}
           >
@@ -391,7 +391,7 @@ export default function App() {
               onClick={isScanning ? CancelAutoTune : handleAutoTune}
               disabled={isConnected && !isScanning}
               className={cn(
-                "flex items-center justify-center gap-2 py-3 doodle-btn font-bold text-lg relative overflow-hidden",
+                "flex items-center justify-center gap-2 py-3 doodle-btn font-bold text-lg relative overflow-hidden transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]",
                 isScanning ? "!bg-red-300 !border-2 !shadow-[2px_2px_0_#222]" : 
                 scanSuccess === true ? "!bg-green-300 !border-2 !shadow-[2px_2px_0_#222]" :
                 scanSuccess === false ? "!bg-red-300 !border-2 !shadow-[2px_2px_0_#222]" :
@@ -406,12 +406,12 @@ export default function App() {
                 </>
               ) : scanSuccess === true ? (
                 <>
-                  <SketchyCheck className="w-6 h-6" />
+                  <SketchyCheck className="w-6 h-6 animate-in zoom-in duration-300" />
                   Success!
                 </>
               ) : scanSuccess === false ? (
                 <>
-                  <SketchyX className="w-6 h-6" />
+                  <SketchyX className="w-6 h-6 animate-in zoom-in duration-300" />
                   Failed
                 </>
               ) : (
@@ -424,7 +424,7 @@ export default function App() {
 
             <button 
               onClick={handleOpenSettings} 
-              className="flex items-center justify-center gap-2 py-3 sketch-box hover:bg-gray-100 font-bold text-lg"
+              className="flex items-center justify-center gap-2 py-3 sketch-box hover:bg-gray-100 hover:shadow-[2px_2px_0_rgba(0,0,0,0.6)] font-bold text-lg transition-all duration-150 hover:scale-[1.02] active:scale-[0.98]"
             >
               <SketchyGear className="w-6 h-6" />
               Gears
@@ -493,11 +493,11 @@ export default function App() {
       {/* Settings Modal - Sketchy Paper */}
       {isSettingsOpen && (
         <div 
-          className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/40 backdrop-blur-sm p-4 app-no-drag"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/40 backdrop-blur-sm p-4 app-no-drag animate-in fade-in duration-200"
           onClick={() => setIsSettingsOpen(false)}
         >
           <div 
-            className="w-full max-w-[340px] bg-[#fdfdfc] sketch-box flex flex-col max-h-[85vh] p-1"
+            className="w-full max-w-[340px] bg-[#fdfdfc] sketch-box flex flex-col max-h-[85vh] p-1 animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
@@ -506,7 +506,7 @@ export default function App() {
                 <SketchyGear className="w-6 h-6 text-gray-800" />
                 <h2 className="text-xl font-marker text-gray-800">My Rules</h2>
               </div>
-              <button onClick={() => setIsSettingsOpen(false)} className="text-gray-500 hover:text-black font-marker text-xl">
+              <button onClick={() => setIsSettingsOpen(false)} className="text-gray-500 hover:text-black font-marker text-xl transition-colors duration-150 hover:scale-110">
                 X
               </button>
             </div>
@@ -555,13 +555,13 @@ export default function App() {
             <div className="flex gap-4 px-4 py-4 mt-2 border-t-2 border-gray-200">
               <button
                 onClick={() => setIsSettingsOpen(false)}
-                className="flex-1 py-3 text-xl font-marker text-gray-600 hover:text-gray-900 hover:bg-gray-100 border-2 border-gray-800 rounded-xl shadow-[2px_2px_0_#222] transition-transform active:translate-y-1 active:shadow-none bg-white"
+                className="flex-1 py-3 text-xl font-marker text-gray-600 hover:text-gray-900 hover:bg-gray-100 border-2 border-gray-800 rounded-xl shadow-[2px_2px_0_#222] transition-all duration-150 active:translate-y-1 active:shadow-none bg-white hover:scale-[1.02]"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSaveSettings}
-                className="flex-1 py-3 text-xl font-marker doodle-btn"
+                className="flex-1 py-3 text-xl font-marker doodle-btn transition-all duration-150 hover:scale-[1.02] active:scale-[0.98]"
               >
                 Save!
               </button>

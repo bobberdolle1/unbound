@@ -142,19 +142,17 @@ func (e *Zapret2WindowsProvider) getProfileArgsLocked(profileName string) []stri
 
 	// ZAPRET 2 ARCHITECTURE (2026):
 	// 1. --wf-l3 is MANDATORY (ipv4,ipv6)
-	// 2. --wf-tcp-in/out and --wf-udp-in/out define WinDivert capture scope
-	// 3. Desync profiles created by --filter-tcp/udp in profile args
+	// 2. --wf-tcp-out and --wf-udp-out define WinDivert capture scope (outbound only)
+	// 3. Single unified profile with auto-detection
 	// 4. Port lists use COMMA separation
 
 	args := []string{
 		"--wf-l3=ipv4,ipv6",
-		"--wf-tcp-in=80,443,2053,2083,2087,2096,5222,5223,5228,8443,8888",
-		"--wf-tcp-out=80,443,2053,2083,2087,2096,5222,5223,5228,8443,8888",
-		"--wf-udp-in=443,8888,50000-65535",
-		"--wf-udp-out=443,8888,50000-65535",
+		"--wf-tcp-out=443",
+		"--wf-udp-out=443,50000-65535",
 	}
 
-	// Lua initialization
+	// Lua initialization MUST come before any profile definitions
 	args = append(args, "--lua-init=@"+luaLib)
 	args = append(args, "--lua-init=@"+luaAntiDpi)
 
@@ -208,6 +206,11 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 	e.status = StatusStarting
 	winwsPath := filepath.Join(e.binPath, "winws2.exe")
 	args := e.getProfileArgsLocked(profileName)
+	
+	// Log full command for debugging
+	cmdLine := winwsPath + " " + strings.Join(args, " ")
+	e.addLog(fmt.Sprintf("[CMD] %s", cmdLine))
+	WriteLog(fmt.Sprintf("Starting winws2 with profile '%s': %s", profileName, cmdLine))
 
 	e.cmd = exec.Command(winwsPath, args...)
 	e.cmd.Dir = e.binPath

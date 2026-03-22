@@ -11,35 +11,17 @@ type Profile struct {
 	Args []string
 }
 
-const (
-	YouTubeDomains = `googlevideo.com
-youtube.com
-youtu.be
-ytimg.com
-ggpht.com
-`
-
-	DiscordDomains = `discord.com
-discord.gg
-discordapp.net
-discordapp.com
-`
-)
-
 func EnsureHostlistFiles() error {
 	configDir, err := GetConfigDir()
 	if err != nil {
 		return fmt.Errorf("failed to get config directory: %w", err)
 	}
 
-	youtubeFile := filepath.Join(configDir, "youtube_domain.txt")
-	if err := os.WriteFile(youtubeFile, []byte(YouTubeDomains), 0644); err != nil {
-		return fmt.Errorf("failed to create youtube_domain.txt: %w", err)
-	}
-
-	discordFile := filepath.Join(configDir, "discord_domain.txt")
-	if err := os.WriteFile(discordFile, []byte(DiscordDomains), 0644); err != nil {
-		return fmt.Errorf("failed to create discord_domain.txt: %w", err)
+	autodetectFile := filepath.Join(configDir, "autodetect.txt")
+	if _, err := os.Stat(autodetectFile); os.IsNotExist(err) {
+		if err := os.WriteFile(autodetectFile, []byte(""), 0644); err != nil {
+			return fmt.Errorf("failed to create autodetect.txt: %w", err)
+		}
 	}
 
 	return nil
@@ -47,56 +29,66 @@ func EnsureHostlistFiles() error {
 
 func GetProfiles(luaDir string) []Profile {
 	configDir, _ := GetConfigDir()
-	youtubeHostlist := filepath.Join(configDir, "youtube_domain.txt")
-	discordHostlist := filepath.Join(configDir, "discord_domain.txt")
+	autodetectFile := filepath.ToSlash(filepath.Join(configDir, "autodetect.txt"))
 
 	return []Profile{
 		{
-			Name: "YouTube + Discord (ТСПУ Optimized)",
+			Name: "Low-TTL Fake",
 			Args: []string{
-				// YouTube TCP 443 (HTTPS/TLS) - SNI fragmentation
-				"--filter-l3=ipv4,ipv6",
 				"--filter-tcp=443",
-				"--hostlist=" + youtubeHostlist,
-				"--lua-desync=fake:blob=fake_default_tls,multisplit:badseq",
+				"--filter-l7=tls",
+				"--hostlist-auto=" + autodetectFile,
+				"--hostlist-auto-fail-threshold=2",
+				"--hostlist-auto-fail-time=30",
+				"--out-range=-d10",
+				"--payload=tls_client_hello",
+				"--lua-desync=fake:blob=fake_default_tls:ip_ttl=3:ip6_ttl=3:repeats=2",
+				"--lua-desync=multisplit:pos=midsld",
 				"--new",
-				// YouTube UDP 443 (QUIC)
-				"--filter-udp=443",
-				"--hostlist=" + youtubeHostlist,
-				"--lua-desync=fake:blob=fake_default_quic",
-				"--new",
-				// Discord TCP 443 (API)
-				"--filter-tcp=443",
-				"--hostlist=" + discordHostlist,
-				"--lua-desync=fake:blob=fake_default_tls,multisplit:badseq",
-				"--new",
-				// Discord UDP 50000-65535 (WebRTC voice)
-				"--filter-udp=50000-65535",
-				"--lua-desync=fake:blob=fake_default_quic,multisplit",
+				"--filter-udp=443,50000-65535",
+				"--filter-l7=quic",
+				"--payload=quic_initial,discord_ip_discovery,stun",
+				"--lua-desync=fake:blob=fake_default_quic:ip_ttl=4:ip6_ttl=4",
+				"--lua-desync=multisplit",
 			},
 		},
 		{
-			Name: "YouTube Only",
+			Name: "Multidisorder",
 			Args: []string{
-				"--filter-l3=ipv4,ipv6",
 				"--filter-tcp=443",
-				"--hostlist=" + youtubeHostlist,
-				"--lua-desync=fake:blob=fake_default_tls,multisplit:badseq",
+				"--filter-l7=tls",
+				"--hostlist-auto=" + autodetectFile,
+				"--hostlist-auto-fail-threshold=2",
+				"--hostlist-auto-fail-time=30",
+				"--out-range=-d10",
+				"--payload=tls_client_hello",
+				"--lua-desync=multidisorder:pos=1,midsld:repeats=6",
 				"--new",
-				"--filter-udp=443",
-				"--hostlist=" + youtubeHostlist,
-				"--lua-desync=fake:blob=fake_default_quic",
+				"--filter-udp=443,50000-65535",
+				"--filter-l7=quic",
+				"--payload=quic_initial,discord_ip_discovery,stun",
+				"--lua-desync=fake:blob=fake_default_quic:ip_ttl=3:ip6_ttl=3",
+				"--lua-desync=multisplit",
 			},
 		},
 		{
-			Name: "Discord Only",
+			Name: "Syndata + Split",
 			Args: []string{
 				"--filter-tcp=443",
-				"--hostlist=" + discordHostlist,
-				"--lua-desync=fake:blob=fake_default_tls,multisplit:badseq",
+				"--filter-l7=tls",
+				"--hostlist-auto=" + autodetectFile,
+				"--hostlist-auto-fail-threshold=2",
+				"--hostlist-auto-fail-time=30",
+				"--out-range=-d10",
+				"--payload=tls_client_hello",
+				"--lua-desync=syndata",
+				"--lua-desync=multisplit:pos=midsld",
 				"--new",
-				"--filter-udp=50000-65535",
-				"--lua-desync=fake:blob=fake_default_quic,multisplit",
+				"--filter-udp=443,50000-65535",
+				"--filter-l7=quic",
+				"--payload=quic_initial,discord_ip_discovery,stun",
+				"--lua-desync=fake:blob=fake_default_quic:ip_ttl=3:ip6_ttl=3",
+				"--lua-desync=multisplit",
 			},
 		},
 	}

@@ -1,7 +1,7 @@
 //go:build windows && !short
 // +build windows,!short
 
-package tests
+package main
 
 import (
 	"context"
@@ -27,9 +27,9 @@ type TestResult struct {
 }
 
 var testProfiles = []string{
-	"YouTube + Discord (ТСПУ Optimized)",
-	"YouTube Only",
-	"Discord Only",
+	"Low-TTL Fake",
+	"Multidisorder",
+	"Syndata + Split",
 }
 
 func TestE2EBypassMatrix(t *testing.T) {
@@ -77,15 +77,9 @@ func TestE2EBypassMatrix(t *testing.T) {
 				t.Logf("  ⚠️  Engine initialization timeout")
 				
 				logs := provider.GetLogs()
-				if len(logs) > 0 {
-					t.Logf("  📋 Engine logs (last 10 lines):")
-					start := len(logs) - 10
-					if start < 0 {
-						start = 0
-					}
-					for _, log := range logs[start:] {
-						t.Logf("      %s", log)
-					}
+				t.Logf("  📋 Engine logs (%d lines):", len(logs))
+				for _, log := range logs {
+					t.Logf("      %s", log)
 				}
 				
 				provider.Stop()
