@@ -154,7 +154,7 @@ func (a *App) TestProfile(engineName string, profileName string) (string, error)
 }
 
 func (a *App) AutoTune() string {
-	wailsruntime.LogInfo(a.ctx, "Starting Auto-Tune...")
+	wailsruntime.LogInfo(a.ctx, "Starting Auto-Tune V2...")
 	
 	updateLog := func(msg string) {
 		wailsruntime.EventsEmit(a.ctx, "autotune_log", msg)
@@ -167,33 +167,99 @@ func (a *App) AutoTune() string {
 		cancel()
 	}()
 
-	profile, err := engine.RunAutoTune(tuneCtx, updateLog)
+	updateLog("🔍 Initializing Auto-Tune V2...")
+	
+	assets, err := engine.ExtractAssets()
 	if err != nil {
-		if tuneCtx.Err() == context.Canceled {
-			updateLog("Auto-Tune cancelled by user.")
-		} else {
-			updateLog("Auto-Tune failed: " + err.Error())
-		}
+		updateLog("❌ Failed to extract assets: " + err.Error())
 		return "Failed"
 	}
 
-	// Final check before starting engine
+	provider := providers.NewZapret2WindowsProvider(
+		assets.BinDir,
+		assets.LuaDir,
+		assets.ListDir,
+		a.debugMode,
+		false,
+	)
+
+	profiles := engine.GetProfiles(assets.LuaDir)
+	for _, prof := range profiles {
+		provider.RegisterProfile(prof.Name, prof.Args)
+	}
+
+	updateLog(fmt.Sprintf("📋 Loaded %d profiles for testing", len(profiles)))
+	
+	go func() {
+		for {
+			select {
+			case <-tuneCtx.Done():
+				return
+			case <-time.After(500 * time.Millisecond):
+				logs := provider.GetLogs()
+				if len(logs) > 0 {
+					lastLog := logs[len(logs)-1]
+					wailsruntime.EventsEmit(a.ctx, "engine_log", lastLog)
+				}
+			}
+		}
+	}()
+
+	result, err := engine.RunAutoTuneV2(provider, profiles)
+	if err != nil {
+		if tuneCtx.Err() == context.Canceled {
+			updateLog("⏹️ Auto-Tune cancelled by user")
+		} else {
+			updateLog("❌ Auto-Tune failed: " + err.Error())
+		}
+		wailsruntime.EventsEmit(a.ctx, "autotune_complete", map[string]interface{}{
+			"success": false,
+			"profile": "",
+		})
+		return "Failed"
+	}
+
 	select {
 	case <-tuneCtx.Done():
-		updateLog("Auto-Tune cancelled.")
+		updateLog("⏹️ Auto-Tune cancelled")
+		wailsruntime.EventsEmit(a.ctx, "autotune_complete", map[string]interface{}{
+			"success": false,
+			"profile": "",
+		})
 		return "Failed"
 	default:
 	}
 
-	updateLog(fmt.Sprintf("Auto-Tune found best profile: %s", profile.Name))
+	updateLog(fmt.Sprintf("✅ Found working profile: %s", result.ProfileName))
+	updateLog(fmt.Sprintf("⏱️ Average latency: %v", result.Latency))
+	
+	for url, success := range result.TestedURLs {
+		status := "❌"
+		if success {
+			status = "✅"
+		}
+		updateLog(fmt.Sprintf("   %s %s", status, url))
+	}
+	
 	time.Sleep(500 * time.Millisecond)
 	
-	if err := a.StartEngine("Zapret 2 (winws)", profile.Name); err != nil {
-		updateLog("Failed to start engine: " + err.Error())
+	if err := a.StartEngine("Zapret 2 (winws)", result.ProfileName); err != nil {
+		updateLog("❌ Failed to start engine: " + err.Error())
+		wailsruntime.EventsEmit(a.ctx, "autotune_complete", map[string]interface{}{
+			"success": false,
+			"profile": result.ProfileName,
+		})
 		return "Failed"
 	}
 
-	return profile.Name
+	wailsruntime.EventsEmit(a.ctx, "autotune_complete", map[string]interface{}{
+		"success": true,
+		"profile": result.ProfileName,
+	})
+	
+	a.ShowNotification("Auto-Tune Complete", fmt.Sprintf("Found working profile: %s", result.ProfileName))
+
+	return result.ProfileName
 }
 
 func (a *App) CancelAutoTune() {

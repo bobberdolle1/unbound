@@ -7,11 +7,23 @@ function cn(...inputs: ClassValue[]) {
 }
 
 // @ts-ignore
-import { GetEngineNames, GetProfiles, StartEngine, StopEngine, GetLogs, AutoTune, CancelAutoTune, GetSettings, SaveSettings, GetLivePing } from '../wailsjs/go/main/App';
+import { GetEngineNames, GetProfiles, StartEngine, StopEngine, GetLogs, AutoTune, CancelAutoTune, GetSettings, SaveSettings, GetLivePing, ShowNotification } from '../wailsjs/go/main/App';
 // @ts-ignore
 import { EventsOn, WindowMinimise, Quit } from '../wailsjs/runtime/runtime';
 
 // === SKETCHY ICONS ===
+const SketchySpinner = ({ className }: { className?: string }) => (
+  <svg className={cn(className, "animate-spin")} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+  </svg>
+);
+
+const SketchyX = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M18 6L6 18M6 6l12 12" />
+  </svg>
+);
+
 const SketchyStar = ({ className }: { className?: string }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M13 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L11 2Z" transform="translate(0.5, 0.5) rotate(2)"/>
@@ -126,6 +138,8 @@ export default function App() {
   const [scanLogs, setScanLogs] = useState<string[]>([]);
   const [isLogExpanded, setIsLogExpanded] = useState<boolean>(false);
   const [isScanning, setIsScanning] = useState<boolean>(false);
+  const [scanProgress, setScanProgress] = useState<string>('');
+  const [scanSuccess, setScanSuccess] = useState<boolean | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [settings, setSettings] = useState<{autoStart: boolean, startMinimized: boolean, defaultProfile: string, startupProfileMode: string, gameFilter: boolean, autoUpdateEnabled: boolean, showLogs: boolean}>({
     autoStart: false,
@@ -140,6 +154,10 @@ export default function App() {
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+    
     GetEngineNames().then((engines: string[]) => {
       setEngines(engines || []);
       if (engines && engines.length > 0) setSelectedEngine(engines[0]);
@@ -161,6 +179,28 @@ export default function App() {
     EventsOn('autotune_log', (msg: string) => {
       setScanLogs(prev => [...prev, msg]);
       setIsLogExpanded(true);
+    });
+    EventsOn('engine_log', (msg: string) => {
+      setLogs(prev => [...prev, msg]);
+    });
+    EventsOn('autotune_complete', (data: {success: boolean, profile: string}) => {
+      setScanSuccess(data.success);
+      if (data.success && data.profile) {
+        setSelectedProfile(data.profile);
+        setScanProgress(`✅ Success! Using ${data.profile}`);
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification('Auto-Tune Complete', {
+            body: `Found working profile: ${data.profile}`,
+            icon: '/icon.png'
+          });
+        }
+      } else {
+        setScanProgress('❌ Auto-Tune failed');
+      }
+      setTimeout(() => {
+        setScanSuccess(null);
+        setScanProgress('');
+      }, 5000);
     });
     
     const interval = setInterval(() => {
@@ -211,16 +251,29 @@ export default function App() {
   const handleAutoTune = async () => {
     setIsScanning(true);
     setScanLogs([]);
+    setScanSuccess(null);
+    setScanProgress('🔍 Scanning profiles...');
     if (settings.showLogs) setIsLogExpanded(true);
     try {
       const bestProfile = await AutoTune();
       if (bestProfile && bestProfile !== "Failed") {
         setSelectedProfile(bestProfile);
+        setScanProgress(`✅ Found: ${bestProfile}`);
+        setScanSuccess(true);
+      } else {
+        setScanProgress('❌ No working profile found');
+        setScanSuccess(false);
       }
     } catch (err) {
       console.error(err);
+      setScanProgress('❌ Error during scan');
+      setScanSuccess(false);
     } finally {
       setIsScanning(false);
+      setTimeout(() => {
+        setScanSuccess(null);
+        setScanProgress('');
+      }, 5000);
     }
   };
 
@@ -287,7 +340,7 @@ export default function App() {
             {isScanning ? 'TESTING...' : status === 'Running' ? 'CONNECTED!' : status === 'Stopped' ? 'DISCONNECTED' : status.toUpperCase()}
           </h2>
           <p className="text-lg font-bold text-gray-500 mt-3 underline decoration-gray-300 decoration-wavy">
-            {isConnected ? 'Traffic bypassed!' : 'Ready to start'}
+            {isScanning && scanProgress ? scanProgress : isConnected ? 'Traffic bypassed!' : 'Ready to start'}
           </p>
         </div>
 
@@ -332,13 +385,35 @@ export default function App() {
               onClick={isScanning ? CancelAutoTune : handleAutoTune}
               disabled={isConnected && !isScanning}
               className={cn(
-                "flex items-center justify-center gap-2 py-3 doodle-btn font-bold text-lg",
-                isScanning ? "!bg-red-300 !border-2 !shadow-[2px_2px_0_#222]" : "!bg-yellow-300 !border-2 !shadow-[2px_2px_0_#222]",
+                "flex items-center justify-center gap-2 py-3 doodle-btn font-bold text-lg relative overflow-hidden",
+                isScanning ? "!bg-red-300 !border-2 !shadow-[2px_2px_0_#222]" : 
+                scanSuccess === true ? "!bg-green-300 !border-2 !shadow-[2px_2px_0_#222]" :
+                scanSuccess === false ? "!bg-red-300 !border-2 !shadow-[2px_2px_0_#222]" :
+                "!bg-yellow-300 !border-2 !shadow-[2px_2px_0_#222]",
                 isConnected && !isScanning ? "opacity-50 cursor-not-allowed" : ""
               )}
             >
-              <SketchyStar className="w-6 h-6" />
-              {isScanning ? 'Stop Tuning' : 'Auto-Tune'}
+              {isScanning ? (
+                <>
+                  <SketchySpinner className="w-6 h-6" />
+                  Scanning...
+                </>
+              ) : scanSuccess === true ? (
+                <>
+                  <SketchyCheck className="w-6 h-6" />
+                  Success!
+                </>
+              ) : scanSuccess === false ? (
+                <>
+                  <SketchyX className="w-6 h-6" />
+                  Failed
+                </>
+              ) : (
+                <>
+                  <SketchyStar className="w-6 h-6" />
+                  Auto-Tune
+                </>
+              )}
             </button>
 
             <button 

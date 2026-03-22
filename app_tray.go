@@ -10,10 +10,10 @@ func (a *App) setupTray() {
 }
 
 func (a *App) onTrayReady() {
-	systray.SetTitle("ClearFlow")
-	systray.SetTooltip("ClearFlow Unbound Engine")
+	systray.SetTitle("Unbound")
+	systray.SetTooltip("Unbound DPI Bypass Engine")
 
-	mShow := systray.AddMenuItem("Show ClearFlow", "Show application window")
+	mShow := systray.AddMenuItem("Show Unbound", "Show application window")
 	systray.AddSeparator()
 	mQuit := systray.AddMenuItem("Quit", "Stop engine and quit application")
 
@@ -41,4 +41,11 @@ func (a *App) HideToTray() {
 
 func (a *App) ShowFromTray() {
 	runtime.WindowShow(a.ctx)
+}
+
+func (a *App) ShowNotification(title, message string) {
+	runtime.EventsEmit(a.ctx, "show_notification", map[string]string{
+		"title":   title,
+		"message": message,
+	})
 }
