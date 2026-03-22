@@ -3,6 +3,9 @@ package engines
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -14,6 +17,8 @@ type XrayEngine struct {
 	isRunning bool
 	logs      []string
 	config    engine.EngineConfig
+	cmd       *exec.Cmd
+	cancel    context.CancelFunc
 }
 
 func NewXrayEngine() *XrayEngine {
@@ -38,13 +43,50 @@ func (e *XrayEngine) Start(ctx context.Context, config engine.EngineConfig) erro
 		return fmt.Errorf("xray engine already running")
 	}
 
+	configPath, err := engine.GetXrayConfigPath()
+	if err != nil {
+		return fmt.Errorf("failed to get xray config path: %w", err)
+	}
+
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		return fmt.Errorf("xray config not found - please select a node first")
+	}
+
+	xrayBinPath := filepath.Join(config.BinPath, "xray.exe")
+	if _, err := os.Stat(xrayBinPath); os.IsNotExist(err) {
+		return fmt.Errorf("xray.exe not found in %s", config.BinPath)
+	}
+
 	e.config = config
-	e.isRunning = true
 	
-	e.addLog("Initializing Xray Core...")
+	cmdCtx, cancel := context.WithCancel(ctx)
+	e.cancel = cancel
+	
+	e.cmd = exec.CommandContext(cmdCtx, xrayBinPath, "-c", configPath)
+	
+	e.addLog("Starting Xray Core...")
+	e.addLog(fmt.Sprintf("Config: %s", configPath))
 	e.addLog("Protocol: VLESS with Reality TLS camouflage")
-	e.addLog("Xray Mode: Stub implementation active")
-	e.addLog("Awaiting core binary integration in Sprint 5")
+	
+	if err := e.cmd.Start(); err != nil {
+		cancel()
+		return fmt.Errorf("failed to start xray: %w", err)
+	}
+	
+	e.isRunning = true
+	e.addLog("Xray engine started successfully")
+	e.addLog("SOCKS5 proxy listening on 127.0.0.1:10808")
+	
+	go func() {
+		err := e.cmd.Wait()
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		
+		if err != nil && e.isRunning {
+			e.addLog(fmt.Sprintf("Xray process exited with error: %v", err))
+		}
+		e.isRunning = false
+	}()
 	
 	return nil
 }
@@ -58,7 +100,19 @@ func (e *XrayEngine) Stop() error {
 	}
 
 	e.addLog("Stopping Xray engine...")
+	
+	if e.cancel != nil {
+		e.cancel()
+	}
+	
+	if e.cmd != nil && e.cmd.Process != nil {
+		if err := e.cmd.Process.Kill(); err != nil {
+			e.addLog(fmt.Sprintf("Failed to kill xray process: %v", err))
+		}
+	}
+	
 	e.isRunning = false
+	e.addLog("Xray engine stopped")
 	
 	return nil
 }

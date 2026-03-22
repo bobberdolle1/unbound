@@ -7,14 +7,40 @@
   "frontend:dev:watcher": "npm run dev",
   "frontend:dev:serverUrl": "auto",
   "author": {
-    "name": "UNBOUND Team",
+    "name": "bobberdolle1",
     "email": "dev@unbound.local"
   },
   "info": {
     "companyName": "UNBOUND",
-    "productName": "UNBOUND",
-    "productVersion": "1.0.0",
-    "copyright": "Copyright © 2024 UNBOUND Team",
-    "comments": "Ultimate DPI bypass engine combining Zapret 2, GoodbyeDPI, and cross-platform support"
+    "productName": "UNBOUND ClearFlow Engine",
+    "productVersion": "2.0.1",
+    "copyright": "Copyright  2024-2026 UNBOUND Team",
+    "comments": "Ultimate DPI bypass engine combining Zapret 2, AmneziaWG, Xray, and cross-platform support"
+  },
+  "wails": {
+    "windows": {
+      "webviewIsTransparent": false,
+      "windowIsTranslucent": false,
+      "disableWindowIcon": false,
+      "disableFramelessWindowDecorations": false,
+      "webviewUserDataPath": "",
+      "webviewBrowserPath": "",
+      "theme": "dark"
+    }
+  },
+  "nsis": {
+    "allowDowngrades": false,
+    "allowSkipModifyUninstall": false,
+    "oneClick": false,
+    "perMachine": true,
+    "deleteAppDataOnUninstall": false,
+    "runAfterFinish": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "license": "LICENSE",
+    "installerIcon": "build/appicon.png",
+    "uninstallerIcon": "build/appicon.png",
+    "setupIcon": "build/appicon.png",
+    "sideImage": "build/appicon.png"
   }
 }

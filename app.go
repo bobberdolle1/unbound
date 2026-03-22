@@ -336,3 +336,31 @@ func (a *App) CheckForUpdates(currentVersion string) (engine.UpdateInfo, error) 
 	
 	return updateInfo, nil
 }
+
+func (a *App) AddSubscription(link string) ([]engine.XrayNode, error) {
+	nodes, err := engine.AddSubscription(link)
+	if err != nil {
+		wailsruntime.LogErrorf(a.ctx, "Failed to add subscription: %v", err)
+		return nil, err
+	}
+	wailsruntime.LogInfof(a.ctx, "Successfully added %d Xray nodes", len(nodes))
+	return nodes, nil
+}
+
+func (a *App) GetXrayNodes() ([]engine.XrayNode, error) {
+	nodes, err := engine.GetXrayNodes()
+	if err != nil {
+		wailsruntime.LogWarningf(a.ctx, "Failed to get Xray nodes: %v", err)
+		return nil, err
+	}
+	return nodes, nil
+}
+
+func (a *App) GenerateXrayConfig(nodeID string) error {
+	if err := engine.GenerateXrayConfig(nodeID); err != nil {
+		wailsruntime.LogErrorf(a.ctx, "Failed to generate Xray config: %v", err)
+		return err
+	}
+	wailsruntime.LogInfo(a.ctx, "Xray config generated successfully")
+	return nil
+}
