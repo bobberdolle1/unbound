@@ -5,6 +5,7 @@
 *.so
 *.dylib
 build/bin/
+zapdpi.txt
 
 # Test binary
 *.test

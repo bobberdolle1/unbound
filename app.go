@@ -77,12 +77,26 @@ func (a *App) StartEngine(engineName string, profileName string) error {
 		return err
 	}
 	if !hasPriv {
-		return fmt.Errorf("administrator/root privileges required")
+		wailsruntime.LogError(a.ctx, "Administrator privileges required")
+		wailsruntime.EventsEmit(a.ctx, "privilege_error", "Administrator privileges required. Please restart the application as administrator.")
+		return fmt.Errorf("administrator privileges required")
+	}
+
+	currentStatus := a.manager.GetStatus()
+	if currentStatus == providers.StatusRunning {
+		wailsruntime.LogInfo(a.ctx, "Stopping current engine before starting new profile")
+		if err := a.manager.Stop(); err != nil {
+			wailsruntime.LogErrorf(a.ctx, "Failed to stop current engine: %v", err)
+		}
+		time.Sleep(1 * time.Second)
 	}
 
 	err = a.manager.Start(a.ctx, engineName, profileName)
 	if err == nil {
 		wailsruntime.EventsEmit(a.ctx, "status_changed", a.manager.GetStatus())
+		wailsruntime.LogInfof(a.ctx, "Engine started with profile: %s", profileName)
+	} else {
+		wailsruntime.LogErrorf(a.ctx, "Failed to start engine: %v", err)
 	}
 	return err
 }
@@ -337,30 +351,157 @@ func (a *App) CheckForUpdates(currentVersion string) (engine.UpdateInfo, error) 
 	return updateInfo, nil
 }
 
-func (a *App) AddSubscription(link string) ([]engine.XrayNode, error) {
-	nodes, err := engine.AddSubscription(link)
-	if err != nil {
-		wailsruntime.LogErrorf(a.ctx, "Failed to add subscription: %v", err)
-		return nil, err
-	}
-	wailsruntime.LogInfof(a.ctx, "Successfully added %d Xray nodes", len(nodes))
-	return nodes, nil
+func (a *App) RunDiagnostics() engine.DiagnosticsReport {
+	wailsruntime.LogInfo(a.ctx, "Running system diagnostics...")
+	report := engine.RunDiagnostics()
+	wailsruntime.LogInfof(a.ctx, "Diagnostics complete: %s", report.Summary)
+	return report
 }
 
-func (a *App) GetXrayNodes() ([]engine.XrayNode, error) {
-	nodes, err := engine.GetXrayNodes()
-	if err != nil {
-		wailsruntime.LogWarningf(a.ctx, "Failed to get Xray nodes: %v", err)
-		return nil, err
-	}
-	return nodes, nil
-}
-
-func (a *App) GenerateXrayConfig(nodeID string) error {
-	if err := engine.GenerateXrayConfig(nodeID); err != nil {
-		wailsruntime.LogErrorf(a.ctx, "Failed to generate Xray config: %v", err)
+func (a *App) ClearDiscordCache() error {
+	if err := engine.ClearDiscordCache(); err != nil {
+		wailsruntime.LogErrorf(a.ctx, "Failed to clear Discord cache: %v", err)
 		return err
 	}
-	wailsruntime.LogInfo(a.ctx, "Xray config generated successfully")
+	wailsruntime.LogInfo(a.ctx, "Discord cache cleared successfully")
 	return nil
+}
+
+func (a *App) RunAdvancedTests(mode string, maxConcurrent int) string {
+	hasPriv, err := a.manager.CheckPrivileges()
+	if err != nil || !hasPriv {
+		return "Administrator privileges required"
+	}
+
+	profiles := a.manager.GetProfiles("Zapret 2 (winws)")
+	if len(profiles) == 0 {
+		return "No profiles available"
+	}
+
+	testMode := tester.TestModeStandard
+	if mode == "dpi_checker" {
+		testMode = tester.TestModeDPIChecker
+	}
+
+	config := tester.AdvancedTestConfig{
+		Mode:            testMode,
+		MaxConcurrent:   maxConcurrent,
+		Timeout:         15 * time.Second,
+		URLs:            tester.TestURLs,
+		CheckTCPFreeze:  true,
+		MinDownloadSize: 16 * 1024,
+	}
+
+	wailsruntime.LogInfo(a.ctx, "Starting advanced profile tests...")
+
+	startProfile := func(profile string) error {
+		return a.manager.Start(a.ctx, "Zapret 2 (winws)", profile)
+	}
+
+	stopProfile := func() error {
+		return a.manager.Stop()
+	}
+
+	var results []tester.AdvancedTestResult
+	if maxConcurrent > 1 {
+		results = tester.RunParallelTests(a.ctx, profiles, config, startProfile, stopProfile)
+	} else {
+		results = tester.RunAdvancedTests(a.ctx, profiles, config, startProfile, stopProfile)
+	}
+
+	sessionID := fmt.Sprintf("%d", time.Now().Unix())
+	for _, result := range results {
+		persistentResults := make([]engine.TestResultPersistent, len(result.Results))
+		for i, r := range result.Results {
+			persistentResults[i] = engine.TestResultPersistent{
+				URL:        r.URL,
+				Success:    r.Success,
+				Latency:    r.Latency,
+				Error:      r.Error,
+				StatusCode: r.StatusCode,
+				TCPFreeze:  result.TCPFreezeDetected,
+			}
+		}
+		
+		session := &engine.TestSession{
+			ID:          sessionID,
+			StartTime:   time.Now().Add(-time.Duration(len(results)) * time.Second),
+			EndTime:     time.Now(),
+			Duration:    time.Duration(len(results)) * time.Second,
+			ProfileName: result.ProfileName,
+			TestMode:    string(result.Mode),
+			Results:     persistentResults,
+			Score:       result.Score,
+			SuccessRate: result.SuccessRate,
+		}
+		
+		engine.SaveTestSession(session)
+	}
+
+	output := tester.FormatAdvancedResults(results)
+	
+	best := tester.FindBestProfile(results)
+	if best != nil {
+		wailsruntime.LogInfof(a.ctx, "Best profile: %s (Score: %d)", best.ProfileName, best.Score)
+		
+		analytics, _ := engine.GenerateTestAnalytics()
+		if analytics != nil {
+			engine.SaveTestAnalytics(analytics)
+		}
+	}
+
+	return output
+}
+
+func (a *App) GetTestAnalytics() (*engine.TestAnalytics, error) {
+	analytics, err := engine.LoadTestAnalytics()
+	if err != nil {
+		wailsruntime.LogWarningf(a.ctx, "Failed to load analytics: %v", err)
+		return nil, err
+	}
+	return analytics, nil
+}
+
+func (a *App) GetTestHistory() ([]*engine.TestSession, error) {
+	sessions, err := engine.LoadAllTestSessions()
+	if err != nil {
+		wailsruntime.LogWarningf(a.ctx, "Failed to load test history: %v", err)
+		return nil, err
+	}
+	return sessions, nil
+}
+
+func (a *App) CleanOldTests(daysOld int) error {
+	duration := time.Duration(daysOld) * 24 * time.Hour
+	if err := engine.CleanOldTestResults(duration); err != nil {
+		wailsruntime.LogErrorf(a.ctx, "Failed to clean old tests: %v", err)
+		return err
+	}
+	wailsruntime.LogInfo(a.ctx, "Old test results cleaned successfully")
+	return nil
+}
+
+func (a *App) GetProfileCategories() []string {
+	return engine.GetProfileCategories()
+}
+
+func (a *App) GetProfilesByCategory(category string) []engine.AdvancedProfile {
+	return engine.GetProfilesByCategory(category)
+}
+
+func (a *App) GetBlobList() []engine.BlobPayload {
+	return engine.ListBlobs()
+}
+
+func (a *App) GenerateCustomBlob(blobType string, sni string) (string, error) {
+	switch blobType {
+	case "tls_random":
+		data := engine.GenerateRandomTLSClientHello(sni)
+		return string(data), nil
+	case "quic_random":
+		data := engine.GenerateRandomQUICInitial()
+		return string(data), nil
+	default:
+		return "", fmt.Errorf("unknown blob type: %s", blobType)
+	}
 }

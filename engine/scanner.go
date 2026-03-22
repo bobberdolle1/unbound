@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 	
@@ -36,19 +35,27 @@ func RunAutoTune(ctx context.Context, updateLog func(string)) (Profile, error) {
 	}
 
 	logAndUpdate("Assets extracted successfully")
+	
+	logAndUpdate("Detecting DPI distance with AutoTTL...")
+	ttlMap := AutoTTLForProfile(ctx, defaultTestTargets)
+	optimalTTL := GetOptimalTTL(ttlMap)
+	logAndUpdate(fmt.Sprintf("Optimal TTL detected: %d hops", optimalTTL))
+	
 	logAndUpdate("Loading available profiles...")
 
-	profiles := GetProfiles(assets.LuaDir)
+	zapretProfiles := GetProfiles(assets.LuaDir)
+	advancedProfiles := GetAdvancedProfiles(assets.LuaDir)
 	
-	// Filter out non-Zapret profiles (Xray, AmneziaWG)
-	zapretProfiles := make([]Profile, 0)
-	for _, p := range profiles {
-		if !strings.Contains(p.Name, "Xray") && !strings.Contains(p.Name, "VLESS") && !strings.Contains(p.Name, "AmneziaWG") {
-			zapretProfiles = append(zapretProfiles, p)
-		}
+	allProfiles := make([]Profile, 0, len(zapretProfiles)+len(advancedProfiles))
+	for _, p := range zapretProfiles {
+		allProfiles = append(allProfiles, p)
+	}
+	for _, ap := range advancedProfiles {
+		allProfiles = append(allProfiles, Profile{Name: ap.Name, Args: ap.Args})
 	}
 	
-	logAndUpdate(fmt.Sprintf("Found %d Zapret profiles to test", len(zapretProfiles)))
+	logAndUpdate(fmt.Sprintf("Found %d profiles to test (%d standard + %d advanced)", 
+		len(allProfiles), len(zapretProfiles), len(advancedProfiles)))
 
 	logAndUpdate("Starting profile tests...")
 
@@ -56,7 +63,7 @@ func RunAutoTune(ctx context.Context, updateLog func(string)) (Profile, error) {
 	bestScore := -1
 	bestLatency := time.Duration(0)
 
-	for i, profile := range zapretProfiles {
+	for i, profile := range allProfiles {
 		logAndUpdate(fmt.Sprintf("Testing [%d/%d]: %s", i+1, len(zapretProfiles), profile.Name))
 
 		winwsPath := filepath.Join(assets.BinDir, "winws.exe")
@@ -126,8 +133,8 @@ func RunAutoTune(ctx context.Context, updateLog func(string)) (Profile, error) {
 
 	if bestScore <= 0 {
 		logAndUpdate("All profiles failed. Selecting first profile as fallback...")
-		if len(zapretProfiles) > 0 {
-			bestProfile = zapretProfiles[0]
+		if len(allProfiles) > 0 {
+			bestProfile = allProfiles[0]
 			logAndUpdate(fmt.Sprintf("FALLBACK: %s", bestProfile.Name))
 		} else {
 			logAndUpdate("No profiles available.")
