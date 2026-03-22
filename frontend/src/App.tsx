@@ -47,7 +47,6 @@ export default function App() {
     gameFilter: true,
     autoUpdateEnabled: true
   });
-  const [pingData, setPingData] = useState<{active: boolean, latency: number, status: string, certValid?: boolean}>({active: false, latency: 0, status: 'stopped'});
   const [livePingData, setLivePingData] = useState<{active: boolean, latency: number, status: string}>({active: false, latency: 0, status: 'stopped'});
   const [isCheckingPing, setIsCheckingPing] = useState<boolean>(false);
   const [updateNotification, setUpdateNotification] = useState<{show: boolean, version: string, url: string, changelog: string}>({show: false, version: '', url: '', changelog: ''});
@@ -94,23 +93,6 @@ export default function App() {
     }, 500);
 
     const pingInterval = setInterval(() => {
-      if (status === 'Running' && !isCheckingPing) {
-        GetCurrentPing().then((data: any) => {
-          setPingData({
-            active: data?.active || false,
-            latency: data?.latency || 0,
-            status: data?.status || 'stopped',
-            certValid: data?.certValid
-          });
-        }).catch(() => {
-          setPingData({active: false, latency: 0, status: 'error'});
-        });
-      } else {
-        setPingData({active: false, latency: 0, status: 'stopped'});
-      }
-    }, 5000);
-
-    const livePingInterval = setInterval(() => {
       if (status === 'Running') {
         GetLivePing().then((data: any) => {
           setLivePingData({
@@ -129,7 +111,6 @@ export default function App() {
     return () => {
       clearInterval(interval);
       clearInterval(pingInterval);
-      clearInterval(livePingInterval);
     };
   }, [isScanning, status, isCheckingPing]);
 
@@ -247,14 +228,13 @@ export default function App() {
     setIsCheckingPing(true);
     try {
       const data = await GetCurrentPing();
-      setPingData({
+      setLivePingData({
         active: data?.active || false,
         latency: data?.latency || 0,
-        status: data?.status || 'stopped',
-        certValid: data?.certValid
+        status: data?.status || 'stopped'
       });
     } catch (err) {
-      setPingData({active: false, latency: 0, status: 'error'});
+      setLivePingData({active: false, latency: 0, status: 'error'});
     } finally {
       setIsCheckingPing(false);
     }
@@ -297,14 +277,6 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-4" style={{ WebkitAppRegion: 'no-drag' } as any}>
-          {/* Live Ping Indicator */}
-          {pingData.active && pingData.status === 'ok' && pingData.latency > 0 && (
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold tracking-widest border bg-cyan-500/10 text-cyan-400 border-cyan-500/30 shadow-[0_0_10px_rgba(6,182,212,0.2)]">
-              <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_8px_rgba(6,182,212,0.8)]" />
-              {pingData.latency}ms
-            </div>
-          )}
-
           {/* Manual Ping Check Button */}
           <button 
             onClick={handleManualPingCheck}
@@ -314,7 +286,7 @@ export default function App() {
               isCheckingPing ? "text-cyan-400 animate-pulse" : "text-zinc-400 hover:text-cyan-400 hover:bg-white/10",
               status !== 'Running' && "opacity-30 cursor-not-allowed"
             )}
-            title="Check Connection Ping"
+            title="Check Connection Health"
           >
             <Radar className={cn("w-4 h-4", isCheckingPing && "animate-spin")} />
           </button>

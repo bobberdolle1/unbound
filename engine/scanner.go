@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 	
@@ -38,7 +39,16 @@ func RunAutoTune(ctx context.Context, updateLog func(string)) (Profile, error) {
 	logAndUpdate("Loading available profiles...")
 
 	profiles := GetProfiles(assets.LuaDir)
-	logAndUpdate(fmt.Sprintf("Found %d profiles to test", len(profiles)))
+	
+	// Filter out non-Zapret profiles (Xray, AmneziaWG)
+	zapretProfiles := make([]Profile, 0)
+	for _, p := range profiles {
+		if !strings.Contains(p.Name, "Xray") && !strings.Contains(p.Name, "VLESS") && !strings.Contains(p.Name, "AmneziaWG") {
+			zapretProfiles = append(zapretProfiles, p)
+		}
+	}
+	
+	logAndUpdate(fmt.Sprintf("Found %d Zapret profiles to test", len(zapretProfiles)))
 
 	logAndUpdate("Starting profile tests...")
 
@@ -46,8 +56,8 @@ func RunAutoTune(ctx context.Context, updateLog func(string)) (Profile, error) {
 	bestScore := -1
 	bestLatency := time.Duration(0)
 
-	for i, profile := range profiles {
-		logAndUpdate(fmt.Sprintf("Testing [%d/%d]: %s", i+1, len(profiles), profile.Name))
+	for i, profile := range zapretProfiles {
+		logAndUpdate(fmt.Sprintf("Testing [%d/%d]: %s", i+1, len(zapretProfiles), profile.Name))
 
 		winwsPath := filepath.Join(assets.BinDir, "winws.exe")
 		absLuaLib, _ := filepath.Abs(filepath.Join(assets.LuaDir, "zapret-lib.lua"))
@@ -116,8 +126,8 @@ func RunAutoTune(ctx context.Context, updateLog func(string)) (Profile, error) {
 
 	if bestScore <= 0 {
 		logAndUpdate("All profiles failed. Selecting first profile as fallback...")
-		if len(profiles) > 0 {
-			bestProfile = profiles[0]
+		if len(zapretProfiles) > 0 {
+			bestProfile = zapretProfiles[0]
 			logAndUpdate(fmt.Sprintf("FALLBACK: %s", bestProfile.Name))
 		} else {
 			logAndUpdate("No profiles available.")
