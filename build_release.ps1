@@ -3,7 +3,7 @@
 
 $ErrorActionPreference = "Stop"
 
-$VERSION = "1.0.0"
+$VERSION = "1.0.1"
 $PROJECT_ROOT = $PSScriptRoot
 $DIST_DIR = Join-Path $PROJECT_ROOT "dist"
 $BUILD_DIR = Join-Path $PROJECT_ROOT "build"

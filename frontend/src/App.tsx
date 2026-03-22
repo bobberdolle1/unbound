@@ -151,6 +151,7 @@ export default function App() {
     showLogs: true
   });
   const [livePingData, setLivePingData] = useState<{active: boolean, latency: number, status: string}>({active: false, latency: 0, status: 'stopped'});
+  const [privilegeError, setPrivilegeError] = useState<string>('');
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -176,6 +177,9 @@ export default function App() {
     }).catch(() => {});
     
     EventsOn('status_changed', (newStatus: string) => setStatus(newStatus));
+    EventsOn('privilege_error', (msg: string) => {
+      setPrivilegeError(msg);
+    });
     EventsOn('autotune_log', (msg: string) => {
       setScanLogs(prev => [...prev, msg]);
       setIsLogExpanded(true);
@@ -195,12 +199,12 @@ export default function App() {
           });
         }
       } else {
-        setScanProgress('❌ Auto-Tune failed');
+        setScanProgress('❌ No working profile found. Check admin rights or connection.');
       }
       setTimeout(() => {
         setScanSuccess(null);
         setScanProgress('');
-      }, 5000);
+      }, 8000);
     });
     
     const interval = setInterval(() => {
@@ -229,7 +233,11 @@ export default function App() {
     if (selectedEngine) {
       GetProfiles(selectedEngine).then((p: string[]) => {
         setProfiles(p || []);
-        if (p && p.length > 0 && !selectedProfile) setSelectedProfile(p[0]);
+        if (p && p.length > 0 && !selectedProfile) {
+          setSelectedProfile(p[0]);
+        } else if (!p || p.length === 0) {
+          console.error('No profiles loaded from backend. Check engine registration.');
+        }
       });
     }
   }, [selectedEngine]);
@@ -261,19 +269,19 @@ export default function App() {
         setScanProgress(`✅ Found: ${bestProfile}`);
         setScanSuccess(true);
       } else {
-        setScanProgress('❌ No working profile found');
+        setScanProgress('❌ No working profile found. Verify admin rights and internet connection.');
         setScanSuccess(false);
       }
     } catch (err) {
       console.error(err);
-      setScanProgress('❌ Error during scan');
+      setScanProgress('❌ Error during scan. Check admin privileges.');
       setScanSuccess(false);
     } finally {
       setIsScanning(false);
       setTimeout(() => {
         setScanSuccess(null);
         setScanProgress('');
-      }, 5000);
+      }, 8000);
     }
   };
 
@@ -317,6 +325,34 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen w-screen relative app-drag">
+      
+      {/* PRIVILEGE ERROR OVERLAY */}
+      {privilegeError && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-red-900/90 backdrop-blur-sm p-4 app-no-drag animate-in fade-in duration-300">
+          <div className="w-full max-w-md bg-red-50 sketch-box p-6 animate-in zoom-in-95 slide-in-from-bottom-4 duration-300">
+            <div className="flex items-start gap-4 mb-4">
+              <div className="w-12 h-12 bg-red-600 rounded-full flex items-center justify-center flex-shrink-0">
+                <span className="text-white font-marker text-3xl">!</span>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-2xl font-marker text-red-900 mb-2">ADMIN REQUIRED!</h3>
+                <p className="text-base font-bold text-red-800 leading-snug mb-3">
+                  {privilegeError}
+                </p>
+                <p className="text-sm text-red-700 leading-snug">
+                  WinDivert cannot intercept traffic without Administrator privileges. Right-click unbound.exe and select "Run as administrator".
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setPrivilegeError('')}
+              className="w-full py-3 text-xl font-marker bg-red-600 text-white hover:bg-red-700 border-2 border-red-900 rounded-xl shadow-[2px_2px_0_#7f1d1d] transition-all duration-150 active:translate-y-1 active:shadow-none"
+            >
+              Got it!
+            </button>
+          </div>
+        </div>
+      )}
       
       {/* 1. HEADER - Sketchy paper top margin */}
       <div className="flex-none h-[40px] flex items-center justify-between px-5 z-10 border-b-2 border-red-300/60 bg-[#fdfdfc]">
@@ -427,7 +463,7 @@ export default function App() {
               className="flex items-center justify-center gap-2 py-3 sketch-box hover:bg-gray-100 hover:shadow-[2px_2px_0_rgba(0,0,0,0.6)] font-bold text-lg transition-all duration-150 hover:scale-[1.02] active:scale-[0.98]"
             >
               <SketchyGear className="w-6 h-6" />
-              Gears
+              Settings
             </button>
           </div>
         </div>
