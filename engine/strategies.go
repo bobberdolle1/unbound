@@ -29,5 +29,13 @@ func GetProfiles(luaDir string) []Profile {
 				"--wf-udp-out=443", "--filter-l7=quic", "--payload=quic_initial", "--lua-desync=multisplit:pos=1", "--new",
 				"--wf-udp-out=50000-65535", "--lua-desync=multisplit:pos=1"},
 		},
+		{
+			Name: "AmneziaWG (VPN Mode)",
+			Args: []string{},
+		},
+		{
+			Name: "Xray VLESS/Reality",
+			Args: []string{},
+		},
 	}
 }

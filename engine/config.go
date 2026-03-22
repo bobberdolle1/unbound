@@ -33,6 +33,8 @@ type Settings struct {
 	StartMinimized     bool   `json:"startMinimized"`
 	DefaultProfile     string `json:"defaultProfile"`
 	StartupProfileMode string `json:"startupProfileMode"`
+	GameFilter         bool   `json:"gameFilter"`
+	AutoUpdateEnabled  bool   `json:"autoUpdateEnabled"`
 }
 
 func GetConfigDir() (string, error) {
@@ -144,6 +146,8 @@ func getDefaultSettings() *Settings {
 		StartMinimized:     false,
 		DefaultProfile:     "Unbound Ultimate (God Mode)",
 		StartupProfileMode: "Last Used",
+		GameFilter:         true,
+		AutoUpdateEnabled:  true,
 	}
 }
 

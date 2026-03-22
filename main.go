@@ -74,7 +74,19 @@ func main() {
 }
 
 func runHeadlessMode(profileName string, debugMode bool) {
-	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	// Attach to parent console for Windows GUI subsystem
+	kernel32 := syscall.NewLazyDLL("kernel32.dll")
+	attachConsole := kernel32.NewProc("AttachConsole")
+	attachConsole.Call(uintptr(0xFFFFFFFF)) // ATTACH_PARENT_PROCESS = -1
+	
+	// Reopen stdout and stderr to ensure output works
+	stdout, _ := os.OpenFile("CONOUT$", os.O_WRONLY, 0)
+	if stdout != nil {
+		os.Stdout = stdout
+		os.Stderr = stdout
+	}
+
+	fmt.Println("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	fmt.Println("🚀 UNBOUND - Headless CLI Mode")
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	fmt.Printf("Profile: %s\n", profileName)
@@ -88,8 +100,19 @@ func runHeadlessMode(profileName string, debugMode bool) {
 		log.Fatalf("Failed to extract assets: %v", err)
 	}
 
+	// Ensure dynamic lists exist
+	fmt.Println("Checking for updated bypass lists...")
+	if err := engine.EnsureListsExist(); err != nil {
+		fmt.Printf("Warning: Failed to update lists: %v\n", err)
+	}
+
+	listsDir, err := engine.GetListsDir()
+	if err != nil {
+		listsDir = assets.ListDir
+	}
+
 	manager := providers.NewProviderManager()
-	provider := providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir, assets.ListDir, debugMode)
+	provider := providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir, listsDir, debugMode, true)
 	manager.Register(provider)
 
 	hasPriv, err := manager.CheckPrivileges()

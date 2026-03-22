@@ -11,6 +11,8 @@ const (
 	EngineTypeGoodbyeDPI EngineType = "GoodbyeDPI"
 	EngineTypeZapret2    EngineType = "Zapret2"
 	EngineTypeZapret1    EngineType = "Zapret1"
+	EngineTypeAmneziaWG  EngineType = "AmneziaWG"
+	EngineTypeXray       EngineType = "Xray"
 )
 
 type EngineMetrics struct {

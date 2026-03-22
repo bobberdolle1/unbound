@@ -8,7 +8,7 @@ function cn(...inputs: ClassValue[]) {
 }
 
 // @ts-ignore
-import { GetEngineNames, GetProfiles, StartEngine, StopEngine, GetLogs, HideToTray, AutoTune, SaveCustomScript, LoadCustomScript, GetCurrentPing, GetSettings, SaveSettings } from '../wailsjs/go/main/App';
+import { GetEngineNames, GetProfiles, StartEngine, StopEngine, GetLogs, HideToTray, AutoTune, SaveCustomScript, LoadCustomScript, GetCurrentPing, GetSettings, SaveSettings, GetLivePing, CheckForUpdates } from '../wailsjs/go/main/App';
 // @ts-ignore
 import { EventsOn } from '../wailsjs/runtime/runtime';
 
@@ -39,14 +39,18 @@ export default function App() {
   const [isEditorOpen, setIsEditorOpen] = useState<boolean>(false);
   const [scriptContent, setScriptContent] = useState<string>('');
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
-  const [settings, setSettings] = useState<{autoStart: boolean, startMinimized: boolean, defaultProfile: string, startupProfileMode: string}>({
+  const [settings, setSettings] = useState<{autoStart: boolean, startMinimized: boolean, defaultProfile: string, startupProfileMode: string, gameFilter: boolean, autoUpdateEnabled: boolean}>({
     autoStart: false,
     startMinimized: false,
     defaultProfile: 'Unbound Ultimate (God Mode)',
-    startupProfileMode: 'Last Used'
+    startupProfileMode: 'Last Used',
+    gameFilter: true,
+    autoUpdateEnabled: true
   });
   const [pingData, setPingData] = useState<{active: boolean, latency: number, status: string, certValid?: boolean}>({active: false, latency: 0, status: 'stopped'});
+  const [livePingData, setLivePingData] = useState<{active: boolean, latency: number, status: string}>({active: false, latency: 0, status: 'stopped'});
   const [isCheckingPing, setIsCheckingPing] = useState<boolean>(false);
+  const [updateNotification, setUpdateNotification] = useState<{show: boolean, version: string, url: string, changelog: string}>({show: false, version: '', url: '', changelog: ''});
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -54,6 +58,21 @@ export default function App() {
       setEngines(engines || []);
       if (engines && engines.length > 0) setSelectedEngine(engines[0]);
     });
+    
+    GetSettings().then((loadedSettings: any) => {
+      if (loadedSettings?.autoUpdateEnabled !== false) {
+        CheckForUpdates("2.0.1").then((updateInfo: any) => {
+          if (updateInfo?.available) {
+            setUpdateNotification({
+              show: true,
+              version: updateInfo.version || '',
+              url: updateInfo.downloadUrl || '',
+              changelog: updateInfo.changelog || ''
+            });
+          }
+        }).catch(() => {});
+      }
+    }).catch(() => {});
     
     EventsOn('status_changed', (newStatus: string) => {
       setStatus(newStatus);
@@ -86,10 +105,27 @@ export default function App() {
         setPingData({active: false, latency: 0, status: 'stopped'});
       }
     }, 5000);
+
+    const livePingInterval = setInterval(() => {
+      if (status === 'Running') {
+        GetLivePing().then((data: any) => {
+          setLivePingData({
+            active: data?.active || false,
+            latency: data?.latency || 0,
+            status: data?.status || 'stopped'
+          });
+        }).catch(() => {
+          setLivePingData({active: false, latency: 0, status: 'error'});
+        });
+      } else {
+        setLivePingData({active: false, latency: 0, status: 'stopped'});
+      }
+    }, 5000);
     
     return () => {
       clearInterval(interval);
       clearInterval(pingInterval);
+      clearInterval(livePingInterval);
     };
   }, [isScanning, status, isCheckingPing]);
 
@@ -161,7 +197,14 @@ export default function App() {
     setIsSettingsOpen(true);
     try {
       const loadedSettings = await GetSettings();
-      setSettings(loadedSettings);
+      setSettings({
+        autoStart: loadedSettings.autoStart || false,
+        startMinimized: loadedSettings.startMinimized || false,
+        defaultProfile: loadedSettings.defaultProfile || 'Unbound Ultimate (God Mode)',
+        startupProfileMode: loadedSettings.startupProfileMode || 'Last Used',
+        gameFilter: loadedSettings.gameFilter !== undefined ? loadedSettings.gameFilter : true,
+        autoUpdateEnabled: loadedSettings.autoUpdateEnabled !== undefined ? loadedSettings.autoUpdateEnabled : true
+      });
     } catch (err) {
       console.error('Failed to load settings:', err);
     }
@@ -369,6 +412,29 @@ export default function App() {
               </select>
               <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 pointer-events-none transition-colors group-hover:text-cyan-400" />
             </div>
+            
+            {/* Live Connection Health Badge */}
+            {isConnected && (
+              <div className="flex items-center gap-2 mt-3 px-3 py-1.5 bg-zinc-800/50 rounded-lg border border-white/5">
+                <span className="text-[9px] text-zinc-500 font-bold tracking-widest uppercase">Health</span>
+                {livePingData.status === 'ok' && livePingData.latency > 0 ? (
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
+                    <span className="text-xs font-bold text-emerald-400">{livePingData.latency}ms</span>
+                  </div>
+                ) : livePingData.status === 'blocked' ? (
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2 h-2 rounded-full bg-red-400 shadow-[0_0_8px_rgba(248,113,113,0.8)]" />
+                    <span className="text-xs font-bold text-red-400">BLOCKED</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                    <span className="text-xs font-bold text-amber-400">TESTING</span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="w-px bg-white/10 self-stretch my-1" />
@@ -587,6 +653,46 @@ export default function App() {
                 <p className="text-xs text-zinc-500 mt-2">Choose which profile to use when Unbound starts</p>
               </div>
 
+              {/* Game Filter Toggle */}
+              <div className="flex items-center justify-between p-4 bg-zinc-900/60 border border-white/10 rounded-xl hover:border-cyan-500/30 transition-all">
+                <div className="flex-1">
+                  <h3 className="text-sm font-bold text-white/90 mb-1">Enable Game Filter</h3>
+                  <p className="text-xs text-zinc-500">Exclude Steam/Riot/Epic UDP ports to prevent game lag</p>
+                </div>
+                <button
+                  onClick={() => setSettings({...settings, gameFilter: !settings.gameFilter})}
+                  className={cn(
+                    "relative w-12 h-6 rounded-full transition-all duration-300 shrink-0",
+                    settings.gameFilter ? "bg-cyan-500" : "bg-zinc-700"
+                  )}
+                >
+                  <div className={cn(
+                    "absolute top-1 w-4 h-4 bg-white rounded-full transition-all duration-300 shadow-lg",
+                    settings.gameFilter ? "left-7" : "left-1"
+                  )} />
+                </button>
+              </div>
+
+              {/* Auto-Update Toggle */}
+              <div className="flex items-center justify-between p-4 bg-zinc-900/60 border border-white/10 rounded-xl hover:border-cyan-500/30 transition-all">
+                <div className="flex-1">
+                  <h3 className="text-sm font-bold text-white/90 mb-1">Enable Auto-Update Checks</h3>
+                  <p className="text-xs text-zinc-500">Automatically check for new releases on startup</p>
+                </div>
+                <button
+                  onClick={() => setSettings({...settings, autoUpdateEnabled: !settings.autoUpdateEnabled})}
+                  className={cn(
+                    "relative w-12 h-6 rounded-full transition-all duration-300 shrink-0",
+                    settings.autoUpdateEnabled ? "bg-cyan-500" : "bg-zinc-700"
+                  )}
+                >
+                  <div className={cn(
+                    "absolute top-1 w-4 h-4 bg-white rounded-full transition-all duration-300 shadow-lg",
+                    settings.autoUpdateEnabled ? "left-7" : "left-1"
+                  )} />
+                </button>
+              </div>
+
             </div>
 
             {/* Modal Footer */}
@@ -604,6 +710,45 @@ export default function App() {
                 Save Settings
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Update Notification Toast */}
+      {updateNotification.show && (
+        <div className="absolute top-20 right-6 z-50 w-96 bg-zinc-900/95 border border-cyan-500/30 rounded-xl shadow-2xl backdrop-blur-xl overflow-hidden animate-in slide-in-from-right">
+          <div className="p-4 border-b border-white/10 bg-gradient-to-r from-cyan-500/10 to-transparent">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-cyan-500/20 flex items-center justify-center border border-cyan-500/30">
+                  <Shield className="w-4 h-4 text-cyan-400" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white/90">Update Available</h3>
+                  <p className="text-xs text-cyan-400 font-bold">{updateNotification.version}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setUpdateNotification({...updateNotification, show: false})}
+                className="text-zinc-500 hover:text-white transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div className="p-4">
+            <p className="text-xs text-zinc-400 mb-3 line-clamp-3">{updateNotification.changelog || 'New version available with improvements and bug fixes.'}</p>
+            <button
+              onClick={() => {
+                window.open(updateNotification.url, '_blank');
+                setUpdateNotification({...updateNotification, show: false});
+              }}
+              className="w-full px-4 py-2 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400 hover:text-cyan-300 border border-cyan-500/30 text-xs font-bold tracking-widest uppercase transition-all shadow-[0_0_15px_rgba(6,182,212,0.2)]"
+            >
+              Download Update
+            </button>
           </div>
         </div>
       )}

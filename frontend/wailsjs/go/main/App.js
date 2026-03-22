@@ -10,12 +10,20 @@ export function AutoTune() {
   return window['go']['main']['App']['AutoTune']();
 }
 
+export function CheckForUpdates(arg1) {
+  return window['go']['main']['App']['CheckForUpdates'](arg1);
+}
+
 export function GetCurrentPing() {
   return window['go']['main']['App']['GetCurrentPing']();
 }
 
 export function GetEngineNames() {
   return window['go']['main']['App']['GetEngineNames']();
+}
+
+export function GetLivePing() {
+  return window['go']['main']['App']['GetLivePing']();
 }
 
 export function GetLogs() {
@@ -68,4 +76,8 @@ export function StopEngine() {
 
 export function TestProfile(arg1, arg2) {
   return window['go']['main']['App']['TestProfile'](arg1, arg2);
+}
+
+export function UpdateLists() {
+  return window['go']['main']['App']['UpdateLists']();
 }

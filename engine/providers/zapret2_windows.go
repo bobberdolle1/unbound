@@ -41,17 +41,19 @@ type Zapret2WindowsProvider struct {
 	listDir        string
 	currentProfile string
 	debugMode      bool
+	gameFilter     bool
 }
 
-func NewZapret2WindowsProvider(binPath, luaDir, listDir string, debugMode bool) BypassProvider {
+func NewZapret2WindowsProvider(binPath, luaDir, listDir string, debugMode bool, gameFilter bool) BypassProvider {
 	InitLogger()
 	return &Zapret2WindowsProvider{
-		status:    StatusStopped,
-		binPath:   binPath,
-		luaDir:    luaDir,
-		listDir:   listDir,
-		debugMode: debugMode,
-		logs:      []string{"Zapret 2 Engine (Windows) initialized."},
+		status:     StatusStopped,
+		binPath:    binPath,
+		luaDir:     luaDir,
+		listDir:    listDir,
+		debugMode:  debugMode,
+		gameFilter: gameFilter,
+		logs:       []string{"Zapret 2 Engine (Windows) initialized."},
 	}
 }
 
@@ -128,6 +130,12 @@ func (e *Zapret2WindowsProvider) getProfileArgs(profileName string) []string {
 	
 	if _, err := os.Stat(telegramIpsPath); err == nil {
 		args = append(args, "--ipset="+filepath.ToSlash(telegramIpsPath))
+	}
+
+	// Add game filter exclusions if enabled
+	if e.gameFilter {
+		// Exclude common game ports from UDP bypass: Steam (27000-27100), Riot (5000-5500), Epic (7777-7787)
+		args = append(args, "--wf-raw-part=not ((udp.DstPort >= 27000 and udp.DstPort <= 27100) or (udp.DstPort >= 5000 and udp.DstPort <= 5500) or (udp.DstPort >= 7777 and udp.DstPort <= 7787))")
 	}
 
 	switch profileName {

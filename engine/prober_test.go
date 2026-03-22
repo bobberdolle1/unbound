@@ -20,7 +20,7 @@ func TestBypassRouting(t *testing.T) {
 		t.Fatalf("Failed to extract assets: %v", err)
 	}
 
-	provider := providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir, assets.ListDir, false)
+	provider := providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir, assets.ListDir, false, true)
 
 	hasPriv, err := provider.CheckPrivileges()
 	if err != nil {

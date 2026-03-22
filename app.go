@@ -39,6 +39,11 @@ func (a *App) startup(ctx context.Context) {
 		wailsruntime.LogWarningf(ctx, "Binary validation warning: %v", err)
 	}
 
+	// Ensure dynamic lists exist
+	if err := engine.EnsureListsExist(); err != nil {
+		wailsruntime.LogWarningf(ctx, "Failed to ensure lists exist: %v", err)
+	}
+
 	registerOSProviders(a, assets)
 
 	a.setupTray()
@@ -273,4 +278,61 @@ func (a *App) SaveSettings(settings engine.Settings) error {
 	}
 	wailsruntime.LogInfo(a.ctx, "Settings saved successfully")
 	return nil
+}
+
+func (a *App) UpdateLists() error {
+	if err := engine.UpdateLists(); err != nil {
+		wailsruntime.LogErrorf(a.ctx, "Failed to update lists: %v", err)
+		return err
+	}
+	wailsruntime.LogInfo(a.ctx, "Lists updated successfully")
+	return nil
+}
+
+func (a *App) GetLivePing() map[string]interface{} {
+	status := a.manager.GetStatus()
+	
+	if status != providers.StatusRunning {
+		return map[string]interface{}{
+			"active":  false,
+			"latency": 0,
+			"status":  "stopped",
+		}
+	}
+
+	testCtx, cancel := context.WithTimeout(a.ctx, 3*time.Second)
+	defer cancel()
+
+	latency, err := engine.SimplePing(testCtx, "https://discord.com")
+	
+	if err != nil {
+		return map[string]interface{}{
+			"active":  true,
+			"latency": 0,
+			"status":  "blocked",
+			"error":   err.Error(),
+		}
+	}
+
+	return map[string]interface{}{
+		"active":  true,
+		"latency": latency.Milliseconds(),
+		"status":  "ok",
+	}
+}
+
+func (a *App) CheckForUpdates(currentVersion string) (engine.UpdateInfo, error) {
+	updateInfo, err := engine.CheckForUpdates(currentVersion)
+	if err != nil {
+		wailsruntime.LogWarningf(a.ctx, "Update check failed: %v", err)
+		return updateInfo, err
+	}
+	
+	if updateInfo.Available {
+		wailsruntime.LogInfof(a.ctx, "Update available: %s", updateInfo.Version)
+	} else {
+		wailsruntime.LogInfo(a.ctx, "No updates available")
+	}
+	
+	return updateInfo, nil
 }

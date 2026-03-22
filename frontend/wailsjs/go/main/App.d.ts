@@ -6,9 +6,13 @@ export function AutoSelectProfile(arg1:string):Promise<string>;
 
 export function AutoTune():Promise<string>;
 
+export function CheckForUpdates(arg1:string):Promise<engine.UpdateInfo>;
+
 export function GetCurrentPing():Promise<{[key: string]: any}>;
 
 export function GetEngineNames():Promise<Array<string>>;
+
+export function GetLivePing():Promise<{[key: string]: any}>;
 
 export function GetLogs():Promise<Array<string>>;
 
@@ -35,3 +39,5 @@ export function StartEngine(arg1:string,arg2:string):Promise<void>;
 export function StopEngine():Promise<void>;
 
 export function TestProfile(arg1:string,arg2:string):Promise<string>;
+
+export function UpdateLists():Promise<void>;
