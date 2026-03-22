@@ -7,7 +7,7 @@ function cn(...inputs: ClassValue[]) {
 }
 
 // @ts-ignore
-import { GetEngineNames, GetProfiles, StartEngine, StopEngine, GetLogs, AutoTune, CancelAutoTune, GetSettings, SaveSettings, GetLivePing, ShowNotification } from '../wailsjs/go/main/App';
+import { GetEngineNames, GetProfiles, StartEngine, StopEngine, GetLogs, AutoTune, CancelAutoTune, GetSettings, SaveSettings, GetLivePing, ShowNotification, EnableAutoStart, DisableAutoStart, IsAutoStartEnabled } from '../wailsjs/go/main/App';
 // @ts-ignore
 import { EventsOn, WindowMinimise, Quit } from '../wailsjs/runtime/runtime';
 
@@ -281,8 +281,9 @@ export default function App() {
     setIsSettingsOpen(true);
     try {
       const loadedSettings = await GetSettings();
+      const autoStartEnabled = await IsAutoStartEnabled();
       setSettings({
-        autoStart: loadedSettings.autoStart || false,
+        autoStart: autoStartEnabled,
         startMinimized: loadedSettings.startMinimized || false,
         defaultProfile: loadedSettings.defaultProfile || 'Unbound Ultimate (God Mode)',
         startupProfileMode: loadedSettings.startupProfileMode || 'Last Used',
@@ -297,6 +298,11 @@ export default function App() {
 
   const handleSaveSettings = async () => {
     try {
+      if (settings.autoStart) {
+        await EnableAutoStart();
+      } else {
+        await DisableAutoStart();
+      }
       await SaveSettings(settings);
       setIsSettingsOpen(false);
     } catch (err) {

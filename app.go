@@ -598,3 +598,41 @@ func (a *App) GenerateCustomBlob(blobType string, sni string) (string, error) {
 		return "", fmt.Errorf("unknown blob type: %s", blobType)
 	}
 }
+
+func (a *App) EnableAutoStart() error {
+	wailsruntime.LogInfo(a.ctx, "Enabling auto-start via Task Scheduler...")
+	if err := engine.EnableAutoStart(); err != nil {
+		wailsruntime.LogErrorf(a.ctx, "Failed to enable auto-start: %v", err)
+		return err
+	}
+	wailsruntime.LogInfo(a.ctx, "Auto-start enabled successfully")
+	return nil
+}
+
+func (a *App) DisableAutoStart() error {
+	wailsruntime.LogInfo(a.ctx, "Disabling auto-start...")
+	if err := engine.DisableAutoStart(); err != nil {
+		wailsruntime.LogErrorf(a.ctx, "Failed to disable auto-start: %v", err)
+		return err
+	}
+	wailsruntime.LogInfo(a.ctx, "Auto-start disabled successfully")
+	return nil
+}
+
+func (a *App) IsAutoStartEnabled() bool {
+	enabled, err := engine.IsAutoStartEnabled()
+	if err != nil {
+		wailsruntime.LogErrorf(a.ctx, "Failed to check auto-start status: %v", err)
+		return false
+	}
+	return enabled
+}
+
+func (a *App) GetAutoStartInfo() map[string]string {
+	info, err := engine.GetAutoStartTaskInfo()
+	if err != nil {
+		wailsruntime.LogErrorf(a.ctx, "Failed to get auto-start info: %v", err)
+		return map[string]string{"error": err.Error()}
+	}
+	return info
+}

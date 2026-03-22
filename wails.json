@@ -29,7 +29,8 @@
       "disableFramelessWindowDecorations": false,
       "webviewUserDataPath": "",
       "webviewBrowserPath": "",
-      "theme": "dark"
+      "theme": "dark",
+      "manifest": "build/windows/app.manifest"
     }
   },
   "nsis": {
