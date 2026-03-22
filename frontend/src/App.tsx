@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Power, Terminal, Shield, ShieldAlert, Minimize2, ChevronUp, ChevronDown, Radar, Code } from 'lucide-react';
+import { Power, Terminal, Shield, ShieldAlert, Minimize2, ChevronUp, ChevronDown, Radar, Code, Settings } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -8,7 +8,7 @@ function cn(...inputs: ClassValue[]) {
 }
 
 // @ts-ignore
-import { GetEngineNames, GetProfiles, StartEngine, StopEngine, GetLogs, HideToTray, AutoTune, SaveCustomScript, LoadCustomScript, GetCurrentPing } from '../wailsjs/go/main/App';
+import { GetEngineNames, GetProfiles, StartEngine, StopEngine, GetLogs, HideToTray, AutoTune, SaveCustomScript, LoadCustomScript, GetCurrentPing, GetSettings, SaveSettings } from '../wailsjs/go/main/App';
 // @ts-ignore
 import { EventsOn } from '../wailsjs/runtime/runtime';
 
@@ -38,6 +38,13 @@ export default function App() {
   const [scanCancelled, setScanCancelled] = useState<boolean>(false);
   const [isEditorOpen, setIsEditorOpen] = useState<boolean>(false);
   const [scriptContent, setScriptContent] = useState<string>('');
+  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [settings, setSettings] = useState<{autoStart: boolean, startMinimized: boolean, defaultProfile: string, startupProfileMode: string}>({
+    autoStart: false,
+    startMinimized: false,
+    defaultProfile: 'Unbound Ultimate (God Mode)',
+    startupProfileMode: 'Last Used'
+  });
   const [pingData, setPingData] = useState<{active: boolean, latency: number, status: string, certValid?: boolean}>({active: false, latency: 0, status: 'stopped'});
   const [isCheckingPing, setIsCheckingPing] = useState<boolean>(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
@@ -150,6 +157,25 @@ export default function App() {
     }
   };
 
+  const handleOpenSettings = async () => {
+    setIsSettingsOpen(true);
+    try {
+      const loadedSettings = await GetSettings();
+      setSettings(loadedSettings);
+    } catch (err) {
+      console.error('Failed to load settings:', err);
+    }
+  };
+
+  const handleSaveSettings = async () => {
+    try {
+      await SaveSettings(settings);
+      setIsSettingsOpen(false);
+    } catch (err) {
+      console.error('Failed to save settings:', err);
+    }
+  };
+
   const handleSaveScript = async () => {
     try {
       await SaveCustomScript(scriptContent);
@@ -255,6 +281,14 @@ export default function App() {
             title="Advanced Lua Editor"
           >
             <Code className="w-4 h-4" />
+          </button>
+
+          <button 
+            onClick={handleOpenSettings} 
+            className="p-1.5 rounded-lg hover:bg-white/10 transition-colors text-zinc-400 hover:text-cyan-400"
+            title="Settings"
+          >
+            <Settings className="w-4 h-4" />
           </button>
 
           <button onClick={() => HideToTray()} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors text-zinc-400 hover:text-white">
@@ -463,6 +497,111 @@ export default function App() {
                 className="px-4 py-2 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400 hover:text-cyan-300 border border-cyan-500/30 text-xs font-bold tracking-widest uppercase transition-all shadow-[0_0_15px_rgba(6,182,212,0.2)]"
               >
                 Save & Apply
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Settings Modal */}
+      {isSettingsOpen && (
+        <div 
+          className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md"
+          onClick={() => setIsSettingsOpen(false)}
+        >
+          <div 
+            className="w-[90%] max-w-2xl bg-zinc-900/95 border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-zinc-950/50 backdrop-blur-xl">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-cyan-500/10 flex items-center justify-center border border-cyan-500/30">
+                  <Settings className="w-4 h-4 text-cyan-400" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold tracking-widest text-white/90">SETTINGS</h2>
+                  <p className="text-[9px] text-zinc-500 font-bold tracking-widest uppercase">Application Configuration</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Settings Content */}
+            <div className="p-6 space-y-6">
+              
+              {/* Auto Start Toggle */}
+              <div className="flex items-center justify-between p-4 bg-zinc-900/60 border border-white/10 rounded-xl hover:border-cyan-500/30 transition-all">
+                <div className="flex-1">
+                  <h3 className="text-sm font-bold text-white/90 mb-1">Launch on System Startup</h3>
+                  <p className="text-xs text-zinc-500">Automatically start Unbound when Windows boots</p>
+                </div>
+                <button
+                  onClick={() => setSettings({...settings, autoStart: !settings.autoStart})}
+                  className={cn(
+                    "relative w-12 h-6 rounded-full transition-all duration-300 shrink-0",
+                    settings.autoStart ? "bg-cyan-500" : "bg-zinc-700"
+                  )}
+                >
+                  <div className={cn(
+                    "absolute top-1 w-4 h-4 bg-white rounded-full transition-all duration-300 shadow-lg",
+                    settings.autoStart ? "left-7" : "left-1"
+                  )} />
+                </button>
+              </div>
+
+              {/* Start Minimized Toggle */}
+              <div className="flex items-center justify-between p-4 bg-zinc-900/60 border border-white/10 rounded-xl hover:border-cyan-500/30 transition-all">
+                <div className="flex-1">
+                  <h3 className="text-sm font-bold text-white/90 mb-1">Start Minimized to Tray</h3>
+                  <p className="text-xs text-zinc-500">Launch directly to system tray without showing window</p>
+                </div>
+                <button
+                  onClick={() => setSettings({...settings, startMinimized: !settings.startMinimized})}
+                  className={cn(
+                    "relative w-12 h-6 rounded-full transition-all duration-300 shrink-0",
+                    settings.startMinimized ? "bg-cyan-500" : "bg-zinc-700"
+                  )}
+                >
+                  <div className={cn(
+                    "absolute top-1 w-4 h-4 bg-white rounded-full transition-all duration-300 shadow-lg",
+                    settings.startMinimized ? "left-7" : "left-1"
+                  )} />
+                </button>
+              </div>
+
+              {/* Startup Profile Mode */}
+              <div className="p-4 bg-zinc-900/60 border border-white/10 rounded-xl hover:border-cyan-500/30 transition-all">
+                <h3 className="text-sm font-bold text-white/90 mb-3">Startup Profile</h3>
+                <div className="relative">
+                  <select 
+                    value={settings.startupProfileMode} 
+                    onChange={(e) => setSettings({...settings, startupProfileMode: e.target.value})}
+                    className="w-full bg-zinc-800/50 border border-white/10 rounded-lg px-3 py-2 text-zinc-100 text-sm font-semibold tracking-wide outline-none cursor-pointer hover:border-cyan-500/50 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 transition-all appearance-none pr-8"
+                  >
+                    <option value="Last Used" className="bg-zinc-900">Last Used Profile</option>
+                    <option value="Auto-Tune" className="bg-zinc-900">Auto-Tune on Startup</option>
+                    {profiles.map(p => <option key={p} value={p} className="bg-zinc-900">{p}</option>)}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 pointer-events-none" />
+                </div>
+                <p className="text-xs text-zinc-500 mt-2">Choose which profile to use when Unbound starts</p>
+              </div>
+
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-white/10 bg-zinc-950/50 backdrop-blur-xl">
+              <button
+                onClick={() => setIsSettingsOpen(false)}
+                className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white text-xs font-bold tracking-widest uppercase transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveSettings}
+                className="px-4 py-2 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400 hover:text-cyan-300 border border-cyan-500/30 text-xs font-bold tracking-widest uppercase transition-all shadow-[0_0_15px_rgba(6,182,212,0.2)]"
+              >
+                Save Settings
               </button>
             </div>
           </div>

@@ -26,6 +26,10 @@ export function GetProfiles(arg1) {
   return window['go']['main']['App']['GetProfiles'](arg1);
 }
 
+export function GetSettings() {
+  return window['go']['main']['App']['GetSettings']();
+}
+
 export function GetStatus() {
   return window['go']['main']['App']['GetStatus']();
 }
@@ -44,6 +48,10 @@ export function LoadCustomScript() {
 
 export function SaveCustomScript(arg1) {
   return window['go']['main']['App']['SaveCustomScript'](arg1);
+}
+
+export function SaveSettings(arg1) {
+  return window['go']['main']['App']['SaveSettings'](arg1);
 }
 
 export function ShowFromTray() {

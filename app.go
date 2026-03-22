@@ -14,8 +14,10 @@ import (
 )
 
 type App struct {
-	ctx     context.Context
-	manager *providers.ProviderManager
+	ctx            context.Context
+	manager        *providers.ProviderManager
+	startMinimized bool
+	debugMode      bool
 }
 
 func NewApp() *App {
@@ -40,6 +42,14 @@ func (a *App) startup(ctx context.Context) {
 	registerOSProviders(a, assets)
 
 	a.setupTray()
+
+	if a.startMinimized {
+		wailsruntime.WindowMinimise(ctx)
+	}
+
+	if a.debugMode {
+		wailsruntime.LogInfo(ctx, "Debug mode enabled - verbose logging active")
+	}
 
 	wailsruntime.LogInfo(ctx, "UNBOUND initialized successfully")
 }
@@ -229,21 +239,38 @@ func (a *App) GetCurrentPing() map[string]interface{} {
 	testCtx, cancel := context.WithTimeout(a.ctx, 5*time.Second)
 	defer cancel()
 
-	result, err := engine.ProbeConnection(testCtx, "https://discord.com", nil)
+	latency, err := engine.SimplePing(testCtx, "https://discord.com")
 	
-	if err != nil || !result.Success {
+	if err != nil {
 		return map[string]interface{}{
 			"active":  true,
 			"latency": 0,
 			"status":  "error",
-			"error":   result.Error,
+			"error":   err.Error(),
 		}
 	}
 
 	return map[string]interface{}{
-		"active":    true,
-		"latency":   result.Latency.Milliseconds(),
-		"status":    "ok",
-		"certValid": result.CertValid,
+		"active":  true,
+		"latency": latency.Milliseconds(),
+		"status":  "ok",
 	}
+}
+
+func (a *App) GetSettings() (*engine.Settings, error) {
+	settings, err := engine.GetSettings()
+	if err != nil {
+		wailsruntime.LogWarningf(a.ctx, "Failed to load settings: %v", err)
+		return settings, err
+	}
+	return settings, nil
+}
+
+func (a *App) SaveSettings(settings engine.Settings) error {
+	if err := engine.SaveSettings(&settings); err != nil {
+		wailsruntime.LogErrorf(a.ctx, "Failed to save settings: %v", err)
+		return err
+	}
+	wailsruntime.LogInfo(a.ctx, "Settings saved successfully")
+	return nil
 }

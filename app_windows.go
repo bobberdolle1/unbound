@@ -8,5 +8,5 @@ import (
 )
 
 func registerOSProviders(a *App, assets *engine.AssetPaths) {
-	a.manager.Register(providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir))
+	a.manager.Register(providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir, assets.ListDir, a.debugMode))
 }

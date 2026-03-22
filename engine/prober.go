@@ -132,6 +132,33 @@ func CalculateProbeScore(results []ProbeResult) int {
 	return score
 }
 
+func SimplePing(ctx context.Context, targetURL string) (time.Duration, error) {
+	host := extractHost(targetURL)
+	if host == "" {
+		return 0, fmt.Errorf("invalid URL: %s", targetURL)
+	}
+
+	startTime := time.Now()
+
+	dialer := &net.Dialer{
+		Timeout: 5 * time.Second,
+	}
+
+	tlsConfig := &tls.Config{
+		ServerName:         host,
+		InsecureSkipVerify: true,
+	}
+
+	conn, err := tls.DialWithDialer(dialer, "tcp", host+":443", tlsConfig)
+	if err != nil {
+		return 0, err
+	}
+	defer conn.Close()
+
+	latency := time.Since(startTime)
+	return latency, nil
+}
+
 func extractHost(url string) string {
 	url = strings.TrimPrefix(url, "https://")
 	url = strings.TrimPrefix(url, "http://")

@@ -1,13 +1,19 @@
 package engine
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+
+	"golang.org/x/sys/windows/registry"
 )
 
 const (
 	ConfigDirName      = "Unbound"
 	CustomScriptName   = "custom_profile.lua"
+	SettingsFileName   = "settings.json"
+	RegistryRunKey     = `Software\Microsoft\Windows\CurrentVersion\Run`
+	RegistryAppName    = "Unbound"
 	DefaultLuaTemplate = `-- Custom Zapret Lua Bypass Strategy
 -- Enter your custom DPI bypass logic here
 -- This script will be loaded with --lua flag when "Custom Profile" is selected
@@ -21,6 +27,13 @@ const (
 
 `
 )
+
+type Settings struct {
+	AutoStart          bool   `json:"autoStart"`
+	StartMinimized     bool   `json:"startMinimized"`
+	DefaultProfile     string `json:"defaultProfile"`
+	StartupProfileMode string `json:"startupProfileMode"`
+}
 
 func GetConfigDir() (string, error) {
 	userConfigDir, err := os.UserConfigDir()
@@ -71,4 +84,89 @@ func LoadCustomScript() (string, error) {
 	}
 	
 	return string(data), nil
+}
+
+func GetSettingsPath() (string, error) {
+	configDir, err := GetConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(configDir, SettingsFileName), nil
+}
+
+func GetSettings() (*Settings, error) {
+	settingsPath, err := GetSettingsPath()
+	if err != nil {
+		return getDefaultSettings(), err
+	}
+
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return getDefaultSettings(), nil
+		}
+		return getDefaultSettings(), err
+	}
+
+	var settings Settings
+	if err := json.Unmarshal(data, &settings); err != nil {
+		return getDefaultSettings(), err
+	}
+
+	return &settings, nil
+}
+
+func SaveSettings(settings *Settings) error {
+	settingsPath, err := GetSettingsPath()
+	if err != nil {
+		return err
+	}
+
+	data, err := json.Marshal(settings)
+	if err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(settingsPath, data, 0644); err != nil {
+		return err
+	}
+
+	if err := applyAutoStartSetting(settings.AutoStart); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func getDefaultSettings() *Settings {
+	return &Settings{
+		AutoStart:          false,
+		StartMinimized:     false,
+		DefaultProfile:     "Unbound Ultimate (God Mode)",
+		StartupProfileMode: "Last Used",
+	}
+}
+
+func applyAutoStartSetting(enable bool) error {
+	k, err := registry.OpenKey(registry.CURRENT_USER, RegistryRunKey, registry.ALL_ACCESS)
+	if err != nil {
+		return err
+	}
+	defer k.Close()
+
+	if enable {
+		exePath, err := os.Executable()
+		if err != nil {
+			return err
+		}
+		
+		cmdLine := `"` + exePath + `" --tray`
+		return k.SetStringValue(RegistryAppName, cmdLine)
+	} else {
+		err := k.DeleteValue(RegistryAppName)
+		if err != nil && err != registry.ErrNotExist {
+			return err
+		}
+		return nil
+	}
 }

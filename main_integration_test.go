@@ -42,7 +42,7 @@ func TestProviderInitialization(t *testing.T) {
 		t.Fatalf("Failed to extract assets: %v", err)
 	}
 
-	provider := providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir)
+	provider := providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir, assets.ListDir, false)
 	
 	if provider.Name() != "Zapret 2 (winws)" {
 		t.Errorf("Expected provider name 'Zapret 2 (winws)', got '%s'", provider.Name())
@@ -55,6 +55,9 @@ func TestProviderInitialization(t *testing.T) {
 
 	expectedProfiles := []string{
 		"Unbound Ultimate (God Mode)",
+		"Discord/CF SNI Bypass",
+		"Telegram MTProto",
+		"The Ultimate Combo",
 		"Discord Voice Optimized",
 		"YouTube QUIC Aggressive",
 		"Telegram API Bypass",
@@ -82,7 +85,7 @@ func TestPrivilegeCheck(t *testing.T) {
 		t.Fatalf("Failed to extract assets: %v", err)
 	}
 
-	provider := providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir)
+	provider := providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir, assets.ListDir, false)
 	hasPriv, err := provider.CheckPrivileges()
 	
 	if err != nil {
@@ -103,7 +106,7 @@ func TestProfileArgumentGeneration(t *testing.T) {
 		t.Fatalf("Failed to extract assets: %v", err)
 	}
 
-	_ = providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir)
+	_ = providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir, assets.ListDir, false)
 	
 	testCases := []struct {
 		profileName string
@@ -159,7 +162,7 @@ func TestEngineStartStop(t *testing.T) {
 		t.Fatalf("Failed to extract assets: %v", err)
 	}
 
-	provider := providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir)
+	provider := providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir, assets.ListDir, false)
 	
 	hasPriv, _ := provider.CheckPrivileges()
 	if !hasPriv {
@@ -204,7 +207,7 @@ func TestAutoTuneScanner(t *testing.T) {
 		t.Fatalf("Failed to extract assets: %v", err)
 	}
 
-	provider := providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir)
+	provider := providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir, assets.ListDir, false)
 	hasPriv, _ := provider.CheckPrivileges()
 	if !hasPriv {
 		t.Skip("Skipping auto-tune test - requires administrator privileges")
@@ -239,7 +242,7 @@ func TestProviderManager(t *testing.T) {
 		t.Fatalf("Failed to extract assets: %v", err)
 	}
 
-	provider := providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir)
+	provider := providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir, assets.ListDir, false)
 	manager.Register(provider)
 
 	engines := manager.GetEngineNames()

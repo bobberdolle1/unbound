@@ -8,20 +8,22 @@ import (
 	"runtime"
 )
 
-//go:embed core_bin/* lua_scripts/*
+//go:embed core_bin/* lua_scripts/* lists/*
 var EmbeddedAssets embed.FS
 
 type AssetPaths struct {
-	BinDir string
-	LuaDir string
+	BinDir  string
+	LuaDir  string
+	ListDir string
 }
 
 func ExtractAssets() (*AssetPaths, error) {
 	tempDir := filepath.Join(os.TempDir(), "clearflow")
 	binDir := filepath.Join(tempDir, "core_bin")
 	luaDir := filepath.Join(tempDir, "lua_scripts")
+	listDir := filepath.Join(tempDir, "lists")
 
-	dirs := []string{binDir, luaDir}
+	dirs := []string{binDir, luaDir, listDir}
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return nil, fmt.Errorf("failed to create temp dir: %w", err)
@@ -74,5 +76,10 @@ func ExtractAssets() (*AssetPaths, error) {
 		return nil, fmt.Errorf("failed to extract lua scripts: %w", err)
 	}
 
-	return &AssetPaths{BinDir: binDir, LuaDir: luaDir}, nil
+	// Extract hostlists and ipsets
+	if err := extract("lists", listDir); err != nil {
+		return nil, fmt.Errorf("failed to extract lists: %w", err)
+	}
+
+	return &AssetPaths{BinDir: binDir, LuaDir: luaDir, ListDir: listDir}, nil
 }

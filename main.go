@@ -1,8 +1,18 @@
 package main
 
 import (
+	"context"
 	"embed"
+	"flag"
+	"fmt"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"unbound/engine"
+	"unbound/engine/providers"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -15,12 +25,25 @@ import (
 var assets embed.FS
 
 func main() {
+	cliMode := flag.Bool("cli", false, "Run in headless CLI mode")
+	profileName := flag.String("profile", "Unbound Ultimate (God Mode)", "Profile to use in CLI mode")
+	trayMode := flag.Bool("tray", false, "Start minimized to system tray")
+	debugMode := flag.Bool("debug", false, "Enable verbose debug logging")
+	flag.Parse()
+
+	if *cliMode {
+		runHeadlessMode(*profileName, *debugMode)
+		return
+	}
+
 	app := NewApp()
+	app.startMinimized = *trayMode
+	app.debugMode = *debugMode
 
 	err := wails.Run(&options.App{
-		Title:  "UNBOUND",
-		Width:  1280,
-		Height: 800,
+		Title:             "UNBOUND",
+		Width:             1280,
+		Height:            800,
 		HideWindowOnClose: true,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
@@ -48,4 +71,64 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+}
+
+func runHeadlessMode(profileName string, debugMode bool) {
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Println("🚀 UNBOUND - Headless CLI Mode")
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Printf("Profile: %s\n", profileName)
+	if debugMode {
+		fmt.Println("Debug: ENABLED")
+	}
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	assets, err := engine.ExtractAssets()
+	if err != nil {
+		log.Fatalf("Failed to extract assets: %v", err)
+	}
+
+	manager := providers.NewProviderManager()
+	provider := providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir, assets.ListDir, debugMode)
+	manager.Register(provider)
+
+	hasPriv, err := manager.CheckPrivileges()
+	if err != nil {
+		log.Fatalf("Failed to check privileges: %v", err)
+	}
+	if !hasPriv {
+		log.Fatal("Administrator privileges required. Run as administrator.")
+	}
+
+	ctx := context.Background()
+	if err := manager.Start(ctx, "Zapret 2 (winws)", profileName); err != nil {
+		log.Fatalf("Failed to start engine: %v", err)
+	}
+
+	fmt.Println("✓ Engine started successfully")
+	fmt.Println("Press Ctrl+C to stop...")
+
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			logs := manager.GetLogs()
+			if len(logs) > 0 {
+				lastLog := logs[len(logs)-1]
+				fmt.Printf("[LOG] %s\n", lastLog)
+			}
+		}
+	}()
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	<-sigChan
+
+	fmt.Println("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Println("Shutting down gracefully...")
+	if err := manager.Stop(); err != nil {
+		log.Printf("Error stopping engine: %v", err)
+	}
+	fmt.Println("✓ Engine stopped")
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 }

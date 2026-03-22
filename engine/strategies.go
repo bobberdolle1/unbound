@@ -9,25 +9,25 @@ func GetProfiles(luaDir string) []Profile {
 	return []Profile{
 		{
 			Name: "Standard Split",
-			Args: []string{"--filter-tcp=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=split:pos=1"},
+			Args: []string{"--wf-tcp-out=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=multisplit:pos=1"},
 		},
 		{
 			Name: "Fake Packets + BadSeq",
-			Args: []string{"--filter-tcp=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=multidisorder:pos=1,midsld", "--lua-desync=badseq"},
+			Args: []string{"--wf-tcp-out=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=multidisorder:pos=1,midsld"},
 		},
 		{
 			Name: "Disorder",
-			Args: []string{"--filter-tcp=443", "--lua-desync=split:pos=2", "--lua-desync=disorder"},
+			Args: []string{"--wf-tcp-out=443", "--lua-desync=multidisorder:pos=2"},
 		},
 		{
 			Name: "Split Handshake",
-			Args: []string{"--filter-tcp=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=split:pos=midsld"},
+			Args: []string{"--wf-tcp-out=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=multisplit:pos=midsld"},
 		},
 		{
 			Name: "Flowseal Legacy",
-			Args: []string{"--filter-tcp=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls:tcp_md5", "--lua-desync=split:pos=1", "--new",
-				"--filter-udp=443", "--filter-l7=quic", "--payload=quic_initial", "--lua-desync=fake:blob=fake_default_quic:repeats=6", "--new",
-				"--filter-udp=50000-65535", "--lua-desync=fake:blob=fake_default_quic:repeats=6"},
+			Args: []string{"--wf-tcp-out=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=multisplit:pos=1", "--new",
+				"--wf-udp-out=443", "--filter-l7=quic", "--payload=quic_initial", "--lua-desync=multisplit:pos=1", "--new",
+				"--wf-udp-out=50000-65535", "--lua-desync=multisplit:pos=1"},
 		},
 	}
 }

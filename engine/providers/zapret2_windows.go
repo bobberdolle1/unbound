@@ -38,16 +38,20 @@ type Zapret2WindowsProvider struct {
 	mu             sync.Mutex
 	binPath        string
 	luaDir         string
+	listDir        string
 	currentProfile string
+	debugMode      bool
 }
 
-func NewZapret2WindowsProvider(binPath, luaDir string) BypassProvider {
+func NewZapret2WindowsProvider(binPath, luaDir, listDir string, debugMode bool) BypassProvider {
 	InitLogger()
 	return &Zapret2WindowsProvider{
-		status:  StatusStopped,
-		binPath: binPath,
-		luaDir:  luaDir,
-		logs:    []string{"Zapret 2 Engine (Windows) initialized."},
+		status:    StatusStopped,
+		binPath:   binPath,
+		luaDir:    luaDir,
+		listDir:   listDir,
+		debugMode: debugMode,
+		logs:      []string{"Zapret 2 Engine (Windows) initialized."},
 	}
 }
 
@@ -80,6 +84,9 @@ func (e *Zapret2WindowsProvider) CheckPrivileges() (bool, error) {
 func (e *Zapret2WindowsProvider) GetProfiles() []string {
 	return []string{
 		"Unbound Ultimate (God Mode)", 
+		"Discord/CF SNI Bypass",
+		"Telegram MTProto",
+		"The Ultimate Combo",
 		"Discord Voice Optimized",
 		"YouTube QUIC Aggressive",
 		"Telegram API Bypass",
@@ -107,49 +114,78 @@ func (e *Zapret2WindowsProvider) getProfileArgs(profileName string) []string {
 		"--lua-init=@" + luaAntiDpi,
 	}
 
+	if e.debugMode {
+		args = append(args, "--debug=1")
+	}
+
+	// Append hostlist and ipset if files exist
+	discordHostsPath := filepath.Join(e.listDir, "discord_hosts.txt")
+	telegramIpsPath := filepath.Join(e.listDir, "telegram_ips.txt")
+	
+	if _, err := os.Stat(discordHostsPath); err == nil {
+		args = append(args, "--hostlist="+filepath.ToSlash(discordHostsPath))
+	}
+	
+	if _, err := os.Stat(telegramIpsPath); err == nil {
+		args = append(args, "--ipset="+filepath.ToSlash(telegramIpsPath))
+	}
+
 	switch profileName {
 	case "Unbound Ultimate (God Mode)":
-		args = append(args, "--wf-tcp-out=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls", "--lua-desync=multisplit:pos=1", "--new")
-		args = append(args, "--wf-udp-out=443", "--filter-l7=quic", "--payload=quic_initial", "--lua-desync=fake:blob=fake_default_quic:repeats=10", "--new")
-		args = append(args, "--wf-udp-out=3478,50000-65535", "--lua-desync=fake:blob=fake_default_quic:repeats=6")
+		args = append(args, "--wf-tcp-out=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=multisplit:pos=1", "--new")
+		args = append(args, "--wf-udp-out=443", "--filter-l7=quic", "--payload=quic_initial", "--lua-desync=multisplit:pos=1", "--new")
+		args = append(args, "--wf-udp-out=3478,50000-65535", "--lua-desync=multisplit:pos=1")
+
+	case "Discord/CF SNI Bypass":
+		args = append(args, "--wf-tcp-out=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=multisplit:pos=1", "--new")
+		args = append(args, "--wf-udp-out=443,3478,50000-65535", "--lua-desync=multisplit:pos=1")
+
+	case "Telegram MTProto":
+		args = append(args, "--wf-tcp-out=443,5222,5223,5228", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=multisplit:pos=1", "--new")
+		args = append(args, "--wf-udp-out=443", "--filter-l7=quic", "--payload=quic_initial", "--lua-desync=multisplit:pos=1")
+
+	case "The Ultimate Combo":
+		args = append(args, "--wf-tcp-out=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=multisplit:pos=1", "--new")
+		args = append(args, "--wf-udp-out=443", "--filter-l7=quic", "--payload=quic_initial", "--lua-desync=multisplit:pos=1", "--new")
+		args = append(args, "--wf-udp-out=3478,50000-65535", "--lua-desync=multisplit:pos=1")
 
 	case "Discord Voice Optimized":
-		args = append(args, "--wf-tcp-out=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls", "--lua-desync=multisplit:pos=1", "--new")
-		args = append(args, "--wf-udp-out=443,3478,50000-65535", "--lua-desync=fake:blob=fake_default_quic:repeats=10")
+		args = append(args, "--wf-tcp-out=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=multisplit:pos=1", "--new")
+		args = append(args, "--wf-udp-out=443,3478,50000-65535", "--lua-desync=multisplit:pos=1")
 
 	case "YouTube QUIC Aggressive":
-		args = append(args, "--wf-tcp-out=80,443", "--lua-desync=fake:blob=fake_default_tls", "--lua-desync=multisplit:pos=1,midsld", "--new")
-		args = append(args, "--wf-udp-out=443", "--filter-l7=quic", "--payload=quic_initial", "--lua-desync=fake:blob=fake_default_quic:repeats=12")
+		args = append(args, "--wf-tcp-out=80,443", "--lua-desync=multisplit:pos=1,midsld", "--new")
+		args = append(args, "--wf-udp-out=443", "--filter-l7=quic", "--payload=quic_initial", "--lua-desync=multisplit:pos=1")
 
 	case "Telegram API Bypass":
-		args = append(args, "--wf-tcp-out=443,5222,5223,5228", "--lua-desync=fake:blob=fake_default_tls", "--lua-desync=multisplit:pos=1", "--new")
-		args = append(args, "--wf-udp-out=443", "--lua-desync=fake:blob=fake_default_quic:repeats=8")
+		args = append(args, "--wf-tcp-out=443,5222,5223,5228", "--lua-desync=multisplit:pos=1", "--new")
+		args = append(args, "--wf-udp-out=443", "--lua-desync=multisplit:pos=1")
 
 	case "Fake TLS & QUIC":
-		args = append(args, "--wf-tcp-out=80,443", "--lua-desync=fake:blob=fake_default_tls", "--new")
-		args = append(args, "--wf-udp-out=443,50000-65535", "--lua-desync=fake:blob=fake_default_quic:repeats=10")
+		args = append(args, "--wf-tcp-out=80,443", "--lua-desync=multisplit:pos=1", "--new")
+		args = append(args, "--wf-udp-out=443,50000-65535", "--lua-desync=multisplit:pos=1")
 
 	case "Multi-Strategy Chaos":
-		args = append(args, "--wf-tcp-out=80,443", "--lua-desync=fake:blob=fake_default_tls", "--lua-desync=multidisorder:pos=1,midsld", "--new")
-		args = append(args, "--wf-udp-out=443", "--lua-desync=fake:blob=fake_default_quic:repeats=10", "--new")
-		args = append(args, "--wf-udp-out=3478,50000-65535", "--lua-desync=fake:blob=fake_default_quic:repeats=8")
+		args = append(args, "--wf-tcp-out=80,443", "--lua-desync=multidisorder:pos=1,midsld", "--new")
+		args = append(args, "--wf-udp-out=443", "--lua-desync=multisplit:pos=1", "--new")
+		args = append(args, "--wf-udp-out=3478,50000-65535", "--lua-desync=multisplit:pos=1")
 
 	case "Standard Split":
-		args = append(args, "--wf-tcp-out=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls", "--lua-desync=multisplit:pos=1")
+		args = append(args, "--wf-tcp-out=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=multisplit:pos=1")
 
 	case "Fake Packets + BadSeq":
-		args = append(args, "--wf-tcp-out=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls", "--lua-desync=multidisorder:pos=1,midsld")
+		args = append(args, "--wf-tcp-out=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=multidisorder:pos=1,midsld")
 
 	case "Disorder":
-		args = append(args, "--wf-tcp-out=443", "--lua-desync=multisplit:pos=2", "--lua-desync=disorder")
+		args = append(args, "--wf-tcp-out=443", "--lua-desync=multidisorder:pos=2")
 
 	case "Split Handshake":
-		args = append(args, "--wf-tcp-out=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls", "--lua-desync=multisplit:pos=midsld")
+		args = append(args, "--wf-tcp-out=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=multisplit:pos=midsld")
 
 	case "Flowseal Legacy":
-		args = append(args, "--wf-tcp-out=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls", "--lua-desync=multisplit:pos=1", "--new",
-			"--wf-udp-out=443", "--filter-l7=quic", "--payload=quic_initial", "--lua-desync=fake:blob=fake_default_quic:repeats=6", "--new",
-			"--wf-udp-out=50000-65535", "--lua-desync=fake:blob=fake_default_quic:repeats=6")
+		args = append(args, "--wf-tcp-out=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=multisplit:pos=1", "--new",
+			"--wf-udp-out=443", "--filter-l7=quic", "--payload=quic_initial", "--lua-desync=multisplit:pos=1", "--new",
+			"--wf-udp-out=50000-65535", "--lua-desync=multisplit:pos=1")
 	
 	case "Custom Profile":
 		customScriptPath, err := getCustomScriptPath()
@@ -157,7 +193,7 @@ func (e *Zapret2WindowsProvider) getProfileArgs(profileName string) []string {
 			absCustomScript, _ := filepath.Abs(customScriptPath)
 			customScriptSlash := filepath.ToSlash(absCustomScript)
 			args = append(args, "--lua-init=@"+customScriptSlash)
-			args = append(args, "--wf-tcp-out=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=fake:blob=fake_default_tls", "--lua-desync=multisplit:pos=1")
+			args = append(args, "--wf-tcp-out=443", "--filter-l7=tls", "--payload=tls_client_hello", "--lua-desync=multisplit:pos=1")
 		}
 	}
 
