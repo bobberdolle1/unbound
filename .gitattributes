@@ -1,0 +1,6 @@
+# Mark Lua scripts as vendored to prevent them from dominating language statistics
+engine/lua_scripts/*.lua linguist-vendored
+# Mark Android Magisk module files as vendored
+android/magisk/* linguist-vendored
+# Mark Windows installer scripts as vendored
+build/windows/installer/* linguist-vendored
