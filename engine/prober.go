@@ -133,7 +133,7 @@ func CalculateProbeScore(results []ProbeResult) int {
 
 			// Give massive priority to YouTube/GoogleVideo to ensure it unblocks video
 			if r.URL == "https://youtube.com" || r.URL == "https://googlevideo.com" {
-				points = 500 
+				points = 500
 			}
 
 			score += points

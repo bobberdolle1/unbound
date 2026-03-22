@@ -148,13 +148,13 @@ func GetAdvancedProfiles(luaDir string) []AdvancedProfile {
 func GetProfilesByCategory(category string) []AdvancedProfile {
 	allProfiles := GetAdvancedProfiles("")
 	filtered := make([]AdvancedProfile, 0)
-	
+
 	for _, p := range allProfiles {
 		if p.Category == category {
 			filtered = append(filtered, p)
 		}
 	}
-	
+
 	return filtered
 }
 

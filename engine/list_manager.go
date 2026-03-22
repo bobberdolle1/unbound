@@ -88,7 +88,7 @@ func UpdateLists() error {
 
 	for _, source := range DefaultListSources {
 		targetPath := filepath.Join(listsDir, source.Filename)
-		
+
 		resp, err := client.Get(source.URL)
 		if err != nil || resp.StatusCode != http.StatusOK {
 			// Network failure or 404 - use hardcoded fallback
@@ -98,7 +98,7 @@ func UpdateLists() error {
 				resp.Body.Close()
 				fmt.Printf("Warning: Failed to download %s: HTTP %d. Using fallback.\n", source.Name, resp.StatusCode)
 			}
-			
+
 			if err := os.WriteFile(targetPath, []byte(source.Fallback), 0644); err != nil {
 				return fmt.Errorf("failed to save fallback %s: %w", source.Name, err)
 			}

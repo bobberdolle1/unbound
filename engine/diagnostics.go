@@ -72,7 +72,7 @@ func RunDiagnostics() DiagnosticsReport {
 func checkBaseFilteringEngine() DiagnosticResult {
 	cmd := exec.Command("sc", "query", "BFE")
 	output, err := cmd.CombinedOutput()
-	
+
 	if err != nil {
 		return DiagnosticResult{
 			Name:     "Base Filtering Engine",
@@ -130,7 +130,7 @@ func checkProxySettings() DiagnosticResult {
 func checkTCPTimestamps() DiagnosticResult {
 	cmd := exec.Command("netsh", "int", "tcp", "show", "global")
 	output, err := cmd.CombinedOutput()
-	
+
 	if err != nil {
 		return DiagnosticResult{
 			Name:    "TCP Timestamps",
@@ -157,7 +157,7 @@ func checkTCPTimestamps() DiagnosticResult {
 
 func checkConflictingSoftware() []DiagnosticResult {
 	results := make([]DiagnosticResult, 0)
-	
+
 	conflictingServices := []struct {
 		name        string
 		displayName string
@@ -173,13 +173,13 @@ func checkConflictingSoftware() []DiagnosticResult {
 	for _, svc := range conflictingServices {
 		cmd := exec.Command("sc", "query", svc.name)
 		output, err := cmd.CombinedOutput()
-		
+
 		if err == nil && strings.Contains(string(output), "RUNNING") {
 			status := "WARNING"
 			if svc.critical {
 				status = "ERROR"
 			}
-			
+
 			results = append(results, DiagnosticResult{
 				Name:     fmt.Sprintf("Conflicting Software: %s", svc.displayName),
 				Status:   status,
@@ -248,7 +248,7 @@ func checkVPNServices() DiagnosticResult {
 	for _, svc := range vpnServices {
 		cmd := exec.Command("sc", "query", svc)
 		output, err := cmd.CombinedOutput()
-		
+
 		if err == nil && strings.Contains(string(output), "RUNNING") {
 			runningVPNs = append(runningVPNs, svc)
 		}
@@ -295,7 +295,7 @@ func checkSecureDNS() DiagnosticResult {
 	k, err := registry.OpenKey(registry.LOCAL_MACHINE, `SYSTEM\CurrentControlSet\Services\Dnscache\Parameters`, registry.QUERY_VALUE)
 	if err == nil {
 		defer k.Close()
-		
+
 		dohEnabled, _, err := k.GetIntegerValue("EnableAutoDoh")
 		if err == nil && dohEnabled == 2 {
 			return DiagnosticResult{
@@ -320,7 +320,7 @@ func checkHostsFile() DiagnosticResult {
 	}
 
 	hostsPath := filepath.Join(systemRoot, "System32", "drivers", "etc", "hosts")
-	
+
 	content, err := os.ReadFile(hostsPath)
 	if err != nil {
 		return DiagnosticResult{
@@ -332,7 +332,7 @@ func checkHostsFile() DiagnosticResult {
 
 	lines := strings.Split(string(content), "\n")
 	activeEntries := 0
-	
+
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line != "" && !strings.HasPrefix(line, "#") {

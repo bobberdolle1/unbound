@@ -44,11 +44,11 @@ func GetConfigDir() (string, error) {
 		return "", err
 	}
 	configPath := filepath.Join(userConfigDir, ConfigDirName)
-	
+
 	if err := os.MkdirAll(configPath, 0755); err != nil {
 		return "", err
 	}
-	
+
 	return configPath, nil
 }
 
@@ -73,7 +73,7 @@ func LoadCustomScript() (string, error) {
 	if err != nil {
 		return DefaultLuaTemplate, err
 	}
-	
+
 	data, err := os.ReadFile(scriptPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -81,11 +81,11 @@ func LoadCustomScript() (string, error) {
 		}
 		return DefaultLuaTemplate, err
 	}
-	
+
 	if len(data) == 0 {
 		return DefaultLuaTemplate, nil
 	}
-	
+
 	return string(data), nil
 }
 
@@ -165,7 +165,7 @@ func applyAutoStartSetting(enable bool) error {
 		if err != nil {
 			return err
 		}
-		
+
 		cmdLine := `"` + exePath + `" --tray`
 		return k.SetStringValue(RegistryAppName, cmdLine)
 	} else {

@@ -15,11 +15,11 @@ func TestAdvancedTestConfig(t *testing.T) {
 		CheckTCPFreeze:  true,
 		MinDownloadSize: 16 * 1024,
 	}
-	
+
 	if config.Mode != TestModeStandard {
 		t.Errorf("Expected mode %s, got %s", TestModeStandard, config.Mode)
 	}
-	
+
 	if config.MaxConcurrent != 4 {
 		t.Errorf("Expected MaxConcurrent 4, got %d", config.MaxConcurrent)
 	}
@@ -54,11 +54,11 @@ func TestDetectTCPFreeze(t *testing.T) {
 			expected: true,
 		},
 	}
-	
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			result := detectTCPFreeze(tc.results)
-			
+
 			if result != tc.expected {
 				t.Errorf("Expected freeze detection %v, got %v", tc.expected, result)
 			}
@@ -101,11 +101,11 @@ func TestCalculateAverageLatency(t *testing.T) {
 			expected: 500 * time.Millisecond,
 		},
 	}
-	
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			result := calculateAverageLatency(tc.results)
-			
+
 			if result != tc.expected {
 				t.Errorf("Expected average latency %v, got %v", tc.expected, result)
 			}
@@ -149,11 +149,11 @@ func TestCalculateSuccessRate(t *testing.T) {
 			expected: 50.0,
 		},
 	}
-	
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			result := calculateSuccessRate(tc.results)
-			
+
 			if result != tc.expected {
 				t.Errorf("Expected success rate %.1f%%, got %.1f%%", tc.expected, result)
 			}
@@ -212,15 +212,15 @@ func TestGenerateRecommendation(t *testing.T) {
 			contains: "FAILED",
 		},
 	}
-	
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			recommendation := generateRecommendation(tc.result)
-			
+
 			if recommendation == "" {
 				t.Error("Expected non-empty recommendation")
 			}
-			
+
 			t.Logf("Recommendation: %s", recommendation)
 		})
 	}
@@ -257,25 +257,25 @@ func TestFindBestProfile(t *testing.T) {
 			TCPFreezeDetected: true,
 		},
 	}
-	
+
 	best := FindBestProfile(results)
-	
+
 	if best == nil {
 		t.Fatal("Expected best profile, got nil")
 	}
-	
+
 	if best.ProfileName != "Profile B" {
 		t.Errorf("Expected Profile B as best, got %s", best.ProfileName)
 	}
-	
-	t.Logf("Best profile: %s (Score: %d, Success: %.1f%%, Latency: %dms)", 
+
+	t.Logf("Best profile: %s (Score: %d, Success: %.1f%%, Latency: %dms)",
 		best.ProfileName, best.Score, best.SuccessRate, best.AverageLatency.Milliseconds())
 }
 
 func TestTestSingleProfile(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	
+
 	config := AdvancedTestConfig{
 		Mode:            TestModeStandard,
 		MaxConcurrent:   1,
@@ -284,21 +284,21 @@ func TestTestSingleProfile(t *testing.T) {
 		CheckTCPFreeze:  false,
 		MinDownloadSize: 0,
 	}
-	
+
 	result := testSingleProfile(ctx, "TestProfile", config)
-	
+
 	if result.ProfileName != "TestProfile" {
 		t.Errorf("Expected profile name 'TestProfile', got '%s'", result.ProfileName)
 	}
-	
+
 	if result.Mode != TestModeStandard {
 		t.Errorf("Expected mode %s, got %s", TestModeStandard, result.Mode)
 	}
-	
+
 	if len(result.Results) == 0 {
 		t.Error("Expected test results, got none")
 	}
-	
-	t.Logf("Profile: %s, Score: %d, Success Rate: %.1f%%", 
+
+	t.Logf("Profile: %s, Score: %d, Success Rate: %.1f%%",
 		result.ProfileName, result.Score, result.SuccessRate)
 }

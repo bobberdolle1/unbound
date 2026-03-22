@@ -9,12 +9,12 @@ import (
 type BlobType string
 
 const (
-	BlobTypeTLSDefault    BlobType = "fake_default_tls"
-	BlobTypeTLSRandom     BlobType = "fake_random_tls"
-	BlobTypeQUICDefault   BlobType = "fake_default_quic"
-	BlobTypeQUICRandom    BlobType = "fake_random_quic"
-	BlobTypeQUICInitial   BlobType = "fake_quic_initial"
-	BlobTypeHTTPRequest   BlobType = "fake_http_request"
+	BlobTypeTLSDefault  BlobType = "fake_default_tls"
+	BlobTypeTLSRandom   BlobType = "fake_random_tls"
+	BlobTypeQUICDefault BlobType = "fake_default_quic"
+	BlobTypeQUICRandom  BlobType = "fake_random_quic"
+	BlobTypeQUICInitial BlobType = "fake_quic_initial"
+	BlobTypeHTTPRequest BlobType = "fake_http_request"
 )
 
 type BlobPayload struct {
@@ -35,13 +35,13 @@ func registerDefaultBlobs() {
 		Data:        generateDefaultTLSClientHello(),
 		Description: "Standard TLS 1.3 ClientHello with common extensions",
 	}
-	
+
 	blobRegistry[BlobTypeQUICDefault] = BlobPayload{
 		Type:        BlobTypeQUICDefault,
 		Data:        generateDefaultQUICInitial(),
 		Description: "Standard QUIC Initial packet",
 	}
-	
+
 	blobRegistry[BlobTypeHTTPRequest] = BlobPayload{
 		Type:        BlobTypeHTTPRequest,
 		Data:        generateDefaultHTTPRequest(),
@@ -93,19 +93,19 @@ func generateDefaultHTTPRequest() []byte {
 func GenerateRandomTLSClientHello(sni string) []byte {
 	random := make([]byte, 32)
 	rand.Read(random)
-	
+
 	sessionID := make([]byte, 32)
 	rand.Read(sessionID)
-	
+
 	base := generateDefaultTLSClientHello()
-	
+
 	copy(base[11:43], random)
 	copy(base[44:76], sessionID)
-	
+
 	if sni != "" {
 		sniBytes := []byte(sni)
 		sniLen := len(sniBytes)
-		
+
 		sniExt := make([]byte, 9+sniLen)
 		sniExt[0] = 0x00
 		sniExt[1] = 0x00
@@ -117,32 +117,32 @@ func GenerateRandomTLSClientHello(sni string) []byte {
 		sniExt[7] = byte(sniLen >> 8)
 		sniExt[8] = byte(sniLen & 0xff)
 		copy(sniExt[9:], sniBytes)
-		
+
 		result := make([]byte, len(base)+len(sniExt))
 		copy(result, base[:120])
 		copy(result[120:], sniExt)
 		copy(result[120+len(sniExt):], base[120:])
-		
+
 		return result
 	}
-	
+
 	return base
 }
 
 func GenerateRandomQUICInitial() []byte {
 	base := generateDefaultQUICInitial()
-	
+
 	if len(base) < 28 {
 		return base
 	}
-	
+
 	random := make([]byte, 32)
 	rand.Read(random)
-	
+
 	if len(base) >= 60 {
 		copy(base[28:60], random)
 	}
-	
+
 	return base
 }
 
@@ -181,11 +181,11 @@ func ModifyTLSSessionID(clientHello []byte, newSessionID []byte) []byte {
 	if len(clientHello) < 76 || len(newSessionID) != 32 {
 		return clientHello
 	}
-	
+
 	modified := make([]byte, len(clientHello))
 	copy(modified, clientHello)
 	copy(modified[44:76], newSessionID)
-	
+
 	return modified
 }
 
@@ -193,9 +193,9 @@ func DuplicateTLSSessionID(clientHello []byte) []byte {
 	if len(clientHello) < 76 {
 		return clientHello
 	}
-	
+
 	sessionID := make([]byte, 32)
 	copy(sessionID, clientHello[44:76])
-	
+
 	return ModifyTLSSessionID(clientHello, sessionID)
 }

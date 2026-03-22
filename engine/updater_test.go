@@ -38,7 +38,7 @@ func TestVersionComparison(t *testing.T) {
 
 func TestSHA256Verification(t *testing.T) {
 	testData := []byte("test binary content for checksum verification")
-	
+
 	hash := sha256.Sum256(testData)
 	expectedChecksum := hex.EncodeToString(hash[:])
 
@@ -72,9 +72,9 @@ func TestZipExtraction(t *testing.T) {
 	}
 
 	testFiles := map[string]string{
-		"unbound.exe":     "fake binary content",
-		"config.json":     `{"version": "1.0.0"}`,
-		"data/lists.txt":  "test data",
+		"unbound.exe":    "fake binary content",
+		"config.json":    `{"version": "1.0.0"}`,
+		"data/lists.txt": "test data",
 	}
 
 	if err := createTestZip(zipPath, testFiles); err != nil {
@@ -198,7 +198,7 @@ func TestUpdateInfoParsing(t *testing.T) {
 
 func TestChecksumValidation(t *testing.T) {
 	testData := []byte("unbound.exe binary content")
-	
+
 	hash := sha256.Sum256(testData)
 	validChecksum := hex.EncodeToString(hash[:])
 
@@ -223,14 +223,14 @@ func validateChecksum(data []byte, expectedChecksum string) bool {
 func TestDownloadProgress(t *testing.T) {
 	totalSize := int64(1024 * 1024)
 	downloaded := int64(0)
-	
+
 	progressCallback := func(current, total int64) {
 		percent := float64(current) / float64(total) * 100
 		t.Logf("Download progress: %.2f%% (%d/%d bytes)", percent, current, total)
 	}
 
 	chunks := []int64{102400, 204800, 307200, 409600, 512000, 614400, 716800, 819200, 921600, 1024000, 1048576}
-	
+
 	for _, chunk := range chunks {
 		downloaded = chunk
 		if downloaded > totalSize {
@@ -246,7 +246,7 @@ func TestDownloadProgress(t *testing.T) {
 
 func TestBackupAndRestore(t *testing.T) {
 	tempDir := t.TempDir()
-	
+
 	originalFile := filepath.Join(tempDir, "unbound.exe")
 	backupFile := filepath.Join(tempDir, "unbound.exe.backup")
 

@@ -12,7 +12,7 @@ import (
 
 func TestEnableAutoStartCommandGeneration(t *testing.T) {
 	exePath := "C:\\Program Files\\Unbound\\unbound.exe"
-	
+
 	expectedArgs := []string{
 		"/Create",
 		"/TN", "UnboundDPIBypass",
@@ -57,7 +57,7 @@ func TestDisableAutoStartCommandGeneration(t *testing.T) {
 
 func TestIsAutoStartEnabledQuery(t *testing.T) {
 	enabled, err := IsAutoStartEnabled()
-	
+
 	if err != nil {
 		t.Logf("Query returned error (expected if task doesn't exist): %v", err)
 	}
@@ -82,7 +82,7 @@ func TestAutoStartTaskNameConstant(t *testing.T) {
 func TestSchtasksAvailability(t *testing.T) {
 	cmd := exec.Command("schtasks.exe", "/?")
 	output, err := cmd.CombinedOutput()
-	
+
 	if err != nil {
 		t.Fatalf("schtasks.exe not available: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestPathWithSpacesHandling(t *testing.T) {
 
 	for _, path := range testPaths {
 		quoted := `"` + path + `"`
-		
+
 		if !strings.HasPrefix(quoted, `"`) || !strings.HasSuffix(quoted, `"`) {
 			t.Errorf("Path not properly quoted: %s", quoted)
 		}
@@ -118,7 +118,7 @@ func TestPathWithSpacesHandling(t *testing.T) {
 
 func TestGetAutoStartTaskInfo(t *testing.T) {
 	info, err := GetAutoStartTaskInfo()
-	
+
 	if err != nil {
 		t.Logf("Task info query failed (expected if task doesn't exist): %v", err)
 		return

@@ -71,7 +71,7 @@ func TestBypassRouting(t *testing.T) {
 			}
 
 			t.Logf("Testing connectivity to: %s", tc.targetURL)
-			
+
 			client := &http.Client{
 				Timeout: 15 * time.Second,
 				Transport: &http.Transport{
@@ -90,11 +90,11 @@ func TestBypassRouting(t *testing.T) {
 			} else {
 				defer resp.Body.Close()
 				t.Logf("HTTP Status: %d", resp.StatusCode)
-				
+
 				if tc.expectOK && (resp.StatusCode < 200 || resp.StatusCode >= 500) {
 					t.Errorf("Expected 2xx/3xx/4xx status but got %d", resp.StatusCode)
 				}
-				
+
 				if resp.StatusCode >= 200 && resp.StatusCode < 500 {
 					t.Logf("✓ %s: SUCCESS (HTTP %d)", tc.description, resp.StatusCode)
 				}

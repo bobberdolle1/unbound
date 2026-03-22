@@ -68,7 +68,7 @@ try {
 Write-Host ""
 
 # Step 5: Integration Tests (Optional)
-Write-Host "[5/6] 🔗 Running integration tests..." -ForegroundColor Yellow
+Write-Host "[5/7] 🔗 Running integration tests..." -ForegroundColor Yellow
 $env:RUN_INTEGRATION_TESTS = "0"
 try {
     go test -v -run Integration ./engine/...
@@ -82,8 +82,23 @@ try {
 }
 Write-Host ""
 
-# Step 6: Build Release Binary
-Write-Host "[6/6] 🔨 Building release binary..." -ForegroundColor Yellow
+# Step 6: E2E Bypass Matrix Test
+Write-Host "[6/7] 🎯 Running E2E Bypass Matrix Test..." -ForegroundColor Yellow
+try {
+    go test -v -timeout 5m ./tests/e2e_bypass_matrix_test.go
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "❌ E2E Bypass Matrix test failed" -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "✅ E2E Bypass Matrix test passed" -ForegroundColor Green
+} catch {
+    Write-Host "❌ E2E Bypass Matrix test failed: $_" -ForegroundColor Red
+    exit 1
+}
+Write-Host ""
+
+# Step 7: Build Release Binary
+Write-Host "[7/7] 🔨 Building release binary..." -ForegroundColor Yellow
 try {
     wails build
     if ($LASTEXITCODE -ne 0) {

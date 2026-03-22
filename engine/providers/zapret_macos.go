@@ -234,9 +234,9 @@ func (e *ZapretMacOSProvider) Stop() error {
 
 func (e *ZapretMacOSProvider) cleanupPf() {
 	e.addLog("Cleaning up pf rules...")
-	
+
 	exec.Command("pfctl", "-a", e.pfAnchor, "-F", "all").Run()
-	
+
 	os.Remove("/tmp/unbound_pf_rules.conf")
 }
 

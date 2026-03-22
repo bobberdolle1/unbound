@@ -10,11 +10,11 @@ import (
 )
 
 type TestResult struct {
-	URL         string
-	Success     bool
-	Latency     time.Duration
-	Error       string
-	StatusCode  int
+	URL        string
+	Success    bool
+	Latency    time.Duration
+	Error      string
+	StatusCode int
 }
 
 type ProfileScore struct {

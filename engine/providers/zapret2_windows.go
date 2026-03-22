@@ -15,7 +15,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
-	
+
 	"golang.org/x/sys/windows"
 )
 
@@ -53,13 +53,13 @@ type Zapret2WindowsProvider struct {
 
 func NewZapret2WindowsProvider(binPath, luaDir, listDir string, debugMode bool, gameFilter bool) *Zapret2WindowsProvider {
 	InitLogger()
-	
+
 	var logFile *os.File
 	if debugMode {
 		logPath := filepath.Join(os.TempDir(), "unbound_debug.log")
 		logFile, _ = os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	}
-	
+
 	return &Zapret2WindowsProvider{
 		status:      StatusStopped,
 		binPath:     binPath,
@@ -136,20 +136,22 @@ func (e *Zapret2WindowsProvider) getProfileArgsLocked(profileName string) []stri
 
 	absLuaLib, _ := filepath.Abs(filepath.Join(e.luaDir, "zapret-lib.lua"))
 	absLuaAntiDpi, _ := filepath.Abs(filepath.Join(e.luaDir, "zapret-antidpi.lua"))
-	
+
 	luaLib := filepath.ToSlash(absLuaLib)
 	luaAntiDpi := filepath.ToSlash(absLuaAntiDpi)
 
 	// ZAPRET 2 ARCHITECTURE (2026):
 	// 1. --wf-l3 is MANDATORY (ipv4,ipv6)
-	// 2. --wf-tcp/udp define WinDivert capture scope (NOT desync profiles)
+	// 2. --wf-tcp-in/out and --wf-udp-in/out define WinDivert capture scope
 	// 3. Desync profiles created by --filter-tcp/udp in profile args
 	// 4. Port lists use COMMA separation
-	
+
 	args := []string{
 		"--wf-l3=ipv4,ipv6",
-		"--wf-tcp=80,443,2053,2083,2087,2096,5222,5223,5228,8443,8888",
-		"--wf-udp=443,8888,50000-65535",
+		"--wf-tcp-in=80,443,2053,2083,2087,2096,5222,5223,5228,8443,8888",
+		"--wf-tcp-out=80,443,2053,2083,2087,2096,5222,5223,5228,8443,8888",
+		"--wf-udp-in=443,8888,50000-65535",
+		"--wf-udp-out=443,8888,50000-65535",
 	}
 
 	// Lua initialization
@@ -197,15 +199,20 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 		e.mu.Lock()
 	}
 
+	// Sync hostlist files from remote sources with fallback
+	if err := SyncHostlists(); err != nil {
+		return fmt.Errorf("failed to sync hostlist files: %w", err)
+	}
+
 	e.engineReady = make(chan bool, 1)
 	e.status = StatusStarting
 	winwsPath := filepath.Join(e.binPath, "winws2.exe")
 	args := e.getProfileArgsLocked(profileName)
-	
+
 	e.cmd = exec.Command(winwsPath, args...)
 	e.cmd.Dir = e.binPath
 	e.cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	
+
 	stdout, _ := e.cmd.StdoutPipe()
 	stderr, _ := e.cmd.StderrPipe()
 
@@ -250,22 +257,23 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 func (e *Zapret2WindowsProvider) streamLogs(reader io.Reader, source string) {
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-	
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		timestamp := time.Now().Format("15:04:05.000")
 		logLine := fmt.Sprintf("[%s][%s] %s", timestamp, source, line)
-		
+
 		e.mu.Lock()
 		e.addLog(logLine)
-		
+
 		if e.logFile != nil {
 			e.logFile.WriteString(logLine + "\n")
 		}
-		
-		if strings.Contains(line, "winws2 started") || 
-		   strings.Contains(line, "filter initialized") ||
-		   strings.Contains(line, "WinDivert") {
+
+		if strings.Contains(line, "winws2 started") ||
+			strings.Contains(line, "filter initialized") ||
+			strings.Contains(line, "WinDivert") ||
+			strings.Contains(line, "packet: id=") {
 			select {
 			case e.engineReady <- true:
 			default:
@@ -294,12 +302,12 @@ func (e *Zapret2WindowsProvider) Stop() error {
 		exec.Command("taskkill", "/F", "/T", "/IM", "winws2.exe").Run()
 		e.cmd = nil
 	}
-	
+
 	if e.logFile != nil {
 		e.logFile.Close()
 		e.logFile = nil
 	}
-	
+
 	e.status = StatusStopped
 	e.currentProfile = ""
 	return nil

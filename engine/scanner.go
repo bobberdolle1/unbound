@@ -13,7 +13,7 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
-	
+
 	"unbound/engine/providers"
 )
 
@@ -45,7 +45,7 @@ func RunAutoTune(ctx context.Context, updateLog func(string)) (Profile, error) {
 		providers.WriteLog("[AUTO-TUNE] " + msg)
 		updateLog(msg)
 	}
-	
+
 	logAndUpdate("Initializing Auto-Tune Scanner with Smart Prober...")
 
 	assets, err := ExtractAssets()
@@ -55,9 +55,9 @@ func RunAutoTune(ctx context.Context, updateLog func(string)) (Profile, error) {
 	}
 
 	logAndUpdate("Assets extracted successfully")
-	
+
 	logAndUpdate("Detecting DPI distance with AutoTTL (Binary Search)...")
-	
+
 	// Pre-check DNS
 	logAndUpdate("Checking DNS resolution...")
 	for _, target := range defaultTestTargets {
@@ -73,12 +73,12 @@ func RunAutoTune(ctx context.Context, updateLog func(string)) (Profile, error) {
 	ttlMap := AutoTTLForProfile(ctx, defaultTestTargets)
 	optimalTTL := GetOptimalTTL(ttlMap)
 	logAndUpdate(fmt.Sprintf("Optimal TTL detected: %d hops", optimalTTL))
-	
+
 	logAndUpdate("Loading available profiles...")
 
 	zapretProfiles := GetProfiles(assets.LuaDir)
 	advancedProfiles := GetAdvancedProfiles(assets.LuaDir)
-	
+
 	allProfiles := make([]Profile, 0, len(zapretProfiles)+len(advancedProfiles))
 	for _, p := range zapretProfiles {
 		allProfiles = append(allProfiles, p)
@@ -86,7 +86,7 @@ func RunAutoTune(ctx context.Context, updateLog func(string)) (Profile, error) {
 	for _, ap := range advancedProfiles {
 		allProfiles = append(allProfiles, Profile{Name: ap.Name, Args: ap.Args})
 	}
-	
+
 	totalProfiles := len(allProfiles)
 	logAndUpdate(fmt.Sprintf("Found %d profiles to test", totalProfiles))
 
@@ -103,10 +103,10 @@ func RunAutoTune(ctx context.Context, updateLog func(string)) (Profile, error) {
 
 	for i, profile := range allProfiles {
 		wg.Add(1)
-		
+
 		go func(idx int, p Profile) {
 			defer wg.Done()
-			
+
 			select {
 			case <-ctx.Done():
 				return
@@ -182,7 +182,7 @@ func RunAutoTune(ctx context.Context, updateLog func(string)) (Profile, error) {
 				bestLatency = avgLatency
 			}
 			mu.Unlock()
-			
+
 		}(i, profile)
 	}
 
@@ -200,10 +200,10 @@ func RunAutoTune(ctx context.Context, updateLog func(string)) (Profile, error) {
 			return Profile{}, errors.New("no profiles available")
 		}
 	} else {
-		logAndUpdate(fmt.Sprintf("WINNER: %s (Score: %d, Latency: %dms)", 
+		logAndUpdate(fmt.Sprintf("WINNER: %s (Score: %d, Latency: %dms)",
 			bestProfile.Name, bestScore, bestLatency.Milliseconds()))
 	}
-	
+
 	cacheMutex.Lock()
 	autoTuneCache = bestProfile
 	cacheTime = time.Now()

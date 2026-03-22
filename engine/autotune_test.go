@@ -25,7 +25,7 @@ func TestAutoTune(t *testing.T) {
 	)
 
 	profiles := GetProfiles(assets.LuaDir)
-	
+
 	for _, prof := range profiles {
 		provider.RegisterProfile(prof.Name, prof.Args)
 	}

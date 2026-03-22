@@ -28,14 +28,14 @@ type AdvancedTestConfig struct {
 }
 
 type AdvancedTestResult struct {
-	ProfileName     string
-	Mode            TestMode
-	Results         []TestResult
-	Score           int
+	ProfileName       string
+	Mode              TestMode
+	Results           []TestResult
+	Score             int
 	TCPFreezeDetected bool
-	AverageLatency  time.Duration
-	SuccessRate     float64
-	Recommendation  string
+	AverageLatency    time.Duration
+	SuccessRate       float64
+	Recommendation    string
 }
 
 type ProfileTestResult struct {
@@ -46,7 +46,7 @@ type ProfileTestResult struct {
 
 func RunAdvancedTests(ctx context.Context, profiles []string, config AdvancedTestConfig, startProfile func(string) error, stopProfile func() error) []AdvancedTestResult {
 	results := make([]AdvancedTestResult, 0, len(profiles))
-	
+
 	for _, profile := range profiles {
 		if err := startProfile(profile); err != nil {
 			results = append(results, AdvancedTestResult{
@@ -83,7 +83,7 @@ func RunParallelTests(ctx context.Context, profiles []string, config AdvancedTes
 		wg.Add(1)
 		go func(p string) {
 			defer wg.Done()
-			
+
 			semaphore <- struct{}{}
 			defer func() { <-semaphore }()
 
@@ -165,7 +165,7 @@ func testDPIChecker(ctx context.Context, config AdvancedTestConfig) []TestResult
 	}
 
 	results := make([]TestResult, 0, len(dpiTestURLs))
-	
+
 	client := &http.Client{
 		Timeout: config.Timeout,
 		Transport: &http.Transport{
@@ -199,11 +199,11 @@ func testDPIChecker(ctx context.Context, config AdvancedTestConfig) []TestResult
 
 		if err != nil {
 			result.Error = err.Error()
-			
+
 			if result.Latency > 15*time.Second {
 				result.Error += " [TCP FREEZE DETECTED]"
 			}
-			
+
 			results = append(results, result)
 			continue
 		}
@@ -211,7 +211,7 @@ func testDPIChecker(ctx context.Context, config AdvancedTestConfig) []TestResult
 
 		if config.CheckTCPFreeze && config.MinDownloadSize > 0 {
 			downloaded, _ := io.Copy(io.Discard, io.LimitReader(resp.Body, config.MinDownloadSize))
-			
+
 			if downloaded < config.MinDownloadSize && result.Latency > 10*time.Second {
 				result.Error = "Incomplete download - possible TCP freeze"
 				result.Success = false
@@ -224,7 +224,7 @@ func testDPIChecker(ctx context.Context, config AdvancedTestConfig) []TestResult
 			if resp.ContentLength > 0 || resp.ContentLength == -1 {
 				testSize := int64(8192) // 8KB test download
 				downloaded, _ := io.Copy(io.Discard, io.LimitReader(resp.Body, testSize))
-				
+
 				if downloaded == 0 && result.Latency > 5*time.Second {
 					result.Error = "No data received - possible TCP freeze on media endpoint"
 					result.Success = false
@@ -326,7 +326,7 @@ func FindBestProfile(results []AdvancedTestResult) *AdvancedTestResult {
 
 	for i := range results {
 		r := &results[i]
-		
+
 		if r.TCPFreezeDetected {
 			continue
 		}
@@ -335,7 +335,7 @@ func FindBestProfile(results []AdvancedTestResult) *AdvancedTestResult {
 		if r.SuccessRate == 100 {
 			combinedScore += 200
 		}
-		
+
 		if r.AverageLatency < 500*time.Millisecond {
 			combinedScore += 100
 		} else if r.AverageLatency < 1*time.Second {
@@ -362,14 +362,14 @@ func FormatAdvancedResults(results []AdvancedTestResult) string {
 		output += fmt.Sprintf("Score: %d\n", r.Score)
 		output += fmt.Sprintf("Success Rate: %.1f%%\n", r.SuccessRate)
 		output += fmt.Sprintf("Average Latency: %dms\n", r.AverageLatency.Milliseconds())
-		
+
 		if r.TCPFreezeDetected {
 			output += "⚠ TCP FREEZE DETECTED\n"
 		}
-		
+
 		output += fmt.Sprintf("Recommendation: %s\n", r.Recommendation)
 		output += "\nTest Details:\n"
-		
+
 		for _, test := range r.Results {
 			status := "✗"
 			if test.Success {
@@ -380,7 +380,7 @@ func FormatAdvancedResults(results []AdvancedTestResult) string {
 				output += fmt.Sprintf("    Error: %s\n", test.Error)
 			}
 		}
-		
+
 		output += "\n───────────────────────────────────────────────────────────\n\n"
 	}
 
@@ -388,7 +388,7 @@ func FormatAdvancedResults(results []AdvancedTestResult) string {
 	if best != nil {
 		output += "═══════════════════════════════════════════════════════════\n"
 		output += fmt.Sprintf("🏆 RECOMMENDED PROFILE: %s\n", best.ProfileName)
-		output += fmt.Sprintf("   Score: %d | Success: %.1f%% | Latency: %dms\n", 
+		output += fmt.Sprintf("   Score: %d | Success: %.1f%% | Latency: %dms\n",
 			best.Score, best.SuccessRate, best.AverageLatency.Milliseconds())
 		output += "═══════════════════════════════════════════════════════════\n"
 	}

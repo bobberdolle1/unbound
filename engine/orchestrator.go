@@ -7,10 +7,10 @@ import (
 )
 
 type EngineOrchestrator struct {
-	mu            sync.Mutex
-	engines       map[EngineType]DPIEngine
-	activeEngine  DPIEngine
-	activeConfig  EngineConfig
+	mu           sync.Mutex
+	engines      map[EngineType]DPIEngine
+	activeEngine DPIEngine
+	activeConfig EngineConfig
 }
 
 func NewEngineOrchestrator() *EngineOrchestrator {

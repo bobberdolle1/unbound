@@ -15,9 +15,9 @@ func RunHealthCheck() error {
 	if err != nil {
 		return errors.New("failed to extract assets for health check: " + err.Error())
 	}
-	
+
 	p := providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir, assets.ListDir, false, true)
-	
+
 	err = p.Start(context.Background(), "Unbound Ultimate (God Mode)")
 	if err != nil {
 		return err
