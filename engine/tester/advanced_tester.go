@@ -154,6 +154,9 @@ func testDPIChecker(ctx context.Context, config AdvancedTestConfig) []TestResult
 	dpiTestURLs := []string{
 		"https://www.youtube.com/generate_204",
 		"https://discord.com/api/v9/gateway",
+		"https://cdn.discordapp.com/attachments/1234567890/1234567890/test.txt",
+		"https://media.discordapp.net/attachments/1234567890/1234567890/test.jpg",
+		"https://api.telegram.org/",
 		"https://web.telegram.org/",
 	}
 
@@ -217,8 +220,22 @@ func testDPIChecker(ctx context.Context, config AdvancedTestConfig) []TestResult
 				result.Success = resp.StatusCode >= 200 && resp.StatusCode < 400
 			}
 		} else {
-			result.StatusCode = resp.StatusCode
-			result.Success = resp.StatusCode >= 200 && resp.StatusCode < 400
+			// Always try to read some body to detect TCP freeze on media endpoints
+			if resp.ContentLength > 0 || resp.ContentLength == -1 {
+				testSize := int64(8192) // 8KB test download
+				downloaded, _ := io.Copy(io.Discard, io.LimitReader(resp.Body, testSize))
+				
+				if downloaded == 0 && result.Latency > 5*time.Second {
+					result.Error = "No data received - possible TCP freeze on media endpoint"
+					result.Success = false
+				} else {
+					result.StatusCode = resp.StatusCode
+					result.Success = resp.StatusCode >= 200 && resp.StatusCode < 400
+				}
+			} else {
+				result.StatusCode = resp.StatusCode
+				result.Success = resp.StatusCode >= 200 && resp.StatusCode < 400
+			}
 		}
 
 		results = append(results, result)

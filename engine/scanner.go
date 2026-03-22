@@ -16,6 +16,8 @@ import (
 
 var defaultTestTargets = []string{
 	"https://discord.com",
+	"https://cdn.discordapp.com/attachments/1234567890/1234567890/test.txt",
+	"https://api.telegram.org/",
 	"https://googlevideo.com",
 	"https://youtube.com",
 }
