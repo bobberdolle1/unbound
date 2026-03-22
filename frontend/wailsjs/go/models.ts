@@ -88,28 +88,6 @@ export namespace engine {
 		    return a;
 		}
 	}
-	export class Settings {
-	    autoStart: boolean;
-	    startMinimized: boolean;
-	    defaultProfile: string;
-	    startupProfileMode: string;
-	    gameFilter: boolean;
-	    autoUpdateEnabled: boolean;
-	
-	    static createFrom(source: any = {}) {
-	        return new Settings(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.autoStart = source["autoStart"];
-	        this.startMinimized = source["startMinimized"];
-	        this.defaultProfile = source["defaultProfile"];
-	        this.startupProfileMode = source["startupProfileMode"];
-	        this.gameFilter = source["gameFilter"];
-	        this.autoUpdateEnabled = source["autoUpdateEnabled"];
-	    }
-	}
 	export class ProfileStats {
 	    profile_name: string;
 	    test_count: number;
@@ -155,13 +133,37 @@ export namespace engine {
 		    return a;
 		}
 	}
+	export class Settings {
+	    autoStart: boolean;
+	    startMinimized: boolean;
+	    defaultProfile: string;
+	    startupProfileMode: string;
+	    gameFilter: boolean;
+	    autoUpdateEnabled: boolean;
+	    showLogs: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new Settings(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.autoStart = source["autoStart"];
+	        this.startMinimized = source["startMinimized"];
+	        this.defaultProfile = source["defaultProfile"];
+	        this.startupProfileMode = source["startupProfileMode"];
+	        this.gameFilter = source["gameFilter"];
+	        this.autoUpdateEnabled = source["autoUpdateEnabled"];
+	        this.showLogs = source["showLogs"];
+	    }
+	}
 	export class TestAnalytics {
 	    total_sessions: number;
 	    total_tests: number;
 	    successful_tests: number;
 	    failed_tests: number;
 	    average_score: number;
-	    profile_stats: {[key: string]: ProfileStats};
+	    profile_stats: Record<string, ProfileStats>;
 	    // Go type: time
 	    last_updated: any;
 	
@@ -176,7 +178,7 @@ export namespace engine {
 	        this.successful_tests = source["successful_tests"];
 	        this.failed_tests = source["failed_tests"];
 	        this.average_score = source["average_score"];
-	        this.profile_stats = source["profile_stats"];
+	        this.profile_stats = this.convertValues(source["profile_stats"], ProfileStats, true);
 	        this.last_updated = this.convertValues(source["last_updated"], null);
 	    }
 	

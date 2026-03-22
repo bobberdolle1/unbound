@@ -1,3 +1,4 @@
+# Discord
 discord.com
 discordapp.com
 gateway.discord.gg
@@ -8,3 +9,15 @@ discord.gg
 discord.media
 discord.co
 status.discord.com
+
+# YouTube
+youtube.com
+www.youtube.com
+m.youtube.com
+googlevideo.com
+ytimg.com
+ytimg.l.google.com
+youtube-ui.l.google.com
+ytstatic.l.google.com
+youtubei.googleapis.com
+nhacmp3.google.com

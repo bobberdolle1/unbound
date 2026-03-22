@@ -53,26 +53,8 @@ func TestProviderInitialization(t *testing.T) {
 		t.Error("No profiles returned from provider")
 	}
 
-	expectedProfiles := []string{
-		"Unbound Ultimate (God Mode)",
-		"Discord/CF SNI Bypass",
-		"Telegram MTProto",
-		"The Ultimate Combo",
-		"Discord Voice Optimized",
-		"YouTube QUIC Aggressive",
-		"Telegram API Bypass",
-		"Fake TLS & QUIC",
-		"Multi-Strategy Chaos",
-		"Standard Split",
-		"Fake Packets + BadSeq",
-		"Disorder",
-		"Split Handshake",
-		"Flowseal Legacy",
-		"Custom Profile",
-	}
-
-	if len(profiles) != len(expectedProfiles) {
-		t.Errorf("Expected %d profiles, got %d", len(expectedProfiles), len(profiles))
+	if len(profiles) < 15 {
+		t.Errorf("Expected at least 15 profiles, got %d", len(profiles))
 	}
 
 	t.Logf("✓ Provider initialized with %d profiles", len(profiles))

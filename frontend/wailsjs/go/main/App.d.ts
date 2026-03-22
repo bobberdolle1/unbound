@@ -6,6 +6,8 @@ export function AutoSelectProfile(arg1:string):Promise<string>;
 
 export function AutoTune():Promise<string>;
 
+export function CancelAutoTune():Promise<void>;
+
 export function CheckForUpdates(arg1:string):Promise<engine.UpdateInfo>;
 
 export function CleanOldTests(arg1:number):Promise<void>;
@@ -16,11 +18,11 @@ export function GenerateCustomBlob(arg1:string,arg2:string):Promise<string>;
 
 export function GetBlobList():Promise<Array<engine.BlobPayload>>;
 
-export function GetCurrentPing():Promise<{[key: string]: any}>;
+export function GetCurrentPing():Promise<Record<string, any>>;
 
 export function GetEngineNames():Promise<Array<string>>;
 
-export function GetLivePing():Promise<{[key: string]: any}>;
+export function GetLivePing():Promise<Record<string, any>>;
 
 export function GetLogs():Promise<Array<string>>;
 
@@ -34,7 +36,7 @@ export function GetSettings():Promise<engine.Settings>;
 
 export function GetStatus():Promise<string>;
 
-export function GetSystemInfo():Promise<{[key: string]: string}>;
+export function GetSystemInfo():Promise<Record<string, string>>;
 
 export function GetTestAnalytics():Promise<engine.TestAnalytics>;
 

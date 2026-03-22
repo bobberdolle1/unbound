@@ -48,10 +48,6 @@ func ProbeConnection(ctx context.Context, targetURL string, engine DPIEngine) (P
 
 	startTime := time.Now()
 
-	dialer := &net.Dialer{
-		Timeout: 10 * time.Second,
-	}
-
 	tlsConfig := &tls.Config{
 		ServerName:         host,
 		InsecureSkipVerify: false,
@@ -80,7 +76,14 @@ func ProbeConnection(ctx context.Context, targetURL string, engine DPIEngine) (P
 		},
 	}
 
-	conn, err := tls.DialWithDialer(dialer, "tcp", host+":443", tlsConfig)
+	tlsDialer := &tls.Dialer{
+		NetDialer: &net.Dialer{
+			Timeout: 10 * time.Second,
+		},
+		Config: tlsConfig,
+	}
+
+	conn, err := tlsDialer.DialContext(ctx, "tcp", host+":443")
 	if err != nil {
 		result.Error = err.Error()
 		if strings.Contains(err.Error(), "connection reset") || strings.Contains(err.Error(), "ECONNRESET") {
@@ -92,7 +95,12 @@ func ProbeConnection(ctx context.Context, targetURL string, engine DPIEngine) (P
 
 	result.Latency = time.Since(startTime)
 
-	if err := conn.Handshake(); err != nil {
+	tlsConn, ok := conn.(*tls.Conn)
+	if !ok {
+		return result, fmt.Errorf("not a TLS connection")
+	}
+
+	if err := tlsConn.HandshakeContext(ctx); err != nil {
 		result.Error = fmt.Sprintf("TLS handshake failed: %v", err)
 		return result, err
 	}
@@ -121,7 +129,15 @@ func CalculateProbeScore(results []ProbeResult) int {
 	score := 0
 	for _, r := range results {
 		if r.Success && r.CertValid {
-			score += 100
+			points := 100
+
+			// Give massive priority to YouTube/GoogleVideo to ensure it unblocks video
+			if r.URL == "https://youtube.com" || r.URL == "https://googlevideo.com" {
+				points = 500 
+			}
+
+			score += points
+
 			if r.Latency < 100*time.Millisecond {
 				score += 20
 			} else if r.Latency < 300*time.Millisecond {

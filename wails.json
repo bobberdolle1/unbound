@@ -1,6 +1,10 @@
 {
   "$schema": "https://wails.io/schemas/config.v2.json",
   "name": "unbound",
+  "width": 400,
+  "height": 650,
+  "frameless": true,
+  "disableResize": true,
   "outputfilename": "unbound",
   "frontend:install": "npm install --include=dev",
   "frontend:build": "npm run build",

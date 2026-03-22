@@ -42,8 +42,10 @@ func main() {
 
 	err := wails.Run(&options.App{
 		Title:             "UNBOUND",
-		Width:             1280,
-		Height:            800,
+		Width:             400,
+		Height:            650,
+		Frameless:         true,
+		DisableResize:     true,
 		HideWindowOnClose: true,
 		AssetServer: &assetserver.Options{
 			Assets: assets,

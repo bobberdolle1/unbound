@@ -18,6 +18,7 @@ type App struct {
 	manager        *providers.ProviderManager
 	startMinimized bool
 	debugMode      bool
+	autoTuneCancel context.CancelFunc
 }
 
 func NewApp() *App {
@@ -159,14 +160,33 @@ func (a *App) AutoTune() string {
 		wailsruntime.EventsEmit(a.ctx, "autotune_log", msg)
 	}
 
-	profile, err := engine.RunAutoTune(a.ctx, updateLog)
+	tuneCtx, cancel := context.WithCancel(a.ctx)
+	a.autoTuneCancel = cancel
+	defer func() {
+		a.autoTuneCancel = nil
+		cancel()
+	}()
+
+	profile, err := engine.RunAutoTune(tuneCtx, updateLog)
 	if err != nil {
-		updateLog("Auto-Tune failed: " + err.Error())
+		if tuneCtx.Err() == context.Canceled {
+			updateLog("Auto-Tune cancelled by user.")
+		} else {
+			updateLog("Auto-Tune failed: " + err.Error())
+		}
 		return "Failed"
 	}
 
-	updateLog(fmt.Sprintf("Starting engine with profile: %s", profile.Name))
-	time.Sleep(1 * time.Second)
+	// Final check before starting engine
+	select {
+	case <-tuneCtx.Done():
+		updateLog("Auto-Tune cancelled.")
+		return "Failed"
+	default:
+	}
+
+	updateLog(fmt.Sprintf("Auto-Tune found best profile: %s", profile.Name))
+	time.Sleep(500 * time.Millisecond)
 	
 	if err := a.StartEngine("Zapret 2 (winws)", profile.Name); err != nil {
 		updateLog("Failed to start engine: " + err.Error())
@@ -174,6 +194,13 @@ func (a *App) AutoTune() string {
 	}
 
 	return profile.Name
+}
+
+func (a *App) CancelAutoTune() {
+	if a.autoTuneCancel != nil {
+		a.autoTuneCancel()
+		wailsruntime.LogInfo(a.ctx, "Auto-Tune cancellation requested")
+	}
 }
 
 func (a *App) AutoSelectProfile(engineName string) (string, error) {
@@ -258,7 +285,7 @@ func (a *App) GetCurrentPing() map[string]interface{} {
 	testCtx, cancel := context.WithTimeout(a.ctx, 5*time.Second)
 	defer cancel()
 
-	latency, err := engine.SimplePing(testCtx, "https://discord.com")
+	latency, err := engine.SimplePing(testCtx, "https://www.google.com")
 	
 	if err != nil {
 		return map[string]interface{}{
@@ -317,14 +344,14 @@ func (a *App) GetLivePing() map[string]interface{} {
 	testCtx, cancel := context.WithTimeout(a.ctx, 3*time.Second)
 	defer cancel()
 
-	latency, err := engine.SimplePing(testCtx, "https://discord.com")
+	// Use Cloudflare for faster ping checks
+	latency, err := engine.SimplePing(testCtx, "https://1.1.1.1")
 	
 	if err != nil {
 		return map[string]interface{}{
 			"active":  true,
 			"latency": 0,
-			"status":  "blocked",
-			"error":   err.Error(),
+			"status":  "error",
 		}
 	}
 

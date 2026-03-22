@@ -10,6 +10,10 @@ export function AutoTune() {
   return window['go']['main']['App']['AutoTune']();
 }
 
+export function CancelAutoTune() {
+  return window['go']['main']['App']['CancelAutoTune']();
+}
+
 export function CheckForUpdates(arg1) {
   return window['go']['main']['App']['CheckForUpdates'](arg1);
 }

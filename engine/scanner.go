@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 	
@@ -22,7 +25,22 @@ var defaultTestTargets = []string{
 	"https://youtube.com",
 }
 
+var (
+	autoTuneCache Profile
+	cacheTime     time.Time
+	cacheMutex    sync.Mutex
+)
+
 func RunAutoTune(ctx context.Context, updateLog func(string)) (Profile, error) {
+	cacheMutex.Lock()
+	if !cacheTime.IsZero() && time.Since(cacheTime) < 1*time.Hour {
+		cached := autoTuneCache
+		cacheMutex.Unlock()
+		updateLog("Using cached Auto-Tune result from previous run")
+		return cached, nil
+	}
+	cacheMutex.Unlock()
+
 	logAndUpdate := func(msg string) {
 		providers.WriteLog("[AUTO-TUNE] " + msg)
 		updateLog(msg)
@@ -38,7 +56,20 @@ func RunAutoTune(ctx context.Context, updateLog func(string)) (Profile, error) {
 
 	logAndUpdate("Assets extracted successfully")
 	
-	logAndUpdate("Detecting DPI distance with AutoTTL...")
+	logAndUpdate("Detecting DPI distance with AutoTTL (Binary Search)...")
+	
+	// Pre-check DNS
+	logAndUpdate("Checking DNS resolution...")
+	for _, target := range defaultTestTargets {
+		host := extractHost(target)
+		ips, err := net.LookupIP(host)
+		if err != nil {
+			logAndUpdate(fmt.Sprintf("WARNING: DNS resolution failed for %s: %v. Bypassing may fail.", host, err))
+		} else {
+			logAndUpdate(fmt.Sprintf("DNS OK: %s -> %v", host, ips[0]))
+		}
+	}
+
 	ttlMap := AutoTTLForProfile(ctx, defaultTestTargets)
 	optimalTTL := GetOptimalTTL(ttlMap)
 	logAndUpdate(fmt.Sprintf("Optimal TTL detected: %d hops", optimalTTL))
@@ -56,82 +87,107 @@ func RunAutoTune(ctx context.Context, updateLog func(string)) (Profile, error) {
 		allProfiles = append(allProfiles, Profile{Name: ap.Name, Args: ap.Args})
 	}
 	
-	logAndUpdate(fmt.Sprintf("Found %d profiles to test (%d standard + %d advanced)", 
-		len(allProfiles), len(zapretProfiles), len(advancedProfiles)))
+	totalProfiles := len(allProfiles)
+	logAndUpdate(fmt.Sprintf("Found %d profiles to test", totalProfiles))
 
-	logAndUpdate("Starting profile tests...")
+	var bestProfile Profile
+	var bestScore int = -1
+	var bestLatency time.Duration = 9999999 * time.Millisecond
+	var mu sync.Mutex
 
-	bestProfile := Profile{}
-	bestScore := -1
-	bestLatency := time.Duration(0)
+	var testedCount int32
+
+	maxConcurrent := 4
+	semaphore := make(chan struct{}, maxConcurrent)
+	var wg sync.WaitGroup
 
 	for i, profile := range allProfiles {
-		logAndUpdate(fmt.Sprintf("Testing [%d/%d]: %s", i+1, len(zapretProfiles), profile.Name))
-
-		winwsPath := filepath.Join(assets.BinDir, "winws.exe")
-		absLuaLib, _ := filepath.Abs(filepath.Join(assets.LuaDir, "zapret-lib.lua"))
-		absLuaAntiDpi, _ := filepath.Abs(filepath.Join(assets.LuaDir, "zapret-antidpi.lua"))
-
-		luaLib := filepath.ToSlash(absLuaLib)
-		luaAntiDpi := filepath.ToSlash(absLuaAntiDpi)
-
-		args := []string{
-			"--intercept=1",
-			"--lua-init=@" + luaLib,
-			"--lua-init=@" + luaAntiDpi,
-		}
-		args = append(args, profile.Args...)
-
-		cmd := exec.Command(winwsPath, args...)
-		cmd.Dir = assets.BinDir
-		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-
-		if err := cmd.Start(); err != nil {
-			logAndUpdate(fmt.Sprintf("Failed to start: %s", err.Error()))
-			continue
-		}
-
-		logAndUpdate("Waiting for WinDivert to bind (2s)...")
-		time.Sleep(2 * time.Second)
-
-		logAndUpdate("Running connectivity probes...")
-		probeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		results := ProbeMultipleTargets(probeCtx, defaultTestTargets, nil)
-		cancel()
-
-		successCount := 0
-		totalLatency := time.Duration(0)
-
-		for _, result := range results {
-			if result.Success {
-				successCount++
-				totalLatency += result.Latency
-				logAndUpdate(fmt.Sprintf("%s: %dms ✓", result.URL, result.Latency.Milliseconds()))
-			} else {
-				logAndUpdate(fmt.Sprintf("%s: FAILED", result.URL))
+		wg.Add(1)
+		
+		go func(idx int, p Profile) {
+			defer wg.Done()
+			
+			select {
+			case <-ctx.Done():
+				return
+			case semaphore <- struct{}{}:
 			}
-		}
+			defer func() { <-semaphore }()
 
-		exec.Command("taskkill", "/F", "/T", "/IM", "winws.exe").Run()
-		logAndUpdate("Stopped engine")
-		time.Sleep(1 * time.Second)
+			current := atomic.AddInt32(&testedCount, 1)
+			logAndUpdate(fmt.Sprintf("Progress: [%d/%d] Testing: %s", current, totalProfiles, p.Name))
 
-		score := CalculateProbeScore(results)
-		avgLatency := time.Duration(0)
-		if successCount > 0 {
-			avgLatency = totalLatency / time.Duration(successCount)
-		}
+			winwsPath := filepath.Join(assets.BinDir, "winws.exe")
+			absLuaLib, _ := filepath.Abs(filepath.Join(assets.LuaDir, "zapret-lib.lua"))
+			absLuaAntiDpi, _ := filepath.Abs(filepath.Join(assets.LuaDir, "zapret-antidpi.lua"))
 
-		logAndUpdate(fmt.Sprintf("Score: %d | Success: %d/%d | Avg Latency: %dms", 
-			score, successCount, len(defaultTestTargets), avgLatency.Milliseconds()))
+			luaLib := filepath.ToSlash(absLuaLib)
+			luaAntiDpi := filepath.ToSlash(absLuaAntiDpi)
 
-		if score > bestScore || (score == bestScore && avgLatency < bestLatency) {
-			bestScore = score
-			bestProfile = profile
-			bestLatency = avgLatency
-			logAndUpdate(fmt.Sprintf("New best profile!"))
-		}
+			args := []string{
+				"--intercept=1",
+				"--lua-init=@" + luaLib,
+				"--lua-init=@" + luaAntiDpi,
+			}
+			args = append(args, p.Args...)
+
+			cmd := exec.CommandContext(ctx, winwsPath, args...)
+			cmd.Dir = assets.BinDir
+			cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+
+			if err := cmd.Start(); err != nil {
+				return
+			}
+
+			// Wait a bit or exit if context is cancelled
+			select {
+			case <-ctx.Done():
+				exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", cmd.Process.Pid)).Run()
+				return
+			case <-time.After(500 * time.Millisecond):
+			}
+
+			probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			results := ProbeMultipleTargets(probeCtx, defaultTestTargets, nil)
+			cancel()
+
+			successCount := 0
+			totalLat := time.Duration(0)
+
+			for _, result := range results {
+				if result.Success {
+					successCount++
+					totalLat += result.Latency
+				}
+			}
+
+			exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", cmd.Process.Pid)).Run()
+
+			if ctx.Err() != nil {
+				return
+			}
+
+			score := CalculateProbeScore(results)
+			avgLatency := time.Duration(9999999 * time.Millisecond)
+			if successCount > 0 {
+				avgLatency = totalLat / time.Duration(successCount)
+			}
+
+			mu.Lock()
+			if score > bestScore || (score == bestScore && avgLatency < bestLatency) {
+				bestScore = score
+				bestProfile = p
+				bestLatency = avgLatency
+			}
+			mu.Unlock()
+			
+		}(i, profile)
 	}
+
+	wg.Wait()
+
+	// Kill any dangling processes just in case
+	exec.Command("taskkill", "/F", "/T", "/IM", "winws.exe").Run()
 
 	if bestScore <= 0 {
 		logAndUpdate("All profiles failed. Selecting first profile as fallback...")
@@ -139,14 +195,17 @@ func RunAutoTune(ctx context.Context, updateLog func(string)) (Profile, error) {
 			bestProfile = allProfiles[0]
 			logAndUpdate(fmt.Sprintf("FALLBACK: %s", bestProfile.Name))
 		} else {
-			logAndUpdate("No profiles available.")
 			return Profile{}, errors.New("no profiles available")
 		}
 	} else {
 		logAndUpdate(fmt.Sprintf("WINNER: %s (Score: %d, Latency: %dms)", 
 			bestProfile.Name, bestScore, bestLatency.Milliseconds()))
 	}
-	logAndUpdate("Saving configuration...")
+	
+	cacheMutex.Lock()
+	autoTuneCache = bestProfile
+	cacheTime = time.Now()
+	cacheMutex.Unlock()
 
 	configData, _ := json.Marshal(map[string]string{"active_profile": bestProfile.Name})
 	os.WriteFile("config.json", configData, 0644)

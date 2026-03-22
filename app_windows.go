@@ -5,6 +5,7 @@ package main
 import (
 	"unbound/engine"
 	"unbound/engine/providers"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 func registerOSProviders(a *App, assets *engine.AssetPaths) {
@@ -19,5 +20,25 @@ func registerOSProviders(a *App, assets *engine.AssetPaths) {
 		listsDir = assets.ListDir
 	}
 	
-	a.manager.Register(providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir, listsDir, a.debugMode, gameFilter))
+	zapretProvider := providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir, listsDir, a.debugMode, gameFilter)
+	
+	// Register status callback for Wails events
+	zapretProvider.SetStatusCallback(func(status providers.Status) {
+		runtime.EventsEmit(a.ctx, "status_changed", status)
+	})
+	
+	// Register unified profiles
+	registered := make(map[string]bool)
+	for _, p := range engine.GetProfiles(assets.LuaDir) {
+		zapretProvider.RegisterProfile(p.Name, p.Args)
+		registered[p.Name] = true
+	}
+	for _, p := range engine.GetAdvancedProfiles(assets.LuaDir) {
+		if !registered[p.Name] {
+			zapretProvider.RegisterProfile(p.Name, p.Args)
+			registered[p.Name] = true
+		}
+	}
+
+	a.manager.Register(zapretProvider)
 }

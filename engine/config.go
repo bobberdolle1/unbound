@@ -35,6 +35,7 @@ type Settings struct {
 	StartupProfileMode string `json:"startupProfileMode"`
 	GameFilter         bool   `json:"gameFilter"`
 	AutoUpdateEnabled  bool   `json:"autoUpdateEnabled"`
+	ShowLogs           bool   `json:"showLogs"`
 }
 
 func GetConfigDir() (string, error) {
@@ -148,6 +149,7 @@ func getDefaultSettings() *Settings {
 		StartupProfileMode: "Last Used",
 		GameFilter:         true,
 		AutoUpdateEnabled:  true,
+		ShowLogs:           true,
 	}
 }
 

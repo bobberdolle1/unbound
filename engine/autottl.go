@@ -18,21 +18,27 @@ func DetectDPIDistance(ctx context.Context, targetHost string) (int, error) {
 	maxTTL := 30
 	minTTL := 1
 	
-	for ttl := minTTL; ttl <= maxTTL; ttl++ {
-		result := probeTTL(ctx, targetHost, ttl)
-		
+	bestTTL := -1
+
+	for minTTL <= maxTTL {
+		midTTL := minTTL + (maxTTL-minTTL)/2
+		result := probeTTL(ctx, targetHost, midTTL)
+
 		if result.Success {
-			if ttl > 1 {
-				return ttl - 1, nil
-			}
-			return 1, nil
-		}
-		
-		if ttl > 10 && !result.Success {
-			break
+			bestTTL = midTTL
+			maxTTL = midTTL - 1 // Try to find a smaller TTL that succeeds
+		} else {
+			minTTL = midTTL + 1 // Increase TTL
 		}
 	}
-	
+
+	if bestTTL != -1 {
+		if bestTTL > 1 {
+			return bestTTL - 1, nil
+		}
+		return 1, nil
+	}
+
 	return 0, fmt.Errorf("could not detect DPI distance for %s", targetHost)
 }
 
