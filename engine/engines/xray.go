@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bobberdolle1/unbound/engine"
+	"unbound/engine"
 )
 
 type XrayEngine struct {
