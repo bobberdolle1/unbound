@@ -37,7 +37,7 @@ var comprehensiveTargets = []TestTarget{
 	{"Google", "https://www.google.com", "General"},
 }
 
-func mainDebug() {
+func main() {
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	fmt.Println("🔬 UNBOUND BYPASS DEBUG SUITE")
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")

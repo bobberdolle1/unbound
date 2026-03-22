@@ -4,22 +4,25 @@
 *.dll
 *.so
 *.dylib
-build/bin/
-zapdpi.txt
 
-# Test binary
+# Test artifacts
 *.test
+test_bypass.exe
+unbound-*.exe
 
-# Output of the go coverage tool
-*.out
-
-# Go workspace file
-go.work
-
-# Wails build
+# Build output
 build/bin/
 frontend/dist/
 frontend/node_modules/
+
+# Temporary files
+*.log
+tmp/
+zapdpi.txt
+unbound_debug.log
+
+# Go workspace
+go.work
 
 # IDE
 .idea/
@@ -31,7 +34,3 @@ frontend/node_modules/
 # OS
 .DS_Store
 Thumbs.db
-
-# Temp
-*.log
-tmp/

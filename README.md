@@ -138,13 +138,10 @@ wails dev
 # Production build (Windows GUI)
 wails build -clean
 
-# Cross-platform CLI builds
-make build-linux-cli   # Linux headless binary
-make build-macos-cli   # macOS headless binary
-
 # Run tests
-make test              # All tests
-make test-cli          # CLI-specific tests
+.\scripts\run_qa_suite.ps1      # Full QA suite
+go test ./...                    # Unit tests only
+go run .\scripts\test_bypass_debug.go  # Real bypass test
 ```
 
 Ready `unbound.exe` will appear in `build/bin/`
@@ -164,10 +161,18 @@ Ready `unbound.exe` will appear in `build/bin/`
 ### Profile doesn't work
 - Try **Auto-Tune** — it will automatically find a working option
 - Check logs in the bottom panel (Telemetry)
+- Run `.\scripts\test_bypass_debug.go` to verify bypass effectiveness
 
 ### Auto-update notification not showing
 - Check Settings → Enable Auto-Update Checks
 - Manually check: Help → Check for Updates
+
+---
+
+## 📚 Documentation
+
+- [Testing Guide](docs/TESTING.md) — QA procedures and test suite
+- [Release Notes](docs/release-notes.txt) — version history
 
 ---
 

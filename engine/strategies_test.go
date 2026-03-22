@@ -30,7 +30,7 @@ func TestGetAdvancedProfiles(t *testing.T) {
 		t.Fatal("Expected advanced profiles, got none")
 	}
 	
-	expectedCount := 12
+	expectedCount := 6
 	if len(profiles) != expectedCount {
 		t.Errorf("Expected %d advanced profiles, got %d", expectedCount, len(profiles))
 	}
@@ -93,10 +93,11 @@ func TestGetProfilesByCategory(t *testing.T) {
 		expectedMin  int
 	}{
 		{"universal", 1},
-		{"aggressive", 1},
-		{"smart", 1},
-		{"experimental", 1},
 		{"stealth", 1},
+		{"chaos", 1},
+		{"quic", 1},
+		{"deep", 1},
+		{"http", 1},
 	}
 	
 	for _, tc := range testCases {

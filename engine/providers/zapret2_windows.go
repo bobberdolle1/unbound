@@ -141,20 +141,18 @@ func (e *Zapret2WindowsProvider) getProfileArgsLocked(profileName string) []stri
 	luaAntiDpi := filepath.ToSlash(absLuaAntiDpi)
 
 	// ZAPRET 2 ARCHITECTURE (2026):
-	// 1. WinDivert filters MUST be specified BEFORE lua-init
-	// 2. --wf-l3 is MANDATORY (ipv4,ipv6)
-	// 3. Port lists use COMMA separation (NOT multiple flags)
-	// 4. Lua modules provide desync logic (--lua-desync replaces old --dpi-desync)
-	// 5. Multiple desync strategies are chained sequentially
+	// 1. --wf-l3 is MANDATORY (ipv4,ipv6)
+	// 2. --wf-tcp/udp define WinDivert capture scope (NOT desync profiles)
+	// 3. Desync profiles created by --filter-tcp/udp in profile args
+	// 4. Port lists use COMMA separation
 	
 	args := []string{
 		"--wf-l3=ipv4,ipv6",
-		"--wf-tcp-out=80,443,2053,2083,2087,2096,5222,5223,5228,8443,8888",
-		"--wf-tcp-in=80,443,2053,2083,2087,2096,5222,5223,5228,8443,8888",
-		"--wf-udp-out=443,8888,50000-65535",
+		"--wf-tcp=80,443,2053,2083,2087,2096,5222,5223,5228,8443,8888",
+		"--wf-udp=443,8888,50000-65535",
 	}
 
-	// Lua initialization AFTER WinDivert filters
+	// Lua initialization
 	args = append(args, "--lua-init=@"+luaLib)
 	args = append(args, "--lua-init=@"+luaAntiDpi)
 
@@ -162,16 +160,8 @@ func (e *Zapret2WindowsProvider) getProfileArgsLocked(profileName string) []stri
 		args = append(args, "--debug=1")
 	}
 
-	// Global hostlist/ipset (applied to all profiles)
-	discordHostsPath := filepath.Join(e.listDir, "discord_hosts.txt")
-	telegramIpsPath := filepath.Join(e.listDir, "telegram_ips.txt")
-	
-	if _, err := os.Stat(discordHostsPath); err == nil {
-		args = append(args, "--hostlist="+filepath.ToSlash(discordHostsPath))
-	}
-	if _, err := os.Stat(telegramIpsPath); err == nil {
-		args = append(args, "--ipset="+filepath.ToSlash(telegramIpsPath))
-	}
+	// REMOVED: Global hostlist/ipset causes profile 0 to match everything
+	// Now using --hostlist-auto in individual profiles for dynamic detection
 
 	if profileName == "Custom Profile" {
 		customScriptPath, err := getCustomScriptPath()
