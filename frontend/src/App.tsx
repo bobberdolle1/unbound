@@ -8,7 +8,7 @@ function cn(...inputs: ClassValue[]) {
 }
 
 // @ts-ignore
-import { GetEngineNames, GetProfiles, StartEngine, StopEngine, GetLogs, HideToTray, AutoTune, SaveCustomScript, LoadCustomScript, GetCurrentPing, GetSettings, SaveSettings, GetLivePing, CheckForUpdates, AddSubscription, GetXrayNodes, GenerateXrayConfig } from '../wailsjs/go/main/App';
+import { GetEngineNames, GetProfiles, StartEngine, StopEngine, GetLogs, HideToTray, AutoTune, SaveCustomScript, LoadCustomScript, GetCurrentPing, GetSettings, SaveSettings, GetLivePing, CheckForUpdates } from '../wailsjs/go/main/App';
 // @ts-ignore
 import { EventsOn } from '../wailsjs/runtime/runtime';
 
@@ -50,10 +50,6 @@ export default function App() {
   const [livePingData, setLivePingData] = useState<{active: boolean, latency: number, status: string}>({active: false, latency: 0, status: 'stopped'});
   const [isCheckingPing, setIsCheckingPing] = useState<boolean>(false);
   const [updateNotification, setUpdateNotification] = useState<{show: boolean, version: string, url: string, changelog: string}>({show: false, version: '', url: '', changelog: ''});
-  const [xraySubscriptionLink, setXraySubscriptionLink] = useState<string>('');
-  const [xrayNodes, setXrayNodes] = useState<any[]>([]);
-  const [selectedXrayNode, setSelectedXrayNode] = useState<string>('');
-  const [isFetchingSubscription, setIsFetchingSubscription] = useState<boolean>(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -170,21 +166,11 @@ export default function App() {
 
   const handleOpenEditor = async () => {
     setIsEditorOpen(true);
-    
-    if (selectedProfile.includes('Xray') || selectedProfile.includes('VLESS')) {
-      try {
-        const nodes = await GetXrayNodes();
-        setXrayNodes(nodes || []);
-      } catch (err) {
-        console.error('Failed to load Xray nodes:', err);
-      }
-    } else {
-      try {
-        const content = await LoadCustomScript();
-        setScriptContent(content);
-      } catch (err) {
-        console.error('Failed to load custom script:', err);
-      }
+    try {
+      const content = await LoadCustomScript();
+      setScriptContent(content);
+    } catch (err) {
+      console.error('Failed to load custom script:', err);
     }
   };
 
@@ -519,111 +505,21 @@ export default function App() {
                   <Code className="w-4 h-4 text-cyan-400" />
                 </div>
                 <div>
-                  <h2 className="text-sm font-bold tracking-widest text-white/90">
-                    {selectedProfile.includes('Xray') || selectedProfile.includes('VLESS') ? 'XRAY SUBSCRIPTION MANAGER' : 
-                     selectedProfile.includes('AmneziaWG') ? 'AMNEZIAWG CONFIG IMPORT' : 
-                     'ADVANCED LUA EDITOR'}
-                  </h2>
-                  <p className="text-[9px] text-zinc-500 font-bold tracking-widest uppercase">
-                    {selectedProfile.includes('Xray') || selectedProfile.includes('VLESS') ? 'VLESS/Reality Node Configuration' : 
-                     selectedProfile.includes('AmneziaWG') ? 'WireGuard Configuration File' : 
-                     'Custom DPI Bypass Strategy'}
-                  </p>
+                  <h2 className="text-sm font-bold tracking-widest text-white/90">ADVANCED LUA EDITOR</h2>
+                  <p className="text-[9px] text-zinc-500 font-bold tracking-widest uppercase">Custom DPI Bypass Strategy</p>
                 </div>
               </div>
             </div>
 
-            {/* Editor Area - Dynamic Content */}
+            {/* Editor Area - Lua Script */}
             <div className="flex-1 p-6 overflow-hidden flex flex-col gap-4">
-              
-              {/* Xray Subscription UI */}
-              {(selectedProfile.includes('Xray') || selectedProfile.includes('VLESS')) && (
-                <>
-                  <div className="flex gap-3">
-                    <input
-                      type="text"
-                      value={xraySubscriptionLink}
-                      onChange={(e) => setXraySubscriptionLink(e.target.value)}
-                      placeholder="Paste subscription link or vless:// URI..."
-                      className="flex-1 bg-zinc-900/80 border border-white/10 rounded-lg px-4 py-2 text-zinc-100 text-sm focus:outline-none focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/20 transition-all"
-                    />
-                    <button
-                      onClick={async () => {
-                        setIsFetchingSubscription(true);
-                        try {
-                          const nodes = await AddSubscription(xraySubscriptionLink);
-                          setXrayNodes(nodes || []);
-                          setXraySubscriptionLink('');
-                        } catch (err: any) {
-                          console.error('Failed to fetch subscription:', err);
-                        } finally {
-                          setIsFetchingSubscription(false);
-                        }
-                      }}
-                      disabled={!xraySubscriptionLink || isFetchingSubscription}
-                      className={cn(
-                        "px-6 py-2 rounded-lg text-xs font-bold tracking-widest uppercase transition-all",
-                        isFetchingSubscription ? "bg-amber-500/20 text-amber-400 animate-pulse" : "bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400 border border-cyan-500/30"
-                      )}
-                    >
-                      {isFetchingSubscription ? 'Fetching...' : 'Fetch'}
-                    </button>
-                  </div>
-
-                  <div className="flex-1 overflow-y-auto bg-zinc-900/60 border border-white/10 rounded-xl p-4">
-                    {xrayNodes.length === 0 ? (
-                      <div className="h-full flex items-center justify-center text-zinc-600 text-sm">
-                        No nodes loaded. Paste a subscription link above.
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {xrayNodes.map((node: any) => (
-                          <button
-                            key={node.id}
-                            onClick={() => setSelectedXrayNode(node.id)}
-                            className={cn(
-                              "w-full text-left px-4 py-3 rounded-lg transition-all border",
-                              selectedXrayNode === node.id 
-                                ? "bg-cyan-500/20 border-cyan-500/50 text-cyan-300" 
-                                : "bg-zinc-800/50 border-white/5 text-zinc-300 hover:bg-zinc-800 hover:border-white/10"
-                            )}
-                          >
-                            <div className="font-bold text-sm">{node.name}</div>
-                            <div className="text-xs text-zinc-500 mt-1">{node.address}:{node.port}</div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
-
-              {/* AmneziaWG Config Import */}
-              {selectedProfile.includes('AmneziaWG') && (
-                <div className="flex-1 flex flex-col gap-3">
-                  <div className="text-sm text-zinc-400">
-                    Paste your AmneziaWG .conf file content below:
-                  </div>
-                  <textarea
-                    value={scriptContent}
-                    onChange={(e) => setScriptContent(e.target.value)}
-                    className="flex-1 w-full bg-zinc-900/80 border border-white/10 rounded-xl p-4 text-emerald-400 font-mono text-sm leading-relaxed resize-none focus:outline-none focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/20 transition-all scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-zinc-900"
-                    placeholder="[Interface]&#10;PrivateKey = ...&#10;Address = ...&#10;&#10;[Peer]&#10;PublicKey = ...&#10;Endpoint = ..."
-                    spellCheck={false}
-                  />
-                </div>
-              )}
-
-              {/* Lua Editor (Default) */}
-              {!selectedProfile.includes('Xray') && !selectedProfile.includes('VLESS') && !selectedProfile.includes('AmneziaWG') && (
-                <textarea
-                  value={scriptContent}
-                  onChange={(e) => setScriptContent(e.target.value)}
-                  className="flex-1 w-full bg-zinc-900/80 border border-white/10 rounded-xl p-4 text-emerald-400 font-mono text-sm leading-relaxed resize-none focus:outline-none focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/20 transition-all scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-zinc-900"
-                  placeholder="-- Enter your custom Zapret Lua bypass strategy here..."
-                  spellCheck={false}
-                />
-              )}
+              <textarea
+                value={scriptContent}
+                onChange={(e) => setScriptContent(e.target.value)}
+                className="flex-1 w-full bg-zinc-900/80 border border-white/10 rounded-xl p-4 text-emerald-400 font-mono text-sm leading-relaxed resize-none focus:outline-none focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/20 transition-all scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-zinc-900"
+                placeholder="-- Enter your custom Zapret Lua bypass strategy here..."
+                spellCheck={false}
+              />
             </div>
 
             {/* Modal Footer */}
@@ -635,26 +531,10 @@ export default function App() {
                 Cancel
               </button>
               <button
-                onClick={async () => {
-                  if (selectedProfile.includes('Xray') || selectedProfile.includes('VLESS')) {
-                    if (!selectedXrayNode) {
-                      alert('Please select a node first');
-                      return;
-                    }
-                    try {
-                      await GenerateXrayConfig(selectedXrayNode);
-                      setIsEditorOpen(false);
-                    } catch (err) {
-                      console.error('Failed to generate Xray config:', err);
-                    }
-                  } else {
-                    await handleSaveScript();
-                  }
-                }}
-                disabled={(selectedProfile.includes('Xray') || selectedProfile.includes('VLESS')) && !selectedXrayNode}
-                className="px-4 py-2 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400 hover:text-cyan-300 border border-cyan-500/30 text-xs font-bold tracking-widest uppercase transition-all shadow-[0_0_15px_rgba(6,182,212,0.2)] disabled:opacity-30 disabled:cursor-not-allowed"
+                onClick={handleSaveScript}
+                className="px-4 py-2 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400 hover:text-cyan-300 border border-cyan-500/30 text-xs font-bold tracking-widest uppercase transition-all shadow-[0_0_15px_rgba(6,182,212,0.2)]"
               >
-                {(selectedProfile.includes('Xray') || selectedProfile.includes('VLESS')) ? 'Apply Selected Node' : 'Save & Apply'}
+                Save & Apply
               </button>
             </div>
           </div>
