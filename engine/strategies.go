@@ -10,48 +10,99 @@ func GetProfiles(luaDir string) []Profile {
 		{
 			Name: "Unbound Ultimate (God Mode)",
 			Args: []string{
-				"--blob=tls_google:tls_clienthello_www_google_com.bin",
-				"--blob=quic_google:quic_initial_www_google_com.bin",
-				// TCP 443 - YouTube & General TLS
-				"--filter-tcp=443", "--payload=tls_client_hello", 
-				"--lua-desync=fake:blob=tls_google:ttl=4:repeats=11:tls_mod=rnd,dupsid,sni=www.google.com", 
-				"--lua-desync=multisplit:pos=1:seqovl=681:seqovl_pattern=tls_google",
+				// TCP 443 (HTTPS/TLS) - Double Fake + Split
+				"--filter-tcp=443",
+				"--out-range=-d10",
+				"--payload=tls_client_hello",
+				"--lua-desync=fake:ttl=4:tcp_md5:badseq",
+				"--lua-desync=fake:ttl=4:tcp_md5:badseq",
+				"--lua-desync=split2:pos=midsld:badseq",
 				"--new",
-				// UDP 443 & Discord Discovery
-				"--filter-udp=443,50000-65535", "--payload=quic_initial,discord_ip_discovery,stun",
-				"--lua-desync=fake:blob=quic_google:ttl=4:repeats=11",
+				// UDP 443 (QUIC) - Aggressive fake flood
+				"--filter-udp=443",
+				"--payload=quic_initial",
+				"--lua-desync=fake:ttl=4:repeats=11",
 				"--lua-desync=multisplit:pos=1",
 				"--new",
-				// Discord Media & Voice (General UDP)
-				"--filter-udp=19294-19344,50000-65535", "--payload=unknown",
+				// UDP 50000-65535 (Discord Voice/RTC)
+				"--filter-udp=50000-65535",
+				"--payload=discord_ip_discovery,stun,unknown",
+				"--lua-desync=fake:blob=0x00000000000000000000000000000000:repeats=2",
 				"--lua-desync=udplen:increment=2",
 				"--new",
-				// Telegram MTProto & Other TCP
-				"--filter-tcp=80,443,5222,5223,5228,8888", "--payload=mtproto_initial,unknown",
+				// TCP 80,5222,5223,5228,8888 (HTTP/MTProto/Telegram)
+				"--filter-tcp=80,5222,5223,5228,8888",
+				"--out-range=-d10",
+				"--payload=http_req,mtproto_initial",
+				"--lua-desync=fake:ttl=4:tcp_md5",
 				"--lua-desync=multisplit:pos=1",
 			},
 		},
 		{
 			Name: "Zapret 2: Telegram MTProto Fix",
 			Args: []string{
-				"--filter-tcp=80,443,5222,5223,5228,8888", "--payload=mtproto_initial,tls_client_hello,unknown",
-				"--lua-desync=fake:blob=fake_default_tls:ttl=4",
-				"--lua-desync=multisplit:pos=1",
+				// TCP (TLS + HTTP + MTProto)
+				"--filter-tcp=80,443,5222,5223,5228,8888",
+				"--out-range=-d10",
+				"--payload=tls_client_hello,http_req,mtproto_initial",
+				"--lua-desync=fake:ttl=4:tcp_md5",
+				"--lua-desync=split2:pos=1:badseq",
 				"--new",
-				"--filter-udp=443,8888", "--payload=all",
-				"--lua-desync=fake:blob=fake_default_quic:ttl=4",
+				// UDP (QUIC + Telegram voice)
+				"--filter-udp=443,8888",
+				"--payload=quic_initial",
+				"--lua-desync=fake:ttl=4:repeats=6",
 				"--lua-desync=multisplit:pos=1",
 			},
 		},
 		{
 			Name: "YouTube + Discord (Universal)",
 			Args: []string{
-				"--filter-tcp=443", "--payload=tls_client_hello",
-				"--lua-desync=fake:blob=fake_default_tls:ttl=4",
-				"--lua-desync=multisplit:pos=1",
+				// TCP 443 (YouTube HTTPS)
+				"--filter-tcp=443",
+				"--out-range=-d10",
+				"--payload=tls_client_hello",
+				"--lua-desync=fake:ttl=4:tcp_md5",
+				"--lua-desync=split2:pos=midsld:badseq",
 				"--new",
-				"--filter-udp=443,19294-19344,50000-65535", "--payload=all",
-				"--lua-desync=fake:blob=fake_default_quic:ttl=4",
+				// UDP (QUIC + Discord)
+				"--filter-udp=443,50000-65535",
+				"--payload=quic_initial,discord_ip_discovery,stun",
+				"--lua-desync=fake:ttl=4:repeats=6",
+				"--lua-desync=multisplit:pos=1",
+			},
+		},
+		{
+			Name: "Lightweight (Low CPU)",
+			Args: []string{
+				// Minimal overhead - single fake + simple split
+				"--filter-tcp=443",
+				"--out-range=-d10",
+				"--payload=tls_client_hello",
+				"--lua-desync=fake:ttl=4",
+				"--lua-desync=split2:pos=2",
+				"--new",
+				"--filter-udp=443",
+				"--payload=quic_initial",
+				"--lua-desync=fake:ttl=4",
+			},
+		},
+		{
+			Name: "Aggressive (Deep Inspection Bypass)",
+			Args: []string{
+				// Triple fake + disorder for aggressive DPI
+				"--filter-tcp=443",
+				"--out-range=-d10",
+				"--payload=tls_client_hello",
+				"--lua-desync=fake:ttl=4:tcp_md5:badseq",
+				"--lua-desync=fake:ttl=4:tcp_md5:badseq",
+				"--lua-desync=fake:ttl=4:tcp_md5:badseq",
+				"--lua-desync=multidisorder:pos=1,midsld",
+				"--new",
+				"--filter-udp=443",
+				"--payload=quic_initial",
+				"--lua-desync=fake:ttl=4:repeats=20",
+				"--lua-desync=multisplit:pos=1",
 			},
 		},
 	}

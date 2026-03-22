@@ -111,7 +111,13 @@ func (e *Zapret2WindowsProvider) getProfileArgsLocked(profileName string) []stri
 	profileArgs, exists := e.profileMap[profileName]
 
 	if !exists && profileName != "Custom Profile" {
-		profileArgs = []string{"--filter-tcp=443", "--wf-tcp-out=443", "--lua-desync=multisplit:pos=1"}
+		// Fallback profile if not found
+		profileArgs = []string{
+			"--filter-tcp=443",
+			"--out-range=-d10",
+			"--payload=tls_client_hello",
+			"--lua-desync=multisplit:pos=1",
+		}
 	}
 
 	absLuaLib, _ := filepath.Abs(filepath.Join(e.luaDir, "zapret-lib.lua"))
@@ -120,22 +126,29 @@ func (e *Zapret2WindowsProvider) getProfileArgsLocked(profileName string) []stri
 	luaLib := filepath.ToSlash(absLuaLib)
 	luaAntiDpi := filepath.ToSlash(absLuaAntiDpi)
 
-	// Base mandatory args for zapret2 (PRO EDITION)
+	// ZAPRET 2 ARCHITECTURE (2026):
+	// 1. WinDivert filters MUST be specified BEFORE lua-init
+	// 2. --wf-l3 is MANDATORY (ipv4,ipv6)
+	// 3. Port lists use COMMA separation (NOT multiple flags)
+	// 4. Lua modules provide desync logic (--lua-desync replaces old --dpi-desync)
+	// 5. Multiple desync strategies are chained sequentially
+	
 	args := []string{
-		"--intercept=1",
+		"--wf-l3=ipv4,ipv6",
 		"--wf-tcp-out=80,443,2053,2083,2087,2096,5222,5223,5228,8443,8888",
 		"--wf-tcp-in=80,443,2053,2083,2087,2096,5222,5223,5228,8443,8888",
-		"--wf-udp-out=443,19294-19344,50000-65535,8888",
-		"--wf-tcp-empty=0", // CRITICAL for conntrack/seqovl
-		"--lua-init=@" + luaLib,
-		"--lua-init=@" + luaAntiDpi,
+		"--wf-udp-out=443,8888,50000-65535",
 	}
+
+	// Lua initialization AFTER WinDivert filters
+	args = append(args, "--lua-init=@"+luaLib)
+	args = append(args, "--lua-init=@"+luaAntiDpi)
 
 	if e.debugMode {
 		args = append(args, "--debug=1")
 	}
 
-	// Always append hostlist and ipset
+	// Global hostlist/ipset (applied to all profiles)
 	discordHostsPath := filepath.Join(e.listDir, "discord_hosts.txt")
 	telegramIpsPath := filepath.Join(e.listDir, "telegram_ips.txt")
 	
@@ -152,7 +165,7 @@ func (e *Zapret2WindowsProvider) getProfileArgsLocked(profileName string) []stri
 			absCustomScript, _ := filepath.Abs(customScriptPath)
 			customScriptSlash := filepath.ToSlash(absCustomScript)
 			args = append(args, "--lua-init=@"+customScriptSlash)
-			args = append(args, "--filter-tcp=443", "--lua-desync=multisplit:pos=1")
+			args = append(args, "--filter-tcp=443", "--out-range=-d10", "--payload=tls_client_hello", "--lua-desync=multisplit:pos=1")
 		}
 	} else {
 		args = append(args, profileArgs...)
@@ -181,7 +194,7 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 	}
 
 	e.status = StatusStarting
-	winwsPath := filepath.Join(e.binPath, "winws.exe")
+	winwsPath := filepath.Join(e.binPath, "winws2.exe")
 	args := e.getProfileArgsLocked(profileName)
 	
 	e.cmd = exec.Command(winwsPath, args...)
@@ -260,7 +273,7 @@ func (e *Zapret2WindowsProvider) Stop() error {
 	if e.cmd != nil && e.cmd.Process != nil {
 		exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", e.cmd.Process.Pid)).Run()
 		time.Sleep(500 * time.Millisecond)
-		exec.Command("taskkill", "/F", "/T", "/IM", "winws.exe").Run()
+		exec.Command("taskkill", "/F", "/T", "/IM", "winws2.exe").Run()
 		e.cmd = nil
 	}
 	e.status = StatusStopped
