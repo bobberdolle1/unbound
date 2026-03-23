@@ -6,9 +6,9 @@
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D6?style=for-the-badge&logo=windows)
 ![Go](https://img.shields.io/badge/Go-00ADD8?style=for-the-badge&logo=go&logoColor=white)
 ![React](https://img.shields.io/badge/React-61DAFB?style=for-the-badge&logo=react&logoColor=black)
-![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)
+![License](https://img.shields.io/badge/license-GPL--3.0-green?style=for-the-badge)
 
-**The next-generation DPI bypass tool for Windows. Install once, forget forever.**
+**The next-generation DPI bypass tool for Windows. Open source, community-driven, and ready for 2026.**
 
 [Download](https://github.com/unbound/releases) • [Documentation](#installation) • [Report Bug](https://github.com/unbound/issues)
 
@@ -33,8 +33,10 @@ No command-line wizardry. No .bat script archaeology. Just click **Connect** and
 
 ### vs. .bat Script Collections
 - **GUI**: No more copy-pasting commands from Telegram channels at 3 AM.
-- **Auto-Tune**: Built-in profile scanner finds what works for your ISP in 30 seconds.
-- **Task Scheduler Integration**: Launches with admin rights on boot without UAC spam. .bat scripts? You're clicking "Yes" every reboot.
+- **Auto-Tune V2**: Built-in profile scanner finds what works for your ISP in 30 seconds. Now tests Telegram, Discord, and YouTube simultaneously.
+- **Health Check**: Native diagnostic tool to fix admin rights and driver conflicts.
+- **Clean Start**: Automatic Discord cache cleaning to bypass "poisoned" sessions.
+- **Task Scheduler Integration**: Launches with admin rights on boot without UAC spam.
 
 ### vs. VPNs
 - **Zero Latency**: Traffic stays local. No routing through Kazakhstan.
@@ -152,7 +154,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## 📜 License
 
-MIT License. See [LICENSE](LICENSE) for details.
+GNU General Public License v3.0 (GPL-3.0). See [LICENSE](LICENSE) for details. Unbound is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation.
 
 ---
 
