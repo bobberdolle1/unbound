@@ -51,8 +51,14 @@ The crown jewel. Fragments TLS handshakes and sends packets **out of order**. DP
 ### 🔄 Dynamic Hostlist Sync
 Automatically fetches updated blocklists from GitHub. When your ISP blocks a new domain, Unbound already knows about it.
 
-### 🎯 Auto-Tune
-One-click profile scanner. Tests all strategies against your ISP's DPI and picks the winner. No guesswork.
+### 🎯 Auto-Tune V2
+One-click profile scanner. In 2026, simple YouTube pings are not enough. Auto-Tune V2 tests strategies against **YouTube, Telegram, Discord, RuTracker, and Facebook** simultaneously using parallel TCP/UDP probes and TLS 1.3 verification.
+
+### 🩺 System Health Check
+Built-in diagnostic tool. Automatically detects administrator privilege issues, driver conflicts (old zapret, GoodbyeDPI), and WinDivert status. Fix issues with one click.
+
+### 🧹 Discord Hygiene & TCP Tuning
+Includes automatic Discord cache cleaning to remove "poisoned" entries and enables system-wide **TCP Timestamps** for maximum compatibility with modern DPI-bypass techniques.
 
 ### 🚀 Stealth Autostart
 Registers with Windows Task Scheduler to launch on boot with admin privileges. No UAC prompts, no tray spam. Just works.
