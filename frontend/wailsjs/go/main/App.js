@@ -94,6 +94,10 @@ export function KillConflicts() {
   return window['go']['main']['App']['KillConflicts']();
 }
 
+export function KillWinws2() {
+  return window['go']['main']['App']['KillWinws2']();
+}
+
 export function RunDiagnostics() {
   return window['go']['main']['App']['RunDiagnostics']();
 }

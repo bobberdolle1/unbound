@@ -271,6 +271,15 @@ func (e *Zapret2WindowsProvider) GetProfiles() []string {
 	return []string{"hostfakesplit", "multisplit"}
 }
 
-func (e *Zapret2WindowsProvider) SetStatusCallback(cb func(string)) {
+func (e *Zapret2WindowsProvider) GetStatus() Status {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.running {
+		return StatusRunning
+	}
+	return StatusStopped
+}
+
+func (e *Zapret2WindowsProvider) SetStatusCallback(cb func(Status)) {
 	// Optional status callback
 }

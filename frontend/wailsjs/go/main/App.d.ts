@@ -48,6 +48,8 @@ export function IsAutoStartEnabled():Promise<boolean>;
 
 export function KillConflicts():Promise<void>;
 
+export function KillWinws2():Promise<void>;
+
 export function RunDiagnostics():Promise<Array<engine.DiagnosticResult>>;
 
 export function SaveSettings(arg1:engine.Settings):Promise<void>;
