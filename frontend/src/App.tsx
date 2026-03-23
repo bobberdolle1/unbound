@@ -7,7 +7,7 @@ function cn(...inputs: ClassValue[]) {
 }
 
 // @ts-ignore
-import { GetEngineNames, GetProfiles, StartEngine, StopEngine, GetLogs, AutoTune, CancelAutoTune, GetSettings, SaveSettings, GetLivePing, ShowNotification, EnableAutoStart, DisableAutoStart, IsAutoStartEnabled, CheckConflicts, KillConflicts, CheckPrivileges, RunDiagnostics, ClearDiscordCache, EnableTCPTimestamps, KillWinws2 } from '../wailsjs/go/main/App';
+import { GetEngineNames, GetProfiles, StartEngine, StopEngine, GetLogs, AutoTune, CancelAutoTune, GetSettings, SaveSettings, GetLivePing, ShowNotification, EnableAutoStart, DisableAutoStart, IsAutoStartEnabled, CheckConflicts, KillConflicts, CheckPrivileges, RunDiagnostics, ClearDiscordCache, EnableTCPTimestamps, KillWinws2, GetAppVersion } from '../wailsjs/go/main/App';
 // @ts-ignore
 import { EventsOn, WindowMinimise, Quit } from '../wailsjs/runtime/runtime';
 
@@ -228,9 +228,19 @@ export default function App() {
     EventsOn('privilege_error', (msg: string) => {
       setPrivilegeError(msg);
     });
-    EventsOn('autotune_log', (msg: string) => {
-      setScanLogs(prev => [...prev, msg]);
-      setIsLogExpanded(true);
+    EventsOn('engine_error', (msg: string) => {
+      ShowNotification("Engine Error", msg);
+      setStatus("Stopped");
+    });
+    EventsOn('notification', (data: any) => {
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification(data.title, { body: data.message });
+      } else {
+        setScanLogs(prev => [...prev, `🔔 ${data.title}: ${data.message}`]);
+      }
+    });
+    EventsOn('autotune_start', (running: boolean) => {
+      setIsScanning(running);
     });
     EventsOn('engine_log', (msg: string) => {
       setLogs(prev => [...prev, msg]);
@@ -763,6 +773,10 @@ export default function App() {
               >
                 Save!
               </button>
+            </div>
+            
+            <div className="px-4 py-2 flex justify-center opacity-40">
+              <span className="font-marker text-sm">v1.0.3 - 2026 Stable</span>
             </div>
           </div>
         </div>
