@@ -1,6 +1,9 @@
 package main
 
 import (
+	"os"
+	"time"
+
 	"github.com/getlantern/systray"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -23,16 +26,22 @@ func (a *App) onTrayReady() {
 			case <-mShow.ClickedCh:
 				runtime.WindowShow(a.ctx)
 			case <-mQuit.ClickedCh:
-				a.manager.Stop()
-				systray.Quit()
-				runtime.Quit(a.ctx)
+				// Остановка движка с таймаутом
+				go func() {
+					a.manager.Stop()
+					time.Sleep(200 * time.Millisecond)
+					systray.Quit()
+					runtime.Quit(a.ctx)
+					// Если Wails не закрылся сам за 1 секунду - убиваем процесс принудительно
+					time.Sleep(1 * time.Second)
+					os.Exit(0)
+				}()
 			}
 		}
 	}()
 }
 
 func (a *App) onTrayExit() {
-	// Cleanup if needed
 }
 
 func (a *App) HideToTray() {
@@ -41,11 +50,4 @@ func (a *App) HideToTray() {
 
 func (a *App) ShowFromTray() {
 	runtime.WindowShow(a.ctx)
-}
-
-func (a *App) ShowNotification(title, message string) {
-	runtime.EventsEmit(a.ctx, "show_notification", map[string]string{
-		"title":   title,
-		"message": message,
-	})
 }
