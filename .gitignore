@@ -4,17 +4,25 @@
 *.dll
 *.so
 *.dylib
+*.bin
 
 # Test artifacts
 *.test
 test_bypass.exe
 unbound-*.exe
+test_results.json
+test_output.txt
+RELEASE_SUMMARY.txt
 
 # Build output
 build/bin/
+dist/
 frontend/dist/
 frontend/node_modules/
-reference 
+
+# References & Docs
+reference/
+docs/screenshot.jpg
 
 # Temporary files
 *.log

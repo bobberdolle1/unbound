@@ -1,6 +1,22 @@
-# Mark Lua scripts as vendored to prevent them from dominating language statistics
-engine/lua_scripts/*.lua linguist-vendored
-# Mark Android Magisk module files as vendored
-android/magisk/* linguist-vendored
-# Mark Windows installer scripts as vendored
-build/windows/installer/* linguist-vendored
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Go and TypeScript
+*.go text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+
+# Linguist overrides - hide data and assets from stats
+engine/lists/* linguist-generated=true
+engine/core_bin/* linguist-binary=true
+engine/lua_scripts/* linguist-vendored=false
+
+# Specific binary files
+*.bin binary
+*.sys binary
+*.ico binary
+*.png binary
+
+# Shell scripts
+*.ps1 text eol=crlf
+*.bat text eol=crlf
