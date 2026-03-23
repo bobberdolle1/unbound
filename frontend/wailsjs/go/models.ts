@@ -1,25 +1,5 @@
 export namespace engine {
 	
-	export class AdvancedProfile {
-	    Name: string;
-	    Description: string;
-	    Args: string[];
-	    Category: string;
-	    Techniques: string[];
-	
-	    static createFrom(source: any = {}) {
-	        return new AdvancedProfile(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.Name = source["Name"];
-	        this.Description = source["Description"];
-	        this.Args = source["Args"];
-	        this.Category = source["Category"];
-	        this.Techniques = source["Techniques"];
-	    }
-	}
 	export class BlobPayload {
 	    Type: string;
 	    Data: number[];
@@ -37,10 +17,10 @@ export namespace engine {
 	    }
 	}
 	export class DiagnosticResult {
-	    Name: string;
+	    Component: string;
 	    Status: string;
-	    Message: string;
-	    Critical: boolean;
+	    Details: string;
+	    IsError: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new DiagnosticResult(source);
@@ -48,90 +28,25 @@ export namespace engine {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.Name = source["Name"];
+	        this.Component = source["Component"];
 	        this.Status = source["Status"];
-	        this.Message = source["Message"];
-	        this.Critical = source["Critical"];
+	        this.Details = source["Details"];
+	        this.IsError = source["IsError"];
 	    }
 	}
-	export class DiagnosticsReport {
-	    Results: DiagnosticResult[];
-	    Score: number;
-	    Summary: string;
+	export class Profile {
+	    Name: string;
+	    Args: string[];
 	
 	    static createFrom(source: any = {}) {
-	        return new DiagnosticsReport(source);
+	        return new Profile(source);
 	    }
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.Results = this.convertValues(source["Results"], DiagnosticResult);
-	        this.Score = source["Score"];
-	        this.Summary = source["Summary"];
+	        this.Name = source["Name"];
+	        this.Args = source["Args"];
 	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class ProfileStats {
-	    profile_name: string;
-	    test_count: number;
-	    success_count: number;
-	    failure_count: number;
-	    average_latency: number;
-	    average_score: number;
-	    // Go type: time
-	    last_tested: any;
-	    recommended_rank: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new ProfileStats(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.profile_name = source["profile_name"];
-	        this.test_count = source["test_count"];
-	        this.success_count = source["success_count"];
-	        this.failure_count = source["failure_count"];
-	        this.average_latency = source["average_latency"];
-	        this.average_score = source["average_score"];
-	        this.last_tested = this.convertValues(source["last_tested"], null);
-	        this.recommended_rank = source["recommended_rank"];
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
 	}
 	export class Settings {
 	    autoStart: boolean;
@@ -141,6 +56,8 @@ export namespace engine {
 	    gameFilter: boolean;
 	    autoUpdateEnabled: boolean;
 	    showLogs: boolean;
+	    enableTCPTimestamps: boolean;
+	    discordCacheAutoClean: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -155,122 +72,9 @@ export namespace engine {
 	        this.gameFilter = source["gameFilter"];
 	        this.autoUpdateEnabled = source["autoUpdateEnabled"];
 	        this.showLogs = source["showLogs"];
+	        this.enableTCPTimestamps = source["enableTCPTimestamps"];
+	        this.discordCacheAutoClean = source["discordCacheAutoClean"];
 	    }
-	}
-	export class TestAnalytics {
-	    total_sessions: number;
-	    total_tests: number;
-	    successful_tests: number;
-	    failed_tests: number;
-	    average_score: number;
-	    profile_stats: Record<string, ProfileStats>;
-	    // Go type: time
-	    last_updated: any;
-	
-	    static createFrom(source: any = {}) {
-	        return new TestAnalytics(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.total_sessions = source["total_sessions"];
-	        this.total_tests = source["total_tests"];
-	        this.successful_tests = source["successful_tests"];
-	        this.failed_tests = source["failed_tests"];
-	        this.average_score = source["average_score"];
-	        this.profile_stats = this.convertValues(source["profile_stats"], ProfileStats, true);
-	        this.last_updated = this.convertValues(source["last_updated"], null);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class TestResultPersistent {
-	    url: string;
-	    success: boolean;
-	    latency: number;
-	    error?: string;
-	    status_code?: number;
-	    tcp_freeze?: boolean;
-	
-	    static createFrom(source: any = {}) {
-	        return new TestResultPersistent(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.url = source["url"];
-	        this.success = source["success"];
-	        this.latency = source["latency"];
-	        this.error = source["error"];
-	        this.status_code = source["status_code"];
-	        this.tcp_freeze = source["tcp_freeze"];
-	    }
-	}
-	export class TestSession {
-	    id: string;
-	    // Go type: time
-	    start_time: any;
-	    // Go type: time
-	    end_time: any;
-	    duration: number;
-	    profile_name: string;
-	    test_mode: string;
-	    results: TestResultPersistent[];
-	    score: number;
-	    success_rate: number;
-	    best_profile?: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new TestSession(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.id = source["id"];
-	        this.start_time = this.convertValues(source["start_time"], null);
-	        this.end_time = this.convertValues(source["end_time"], null);
-	        this.duration = source["duration"];
-	        this.profile_name = source["profile_name"];
-	        this.test_mode = source["test_mode"];
-	        this.results = this.convertValues(source["results"], TestResultPersistent);
-	        this.score = source["score"];
-	        this.success_rate = source["success_rate"];
-	        this.best_profile = source["best_profile"];
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
 	}
 	export class UpdateInfo {
 	    available: boolean;

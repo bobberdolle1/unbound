@@ -88,7 +88,7 @@ Write-Host "🔍 Step 3/4: Locating Inno Setup compiler..." -ForegroundColor Yel
 
 $iscc = Find-InnoSetup
 
-if (-not $iscc) {
+if ([string]::IsNullOrEmpty($iscc)) {
     Write-Host "❌ Inno Setup not found. Please install manually from: https://jrsoftware.org/isdl.php" -ForegroundColor Red
     Write-Host "After installation, run this script again." -ForegroundColor Yellow
     exit 1

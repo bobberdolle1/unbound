@@ -7,7 +7,7 @@ function cn(...inputs: ClassValue[]) {
 }
 
 // @ts-ignore
-import { GetEngineNames, GetProfiles, StartEngine, StopEngine, GetLogs, AutoTune, CancelAutoTune, GetSettings, SaveSettings, GetLivePing, ShowNotification, EnableAutoStart, DisableAutoStart, IsAutoStartEnabled } from '../wailsjs/go/main/App';
+import { GetEngineNames, GetProfiles, StartEngine, StopEngine, GetLogs, AutoTune, CancelAutoTune, GetSettings, SaveSettings, GetLivePing, ShowNotification, EnableAutoStart, DisableAutoStart, IsAutoStartEnabled, CheckConflicts, KillConflicts, CheckPrivileges, RunDiagnostics, ClearDiscordCache, EnableTCPTimestamps, KillWinws2 } from '../wailsjs/go/main/App';
 // @ts-ignore
 import { EventsOn, WindowMinimise, Quit } from '../wailsjs/runtime/runtime';
 
@@ -141,23 +141,69 @@ export default function App() {
   const [scanProgress, setScanProgress] = useState<string>('');
   const [scanSuccess, setScanSuccess] = useState<boolean | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
-  const [settings, setSettings] = useState<{autoStart: boolean, startMinimized: boolean, defaultProfile: string, startupProfileMode: string, gameFilter: boolean, autoUpdateEnabled: boolean, showLogs: boolean}>({
+  const [isDiagOpen, setIsDiagOpen] = useState<boolean>(false);
+  const [diagResults, setDiagResults] = useState<any[]>([]);
+  const [isDiagRunning, setIsDiagRunning] = useState<boolean>(false);
+  
+  const [settings, setSettings] = useState<{
+    autoStart: boolean, 
+    startMinimized: boolean, 
+    defaultProfile: string, 
+    startupProfileMode: string, 
+    gameFilter: boolean, 
+    autoUpdateEnabled: boolean, 
+    showLogs: boolean,
+    enableTCPTimestamps: boolean,
+    discordCacheAutoClean: boolean
+  }>({
     autoStart: false,
     startMinimized: false,
     defaultProfile: 'Unbound Ultimate (God Mode)',
     startupProfileMode: 'Last Used',
     gameFilter: true,
     autoUpdateEnabled: true,
-    showLogs: true
+    showLogs: true,
+    enableTCPTimestamps: false,
+    discordCacheAutoClean: false
   });
   const [livePingData, setLivePingData] = useState<{active: boolean, latency: number, status: string}>({active: false, latency: 0, status: 'stopped'});
   const [privilegeError, setPrivilegeError] = useState<string>('');
+  const [conflictWarning, setConflictWarning] = useState<string[]>([]);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();
     }
+    
+    // Check admin privileges on startup
+    const checkAdmin = async () => {
+      try {
+        const hasPriv = await CheckPrivileges();
+        if (!hasPriv) {
+          setPrivilegeError('Administrator privileges required. Please restart the application as administrator.');
+        }
+      } catch (err) {
+        console.error('Privilege check failed:', err);
+        setPrivilegeError('Administrator privileges required. Please restart the application as administrator.');
+      }
+    };
+    
+    checkAdmin();
+    
+    // Check for conflicts on startup
+    const checkConflicts = async () => {
+      try {
+        const conflicts = await CheckConflicts();
+        if (conflicts && conflicts.length > 0) {
+          setConflictWarning(conflicts);
+        }
+      } catch (err) {
+        console.error('Conflict check failed:', err);
+      }
+    };
+    
+    checkConflicts();
     
     GetEngineNames().then((engines: string[]) => {
       setEngines(engines || []);
@@ -172,7 +218,9 @@ export default function App() {
         startupProfileMode: loadedSettings.startupProfileMode || 'Last Used',
         gameFilter: loadedSettings.gameFilter !== undefined ? loadedSettings.gameFilter : false,
         autoUpdateEnabled: loadedSettings.autoUpdateEnabled !== undefined ? loadedSettings.autoUpdateEnabled : true,
-        showLogs: loadedSettings.showLogs !== undefined ? loadedSettings.showLogs : true
+        showLogs: loadedSettings.showLogs !== undefined ? loadedSettings.showLogs : true,
+        enableTCPTimestamps: loadedSettings.enableTCPTimestamps || false,
+        discordCacheAutoClean: loadedSettings.discordCacheAutoClean || false
       });
     }).catch(() => {});
     
@@ -297,7 +345,9 @@ export default function App() {
         startupProfileMode: loadedSettings.startupProfileMode || 'Last Used',
         gameFilter: loadedSettings.gameFilter !== undefined ? loadedSettings.gameFilter : false,
         autoUpdateEnabled: loadedSettings.autoUpdateEnabled !== undefined ? loadedSettings.autoUpdateEnabled : true,
-        showLogs: loadedSettings.showLogs !== undefined ? loadedSettings.showLogs : true
+        showLogs: loadedSettings.showLogs !== undefined ? loadedSettings.showLogs : true,
+        enableTCPTimestamps: false,
+        discordCacheAutoClean: false
       });
     } catch (err) {
       console.error(err);
@@ -318,6 +368,37 @@ export default function App() {
     }
   };
 
+  const handleRunDiagnostics = async () => {
+    setIsDiagRunning(true);
+    setIsDiagOpen(true);
+    try {
+      const results = await RunDiagnostics();
+      setDiagResults(Array.isArray(results) ? results : []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsDiagRunning(false);
+    }
+  };
+
+  const handleClearCache = async () => {
+    try {
+      await ClearDiscordCache();
+      ShowNotification("Cache Cleared", "Discord cache has been successfully cleaned.");
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleKillWinws2 = async () => {
+    try {
+      await KillWinws2();
+      ShowNotification("Success", "All winws2 processes terminated.");
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const isConnected = status === 'Running';
   const isConnecting = status === 'Starting';
   const disableMain = isConnecting || isScanning;
@@ -325,6 +406,47 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen w-screen relative app-drag">
+      
+      {/* CONFLICT WARNING OVERLAY */}
+      {conflictWarning.length > 0 && (
+        <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-orange-900/90 backdrop-blur-sm p-4 app-no-drag animate-in fade-in duration-300">
+          <div className="w-full max-w-md bg-orange-50 sketch-box p-6 animate-in zoom-in-95 slide-in-from-bottom-4 duration-300">
+            <div className="flex items-start gap-4 mb-4">
+              <div className="w-12 h-12 bg-orange-600 rounded-full flex items-center justify-center flex-shrink-0">
+                <span className="text-white font-marker text-3xl">!</span>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-2xl font-marker text-orange-900 mb-2">CONFLICTS DETECTED!</h3>
+                <div className="text-base font-bold text-orange-800 leading-snug mb-3 space-y-1">
+                  {conflictWarning.map((conflict, idx) => (
+                    <div key={idx}>{conflict}</div>
+                  ))}
+                </div>
+                <p className="text-sm text-orange-700 leading-snug">
+                  These processes may interfere with Unbound. Kill them to avoid conflicts.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConflictWarning([])}
+                className="flex-1 py-3 text-xl font-marker text-orange-600 hover:text-orange-900 hover:bg-orange-100 border-2 border-orange-800 rounded-xl shadow-[2px_2px_0_#7c2d12] transition-all duration-150 active:translate-y-1 active:shadow-none bg-white hover:scale-[1.02]"
+              >
+                Ignore
+              </button>
+              <button
+                onClick={async () => {
+                  await KillConflicts();
+                  setConflictWarning([]);
+                }}
+                className="flex-1 py-3 text-xl font-marker bg-orange-600 text-white hover:bg-orange-700 border-2 border-orange-900 rounded-xl shadow-[2px_2px_0_#7c2d12] transition-all duration-150 active:translate-y-1 active:shadow-none hover:scale-[1.02]"
+              >
+                Kill All
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* PRIVILEGE ERROR OVERLAY */}
       {privilegeError && (
@@ -573,6 +695,22 @@ export default function App() {
                 onChange={() => setSettings({...settings, showLogs: !settings.showLogs})} 
               />
 
+              <DoodleCheckbox 
+                id="enableTCPTimestamps" 
+                label="TCP Timestamps"
+                desc="Improve compatibility with some ISPs"
+                checked={settings.enableTCPTimestamps} 
+                onChange={() => setSettings({...settings, enableTCPTimestamps: !settings.enableTCPTimestamps})} 
+              />
+
+              <DoodleCheckbox 
+                id="discordCacheAutoClean" 
+                label="Discord Hygiene"
+                desc="Auto-clean Discord cache on startup"
+                checked={settings.discordCacheAutoClean} 
+                onChange={() => setSettings({...settings, discordCacheAutoClean: !settings.discordCacheAutoClean})} 
+              />
+
               <div className="flex flex-col gap-2 p-3 bg-white border-2 border-gray-800 rounded-xl relative z-50 shadow-[2px_2px_0_#222]">
                 <div>
                   <span className="text-lg font-bold text-gray-900 block leading-none">Startup Profile</span>
@@ -588,7 +726,31 @@ export default function App() {
             </div>
 
             {/* Modal Footer */}
-            <div className="flex gap-4 px-4 py-4 mt-2 border-t-2 border-gray-200">
+            <div className="px-4 py-2 space-y-2 mb-2 relative z-[60]">
+               <button 
+                onClick={handleRunDiagnostics}
+                className="w-full flex items-center justify-center gap-2 py-2 sketch-box bg-blue-50 hover:bg-blue-100 text-blue-800 font-bold text-sm transition-all duration-150"
+              >
+                <SketchyTerminal className="w-4 h-4" />
+                Run Diagnostics
+              </button>
+              <button 
+                onClick={handleClearCache}
+                className="w-full flex items-center justify-center gap-2 py-2 sketch-box bg-gray-50 hover:bg-gray-100 text-gray-800 font-bold text-sm transition-all duration-150"
+              >
+                <SketchyX className="w-4 h-4" />
+                Clear Discord Cache
+              </button>
+              <button 
+                onClick={handleKillWinws2}
+                className="w-full flex items-center justify-center gap-2 py-2 sketch-box bg-red-50 hover:bg-red-100 text-red-800 font-bold text-sm transition-all duration-150"
+              >
+                <SketchyX className="w-4 h-4" />
+                Kill winws2.exe
+              </button>
+            </div>
+
+            <div className="flex gap-4 px-4 py-4 mt-2 border-t-2 border-gray-200 relative z-[60]">
               <button
                 onClick={() => setIsSettingsOpen(false)}
                 className="flex-1 py-3 text-xl font-marker text-gray-600 hover:text-gray-900 hover:bg-gray-100 border-2 border-gray-800 rounded-xl shadow-[2px_2px_0_#222] transition-all duration-150 active:translate-y-1 active:shadow-none bg-white hover:scale-[1.02]"
@@ -600,6 +762,63 @@ export default function App() {
                 className="flex-1 py-3 text-xl font-marker doodle-btn transition-all duration-150 hover:scale-[1.02] active:scale-[0.98]"
               >
                 Save!
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Diagnostics Modal */}
+      {isDiagOpen && (
+        <div 
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-blue-900/40 backdrop-blur-sm p-4 app-no-drag animate-in fade-in duration-200"
+          onClick={() => setIsDiagOpen(false)}
+        >
+          <div 
+            className="w-full max-w-[360px] bg-[#fdfdfc] sketch-box flex flex-col max-h-[80vh] p-1 animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b-2 border-gray-200 mb-2">
+              <div className="flex items-center gap-2">
+                <SketchyTerminal className="w-6 h-6 text-blue-600" />
+                <h2 className="text-xl font-marker text-gray-800">Health Check</h2>
+              </div>
+              <button onClick={() => setIsDiagOpen(false)} className="text-gray-500 hover:text-black font-marker text-xl">X</button>
+            </div>
+
+            <div className="px-4 py-4 overflow-y-auto space-y-4 flex-1">
+              {isDiagRunning ? (
+                <div className="flex flex-col items-center justify-center py-12 gap-4">
+                  <SketchySpinner className="w-12 h-12 text-blue-500" />
+                  <span className="font-marker text-xl text-blue-600">Checking vitals...</span>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {diagResults.map((res, idx) => (
+                    <div key={idx} className={cn(
+                      "p-3 sketch-box border-2 transition-all duration-200",
+                      res.IsError ? "bg-red-50 border-red-300" : "bg-green-50 border-green-300"
+                    )}>
+                      <div className="flex justify-between items-start mb-1">
+                        <span className="font-bold text-gray-900">{res.Component}</span>
+                        <span className={cn(
+                          "text-xs px-2 py-0.5 rounded-full font-bold uppercase",
+                          res.IsError ? "bg-red-200 text-red-700" : "bg-green-200 text-green-700"
+                        )}>{res.Status}</span>
+                      </div>
+                      <p className="text-sm text-gray-700 leading-snug">{res.Details}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t-2 border-gray-200">
+              <button
+                onClick={() => setIsDiagOpen(false)}
+                className="w-full py-3 text-xl font-marker doodle-btn hover:scale-[1.02] active:scale-[0.98]"
+              >
+                Got it!
               </button>
             </div>
           </div>

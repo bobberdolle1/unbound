@@ -29,13 +29,15 @@ const (
 )
 
 type Settings struct {
-	AutoStart          bool   `json:"autoStart"`
-	StartMinimized     bool   `json:"startMinimized"`
-	DefaultProfile     string `json:"defaultProfile"`
-	StartupProfileMode string `json:"startupProfileMode"`
-	GameFilter         bool   `json:"gameFilter"`
-	AutoUpdateEnabled  bool   `json:"autoUpdateEnabled"`
-	ShowLogs           bool   `json:"showLogs"`
+	AutoStart               bool   `json:"autoStart"`
+	StartMinimized          bool   `json:"startMinimized"`
+	DefaultProfile          string `json:"defaultProfile"`
+	StartupProfileMode      string `json:"startupProfileMode"`
+	GameFilter              bool   `json:"gameFilter"`
+	AutoUpdateEnabled       bool   `json:"autoUpdateEnabled"`
+	ShowLogs                bool   `json:"showLogs"`
+	EnableTCPTimestamps     bool   `json:"enableTCPTimestamps"`
+	DiscordCacheAutoClean   bool   `json:"discordCacheAutoClean"`
 }
 
 func GetConfigDir() (string, error) {

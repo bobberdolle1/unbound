@@ -27,7 +27,7 @@ func registerOSProviders(a *App, assets *engine.AssetPaths) {
 		runtime.EventsEmit(a.ctx, "status_changed", status)
 	})
 	
-	// Register unified profiles
+	// Register built-in profiles (includes all reference profiles)
 	registered := make(map[string]bool)
 	for _, p := range engine.GetProfiles(assets.LuaDir) {
 		zapretProvider.RegisterProfile(p.Name, p.Args)

@@ -8,7 +8,7 @@ import (
 	"runtime"
 )
 
-//go:embed core_bin/* lua_scripts/* lists/*
+//go:embed core_bin/* lua_scripts/* lists/* windivert.filter/*
 var EmbeddedAssets embed.FS
 
 type AssetPaths struct {
@@ -27,6 +27,33 @@ func ExtractAssets() (*AssetPaths, error) {
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return nil, fmt.Errorf("failed to create temp dir: %w", err)
+		}
+	}
+	
+	// Extract windivert.filter to config directory
+	configDir, err := GetConfigDir()
+	if err == nil {
+		windivertDir := filepath.Join(configDir, "windivert.filter")
+		if err := os.MkdirAll(windivertDir, 0755); err == nil {
+			extractWinDivertFilters := func() error {
+				entries, err := EmbeddedAssets.ReadDir("windivert.filter")
+				if err != nil {
+					return nil
+				}
+				for _, entry := range entries {
+					if entry.IsDir() {
+						continue
+					}
+					data, err := EmbeddedAssets.ReadFile("windivert.filter/" + entry.Name())
+					if err != nil {
+						continue
+					}
+					targetPath := filepath.Join(windivertDir, entry.Name())
+					os.WriteFile(targetPath, data, 0644)
+				}
+				return nil
+			}
+			extractWinDivertFilters()
 		}
 	}
 
@@ -55,6 +82,11 @@ func ExtractAssets() (*AssetPaths, error) {
 			}
 		}
 		return nil
+	}
+
+	// Extract blob files from core_bin root (platform-independent)
+	if err := extract("core_bin", binDir); err != nil {
+		return nil, fmt.Errorf("failed to extract blob files: %w", err)
 	}
 
 	// Extract OS-specific binaries

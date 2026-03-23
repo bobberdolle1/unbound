@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 	"unbound/engine/providers"
 )
@@ -13,18 +14,35 @@ import (
 type AutoTuneResult struct {
 	ProfileName string
 	Success     bool
+	Score       int
 	Latency     time.Duration
-	Error       error
-	TestedURLs  map[string]bool
+	Results     map[string]TargetStatus
 }
 
-var testTargets = []string{
-	"https://discord.com/api/v9/gateway",
-	"https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+type TargetStatus struct {
+	OK      bool
+	Latency time.Duration
+	TLS13   bool
+	Error   string
+}
+
+type Target struct {
+	Name string
+	URL  string
+}
+
+var testTargets = []Target{
+	{Name: "Discord", URL: "https://discord.com/api/v9/gateway"},
+	{Name: "YouTube", URL: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
+	{Name: "Telegram", URL: "https://api.telegram.org"},
+	{Name: "RuTracker", URL: "https://rutracker.org/forum/index.php"},
+	{Name: "Facebook", URL: "https://www.facebook.com"},
+	{Name: "Google", URL: "https://www.google.com"},
 }
 
 func RunAutoTuneV2(provider *providers.Zapret2WindowsProvider, profiles []Profile) (*AutoTuneResult, error) {
 	ctx := context.Background()
+	var bestResult *AutoTuneResult
 
 	for _, profile := range profiles {
 		fmt.Printf("🔍 Testing profile: %s\n", profile.Name)
@@ -34,105 +52,132 @@ func RunAutoTuneV2(provider *providers.Zapret2WindowsProvider, profiles []Profil
 			continue
 		}
 
-		ready := provider.WaitReady(3 * time.Second)
+		// Wait for engine to initialize WinDivert
+		ready := provider.WaitReady(5 * time.Second)
 		if !ready {
 			fmt.Printf("⏱️ Engine initialization timeout\n")
 			provider.Stop()
 			continue
 		}
 
-		time.Sleep(1 * time.Second)
+		// Пауза для стабилизации сетевого стека
+		time.Sleep(2 * time.Second)
 
-		result := testBypass(profile.Name)
-
+		result := testBypassParallel(profile.Name)
 		provider.Stop()
 		time.Sleep(500 * time.Millisecond)
 
-		if result.Success {
-			fmt.Printf("✅ Profile works: %s\n", profile.Name)
-			return result, nil
-		}
+		fmt.Printf("📊 Score: %d | OK: %d/%d\n", result.Score, countOK(result), len(testTargets))
 
-		fmt.Printf("❌ Profile failed: %s (%v)\n", profile.Name, result.Error)
+		if result.Success {
+			if bestResult == nil || result.Score > bestResult.Score {
+				bestResult = result
+				// Если профиль идеален (все цели доступны), можно закончить досрочно
+				if countOK(result) == len(testTargets) {
+					fmt.Printf("⭐ Perfect profile found: %s\n", profile.Name)
+					return bestResult, nil
+				}
+			}
+		}
+	}
+
+	if bestResult != nil {
+		return bestResult, nil
 	}
 
 	return nil, fmt.Errorf("no working profile found")
 }
 
-func testBypass(profileName string) *AutoTuneResult {
+func countOK(res *AutoTuneResult) int {
+	ok := 0
+	for _, s := range res.Results {
+		if s.OK {
+			ok++
+		}
+	}
+	return ok
+}
+
+func testBypassParallel(profileName string) *AutoTuneResult {
 	result := &AutoTuneResult{
 		ProfileName: profileName,
-		TestedURLs:  make(map[string]bool),
+		Results:     make(map[string]TargetStatus),
 	}
 
-	client := &http.Client{
-		Timeout: 5 * time.Second,
-		Transport: &http.Transport{
-			DialContext: (&net.Dialer{
-				Timeout:   3 * time.Second,
-				KeepAlive: 0,
-			}).DialContext,
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: false,
-			},
-			DisableKeepAlives:     true,
-			MaxIdleConns:          1,
-			IdleConnTimeout:       1 * time.Second,
-			TLSHandshakeTimeout:   3 * time.Second,
-			ExpectContinueTimeout: 1 * time.Second,
-		},
-	}
-
-	successCount := 0
-	start := time.Now()
+	var wg sync.WaitGroup
+	var mu sync.Mutex
 
 	for _, target := range testTargets {
-		req, err := http.NewRequest("GET", target, nil)
-		if err != nil {
-			result.TestedURLs[target] = false
-			continue
-		}
+		wg.Add(1)
+		go func(t Target) {
+			defer wg.Done()
+			status := testTarget(t.URL)
+			mu.Lock()
+			result.Results[t.Name] = status
+			mu.Unlock()
+		}(target)
+	}
 
-		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+	wg.Wait()
 
-		resp, err := client.Do(req)
-		if err != nil {
-			result.TestedURLs[target] = false
-			result.Error = err
-			continue
-		}
-
-		resp.Body.Close()
-
-		if resp.StatusCode >= 200 && resp.StatusCode < 400 {
-			result.TestedURLs[target] = true
+	// Расчет очков (как в референсе: OK тесты + бонусы за TLS 1.3)
+	score := 0
+	successCount := 0
+	for _, s := range result.Results {
+		if s.OK {
 			successCount++
-		} else {
-			result.TestedURLs[target] = false
+			score += 10
+			if s.TLS13 {
+				score += 2
+			}
 		}
 	}
 
-	result.Latency = time.Since(start)
-	result.Success = successCount == 2
-
+	result.Score = score
+	// Считаем успех, если хотя бы 50% целей доступны (в 2026-м 100% — редкость)
+	result.Success = successCount >= (len(testTargets) / 2)
+	
 	return result
 }
 
-func QuickTest(provider *providers.Zapret2WindowsProvider, profileName string) (*AutoTuneResult, error) {
-	ctx := context.Background()
-
-	if err := provider.Start(ctx, profileName); err != nil {
-		return nil, fmt.Errorf("failed to start engine: %w", err)
+func testTarget(url string) TargetStatus {
+	start := time.Now()
+	
+	// Тестируем с поддержкой TLS 1.3 (самый сложный для DPI)
+	client := &http.Client{
+		Timeout: 7 * time.Second,
+		Transport: &http.Transport{
+			DialContext: (&net.Dialer{
+				Timeout:   4 * time.Second,
+				KeepAlive: 0,
+			}).DialContext,
+			TLSClientConfig: &tls.Config{
+				MinVersion: tls.VersionTLS12,
+				MaxVersion: tls.VersionTLS13,
+			},
+			DisableKeepAlives: true,
+		},
 	}
 
-	defer provider.Stop()
-
-	if !provider.WaitReady(3 * time.Second) {
-		return nil, fmt.Errorf("engine initialization timeout")
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return TargetStatus{OK: false, Error: err.Error()}
 	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
 
-	time.Sleep(1 * time.Second)
+	resp, err := client.Do(req)
+	if err != nil {
+		return TargetStatus{OK: false, Error: err.Error()}
+	}
+	defer resp.Body.Close()
 
-	result := testBypass(profileName)
-	return result, nil
+	isTLS13 := resp.TLS != nil && resp.TLS.Version == tls.VersionTLS13
+
+	// В 2026-м статус 200, 403 или даже 404 — это часто УСПЕХ, 
+	// если соединение не было разорвано по TLS/TCP.
+	return TargetStatus{
+		OK:      resp.StatusCode < 500,
+		Latency: time.Since(start),
+		TLS13:   isTLS13,
+	}
 }

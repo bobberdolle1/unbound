@@ -1,0 +1,23 @@
+﻿TOP 10 WORKING PROFILES
+============================================================
+
+general ALT9 1.9.4
+  Score: 30/40
+general ALT8
+  Score: 30/40
+general FAKE TLS AUTO ALT
+  Score: 30/40
+general ALT9 1.9.5
+  Score: 30/40
+general ALT5
+  Score: 30/40
+general ALT4
+  Score: 30/40
+general ALT7
+  Score: 30/40
+general ALT6
+  Score: 30/40
+general SIMPLE FAKE ALT2
+  Score: 30/40
+general SIMPLE FAKE ALT
+  Score: 30/40

@@ -1,0 +1,191 @@
+﻿[
+    {
+        "Profile":  "Default.txt",
+        "Failed":  2,
+        "Tests":  [
+                      {
+                          "Status":  "FAIL",
+                          "URL":  "https://www.youtube.com",
+                          "Error":  "The operation has timed out."
+                      },
+                      {
+                          "Status":  "FAIL",
+                          "URL":  "https://discord.com",
+                          "Error":  "The operation has timed out."
+                      },
+                      {
+                          "Status":  "OK",
+                          "URL":  "https://www.google.com",
+                          "Latency":  380
+                      },
+                      {
+                          "Status":  "OK",
+                          "URL":  "https://www.cloudflare.com",
+                          "Latency":  1408
+                      }
+                  ],
+        "Success":  2
+    },
+    {
+        "Profile":  "general ALT.txt",
+        "Failed":  1,
+        "Tests":  [
+                      {
+                          "Status":  "FAIL",
+                          "URL":  "https://www.youtube.com",
+                          "Error":  "Базовое соединение закрыто: Непредвиденная ошибка при передаче."
+                      },
+                      {
+                          "Status":  "OK",
+                          "URL":  "https://discord.com",
+                          "Latency":  429
+                      },
+                      {
+                          "Status":  "OK",
+                          "URL":  "https://www.google.com",
+                          "Latency":  331
+                      },
+                      {
+                          "Status":  "OK",
+                          "URL":  "https://www.cloudflare.com",
+                          "Latency":  1129
+                      }
+                  ],
+        "Success":  3
+    },
+    {
+        "Profile":  "general FAKE TLS AUTO.txt",
+        "Failed":  0,
+        "Tests":  [
+                      {
+                          "Status":  "OK",
+                          "URL":  "https://www.youtube.com",
+                          "Latency":  2484
+                      },
+                      {
+                          "Status":  "OK",
+                          "URL":  "https://discord.com",
+                          "Latency":  175
+                      },
+                      {
+                          "Status":  "OK",
+                          "URL":  "https://www.google.com",
+                          "Latency":  325
+                      },
+                      {
+                          "Status":  "OK",
+                          "URL":  "https://www.cloudflare.com",
+                          "Latency":  1034
+                      }
+                  ],
+        "Success":  4
+    },
+    {
+        "Profile":  "general ALT2.txt",
+        "Failed":  0,
+        "Tests":  [
+                      {
+                          "Status":  "OK",
+                          "URL":  "https://www.youtube.com",
+                          "Latency":  2303
+                      },
+                      {
+                          "Status":  "OK",
+                          "URL":  "https://discord.com",
+                          "Latency":  175
+                      },
+                      {
+                          "Status":  "OK",
+                          "URL":  "https://www.google.com",
+                          "Latency":  364
+                      },
+                      {
+                          "Status":  "OK",
+                          "URL":  "https://www.cloudflare.com",
+                          "Latency":  1090
+                      }
+                  ],
+        "Success":  4
+    },
+    {
+        "Profile":  "general ALT3.txt",
+        "Failed":  0,
+        "Tests":  [
+                      {
+                          "Status":  "OK",
+                          "URL":  "https://www.youtube.com",
+                          "Latency":  2458
+                      },
+                      {
+                          "Status":  "OK",
+                          "URL":  "https://discord.com",
+                          "Latency":  182
+                      },
+                      {
+                          "Status":  "OK",
+                          "URL":  "https://www.google.com",
+                          "Latency":  342
+                      },
+                      {
+                          "Status":  "OK",
+                          "URL":  "https://www.cloudflare.com",
+                          "Latency":  1030
+                      }
+                  ],
+        "Success":  4
+    },
+    {
+        "Profile":  "Default v2 (game filter).txt",
+        "Failed":  0,
+        "Tests":  [
+                      {
+                          "Status":  "OK",
+                          "URL":  "https://www.youtube.com",
+                          "Latency":  2215
+                      },
+                      {
+                          "Status":  "OK",
+                          "URL":  "https://discord.com",
+                          "Latency":  163
+                      },
+                      {
+                          "Status":  "OK",
+                          "URL":  "https://www.google.com",
+                          "Latency":  330
+                      },
+                      {
+                          "Status":  "OK",
+                          "URL":  "https://www.cloudflare.com",
+                          "Latency":  1043
+                      }
+                  ],
+        "Success":  4
+    },
+    {
+        "Profile":  "Default v3 (game filter).txt",
+        "Failed":  0,
+        "Tests":  [
+                      {
+                          "Status":  "OK",
+                          "URL":  "https://www.youtube.com",
+                          "Latency":  2262
+                      },
+                      {
+                          "Status":  "OK",
+                          "URL":  "https://discord.com",
+                          "Latency":  162
+                      },
+                      {
+                          "Status":  "OK",
+                          "URL":  "https://www.google.com",
+                          "Latency":  314
+                      },
+                      {
+                          "Status":  "OK",
+                          "URL":  "https://www.cloudflare.com",
+                          "Latency":  1037
+                      }
+                  ],
+        "Success":  4
+    }
+]

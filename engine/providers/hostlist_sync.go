@@ -48,7 +48,7 @@ func SyncHostlists() error {
 	if err != nil {
 		return fmt.Errorf("failed to get user config directory: %w", err)
 	}
-	configPath := filepath.Join(userConfigDir, configDirName)
+	configPath := filepath.Join(userConfigDir, "Unbound")
 	if err := os.MkdirAll(configPath, 0755); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
