@@ -12,7 +12,9 @@ All notable changes to this project will be documented in this file.
 - **Full Kill**: Nuclear option to terminate all conflicting DPI bypass processes and reset drivers.
 
 ### Fixed
+- **System Tray**: Fixed non-responsive menu items. Added `appicon.png` embedding for stable icon display on Windows.
 - **Console Flashing**: All system calls now use `CREATE_NO_WINDOW`, eliminating black box flickering.
+- **Window Management**: Improved "Show" from tray logic using `WindowUnminimise`.
 - **Profiles**: Restored full list of 70+ presets from Zapret 2 reference materials.
 - **Auto-Tune Stability**: Fixed log duplication and cancellation logic.
 - **Launch Issues**: Fixed winws2.exe working directory and blob path resolution.

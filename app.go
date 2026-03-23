@@ -247,3 +247,10 @@ func (a *App) KillConflicts() error {
 	})
 	return nil
 }
+
+func (a *App) ShowNotification(title string, message string) {
+	wailsruntime.EventsEmit(a.ctx, "notification", map[string]string{
+		"title":   title,
+		"message": message,
+	})
+}
