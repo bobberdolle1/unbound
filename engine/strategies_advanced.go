@@ -9,6 +9,77 @@ func GetAdvancedProfiles(luaDir string) []Profile {
 	
 	return []Profile{
 		{
+			Name: "Universal 2026 (All-in-One)",
+			Args: []string{
+				"--wf-tcp-out=80,443,1080,2053,2083,2087,2096,8443",
+				"--wf-udp-out=443,19294-19344,50000-50100",
+				"--wf-raw-part=@" + filepath.ToSlash(filepath.Join(windivertDir, "windivert_part.discord_media.txt")),
+				"--wf-raw-part=@" + filepath.ToSlash(filepath.Join(windivertDir, "windivert_part.stun.txt")),
+				"--wf-raw-part=@" + filepath.ToSlash(filepath.Join(windivertDir, "windivert_part.wireguard.txt")),
+				
+				// 1. Block for Discord Voice (UDP)
+				"--filter-udp=443,50000-50100",
+				"--filter-l7=discord,stun",
+				"--payload=stun,discord_ip_discovery",
+				"--lua-desync=fake:blob=fake_default_udp:repeats=6",
+				"--new",
+
+				// 2. Block for Discord API/Media (TCP)
+				"--filter-tcp=80,443,1080,2053,2083,2087,2096,8443",
+				"--hostlist=" + filepath.ToSlash(filepath.Join(listsDir, "discord.txt")),
+				"--hostlist-domains=discord.media",
+				"--lua-desync=fake:blob=tls_google:repeats=6:tcp_seq=2",
+				"--lua-desync=fakedsplit:pos=2:repeats=8:tcp_seq=2",
+				"--new",
+
+				// 3. Block for YouTube (TCP + UDP/QUIC)
+				"--filter-udp=443",
+				"--hostlist=" + filepath.ToSlash(filepath.Join(listsDir, "youtube.txt")),
+				"--hostlist-domains=googlevideo.com",
+				"--payload=quic_initial",
+				"--lua-desync=fake:blob=quic_google:repeats=6",
+				"--new",
+				"--filter-tcp=80,443",
+				"--hostlist=" + filepath.ToSlash(filepath.Join(listsDir, "youtube.txt")),
+				"--hostlist-domains=googlevideo.com",
+				"--out-range=-d8",
+				"--lua-desync=hostfakesplit:host=ozon.ru:tcp_ts=-1000:tcp_md5:repeats=4",
+				"--new",
+
+				// 4. Block for Telegram MTProto (TCP 443)
+				// Telegram uses standard ports but not necessarily TLS. We fragment the first packets blindly.
+				"--filter-tcp=443",
+				"--ipset=" + filepath.ToSlash(filepath.Join(listsDir, "ipset-telegram.txt")),
+				"--lua-desync=fakedsplit:pos=2:repeats=6:tcp_seq=2",
+				"--new",
+
+				// 5. Block for Social Networks (Twitter, Facebook, Instagram, WhatsApp) (TCP 443 TLS)
+				"--filter-tcp=443",
+				"--ipset=" + filepath.ToSlash(filepath.Join(listsDir, "ipset-twitter.txt")),
+				"--ipset=" + filepath.ToSlash(filepath.Join(listsDir, "ipset-facebook.txt")),
+				"--ipset=" + filepath.ToSlash(filepath.Join(listsDir, "ipset-instagram.txt")),
+				"--ipset=" + filepath.ToSlash(filepath.Join(listsDir, "ipset-whatsapp.txt")),
+				"--payload=tls_client_hello",
+				"--lua-desync=fake:blob=fake_default_tls:tls_mod=rnd,dupsid,sni=www.google.com:repeats=8:tcp_seq=2",
+				"--lua-desync=fakedsplit:pos=2:repeats=8:tcp_seq=2",
+				"--new",
+
+				// 6. Block for all other general blacklisted IPs (Fallback for thousands of sites)
+				"--filter-udp=443",
+				"--ipset=" + filepath.ToSlash(filepath.Join(listsDir, "ipset-all.txt")),
+				"--ipset-exclude=" + filepath.ToSlash(filepath.Join(listsDir, "ipset-exclude.txt")),
+				"--payload=quic_initial",
+				"--lua-desync=fake:blob=quic_google:repeats=6",
+				"--new",
+				"--filter-tcp=80,443",
+				"--ipset=" + filepath.ToSlash(filepath.Join(listsDir, "ipset-all.txt")),
+				"--ipset-exclude=" + filepath.ToSlash(filepath.Join(listsDir, "ipset-exclude.txt")),
+				"--payload=tls_client_hello",
+				"--lua-desync=fake:blob=fake_default_tls:tls_mod=rnd,dupsid,sni=www.google.com:repeats=8:tcp_seq=2",
+				"--lua-desync=fakedsplit:pos=2:repeats=8:tcp_seq=2",
+			},
+		},
+		{
 			Name: "Advanced 1 (hostfakesplit + MD5)",
 			Args: []string{
 				"--wf-tcp-out=80,443,2053,2083,2087,2096,8443",

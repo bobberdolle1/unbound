@@ -74,23 +74,40 @@ func (a *App) GetProfiles(engineName string) []string {
 }
 
 func (a *App) StartEngine(engineName string, profileName string) error {
+	defer func() {
+		if r := recover(); r != nil {
+			wailsruntime.LogErrorf(a.ctx, "PANIC in StartEngine: %v", r)
+		}
+	}()
+	
 	wailsruntime.LogInfof(a.ctx, "StartEngine called: engine=%s, profile=%s", engineName, profileName)
 	
+	wailsruntime.LogInfo(a.ctx, "Checking admin privileges...")
 	hasPriv, err := checkAdminPrivileges()
 	if err != nil {
 		wailsruntime.LogErrorf(a.ctx, "Privilege check error: %v", err)
+		wailsruntime.EventsEmit(a.ctx, "privilege_error", fmt.Sprintf("Privilege check failed: %v", err))
 		return err
 	}
+	wailsruntime.LogInfof(a.ctx, "Privilege check result: %v", hasPriv)
+	
 	if !hasPriv {
 		wailsruntime.LogError(a.ctx, "Administrator privileges required")
 		wailsruntime.EventsEmit(a.ctx, "privilege_error", "Administrator privileges required. Please restart the application as administrator.")
 		return fmt.Errorf("administrator privileges required")
 	}
 
+	wailsruntime.LogInfo(a.ctx, "Stopping current engine if running...")
 	a.manager.Stop()
 	time.Sleep(500 * time.Millisecond)
 
+	wailsruntime.LogInfof(a.ctx, "Starting engine: %s with profile: %s", engineName, profileName)
+	wailsruntime.LogInfof(a.ctx, "Available engines: %v", a.manager.GetEngineNames())
+	
+	wailsruntime.LogInfo(a.ctx, "About to call manager.Start...")
 	err = a.manager.Start(a.ctx, engineName, profileName)
+	wailsruntime.LogInfof(a.ctx, "Manager.Start returned: err=%v", err)
+	
 	if err == nil {
 		wailsruntime.EventsEmit(a.ctx, "status_changed", "Running")
 		wailsruntime.LogInfof(a.ctx, "Started: %s", profileName)
