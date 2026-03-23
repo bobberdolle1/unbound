@@ -74,16 +74,23 @@ func (a *App) GetProfiles(engineName string) []string {
 }
 
 func (a *App) StartEngine(engineName string, profileName string) error {
-	hasPriv, _ := a.manager.CheckPrivileges()
+	wailsruntime.LogInfof(a.ctx, "StartEngine called: engine=%s, profile=%s", engineName, profileName)
+	
+	hasPriv, err := checkAdminPrivileges()
+	if err != nil {
+		wailsruntime.LogErrorf(a.ctx, "Privilege check error: %v", err)
+		return err
+	}
 	if !hasPriv {
-		wailsruntime.EventsEmit(a.ctx, "privilege_error", "Admin rights required!")
-		return fmt.Errorf("no admin")
+		wailsruntime.LogError(a.ctx, "Administrator privileges required")
+		wailsruntime.EventsEmit(a.ctx, "privilege_error", "Administrator privileges required. Please restart the application as administrator.")
+		return fmt.Errorf("administrator privileges required")
 	}
 
 	a.manager.Stop()
 	time.Sleep(500 * time.Millisecond)
 
-	err := a.manager.Start(a.ctx, engineName, profileName)
+	err = a.manager.Start(a.ctx, engineName, profileName)
 	if err == nil {
 		wailsruntime.EventsEmit(a.ctx, "status_changed", "Running")
 		wailsruntime.LogInfof(a.ctx, "Started: %s", profileName)
@@ -210,7 +217,7 @@ func (a *App) IsAutoStartEnabled() bool {
 }
 
 func (a *App) CheckPrivileges() (bool, error) {
-	return a.manager.CheckPrivileges()
+	return checkAdminPrivileges()
 }
 
 func (a *App) CheckConflicts() []string {

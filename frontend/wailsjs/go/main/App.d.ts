@@ -8,8 +8,6 @@ export function CancelAutoTune():Promise<void>;
 
 export function CheckConflicts():Promise<Array<string>>;
 
-export function CheckForUpdates(arg1:string):Promise<engine.UpdateInfo>;
-
 export function CheckPrivileges():Promise<boolean>;
 
 export function ClearDiscordCache():Promise<void>;
@@ -20,9 +18,7 @@ export function EnableAutoStart():Promise<void>;
 
 export function EnableTCPTimestamps():Promise<void>;
 
-export function GenerateCustomBlob(arg1:string,arg2:string):Promise<string>;
-
-export function GetBlobList():Promise<Array<engine.BlobPayload>>;
+export function GetAppVersion():Promise<string>;
 
 export function GetEngineNames():Promise<Array<string>>;
 
@@ -30,17 +26,11 @@ export function GetLivePing():Promise<Record<string, any>>;
 
 export function GetLogs():Promise<Array<string>>;
 
-export function GetProfileCategories():Promise<Array<string>>;
-
 export function GetProfiles(arg1:string):Promise<Array<string>>;
-
-export function GetProfilesByCategory(arg1:string):Promise<Array<engine.Profile>>;
 
 export function GetSettings():Promise<engine.Settings>;
 
 export function GetStatus():Promise<string>;
-
-export function GetSystemInfo():Promise<Record<string, string>>;
 
 export function HideToTray():Promise<void>;
 
@@ -61,7 +51,3 @@ export function ShowNotification(arg1:string,arg2:string):Promise<void>;
 export function StartEngine(arg1:string,arg2:string):Promise<void>;
 
 export function StopEngine():Promise<void>;
-
-export function TestProfile(arg1:string,arg2:string):Promise<string>;
-
-export function UpdateLists():Promise<void>;

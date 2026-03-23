@@ -14,10 +14,6 @@ export function CheckConflicts() {
   return window['go']['main']['App']['CheckConflicts']();
 }
 
-export function CheckForUpdates(arg1) {
-  return window['go']['main']['App']['CheckForUpdates'](arg1);
-}
-
 export function CheckPrivileges() {
   return window['go']['main']['App']['CheckPrivileges']();
 }
@@ -38,12 +34,8 @@ export function EnableTCPTimestamps() {
   return window['go']['main']['App']['EnableTCPTimestamps']();
 }
 
-export function GenerateCustomBlob(arg1, arg2) {
-  return window['go']['main']['App']['GenerateCustomBlob'](arg1, arg2);
-}
-
-export function GetBlobList() {
-  return window['go']['main']['App']['GetBlobList']();
+export function GetAppVersion() {
+  return window['go']['main']['App']['GetAppVersion']();
 }
 
 export function GetEngineNames() {
@@ -58,16 +50,8 @@ export function GetLogs() {
   return window['go']['main']['App']['GetLogs']();
 }
 
-export function GetProfileCategories() {
-  return window['go']['main']['App']['GetProfileCategories']();
-}
-
 export function GetProfiles(arg1) {
   return window['go']['main']['App']['GetProfiles'](arg1);
-}
-
-export function GetProfilesByCategory(arg1) {
-  return window['go']['main']['App']['GetProfilesByCategory'](arg1);
 }
 
 export function GetSettings() {
@@ -76,10 +60,6 @@ export function GetSettings() {
 
 export function GetStatus() {
   return window['go']['main']['App']['GetStatus']();
-}
-
-export function GetSystemInfo() {
-  return window['go']['main']['App']['GetSystemInfo']();
 }
 
 export function HideToTray() {
@@ -120,12 +100,4 @@ export function StartEngine(arg1, arg2) {
 
 export function StopEngine() {
   return window['go']['main']['App']['StopEngine']();
-}
-
-export function TestProfile(arg1, arg2) {
-  return window['go']['main']['App']['TestProfile'](arg1, arg2);
-}
-
-export function UpdateLists() {
-  return window['go']['main']['App']['UpdateLists']();
 }
