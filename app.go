@@ -244,7 +244,9 @@ func (a *App) CheckPrivileges() bool {
 
 func (a *App) CheckConflicts() []string {
 	conflicts := []string{}
-	procs := []string{"winws2.exe", "winws.exe", "goodbyedpi.exe", "nfqws.exe", "zapret.exe"}
+	
+	// Only check for external DPI bypass tools, not our own winws2.exe
+	procs := []string{"winws.exe", "goodbyedpi.exe", "nfqws.exe", "zapret.exe"}
 	
 	for _, p := range procs {
 		cmd := exec.Command("tasklist", "/FI", "IMAGENAME eq "+p, "/NH")
@@ -259,7 +261,9 @@ func (a *App) CheckConflicts() []string {
 
 func (a *App) KillConflicts() error {
 	wailsruntime.LogInfo(a.ctx, "Executing Full Kill...")
-	procs := []string{"winws2.exe", "winws.exe", "goodbyedpi.exe", "nfqws.exe", "zapret.exe"}
+	
+	// Kill external DPI bypass tools only
+	procs := []string{"winws.exe", "goodbyedpi.exe", "nfqws.exe", "zapret.exe"}
 	
 	for _, p := range procs {
 		cmd := exec.Command("taskkill", "/F", "/IM", p)
