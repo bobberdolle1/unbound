@@ -216,8 +216,13 @@ func (a *App) IsAutoStartEnabled() bool {
 	return enabled
 }
 
-func (a *App) CheckPrivileges() (bool, error) {
-	return checkAdminPrivileges()
+func (a *App) CheckPrivileges() bool {
+	hasPriv, err := checkAdminPrivileges()
+	if err != nil {
+		wailsruntime.LogErrorf(a.ctx, "CheckPrivileges error: %v", err)
+		return false
+	}
+	return hasPriv
 }
 
 func (a *App) CheckConflicts() []string {

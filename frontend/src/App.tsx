@@ -307,21 +307,32 @@ export default function App() {
   }, [logs, scanLogs, isLogExpanded, isScanning, settings.showLogs]);
 
   const toggleConnection = async () => {
-    if (status === 'Running' || status === 'Starting') {
-      await StopEngine().catch(console.error);
-    } else {
-      await StartEngine(selectedEngine, selectedProfile).catch(console.error);
+    console.log('[DEBUG] toggleConnection called, status:', status);
+    try {
+      if (status === 'Running' || status === 'Starting') {
+        console.log('[DEBUG] Stopping engine...');
+        await StopEngine();
+      } else {
+        console.log('[DEBUG] Starting engine:', selectedEngine, selectedProfile);
+        await StartEngine(selectedEngine, selectedProfile);
+      }
+    } catch (err) {
+      console.error('[ERROR] toggleConnection failed:', err);
+      setLogs(prev => [...prev, `Error: ${err}`]);
     }
   };
 
   const handleAutoTune = async () => {
+    console.log('[DEBUG] handleAutoTune called');
     setIsScanning(true);
     setScanLogs([]);
     setScanSuccess(null);
     setScanProgress('🔍 Scanning profiles...');
     if (settings.showLogs) setIsLogExpanded(true);
     try {
+      console.log('[DEBUG] Calling AutoTune...');
       const bestProfile = await AutoTune();
+      console.log('[DEBUG] AutoTune result:', bestProfile);
       if (bestProfile && bestProfile !== "Failed") {
         setSelectedProfile(bestProfile);
         setScanProgress(`✅ Found: ${bestProfile}`);
@@ -331,7 +342,7 @@ export default function App() {
         setScanSuccess(false);
       }
     } catch (err) {
-      console.error(err);
+      console.error('[ERROR] AutoTune failed:', err);
       setScanProgress('❌ Error during scan. Check admin privileges.');
       setScanSuccess(false);
     } finally {
