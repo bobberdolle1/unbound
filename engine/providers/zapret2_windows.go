@@ -47,6 +47,7 @@ type Zapret2WindowsProvider struct {
 	profileMap     map[string][]string
 	profileNames   []string
 	onStatusChange func(Status)
+	onLogAdd       func(string)
 	logFile        *os.File
 	engineReady    chan bool
 }
@@ -78,6 +79,12 @@ func (e *Zapret2WindowsProvider) SetStatusCallback(cb func(Status)) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.onStatusChange = cb
+}
+
+func (e *Zapret2WindowsProvider) SetLogCallback(cb func(string)) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.onLogAdd = cb
 }
 
 func (e *Zapret2WindowsProvider) RegisterProfile(name string, args []string) {
@@ -332,5 +339,8 @@ func (e *Zapret2WindowsProvider) addLog(msg string) {
 	e.logs = append(e.logs, msg)
 	if len(e.logs) > 100 {
 		e.logs = e.logs[1:]
+	}
+	if e.onLogAdd != nil {
+		e.onLogAdd(msg)
 	}
 }
