@@ -169,7 +169,9 @@ export default function App() {
   const [livePingData, setLivePingData] = useState<{active: boolean, latency: number, status: string}>({active: false, latency: 0, status: 'stopped'});
   const [privilegeError, setPrivilegeError] = useState<string>('');
   const [conflictWarning, setConflictWarning] = useState<string[]>([]);
+  const [isUserScrolling, setIsUserScrolling] = useState<boolean>(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
+  const logsContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
@@ -301,10 +303,24 @@ export default function App() {
   }, [selectedEngine]);
 
   useEffect(() => {
-    if (isLogExpanded && settings.showLogs) {
+    if (isLogExpanded && settings.showLogs && !isUserScrolling) {
       logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [logs, scanLogs, isLogExpanded, isScanning, settings.showLogs]);
+  }, [logs, scanLogs, isLogExpanded, isScanning, settings.showLogs, isUserScrolling]);
+
+  useEffect(() => {
+    const container = logsContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
+      setIsUserScrolling(!isAtBottom);
+    };
+
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [isLogExpanded]);
 
   const toggleConnection = async () => {
     console.log('[DEBUG] toggleConnection called, status:', status);
@@ -633,7 +649,9 @@ export default function App() {
             </div>
           </div>
 
-          <div className={cn(
+          <div 
+            ref={logsContainerRef}
+            className={cn(
             "flex-1 overflow-y-auto px-6 py-2 font-mono text-sm leading-relaxed transition-opacity duration-300 bg-[#f8f9fa] text-blue-800 select-text",
             isLogExpanded ? "opacity-100 block" : "opacity-0 hidden"
           )}>

@@ -160,6 +160,16 @@ func (a *App) GetSettings() (*engine.Settings, error) {
 }
 
 func (a *App) SaveSettings(settings *engine.Settings) error {
+	if settings.EnableTCPTimestamps {
+		if err := engine.EnableTCPTimestamps(); err != nil {
+			wailsruntime.LogErrorf(a.ctx, "Failed to enable TCP Timestamps: %v", err)
+		}
+	}
+	if settings.DiscordCacheAutoClean {
+		if err := engine.ClearDiscordCache(); err != nil {
+			wailsruntime.LogErrorf(a.ctx, "Failed to clear Discord cache: %v", err)
+		}
+	}
 	return engine.SaveSettings(settings)
 }
 

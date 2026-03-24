@@ -143,9 +143,11 @@ func (e *Zapret2WindowsProvider) getProfileArgsLocked(profileName string) []stri
 
 	absLuaLib, _ := filepath.Abs(filepath.Join(e.luaDir, "zapret-lib.lua"))
 	absLuaAntiDpi, _ := filepath.Abs(filepath.Join(e.luaDir, "zapret-antidpi.lua"))
+	absInitVars, _ := filepath.Abs(filepath.Join(e.luaDir, "init_vars.lua"))
 
 	luaLib := filepath.ToSlash(absLuaLib)
 	luaAntiDpi := filepath.ToSlash(absLuaAntiDpi)
+	initVars := filepath.ToSlash(absInitVars)
 
 	// ZAPRET 2 ARCHITECTURE (2026):
 	// 1. --wf-l3 is MANDATORY (ipv4,ipv6)
@@ -162,6 +164,7 @@ func (e *Zapret2WindowsProvider) getProfileArgsLocked(profileName string) []stri
 	// Lua initialization MUST come before any profile definitions
 	args = append(args, "--lua-init=@"+luaLib)
 	args = append(args, "--lua-init=@"+luaAntiDpi)
+	args = append(args, "--lua-init=@"+initVars)
 
 	if e.debugMode {
 		args = append(args, "--debug=1")

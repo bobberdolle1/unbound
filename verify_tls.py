@@ -1,0 +1,40 @@
+s = b'\x16\x03\x01\x00\xd3'
+s += b'\x01\x00\x00\xcf\x03\x03'
+s += b'\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f'
+s += b'\x20'
+s += b'\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f'
+s += b'\x00\x20'
+s += b'\x13\x01\x13\x02\x13\x03\xc0\x2c\xc0\x30\x00\x9f\xcc\xa9\xcc\xa8\xcc\xaa\xc0\x2b\xc0\x2f\x00\x9e\xc0\x24\xc0\x28\x00\x6b\xc0\x23'
+s += b'\x01\x00'
+s += b'\x00\x69'
+s += b'\x00\x00\x00\x1e\x00\x1c\x00\x00\x19'
+s += b'www.cloudflare-dns.com'
+s += b'\x00\x0b\x00\x04\x03\x00\x01\x02'
+s += b'\x00\x0a\x00\x0c\x00\x0a\x00\x1d\x00\x17\x00\x1e\x00\x19\x00\x18'
+s += b'\x00\x23\x00\x00'
+s += b'\x00\x16\x00\x00'
+s += b'\x00\x17\x00\x00'
+s += b'\x00\x0d\x00\x1e\x00\x1c\x04\x03\x05\x03\x06\x03\x08\x07\x08\x08\x08\x09\x08\x0a\x08\x0b\x08\x04\x08\x05\x08\x06\x04\x01\x05\x01\x06\x01'
+
+print(f'Total: {len(s)} bytes')
+print(f'Record len: {int.from_bytes(s[3:5], "big")} (should be {len(s)-5})')
+print(f'Handshake len: {int.from_bytes(s[6:9], "big")} (should be {len(s)-9})')
+print(f'Extensions len: {int.from_bytes(s[109:111], "big")}')
+
+# Parse extensions
+ext_start = 111
+print(f'\nExtensions start at byte {ext_start}:')
+pos = ext_start
+while pos < len(s):
+    if pos + 4 > len(s):
+        break
+    ext_type = int.from_bytes(s[pos:pos+2], 'big')
+    ext_len = int.from_bytes(s[pos+2:pos+4], 'big')
+    print(f'  Type={ext_type:#06x} Len={ext_len} at pos {pos}')
+    if ext_type == 0:  # SNI
+        sni_list_len = int.from_bytes(s[pos+4:pos+6], 'big')
+        sni_type = s[pos+6]
+        sni_len = int.from_bytes(s[pos+7:pos+9], 'big')
+        sni_name = s[pos+9:pos+9+sni_len].decode('ascii')
+        print(f'    SNI List Len={sni_list_len}, Type={sni_type}, Name Len={sni_len}, Name="{sni_name}"')
+    pos += 4 + ext_len
