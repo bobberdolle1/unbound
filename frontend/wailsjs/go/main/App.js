@@ -62,6 +62,10 @@ export function GetStatus() {
   return window['go']['main']['App']['GetStatus']();
 }
 
+export function GetStructuredLogs() {
+  return window['go']['main']['App']['GetStructuredLogs']();
+}
+
 export function HideToTray() {
   return window['go']['main']['App']['HideToTray']();
 }

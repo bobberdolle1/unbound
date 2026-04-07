@@ -26,43 +26,84 @@ type TargetStatus struct {
 }
 
 type Target struct {
-	Name string
-	URL  string
+	Name     string
+	URL      string
+	Priority int // приоритет при подсчёте очков
 }
 
+// Расширенный список целей для тестирования — отражает реальные российские блокировки
 var testTargets = []Target{
-	{Name: "Discord", URL: "https://discord.com/api/v9/gateway"},
-	{Name: "YouTube", URL: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
-	{Name: "Telegram", URL: "https://api.telegram.org"},
-	{Name: "RuTracker", URL: "https://rutracker.org/forum/index.php"},
-	{Name: "Facebook", URL: "https://www.facebook.com"},
+	// Высокий приоритет — основные цели (30 очков каждый)
+	{Name: "YouTube",   URL: "https://www.youtube.com/favicon.ico",        Priority: 30},
+	{Name: "Discord",   URL: "https://discord.com/favicon.ico",            Priority: 30},
+	{Name: "Instagram", URL: "https://www.instagram.com/favicon.ico",      Priority: 20},
+	{Name: "Telegram",  URL: "https://web.telegram.org/favicon.ico",       Priority: 20},
+	// Средний приоритет — часто блокируемые
+	{Name: "Twitter/X", URL: "https://twitter.com/favicon.ico",            Priority: 15},
+	{Name: "Facebook",  URL: "https://www.facebook.com/favicon.ico",       Priority: 15},
+	{Name: "RuTracker", URL: "https://rutracker.org/favicon.ico",          Priority: 15},
+	// Низкий приоритет — VPN и прочее
+	{Name: "NordVPN",   URL: "https://nordvpn.com/favicon.ico",            Priority: 10},
+	{Name: "Proton",    URL: "https://proton.me/favicon.ico",              Priority: 10},
 }
 
 func RunAutoTuneV2WithContext(ctx context.Context, provider *providers.Zapret2WindowsProvider, profiles []Profile) (*AutoTuneResult, error) {
+	logger := GetLogger()
+	notifMgr := GetNotificationManager()
+	
+	logger.Info("AutoTune", "Запуск AutoTune V2")
+	logger.Infof("AutoTune", "Тестируем %d профилей на %d целях", len(profiles), len(testTargets))
+	
 	var bestResult *AutoTuneResult
+	testedCount := 0
 
 	for _, profile := range profiles {
 		select {
 		case <-ctx.Done():
+			logger.Warn("AutoTune", "AutoTune отменён пользователем")
+			notifMgr.Warning("AutoTune", "Процесс отменён")
 			return nil, ctx.Err()
 		default:
-			fmt.Printf("🔍 Testing profile: %s\n", profile.Name)
+			testedCount++
+			logger.Infof("AutoTune", "[%d/%d] Тестируем профиль: %s", testedCount, len(profiles), profile.Name)
 
 			if err := provider.Start(ctx, profile.Name); err != nil {
+				logger.Warnf("AutoTune", "Не удалось запустить профиль %s: %v", profile.Name, err)
 				continue
 			}
 
-			// Wait for stabilization
+			// Ждём стабилизации
 			time.Sleep(2 * time.Second)
 
 			result := testBypassParallel(profile.Name)
 			provider.Stop()
 			time.Sleep(500 * time.Millisecond)
 
+			// Логируем детали
+			okCount := countOK(result)
+			logger.Infof("AutoTune", "Профиль %s: %d/%d целей OK, счёт=%d", 
+				profile.Name, okCount, len(testTargets), result.Score)
+			
+			for targetName, status := range result.Results {
+				if status.OK {
+					logger.Debugf("AutoTune", "  ✓ %s: %dмс (TLS1.3=%v)", 
+						targetName, status.Latency.Milliseconds(), status.TLS13)
+				} else {
+					logger.Debugf("AutoTune", "  ✗ %s: %s", targetName, status.Error)
+				}
+			}
+
 			if result.Success {
 				if bestResult == nil || result.Score > bestResult.Score {
 					bestResult = result
-					if countOK(result) == len(testTargets) {
+					logger.Infof("AutoTune", "Новый лучший профиль: %s (счёт=%d)", profile.Name, result.Score)
+					
+					// Если YouTube и Discord оба работают — это уже отличный результат
+					ytOK := result.Results["YouTube"].OK
+					dcOK := result.Results["Discord"].OK
+					if ytOK && dcOK && okCount >= len(testTargets)/2 {
+						logger.Infof("AutoTune", "Отличный профиль найден: %s", profile.Name)
+						notifMgr.Success("AutoTune завершён", fmt.Sprintf("Лучший профиль: %s", profile.Name))
 						return bestResult, nil
 					}
 				}
@@ -71,8 +112,14 @@ func RunAutoTuneV2WithContext(ctx context.Context, provider *providers.Zapret2Wi
 	}
 
 	if bestResult != nil {
+		logger.Infof("AutoTune", "AutoTune завершён. Лучший профиль: %s (счёт=%d)", 
+			bestResult.ProfileName, bestResult.Score)
+		notifMgr.Success("AutoTune завершён", fmt.Sprintf("Лучший профиль: %s", bestResult.ProfileName))
 		return bestResult, nil
 	}
+	
+	logger.Error("AutoTune", "Подходящий профиль не найден")
+	notifMgr.Error("AutoTune не удался", "Рабочий профиль не найден")
 	return nil, fmt.Errorf("no profile found")
 }
 
@@ -85,6 +132,7 @@ func countOK(res *AutoTuneResult) int {
 }
 
 func testBypassParallel(profileName string) *AutoTuneResult {
+	logger := GetLogger()
 	result := &AutoTuneResult{
 		ProfileName: profileName,
 		Results:     make(map[string]TargetStatus),
@@ -92,6 +140,8 @@ func testBypassParallel(profileName string) *AutoTuneResult {
 
 	var wg sync.WaitGroup
 	var mu sync.Mutex
+
+	logger.Debugf("AutoTune", "Параллельное тестирование %d целей для профиля: %s", len(testTargets), profileName)
 
 	for _, target := range testTargets {
 		wg.Add(1)
@@ -108,23 +158,44 @@ func testBypassParallel(profileName string) *AutoTuneResult {
 
 	score := 0
 	successCount := 0
-	for _, s := range result.Results {
+	totalLatency := time.Duration(0)
+	
+	for _, t := range testTargets {
+		s := result.Results[t.Name]
 		if s.OK {
 			successCount++
-			score += 10
-			if s.TLS13 { score += 2 }
+			score += t.Priority
+			if s.TLS13 { 
+				score += 3
+			}
+			// Бонус за низкий пинг
+			if s.Latency < 150*time.Millisecond {
+				score += 5
+			}
+			totalLatency += s.Latency
 		}
 	}
 
+	if successCount > 0 {
+		result.Latency = totalLatency / time.Duration(successCount)
+	}
+
 	result.Score = score
-	result.Success = successCount >= 2 // Minimum 2 targets for success
+	result.Success = successCount >= 2 // Минимум 2 цели для признания успеха
+	
+	logger.Debugf("AutoTune", "Профиль %s: %d/%d OK, счёт=%d, ср.пинг=%dмс", 
+		profileName, successCount, len(testTargets), score, result.Latency.Milliseconds())
+	
 	return result
 }
 
 func testTarget(url string) TargetStatus {
+	logger := GetLogger()
 	start := time.Now()
+	
+	// Используем HEAD для скорости (как probe.trolling.website)
 	client := &http.Client{
-		Timeout: 5 * time.Second,
+		Timeout: 8 * time.Second, // увеличен таймаут как у probe.trolling.website
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
 				MinVersion: tls.VersionTLS12,
@@ -132,20 +203,46 @@ func testTarget(url string) TargetStatus {
 			},
 			DisableKeepAlives: true,
 		},
+		// Не следуем редиректам для скорости (favicon может редиректить)
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 3 {
+				return http.ErrUseLastResponse
+			}
+			return nil
+		},
 	}
 
-	req, _ := http.NewRequest("GET", url, nil)
+	req, _ := http.NewRequest("HEAD", url, nil)
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return TargetStatus{OK: false, Error: err.Error()}
+		// Попробуем GET если HEAD не сработал
+		req2, _ := http.NewRequest("GET", url, nil)
+		req2.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+		resp2, err2 := client.Do(req2)
+		if err2 != nil {
+			logger.Debugf("AutoTune", "Цель %s недоступна: %v", url, err2)
+			return TargetStatus{OK: false, Error: err2.Error()}
+		}
+		defer resp2.Body.Close()
+		latency := time.Since(start)
+		isTLS13 := resp2.TLS != nil && resp2.TLS.Version == tls.VersionTLS13
+		isOK := resp2.StatusCode < 500
+		return TargetStatus{OK: isOK, Latency: latency, TLS13: isTLS13}
 	}
 	defer resp.Body.Close()
 
+	latency := time.Since(start)
+	isTLS13 := resp.TLS != nil && resp.TLS.Version == tls.VersionTLS13
+	isOK := resp.StatusCode < 500
+
+	logger.Debugf("AutoTune", "Цель %s: статус=%d, пинг=%dмс, TLS1.3=%v", 
+		url, resp.StatusCode, latency.Milliseconds(), isTLS13)
+
 	return TargetStatus{
-		OK:      resp.StatusCode < 500,
-		Latency: time.Since(start),
-		TLS13:   resp.TLS != nil && resp.TLS.Version == tls.VersionTLS13,
+		OK:      isOK,
+		Latency: latency,
+		TLS13:   isTLS13,
 	}
 }

@@ -34,30 +34,77 @@ func NewApp() *App {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
-
+	
+	logger := engine.GetLogger()
+	notifMgr := engine.GetNotificationManager()
+	
+	// Initialize notification manager with Wails event emitter
+	notifMgr.Initialize(ctx, wailsruntime.EventsEmit)
+	
+	logger.Info("App", "UNBOUND starting up...")
+	
+	// Extract assets
 	assets, err := engine.ExtractAssets()
 	if err != nil {
+		logger.Errorf("App", "Failed to extract assets: %v", err)
+		notifMgr.Error("Startup Error", "Failed to extract required files")
 		wailsruntime.LogErrorf(ctx, "Failed to extract assets: %v", err)
 		return
 	}
+	logger.Info("App", "Assets extracted successfully")
+
+	// Validate startup requirements
+	validator := engine.NewStartupValidator(assets)
+	validationResult := validator.ValidateStartup()
+	
+	if !validationResult.Valid {
+		logger.Error("App", "Startup validation failed")
+		for _, err := range validationResult.Errors {
+			logger.Errorf("App", "Validation error: %s", err)
+		}
+		notifMgr.Error("Startup Failed", "Critical files missing. Please reinstall the application.")
+		wailsruntime.LogError(ctx, "Startup validation failed - see logs for details")
+		return
+	}
+	
+	// Log warnings if any
+	for _, warning := range validationResult.Warnings {
+		logger.Warnf("App", "Validation warning: %s", warning)
+	}
+	
+	if len(validationResult.Warnings) > 0 {
+		notifMgr.Warning("Startup Warning", "Some optional components are missing")
+	}
+	
+	logger.Info("App", "Startup validation passed")
 
 	// Apply system settings
 	settings, _ := engine.GetSettings()
 	if settings != nil {
 		if settings.EnableTCPTimestamps {
+			logger.Info("App", "Enabling TCP timestamps")
 			a.EnableTCPTimestamps()
 		}
 		if settings.DiscordCacheAutoClean {
+			logger.Info("App", "Cleaning Discord cache")
 			a.ClearDiscordCache()
 		}
 	}
 
+	// Register OS-specific providers
 	registerOSProviders(a, assets)
+	
+	// Log registered engines
+	engines := a.manager.GetEngineNames()
+	logger.Infof("App", "Registered engines: %v", engines)
+	
 	a.setupTray()
 
 	if a.startMinimized {
 		wailsruntime.WindowMinimise(ctx)
 	}
+	
+	logger.Info("App", "UNBOUND initialized successfully")
 	wailsruntime.LogInfo(ctx, "UNBOUND initialized")
 }
 
@@ -80,38 +127,61 @@ func (a *App) StartEngine(engineName string, profileName string) error {
 		}
 	}()
 	
+	logger := engine.GetLogger()
+	notifMgr := engine.GetNotificationManager()
+	
+	logger.Infof("App", "StartEngine called: engine=%s, profile=%s", engineName, profileName)
 	wailsruntime.LogInfof(a.ctx, "StartEngine called: engine=%s, profile=%s", engineName, profileName)
 	
+	// Check admin privileges
+	logger.Info("App", "Checking administrator privileges...")
 	wailsruntime.LogInfo(a.ctx, "Checking admin privileges...")
+	
 	hasPriv, err := checkAdminPrivileges()
 	if err != nil {
+		logger.Errorf("App", "Privilege check error: %v", err)
 		wailsruntime.LogErrorf(a.ctx, "Privilege check error: %v", err)
+		notifMgr.Error("Privilege Error", "Failed to check administrator privileges")
 		wailsruntime.EventsEmit(a.ctx, "privilege_error", fmt.Sprintf("Privilege check failed: %v", err))
 		return err
 	}
+	
+	logger.Infof("App", "Privilege check result: admin=%v", hasPriv)
 	wailsruntime.LogInfof(a.ctx, "Privilege check result: %v", hasPriv)
 	
 	if !hasPriv {
+		logger.Error("App", "Administrator privileges required but not granted")
 		wailsruntime.LogError(a.ctx, "Administrator privileges required")
+		notifMgr.Error("Admin Required", "Please restart the application as administrator")
 		wailsruntime.EventsEmit(a.ctx, "privilege_error", "Administrator privileges required. Please restart the application as administrator.")
 		return fmt.Errorf("administrator privileges required")
 	}
+	
+	logger.Info("App", "Administrator privileges confirmed")
 
+	logger.Info("App", "Stopping current engine if running...")
 	wailsruntime.LogInfo(a.ctx, "Stopping current engine if running...")
 	a.manager.Stop()
 	time.Sleep(500 * time.Millisecond)
 
+	logger.Infof("App", "Starting engine: %s with profile: %s", engineName, profileName)
+	logger.Infof("App", "Available engines: %v", a.manager.GetEngineNames())
 	wailsruntime.LogInfof(a.ctx, "Starting engine: %s with profile: %s", engineName, profileName)
 	wailsruntime.LogInfof(a.ctx, "Available engines: %v", a.manager.GetEngineNames())
 	
 	wailsruntime.LogInfo(a.ctx, "About to call manager.Start...")
 	err = a.manager.Start(a.ctx, engineName, profileName)
+	logger.Infof("App", "Manager.Start returned: err=%v", err)
 	wailsruntime.LogInfof(a.ctx, "Manager.Start returned: err=%v", err)
 	
 	if err == nil {
+		logger.Infof("App", "Engine started successfully: %s", profileName)
+		notifMgr.Success("Engine Started", fmt.Sprintf("Profile: %s", profileName))
 		wailsruntime.EventsEmit(a.ctx, "status_changed", "Running")
 		wailsruntime.LogInfof(a.ctx, "Started: %s", profileName)
 	} else {
+		logger.Errorf("App", "Failed to start engine: %v", err)
+		notifMgr.Error("Engine Failed", fmt.Sprintf("Failed to start: %v", err))
 		wailsruntime.LogErrorf(a.ctx, "Start failed: %v", err)
 		wailsruntime.EventsEmit(a.ctx, "engine_error", err.Error())
 	}
@@ -132,17 +202,26 @@ func (a *App) GetLogs() []string {
 	return a.manager.GetLogs()
 }
 
+func (a *App) GetStructuredLogs() []string {
+	logger := engine.GetLogger()
+	return logger.GetEntriesFormatted()
+}
+
 func (a *App) RunDiagnostics() []engine.DiagnosticResult {
 	return engine.RunDiagnostics()
 }
 
 func (a *App) ClearDiscordCache() error {
+	logger := engine.GetLogger()
+	notifMgr := engine.GetNotificationManager()
+	
+	logger.Info("App", "Clearing Discord cache")
 	err := engine.ClearDiscordCache()
 	if err == nil {
-		wailsruntime.EventsEmit(a.ctx, "notification", map[string]string{
-			"title": "Cleanup",
-			"message": "Discord cache cleared successfully",
-		})
+		notifMgr.Success("Cleanup", "Discord cache cleared successfully")
+	} else {
+		logger.Errorf("App", "Failed to clear Discord cache: %v", err)
+		notifMgr.Error("Cleanup Failed", "Could not clear Discord cache")
 	}
 	return err
 }
@@ -174,13 +253,19 @@ func (a *App) SaveSettings(settings *engine.Settings) error {
 }
 
 func (a *App) AutoTune() string {
+	logger := engine.GetLogger()
+	notifMgr := engine.GetNotificationManager()
+	
 	if a.autoTuneCancel != nil {
+		logger.Warn("App", "AutoTune already running")
 		return "Already running"
 	}
 
 	tuneCtx, cancel := context.WithCancel(a.ctx)
 	a.autoTuneCancel = cancel
 	
+	logger.Info("App", "AutoTune process started")
+	notifMgr.Info("AutoTune", "Starting profile optimization...")
 	wailsruntime.EventsEmit(a.ctx, "autotune_start", true)
 	
 	defer func() {
@@ -193,13 +278,17 @@ func (a *App) AutoTune() string {
 	
 	// LOAD ALL PROFILES
 	allProfiles := append(engine.GetProfiles(assets.LuaDir), engine.GetAdvancedProfiles(assets.LuaDir)...)
+	logger.Infof("App", "Loaded %d profiles for testing", len(allProfiles))
 	
 	result, err := engine.RunAutoTuneV2WithContext(tuneCtx, provider, allProfiles)
 	if err != nil {
+		logger.Errorf("App", "AutoTune failed: %v", err)
+		notifMgr.Error("AutoTune Failed", "Could not find optimal profile")
 		wailsruntime.EventsEmit(a.ctx, "autotune_log", "❌ Auto-Tune failed or cancelled")
 		return "Failed"
 	}
 
+	logger.Infof("App", "AutoTune completed successfully: %s", result.ProfileName)
 	wailsruntime.EventsEmit(a.ctx, "autotune_complete", map[string]interface{}{
 		"success": true,
 		"profile": result.ProfileName,
@@ -219,15 +308,21 @@ func (a *App) GetLivePing() map[string]interface{} {
 	if a.manager.GetStatus() != providers.StatusRunning {
 		return map[string]interface{}{"active": false}
 	}
-	latency, err := engine.SimplePing(a.ctx, "https://1.1.1.1")
+	// Проверяем реальный обход — тестируем YouTube (основная заблокированная цель)
+	latency, err := engine.SimplePing(a.ctx, "https://www.youtube.com")
 	if err != nil {
-		return map[string]interface{}{"active": true, "latency": 0, "status": "error"}
+		// Fallback: пробуем Discord
+		latency2, err2 := engine.SimplePing(a.ctx, "https://discord.com")
+		if err2 != nil {
+			return map[string]interface{}{"active": true, "latency": 0, "status": "blocked"}
+		}
+		return map[string]interface{}{"active": true, "latency": latency2.Milliseconds(), "status": "ok"}
 	}
 	return map[string]interface{}{"active": true, "latency": latency.Milliseconds(), "status": "ok"}
 }
 
 func (a *App) GetAppVersion() string {
-	return "1.0.3"
+	return "1.0.4"
 }
 
 func (a *App) EnableAutoStart() error {
@@ -255,25 +350,47 @@ func (a *App) CheckPrivileges() bool {
 func (a *App) CheckConflicts() []string {
 	conflicts := []string{}
 	
-	// Only check for external DPI bypass tools, not our own winws2.exe
-	procs := []string{"winws.exe", "goodbyedpi.exe", "nfqws.exe", "zapret.exe"}
+	// Проверяем DPI-обходчики и VPN-клиенты (не наш winws2.exe)
+	type conflictProc struct {
+		Exe  string
+		Desc string
+	}
+	procs := []conflictProc{
+		{"winws.exe",         "старый Zapret (winws)"},
+		{"goodbyedpi.exe",    "GoodbyeDPI"},
+		{"nfqws.exe",         "nfqws"},
+		{"zapret.exe",        "Zapret"},
+		{"ciadpi.exe",        "ciadpi"},
+		{"byedpi.exe",        "ByeDPI"},
+		{"openvpn.exe",       "OpenVPN"},
+		{"warp-svc.exe",      "Cloudflare WARP"},
+		{"expressvpn.exe",    "ExpressVPN"},
+		{"nordvpn-service.exe", "NordVPN"},
+	}
 	
 	for _, p := range procs {
-		cmd := exec.Command("tasklist", "/FI", "IMAGENAME eq "+p, "/NH")
+		cmd := exec.Command("tasklist", "/FI", "IMAGENAME eq "+p.Exe, "/NH")
 		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: CREATE_NO_WINDOW}
 		out, _ := cmd.Output()
-		if strings.Contains(string(out), p) {
-			conflicts = append(conflicts, "⚠️ "+p+" is running")
+		if strings.Contains(string(out), p.Exe) {
+			conflicts = append(conflicts, "⚠️ "+p.Desc+" запущен")
 		}
 	}
 	return conflicts
 }
 
 func (a *App) KillConflicts() error {
+	logger := engine.GetLogger()
+	notifMgr := engine.GetNotificationManager()
+	
+	logger.Info("App", "Выполняем завершение конфликтующих процессов...")
 	wailsruntime.LogInfo(a.ctx, "Executing Full Kill...")
 	
-	// Kill external DPI bypass tools only
-	procs := []string{"winws.exe", "goodbyedpi.exe", "nfqws.exe", "zapret.exe"}
+	// Завершаем внешние DPI-обходчики и VPN (не наш winws2.exe)
+	procs := []string{
+		"winws.exe", "goodbyedpi.exe", "nfqws.exe", "zapret.exe",
+		"ciadpi.exe", "byedpi.exe",
+	}
 	
 	for _, p := range procs {
 		cmd := exec.Command("taskkill", "/F", "/IM", p)
@@ -281,19 +398,15 @@ func (a *App) KillConflicts() error {
 		cmd.Run()
 	}
 	
-	// Reset WinDivert driver
+	// Сброс драйвера WinDivert
 	exec.Command("sc", "stop", "WinDivert").Run()
 	
-	wailsruntime.EventsEmit(a.ctx, "notification", map[string]string{
-		"title": "Full Kill",
-		"message": "All conflicting processes and drivers reset.",
-	})
+	logger.Info("App", "Конфликтующие процессы и драйверы остановлены")
+	notifMgr.Success("Конфликты устранены", "Все конфликтующие процессы и драйверы остановлены")
 	return nil
 }
 
 func (a *App) ShowNotification(title string, message string) {
-	wailsruntime.EventsEmit(a.ctx, "notification", map[string]string{
-		"title":   title,
-		"message": message,
-	})
+	notifMgr := engine.GetNotificationManager()
+	notifMgr.Info(title, message)
 }

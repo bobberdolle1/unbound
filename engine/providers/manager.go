@@ -54,7 +54,11 @@ func (m *ProviderManager) Start(ctx context.Context, engineName string, profileN
 
 	p, ok := m.providers[engineName]
 	if !ok {
-		return fmt.Errorf("engine not found: %s", engineName)
+		availableEngines := []string{}
+		for name := range m.providers {
+			availableEngines = append(availableEngines, name)
+		}
+		return fmt.Errorf("engine not found: %s (available: %v)", engineName, availableEngines)
 	}
 
 	m.activeProvider = p

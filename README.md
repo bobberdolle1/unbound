@@ -2,180 +2,104 @@
 
 <div align="center">
 
-![Release](https://img.shields.io/badge/release-v1.0.0-blue?style=for-the-badge)
+![Release](https://img.shields.io/badge/release-v1.0.4-blue?style=for-the-badge)
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D6?style=for-the-badge&logo=windows)
 ![Go](https://img.shields.io/badge/Go-00ADD8?style=for-the-badge&logo=go&logoColor=white)
 ![React](https://img.shields.io/badge/React-61DAFB?style=for-the-badge&logo=react&logoColor=black)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green?style=for-the-badge)
 
-**The next-generation DPI bypass tool for Windows. Open source, community-driven, and ready for 2026.**
+**Продвинутый инструмент обхода DPI для Windows. Открытый исходный код, движок Zapret2 и полная поддержка русского языка.**
 
-[Download](https://github.com/unbound/releases) • [Documentation](#installation) • [Report Bug](https://github.com/unbound/issues)
+[Скачать](https://github.com/bobberdolle1/unbound/releases/latest) • [Инструкция](#установка) • [Сообщить об ошибке](https://github.com/bobberdolle1/unbound/issues)
 
 </div>
 
 ---
 
-## 🎯 What is Unbound?
+## 🎯 Что такое Unbound?
 
-Unbound is a **zero-maintenance DPI circumvention tool** that resurrects blocked services like YouTube and Discord (including WebRTC voice) in restrictive network environments. Built on the battle-tested **Zapret 2 engine** with a modern GUI, it's the "set and forget" solution that actually works.
+Unbound — это инструмент класса "настроил и забыл" для обхода блокировок ТСПУ и DPI в России (YouTube, Discord, Twitter, Instagram и др.). Основан на мощном движке **zapret2** (winws2) от bol-van, обёрнутом в привлекательный графический интерфейс.
 
-No command-line wizardry. No .bat script archaeology. Just click **Connect** and you're done.
-
----
-
-## � Why Unbound Destroys the Competition
-
-### vs. GoodbyeDPI / SpoofDPI
-- **Zapret 2 (2026)**: Lua-based strategy engine vs. hardcoded C logic. Adapt to new DPI signatures in minutes, not months.
-- **Multidisorder Strategy**: Packet reordering bypasses stateful DPI without triggering TCP RST from CDN servers. GoodbyeDPI's high-TTL fakes? Dead on arrival.
-- **Auto-Updates**: Pulls fresh blocklists from GitHub automatically. GoodbyeDPI users manually edit text files like it's 2015.
-
-### vs. .bat Script Collections
-- **GUI**: No more copy-pasting commands from Telegram channels at 3 AM.
-- **Auto-Tune V2**: Built-in profile scanner finds what works for your ISP in 30 seconds. Now tests Telegram, Discord, and YouTube simultaneously.
-- **Health Check**: Native diagnostic tool to fix admin rights and driver conflicts.
-- **Clean Start**: Automatic Discord cache cleaning to bypass "poisoned" sessions.
-- **Task Scheduler Integration**: Launches with admin rights on boot without UAC spam.
-
-### vs. VPNs
-- **Zero Latency**: Traffic stays local. No routing through Kazakhstan.
-- **Free Forever**: No subscriptions, no bandwidth caps, no "premium" tiers.
-- **Selective Bypass**: Only manipulates blocked domains. Your banking app doesn't route through sketchy proxies.
+Никаких чёрных окон консоли. Никаких bat-скриптов. Просто нажмите **«Автоподбор»**, затем **«ПОДКЛЮЧИТЬ!»** и наслаждайтесь свободным интернетом.
 
 ---
 
-## ⚡ Killer Features
+## 💥 Почему Unbound лучше аналогов
 
-### 🧠 Smart Multidisorder
-The crown jewel. Fragments TLS handshakes and sends packets **out of order**. DPI systems can't reassemble them, but destination servers handle it flawlessly. Result: **100% bypass rate** without server-side connection resets.
+### Против GoodbyeDPI / SpoofDPI
+- **Zapret 2 (2026)**: Использование Lua-скриптов позволяет адаптироваться к новым сигнатурам ТСПУ за минуты. GoodbyeDPI использует жёстко заданную логику на C.
+- **Стратегия Multidisorder**: Переупорядочивание пакетов обходит DPI без обрыва соединения сервером.
+- **Всё в одном**: Все нужные библиотеки, драйверы WinDivert и самые актуальные Lua-скрипты уже вшиты в один `.exe` файл (использует `embed.FS`).
 
-### 🔄 Dynamic Hostlist Sync
-Automatically fetches updated blocklists from GitHub. When your ISP blocks a new domain, Unbound already knows about it.
+### Против коллекций .bat скриптов
+- **Удобный GUI**: Никакого редактирования текстовых файлов.
+- **Улучшенный Автоподбор**: Встроенный быстрый сканер параллельно тестирует профили на **YouTube, Discord, Telegram, Instagram, Twitter, RuTracker**. Используется методика проверки `probe.trolling.website` (быстрые HEAD-запросы с 8-секундным таймаутом).
+- **Диагностика**: Автоматически находит конфликты прав администратора и работающие аналоги (старый Zapret, WARP, OpenVPN), которые могут мешать WinDivert.
 
-### 🎯 Auto-Tune V2
-One-click profile scanner. In 2026, simple YouTube pings are not enough. Auto-Tune V2 tests strategies against **YouTube, Telegram, Discord, RuTracker, and Facebook** simultaneously using parallel TCP/UDP probes and TLS 1.3 verification.
-
-### 🩺 System Health Check
-Built-in diagnostic tool. Automatically detects administrator privilege issues, driver conflicts (old zapret, GoodbyeDPI), and WinDivert status. Fix issues with one click.
-
-### 🧹 Discord Hygiene & TCP Tuning
-Includes automatic Discord cache cleaning to remove "poisoned" entries and enables system-wide **TCP Timestamps** for maximum compatibility with modern DPI-bypass techniques.
-
-### 🚀 Stealth Autostart
-Registers with Windows Task Scheduler to launch on boot with admin privileges. No UAC prompts, no tray spam. Just works.
-
-### 🎨 Native UI
-Built with Wails (Go + React). Feels like a real Windows app because it is one. No Electron bloat.
+### Против VPN
+- **Нулевая потеря скорости**: Ваш трафик не идёт через другие страны, скорость остаётся максимальной.
+- **Выборочный обход**: Идёт работа только с заблокированными доменами. Трафик банков или Госуслуг не модифицируется.
 
 ---
 
-## 📦 Installation
+## ⚡ Главные фишки
 
-### Quick Start (Recommended)
-1. Download `Unbound-Setup-v1.0.0.exe` from [Releases](https://github.com/unbound/releases)
-2. Run installer (requires admin rights)
-3. Launch Unbound
-4. Click **Auto-Tune** → **Connect**
-5. Enjoy unblocked YouTube/Discord
+### 🧠 Умный Multidisorder
+«Разбивает» TLS ClientHello на фрагменты и отправляет их не по порядку. DPI не পারে собрать пазл, а целевой сервер (например, YouTube) легко справляется с этим. Итог: **100% обход** без обрывов.
 
-### Manual Build
-```bash
-# Prerequisites: Go 1.21+, Node.js 18+, Wails CLI
-git clone https://github.com/unbound/unbound.git
+### 🎯 Быстрый Автоподбор (Auto-Tune)
+В одно нажатие программа подберёт параметры, идеально работающие у вашего провайдера. Настроен умный вес: профили, разблокирующие сразу YouTube и Discord, получают наивысший приоритет.
+
+### 🧹 Очистка Discord
+Специальная галочка для автоматической очистки кэша клиента Discord при запуске (помогает при бесконечном "Соединении").
+
+### 🚀 Тихий автозапуск
+Регистрация в планировщике задач (Task Scheduler) для запуска программы при старте Windows со скрытым окном в системном трее — **без назойливых UAC-окон**.
+
+---
+
+## 📦 Установка
+
+### Быстрый старт
+1. Скачайте `unbound-v1.0.4-win64.zip` из [Releases](https://github.com/bobberdolle1/unbound/releases/latest).
+2. Распакуйте архив в удобное место.
+3. Нажмите **правой кнопкой** мыши на `unbound.exe` и выберите **«Запуск от имени администратора»**. *(Обязательно для работы WinDivert!)*
+4. Нажмите **«Автоподбор»** → дождитесь результата → нажмите **«ПОДКЛЮЧИТЬ!»**.
+
+### Самостоятельная сборка
+Для сборки нужен Go 1.22+ и NodeJS 18+:
+```powershell
+git clone https://github.com/bobberdolle1/unbound.git
 cd unbound
-wails build
+.\build.ps1
+# Обратите внимание: .\build.ps1 автоматом собирает .zip архив в папку dist/
 ```
 
 ---
 
-## 🖥️ Interface
+## 🖥️ Интерфейс
 
 ![Unbound UI](docs/screenshot.jpg)
 
-**Main Controls:**
-- **Profile Selector**: Choose bypass strategy (or let Auto-Tune decide)
-- **Connect/Disconnect**: Toggle DPI bypass
-- **Auto-Tune**: Automated profile scanner
-- **Settings**: Autostart, default profile, log visibility
+**Элементы управления:**
+- **Выбор профиля**: Ручной выбор стратегии обхода, если не помог «Автоподбор».
+- **ПОДКЛЮЧИТЬ / ОТКЛЮЧИТЬ**: Включение и отключение обхода.
+- **Автоподбор**: Интеллектуальный поиск лучшего способа обхода.
+- **Настройки**: Настройка автозапуска, тихого старта, показа системных логов.
 
 ---
 
-## 🛠️ How It Works
+## 🛠️ Как это работает
 
-Unbound intercepts outbound TCP/UDP packets using **WinDivert** and applies Lua-based desynchronization strategies:
+Приложение работает поверх **WinDivert** — драйвера для перехвата и модификации исходящих пакетов. Непосредственным изменением пакетов руководит движок `zapret2` (`winws2.exe`).
 
-1. **Fake Packets**: Low-TTL decoys die before reaching DPI but trigger state machines
-2. **Multidisorder**: Reorder TLS handshake fragments to break DPI reassembly
-3. **Multisplit**: Fragment packets at strategic positions (SNI, HTTP headers)
-4. **Syndata**: Embed data in SYN packets to bypass session tracking
-
-The **Zapret 2 engine** (Lua API) allows rapid strategy iteration without recompiling C code. When ISPs update DPI signatures, we push new Lua scripts—users get fixes via auto-update.
+Все зависимости (Lua, txt-списки, сам бинарник `winws2`, `.sys` и `.dll` от WinDivert) внутри встроены в `unbound.exe` и распаковываются только в `%APPDATA%`, что сохраняет папку с программой чистой.
 
 ---
 
-## 🔧 Advanced Configuration
+## 📜 Лицензия
+**GNU General Public License v3.0 (GPL-3.0)** — программа абсолютно бесплатна.
 
-### Custom Profiles
-Edit `%APPDATA%\Unbound\profiles.json` to create custom strategies:
-```json
-{
-  "name": "My Custom Profile",
-  "args": [
-    "--filter-tcp=443",
-    "--lua-desync=multidisorder:pos=1,midsld:repeats=6"
-  ]
-}
-```
-
-### Hostlist Management
-Add domains to `%APPDATA%\Unbound\autodetect.txt`:
-```
-youtube.com
-discord.com
-```
-
-### Debug Logs
-Enable **Show Diary** in Settings to view real-time packet manipulation logs.
-
----
-
-## 🤝 Contributing
-
-We welcome contributions! Areas of interest:
-- New Lua desync strategies
-- ISP-specific profile optimizations
-- UI/UX improvements
-- Documentation translations
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
----
-
-## 📜 License
-
-GNU General Public License v3.0 (GPL-3.0). See [LICENSE](LICENSE) for details. Unbound is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation.
-
----
-
-## ⚠️ Disclaimer
-
-Unbound is designed for **educational purposes** and to restore access to legally available services in regions with network restrictions. Users are responsible for compliance with local laws. The developers assume no liability for misuse.
-
----
-
-## 🙏 Acknowledgments
-
-- **[bol-van](https://github.com/bol-van)**: Creator of Zapret/Zapret2
-- **[Wails](https://wails.io)**: Go + React desktop framework
-- **Community testers**: For ISP-specific profile validation
-
----
-
-<div align="center">
-
-**Made with ❤️ by developers who believe the internet should be open.**
-
-[⬆ Back to Top](#-unbound)
-
-</div>
+## 🙏 Благодарности
+- **[bol-van](https://github.com/bol-van)** - создатель мощнейшего ядра Zapret/Zapret2.
+- **[Wails](https://wails.io)** - классный фреймворк для сборки настольных GUI на Go+React.

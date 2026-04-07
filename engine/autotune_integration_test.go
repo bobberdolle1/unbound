@@ -24,7 +24,7 @@ func TestAutoTuneV2WithMockDPI(t *testing.T) {
 	}))
 	defer mockBlockedServer.Close()
 
-	testTargets = []string{mockDPIServer.URL, mockBlockedServer.URL}
+	testTargets = []Target{{Name:"mock1", URL:mockDPIServer.URL, Priority:10}, {Name:"mock2", URL:mockBlockedServer.URL, Priority:10}}
 
 	assets, err := ExtractAssets()
 	if err != nil {
@@ -56,7 +56,7 @@ func TestAutoTuneV2WithMockDPI(t *testing.T) {
 	var testErr error
 
 	go func() {
-		result, testErr = RunAutoTuneV2(provider, profiles)
+		result, testErr = RunAutoTuneV2WithContext(context.Background(), provider, profiles)
 		done <- true
 	}()
 
@@ -80,7 +80,7 @@ func TestAutoTuneV2Timeout(t *testing.T) {
 	}))
 	defer slowServer.Close()
 
-	testTargets = []string{slowServer.URL}
+	testTargets = []Target{{Name: "slow", URL: slowServer.URL, Priority: 10}}
 
 	assets, err := ExtractAssets()
 	if err != nil {
@@ -104,7 +104,7 @@ func TestAutoTuneV2Timeout(t *testing.T) {
 	}
 
 	start := time.Now()
-	result, err := RunAutoTuneV2(provider, profiles)
+	result, err := RunAutoTuneV2WithContext(context.Background(), provider, profiles)
 	elapsed := time.Since(start)
 
 	if elapsed > 20*time.Second {
@@ -131,10 +131,13 @@ func TestTestBypassWithMockServers(t *testing.T) {
 	defer badServer.Close()
 
 	originalTargets := testTargets
-	testTargets = []string{goodServer.URL, badServer.URL}
+	testTargets = []Target{
+		{Name: "good", URL: goodServer.URL, Priority: 10},
+		{Name: "bad", URL: badServer.URL, Priority: 10},
+	}
 	defer func() { testTargets = originalTargets }()
 
-	result := testBypass("Mock Profile")
+	result := testBypassParallel("Mock Profile")
 
 	if result == nil {
 		t.Fatal("Expected result, got nil")
@@ -145,8 +148,8 @@ func TestTestBypassWithMockServers(t *testing.T) {
 	}
 
 	successCount := 0
-	for _, success := range result.TestedURLs {
-		if success {
+	for _, status := range result.Results {
+		if status.OK {
 			successCount++
 		}
 	}
@@ -155,7 +158,7 @@ func TestTestBypassWithMockServers(t *testing.T) {
 		t.Error("Expected at least one successful test")
 	}
 
-	t.Logf("Success rate: %d/%d", successCount, len(result.TestedURLs))
+	t.Logf("Success rate: %d/%d", successCount, len(result.Results))
 }
 
 func TestHTTPClientConfiguration(t *testing.T) {

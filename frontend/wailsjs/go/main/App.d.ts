@@ -32,6 +32,8 @@ export function GetSettings():Promise<engine.Settings>;
 
 export function GetStatus():Promise<string>;
 
+export function GetStructuredLogs():Promise<Array<string>>;
+
 export function HideToTray():Promise<void>;
 
 export function IsAutoStartEnabled():Promise<boolean>;

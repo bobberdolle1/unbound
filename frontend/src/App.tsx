@@ -76,7 +76,7 @@ const DoodleSelect = ({ value, options, onChange, disabled, up }: { value: strin
         )}
         onClick={() => !disabled && setIsOpen(!isOpen)}
       >
-        <span className="truncate">{value || 'Pick Strategy'}</span>
+        <span className="truncate">{value || 'Выбрать стратегию'}</span>
         <span className={cn("font-marker font-black text-xl transition-transform duration-200", isOpen && "rotate-180")}>{isOpen ? 'x' : 'v'}</span>
       </div>
       
@@ -170,6 +170,7 @@ export default function App() {
   const [privilegeError, setPrivilegeError] = useState<string>('');
   const [conflictWarning, setConflictWarning] = useState<string[]>([]);
   const [isUserScrolling, setIsUserScrolling] = useState<boolean>(false);
+  const [toasts, setToasts] = useState<Array<{id: number, type: string, title: string, message: string}>>([]);
   const logsEndRef = useRef<HTMLDivElement>(null);
   const logsContainerRef = useRef<HTMLDivElement>(null);
 
@@ -178,22 +179,22 @@ export default function App() {
       Notification.requestPermission();
     }
     
-    // Check admin privileges on startup
+    // Проверка прав при запуске
     const checkAdmin = async () => {
       try {
         const hasPriv = await CheckPrivileges();
         if (!hasPriv) {
-          setPrivilegeError('Administrator privileges required. Please restart the application as administrator.');
+          setPrivilegeError('Требуются права администратора. Перезапустите приложение от имени администратора.');
         }
       } catch (err) {
         console.error('Privilege check failed:', err);
-        setPrivilegeError('Administrator privileges required. Please restart the application as administrator.');
+        setPrivilegeError('Требуются права администратора. Перезапустите приложение от имени администратора.');
       }
     };
     
     checkAdmin();
     
-    // Check for conflicts on startup
+    // Проверка конфликтов при запуске
     const checkConflicts = async () => {
       try {
         const conflicts = await CheckConflicts();
@@ -208,8 +209,12 @@ export default function App() {
     checkConflicts();
     
     GetEngineNames().then((engines: string[]) => {
+      console.log('[DEBUG] Loaded engines:', engines);
       setEngines(engines || []);
-      if (engines && engines.length > 0) setSelectedEngine(engines[0]);
+      if (engines && engines.length > 0) {
+        console.log('[DEBUG] Setting selectedEngine to:', engines[0]);
+        setSelectedEngine(engines[0]);
+      }
     });
     
     GetSettings().then((loadedSettings: any) => {
@@ -231,10 +236,19 @@ export default function App() {
       setPrivilegeError(msg);
     });
     EventsOn('engine_error', (msg: string) => {
-      ShowNotification("Engine Error", msg);
+      ShowNotification("Ошибка движка", msg);
       setStatus("Stopped");
     });
     EventsOn('notification', (data: any) => {
+      // Внутреннее уведомление-тост
+      setToasts(prev => [...prev, {
+        id: Date.now(),
+        type: data.type || 'info',
+        title: data.title,
+        message: data.message
+      }]);
+      
+      // Системное уведомление если разрешено
       if ('Notification' in window && Notification.permission === 'granted') {
         new Notification(data.title, { body: data.message });
       } else {
@@ -251,15 +265,15 @@ export default function App() {
       setScanSuccess(data.success);
       if (data.success && data.profile) {
         setSelectedProfile(data.profile);
-        setScanProgress(`✅ Success! Using ${data.profile}`);
+        setScanProgress(`✅ Готово! Профиль: ${data.profile}`);
         if ('Notification' in window && Notification.permission === 'granted') {
-          new Notification('Auto-Tune Complete', {
-            body: `Found working profile: ${data.profile}`,
+          new Notification('Автоподбор завершён', {
+            body: `Найден рабочий профиль: ${data.profile}`,
             icon: '/icon.png'
           });
         }
       } else {
-        setScanProgress('❌ No working profile found. Check admin rights or connection.');
+        setScanProgress('❌ Рабочий профиль не найден. Проверьте права администратора и соединение.');
       }
       setTimeout(() => {
         setScanSuccess(null);
@@ -291,9 +305,12 @@ export default function App() {
 
   useEffect(() => {
     if (selectedEngine) {
+      console.log('[DEBUG] selectedEngine changed:', selectedEngine);
       GetProfiles(selectedEngine).then((p: string[]) => {
+        console.log('[DEBUG] Loaded profiles:', p);
         setProfiles(p || []);
         if (p && p.length > 0 && !selectedProfile) {
+          console.log('[DEBUG] Setting selectedProfile to:', p[0]);
           setSelectedProfile(p[0]);
         } else if (!p || p.length === 0) {
           console.error('No profiles loaded from backend. Check engine registration.');
@@ -334,7 +351,7 @@ export default function App() {
       }
     } catch (err) {
       console.error('[ERROR] toggleConnection failed:', err);
-      setLogs(prev => [...prev, `Error: ${err}`]);
+      setLogs(prev => [...prev, `Ошибка: ${err}`]);
     }
   };
 
@@ -343,7 +360,7 @@ export default function App() {
     setIsScanning(true);
     setScanLogs([]);
     setScanSuccess(null);
-    setScanProgress('🔍 Scanning profiles...');
+    setScanProgress('🔍 Сканирую профили...');
     if (settings.showLogs) setIsLogExpanded(true);
     try {
       console.log('[DEBUG] Calling AutoTune...');
@@ -351,15 +368,15 @@ export default function App() {
       console.log('[DEBUG] AutoTune result:', bestProfile);
       if (bestProfile && bestProfile !== "Failed") {
         setSelectedProfile(bestProfile);
-        setScanProgress(`✅ Found: ${bestProfile}`);
+        setScanProgress(`✅ Найдено: ${bestProfile}`);
         setScanSuccess(true);
       } else {
-        setScanProgress('❌ No working profile found. Verify admin rights and internet connection.');
+        setScanProgress('❌ Рабочий профиль не найден. Проверьте права администратора и интернет-соединение.');
         setScanSuccess(false);
       }
     } catch (err) {
       console.error('[ERROR] AutoTune failed:', err);
-      setScanProgress('❌ Error during scan. Check admin privileges.');
+      setScanProgress('❌ Ошибка сканирования. Проверьте права администратора.');
       setScanSuccess(false);
     } finally {
       setIsScanning(false);
@@ -421,7 +438,7 @@ export default function App() {
   const handleClearCache = async () => {
     try {
       await ClearDiscordCache();
-      ShowNotification("Cache Cleared", "Discord cache has been successfully cleaned.");
+      ShowNotification("Кэш очищен", "Кэш Discord успешно очищен.");
     } catch (err) {
       console.error(err);
     }
@@ -430,7 +447,7 @@ export default function App() {
   const handleKillWinws2 = async () => {
     try {
       await KillWinws2();
-      ShowNotification("Success", "All winws2 processes terminated.");
+      ShowNotification("Успех", "Все процессы winws2 завершены.");
     } catch (err) {
       console.error(err);
     }
@@ -441,10 +458,60 @@ export default function App() {
   const disableMain = isConnecting || isScanning;
   const displayLogs = isScanning ? scanLogs : logs;
 
+  const removeToast = (id: number) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  };
+
+  useEffect(() => {
+    toasts.forEach(toast => {
+      const timer = setTimeout(() => removeToast(toast.id), 5000);
+      return () => clearTimeout(timer);
+    });
+  }, [toasts]);
+
   return (
     <div className="flex flex-col h-screen w-screen relative app-drag">
       
-      {/* CONFLICT WARNING OVERLAY */}
+      {/* УВЕДОМЛЕНИЯ-ТОСТЫ */}
+      <div className="fixed top-4 right-4 z-[10000] flex flex-col gap-2 pointer-events-none app-no-drag">
+        {toasts.map(toast => (
+          <div
+            key={toast.id}
+            className={cn(
+              "pointer-events-auto sketch-box p-4 min-w-[280px] max-w-[320px] animate-in slide-in-from-right-full fade-in duration-300",
+              toast.type === 'error' ? "bg-red-50 border-red-800" :
+              toast.type === 'warning' ? "bg-orange-50 border-orange-800" :
+              toast.type === 'success' ? "bg-green-50 border-green-800" :
+              "bg-blue-50 border-blue-800"
+            )}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1">
+                <div className={cn(
+                  "font-marker text-lg mb-1",
+                  toast.type === 'error' ? "text-red-900" :
+                  toast.type === 'warning' ? "text-orange-900" :
+                  toast.type === 'success' ? "text-green-900" :
+                  "text-blue-900"
+                )}>
+                  {toast.title}
+                </div>
+                <div className="text-sm font-bold text-gray-700 leading-snug">
+                  {toast.message}
+                </div>
+              </div>
+              <button
+                onClick={() => removeToast(toast.id)}
+                className="flex-shrink-0 text-gray-500 hover:text-gray-900 font-marker text-xl leading-none"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+      
+      {/* ОВЕРЛЕЙ — КОНФЛИКТЫ */}
       {conflictWarning.length > 0 && (
         <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-orange-900/90 backdrop-blur-sm p-4 app-no-drag animate-in fade-in duration-300">
           <div className="w-full max-w-md bg-orange-50 sketch-box p-6 animate-in zoom-in-95 slide-in-from-bottom-4 duration-300">
@@ -453,14 +520,14 @@ export default function App() {
                 <span className="text-white font-marker text-3xl">!</span>
               </div>
               <div className="flex-1">
-                <h3 className="text-2xl font-marker text-orange-900 mb-2">CONFLICTS DETECTED!</h3>
+                <h3 className="text-2xl font-marker text-orange-900 mb-2">ОБНАРУЖЕНЫ КОНФЛИКТЫ!</h3>
                 <div className="text-base font-bold text-orange-800 leading-snug mb-3 space-y-1">
                   {conflictWarning.map((conflict, idx) => (
                     <div key={idx}>{conflict}</div>
                   ))}
                 </div>
                 <p className="text-sm text-orange-700 leading-snug">
-                  These processes may interfere with Unbound. Kill them to avoid conflicts.
+                  Эти процессы могут помешать работе Unbound. Завершите их, чтобы избежать конфликтов.
                 </p>
               </div>
             </div>
@@ -469,7 +536,7 @@ export default function App() {
                 onClick={() => setConflictWarning([])}
                 className="flex-1 py-3 text-xl font-marker text-orange-600 hover:text-orange-900 hover:bg-orange-100 border-2 border-orange-800 rounded-xl shadow-[2px_2px_0_#7c2d12] transition-all duration-150 active:translate-y-1 active:shadow-none bg-white hover:scale-[1.02]"
               >
-                Ignore
+                Игнорировать
               </button>
               <button
                 onClick={async () => {
@@ -478,14 +545,14 @@ export default function App() {
                 }}
                 className="flex-1 py-3 text-xl font-marker bg-orange-600 text-white hover:bg-orange-700 border-2 border-orange-900 rounded-xl shadow-[2px_2px_0_#7c2d12] transition-all duration-150 active:translate-y-1 active:shadow-none hover:scale-[1.02]"
               >
-                Kill All
+                Завершить все
               </button>
             </div>
           </div>
         </div>
       )}
       
-      {/* PRIVILEGE ERROR OVERLAY */}
+      {/* ОВЕРЛЕЙ — ПРАВА АДМИНИСТРАТОРА */}
       {privilegeError && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-red-900/90 backdrop-blur-sm p-4 app-no-drag animate-in fade-in duration-300">
           <div className="w-full max-w-md bg-red-50 sketch-box p-6 animate-in zoom-in-95 slide-in-from-bottom-4 duration-300">
@@ -494,12 +561,12 @@ export default function App() {
                 <span className="text-white font-marker text-3xl">!</span>
               </div>
               <div className="flex-1">
-                <h3 className="text-2xl font-marker text-red-900 mb-2">ADMIN REQUIRED!</h3>
+                <h3 className="text-2xl font-marker text-red-900 mb-2">НУЖНЫ ПРАВА АДМИНИСТРАТОРА!</h3>
                 <p className="text-base font-bold text-red-800 leading-snug mb-3">
                   {privilegeError}
                 </p>
                 <p className="text-sm text-red-700 leading-snug">
-                  WinDivert cannot intercept traffic without Administrator privileges. Right-click unbound.exe and select "Run as administrator".
+                  WinDivert не может перехватывать трафик без прав администратора. Нажмите правой кнопкой на unbound.exe и выберите «Запуск от имени администратора».
                 </p>
               </div>
             </div>
@@ -507,54 +574,54 @@ export default function App() {
               onClick={() => setPrivilegeError('')}
               className="w-full py-3 text-xl font-marker bg-red-600 text-white hover:bg-red-700 border-2 border-red-900 rounded-xl shadow-[2px_2px_0_#7f1d1d] transition-all duration-150 active:translate-y-1 active:shadow-none"
             >
-              Got it!
+              Понятно!
             </button>
           </div>
         </div>
       )}
       
-      {/* 1. HEADER - Sketchy paper top margin */}
+      {/* 1. ШАПКА */}
       <div className="flex-none h-[40px] flex items-center justify-between px-5 z-10 border-b-2 border-red-300/60 bg-[#fdfdfc]">
         <div className="flex items-center gap-2 app-no-drag">
           <span className="font-marker text-xl text-gray-800 tracking-wider">UNBOUND!</span>
         </div>
 
         <div className="flex items-center gap-4 text-gray-500 app-no-drag">
-          <button onClick={WindowMinimise} className="hover:text-black font-marker text-xl leading-none" title="Minimize">
+          <button onClick={WindowMinimise} className="hover:text-black font-marker text-xl leading-none" title="Свернуть">
             _
           </button>
-          <button onClick={Quit} className="hover:text-red-500 font-marker text-xl leading-none pb-1" title="Close">
+          <button onClick={Quit} className="hover:text-red-500 font-marker text-xl leading-none pb-1" title="Закрыть">
             X
           </button>
         </div>
       </div>
 
-      {/* 2. MAIN BODY */}
+      {/* 2. ОСНОВНОЙ БЛОК */}
       <div className="flex-1 flex flex-col relative w-full px-8 pt-12 pb-10 min-h-0 app-no-drag overflow-y-auto">
         
-        {/* Status Text */}
+        {/* Статус */}
         <div className="flex flex-col items-center justify-center mb-12">
           <h2 className={cn(
             "text-4xl font-marker tracking-widest text-center transition-colors duration-300",
             isConnected ? "text-green-600" : isConnecting || isScanning ? "text-blue-600 animate-pulse" : "text-gray-500"
           )}>
-            {isScanning ? 'TESTING...' : status === 'Running' ? 'CONNECTED!' : status === 'Stopped' ? 'DISCONNECTED' : status.toUpperCase()}
+            {isScanning ? 'ТЕСТИРУЮ...' : status === 'Running' ? 'ПОДКЛЮЧЕНО!' : status === 'Stopped' ? 'ОТКЛЮЧЕНО' : status.toUpperCase()}
           </h2>
           <p className="text-lg font-bold text-gray-500 mt-3 underline decoration-gray-300 decoration-wavy">
-            {isScanning && scanProgress ? scanProgress : isConnected ? 'Traffic bypassed!' : 'Ready to start'}
+            {isScanning && scanProgress ? scanProgress : isConnected ? 'Трафик обходит DPI!' : 'Готово к запуску'}
           </p>
         </div>
 
-        {/* Profile Selector */}
+        {/* Выбор профиля */}
         <div className="flex flex-col gap-2 mb-10 relative z-40">
           <div className="flex justify-between items-end px-2">
-            <span className="text-lg font-bold text-gray-700">Profile:</span>
+            <span className="text-lg font-bold text-gray-700">Профиль:</span>
             {isConnected && (
               <span className={cn(
                 "font-marker text-lg px-2 transform rotate-2",
                 livePingData.status === 'ok' ? "text-green-600" : livePingData.status === 'blocked' ? "text-red-600" : "text-blue-500"
               )}>
-                {livePingData.status === 'ok' ? `Ping: ${livePingData.latency}ms` : livePingData.status === 'blocked' ? 'Oof!' : '?'}
+                {livePingData.status === 'ok' ? `Пинг: ${livePingData.latency}мс` : livePingData.status === 'blocked' ? 'Заблокировано!' : '?'}
               </span>
             )}
           </div>
@@ -568,7 +635,7 @@ export default function App() {
           />
         </div>
 
-        {/* Action Buttons */}
+        {/* Кнопки действий */}
         <div className="flex flex-col gap-5 relative z-30">
           <button
             onClick={toggleConnection}
@@ -578,7 +645,7 @@ export default function App() {
               isConnected && !disableMain ? "doodle-btn-red" : ""
             )}
           >
-            {isConnected ? 'DISCONNECT!' : 'CONNECT!'}
+            {isConnected ? 'ОТКЛЮЧИТЬ!' : 'ПОДКЛЮЧИТЬ!'}
           </button>
 
           <div className="grid grid-cols-2 gap-4">
@@ -597,22 +664,22 @@ export default function App() {
               {isScanning ? (
                 <>
                   <SketchySpinner className="w-6 h-6" />
-                  Scanning...
+                  Сканирую...
                 </>
               ) : scanSuccess === true ? (
                 <>
                   <SketchyCheck className="w-6 h-6 animate-in zoom-in duration-300" />
-                  Success!
+                  Успех!
                 </>
               ) : scanSuccess === false ? (
                 <>
                   <SketchyX className="w-6 h-6 animate-in zoom-in duration-300" />
-                  Failed
+                  Не удалось
                 </>
               ) : (
                 <>
                   <SketchyStar className="w-6 h-6" />
-                  Auto-Tune
+                  Автоподбор
                 </>
               )}
             </button>
@@ -622,13 +689,13 @@ export default function App() {
               className="flex items-center justify-center gap-2 py-3 sketch-box hover:bg-gray-100 hover:shadow-[2px_2px_0_rgba(0,0,0,0.6)] font-bold text-lg transition-all duration-150 hover:scale-[1.02] active:scale-[0.98]"
             >
               <SketchyGear className="w-6 h-6" />
-              Settings
+              Настройки
             </button>
           </div>
         </div>
       </div>
 
-      {/* 3. LOGS NOTEBOOK (Conditionally rendered) */}
+      {/* 3. ЖУРНАЛ ЛОГОВ */}
       {settings.showLogs && (
         <div 
           className={cn(
@@ -642,7 +709,7 @@ export default function App() {
           >
             <div className="flex items-center gap-3 text-gray-700 font-bold text-lg">
               <SketchyTerminal className="w-6 h-6" />
-              <span>{isScanning ? 'Scan Notes' : 'Dev Diary'}</span>
+              <span>{isScanning ? 'Лог сканера' : 'Журнал'}</span>
             </div>
             <div className="font-marker text-xl text-gray-500">
               {isLogExpanded ? '\\/' : '^'}
@@ -656,14 +723,14 @@ export default function App() {
             isLogExpanded ? "opacity-100 block" : "opacity-0 hidden"
           )}>
             {displayLogs.length === 0 ? (
-              <div className="text-gray-400 h-full flex items-center justify-center font-hand text-lg font-bold">Nothing written yet...</div>
+              <div className="text-gray-400 h-full flex items-center justify-center font-hand text-lg font-bold">Пока пусто...</div>
             ) : (
               <div className="space-y-2 pb-4">
                 {displayLogs.map((rawLog, i) => {
                   const log = formatLog(rawLog);
                   const lowerLog = log.toLowerCase();
-                  const isError = lowerLog.includes('error') || lowerLog.includes('fail');
-                  const isSuccess = lowerLog.includes('active') || lowerLog.includes('success') || lowerLog.includes('✓') || lowerLog.includes('start');
+                  const isError = lowerLog.includes('error') || lowerLog.includes('fail') || lowerLog.includes('ошибк');
+                  const isSuccess = lowerLog.includes('active') || lowerLog.includes('success') || lowerLog.includes('✓') || lowerLog.includes('start') || lowerLog.includes('запущ');
                   
                   return (
                     <div 
@@ -687,7 +754,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Settings Modal - Sketchy Paper */}
+      {/* НАСТРОЙКИ */}
       {isSettingsOpen && (
         <div 
           className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/40 backdrop-blur-sm p-4 app-no-drag animate-in fade-in duration-200"
@@ -697,39 +764,39 @@ export default function App() {
             className="w-full max-w-[340px] bg-[#fdfdfc] sketch-box flex flex-col max-h-[85vh] p-1 animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Modal Header */}
+            {/* Шапка модалки */}
             <div className="flex items-center justify-between px-4 py-3 border-b-2 border-gray-200 mb-2">
               <div className="flex items-center gap-2">
                 <SketchyGear className="w-6 h-6 text-gray-800" />
-                <h2 className="text-xl font-marker text-gray-800">My Rules</h2>
+                <h2 className="text-xl font-marker text-gray-800">Настройки</h2>
               </div>
               <button onClick={() => setIsSettingsOpen(false)} className="text-gray-500 hover:text-black font-marker text-xl transition-colors duration-150 hover:scale-110">
                 X
               </button>
             </div>
 
-            {/* Settings Content */}
+            {/* Содержимое настроек */}
             <div className="px-4 py-2 overflow-y-visible space-y-4 flex-1">
               <DoodleCheckbox 
                 id="autoStart" 
-                label="Boot Sequence"
-                desc="Launch Unbound when system starts"
+                label="Автозапуск"
+                desc="Запускать Unbound при старте системы"
                 checked={settings.autoStart} 
                 onChange={() => setSettings({...settings, autoStart: !settings.autoStart})} 
               />
 
               <DoodleCheckbox 
                 id="startMinimized" 
-                label="Stealth Start"
-                desc="Launch minimized to tray"
+                label="Тихий старт"
+                desc="Запускать свёрнутым в системный трей"
                 checked={settings.startMinimized} 
                 onChange={() => setSettings({...settings, startMinimized: !settings.startMinimized})} 
               />
 
               <DoodleCheckbox 
                 id="showLogs" 
-                label="Show Diary"
-                desc="Show/Hide the bottom logs panel"
+                label="Показать журнал"
+                desc="Показать/скрыть панель логов внизу"
                 checked={settings.showLogs} 
                 onChange={() => setSettings({...settings, showLogs: !settings.showLogs})} 
               />
@@ -737,23 +804,23 @@ export default function App() {
               <DoodleCheckbox 
                 id="enableTCPTimestamps" 
                 label="TCP Timestamps"
-                desc="Improve compatibility with some ISPs"
+                desc="Улучшить совместимость с некоторыми провайдерами"
                 checked={settings.enableTCPTimestamps} 
                 onChange={() => setSettings({...settings, enableTCPTimestamps: !settings.enableTCPTimestamps})} 
               />
 
               <DoodleCheckbox 
                 id="discordCacheAutoClean" 
-                label="Discord Hygiene"
-                desc="Auto-clean Discord cache on startup"
+                label="Очистка Discord"
+                desc="Автоматически очищать кэш Discord при запуске"
                 checked={settings.discordCacheAutoClean} 
                 onChange={() => setSettings({...settings, discordCacheAutoClean: !settings.discordCacheAutoClean})} 
               />
 
               <div className="flex flex-col gap-2 p-3 bg-white border-2 border-gray-800 rounded-xl relative z-50 shadow-[2px_2px_0_#222]">
                 <div>
-                  <span className="text-lg font-bold text-gray-900 block leading-none">Startup Profile</span>
-                  <span className="text-xs text-gray-600 block mt-1">Which one to load on launch?</span>
+                  <span className="text-lg font-bold text-gray-900 block leading-none">Профиль при запуске</span>
+                  <span className="text-xs text-gray-600 block mt-1">Какой профиль загружать при старте?</span>
                 </div>
                 <DoodleSelect 
                   value={settings.startupProfileMode}
@@ -764,28 +831,28 @@ export default function App() {
               </div>
             </div>
 
-            {/* Modal Footer */}
+            {/* Подвал настроек */}
             <div className="px-4 py-2 space-y-2 mb-2 relative z-[60]">
                <button 
                 onClick={handleRunDiagnostics}
                 className="w-full flex items-center justify-center gap-2 py-2 sketch-box bg-blue-50 hover:bg-blue-100 text-blue-800 font-bold text-sm transition-all duration-150"
               >
                 <SketchyTerminal className="w-4 h-4" />
-                Run Diagnostics
+                Диагностика
               </button>
               <button 
                 onClick={handleClearCache}
                 className="w-full flex items-center justify-center gap-2 py-2 sketch-box bg-gray-50 hover:bg-gray-100 text-gray-800 font-bold text-sm transition-all duration-150"
               >
                 <SketchyX className="w-4 h-4" />
-                Clear Discord Cache
+                Очистить кэш Discord
               </button>
               <button 
                 onClick={handleKillWinws2}
                 className="w-full flex items-center justify-center gap-2 py-2 sketch-box bg-red-50 hover:bg-red-100 text-red-800 font-bold text-sm transition-all duration-150"
               >
                 <SketchyX className="w-4 h-4" />
-                Kill winws2.exe
+                Завершить winws2.exe
               </button>
             </div>
 
@@ -794,24 +861,24 @@ export default function App() {
                 onClick={() => setIsSettingsOpen(false)}
                 className="flex-1 py-3 text-xl font-marker text-gray-600 hover:text-gray-900 hover:bg-gray-100 border-2 border-gray-800 rounded-xl shadow-[2px_2px_0_#222] transition-all duration-150 active:translate-y-1 active:shadow-none bg-white hover:scale-[1.02]"
               >
-                Cancel
+                Отмена
               </button>
               <button
                 onClick={handleSaveSettings}
                 className="flex-1 py-3 text-xl font-marker doodle-btn transition-all duration-150 hover:scale-[1.02] active:scale-[0.98]"
               >
-                Save!
+                Сохранить!
               </button>
             </div>
             
             <div className="px-4 py-2 flex justify-center opacity-40">
-              <span className="font-marker text-sm">v1.0.3 - 2026 Stable</span>
+              <span className="font-marker text-sm">v1.0.4 — 2026 Стабильная</span>
             </div>
           </div>
         </div>
       )}
 
-      {/* Diagnostics Modal */}
+      {/* ДИАГНОСТИКА */}
       {isDiagOpen && (
         <div 
           className="fixed inset-0 z-[100] flex items-center justify-center bg-blue-900/40 backdrop-blur-sm p-4 app-no-drag animate-in fade-in duration-200"
@@ -824,7 +891,7 @@ export default function App() {
             <div className="flex items-center justify-between px-4 py-3 border-b-2 border-gray-200 mb-2">
               <div className="flex items-center gap-2">
                 <SketchyTerminal className="w-6 h-6 text-blue-600" />
-                <h2 className="text-xl font-marker text-gray-800">Health Check</h2>
+                <h2 className="text-xl font-marker text-gray-800">Проверка системы</h2>
               </div>
               <button onClick={() => setIsDiagOpen(false)} className="text-gray-500 hover:text-black font-marker text-xl">X</button>
             </div>
@@ -833,7 +900,7 @@ export default function App() {
               {isDiagRunning ? (
                 <div className="flex flex-col items-center justify-center py-12 gap-4">
                   <SketchySpinner className="w-12 h-12 text-blue-500" />
-                  <span className="font-marker text-xl text-blue-600">Checking vitals...</span>
+                  <span className="font-marker text-xl text-blue-600">Проверяю систему...</span>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -861,7 +928,7 @@ export default function App() {
                 onClick={() => setIsDiagOpen(false)}
                 className="w-full py-3 text-xl font-marker doodle-btn hover:scale-[1.02] active:scale-[0.98]"
               >
-                Got it!
+                Понятно!
               </button>
             </div>
           </div>

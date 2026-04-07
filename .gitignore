@@ -39,6 +39,7 @@ go.work
 *.swp
 *.swo
 *~
+.kiro
 
 # OS
 .DS_Store
