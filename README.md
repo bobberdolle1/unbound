@@ -1,8 +1,8 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Версия-2.0.0-ff6b6b?style=for-the-badge&logo=rocket" alt="Версия 2.0.0" />
   <img src="https://img.shields.io/badge/Платформа-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android%20%7C%20iOS%20%7C%20OpenWrt-3b82f6?style=for-the-badge&logo=windows" alt="Мультиплатформа" />
-  <img src="https://img.shields.io/badge/Лицензия-MIT-green?style=for-the-badge" alt="Лицензия MIT" />
-  <img src="https://img.shields.io/badge/Статус-Готов%20к%20продакшену-success?style=for-the-badge" alt="Готов к продакшену" />
+  <img src="https://img.shields.io/badge/Лицензия-GPL--3.0-orange?style=for-the-badge" alt="Лицензия GPL-3.0" />
+  <img src="https://img.shields.io/badge/OpenSource-Свободный%20код-brightgreen?style=for-the-badge" alt="Open Source" />
 </p>
 
 <p align="center">
@@ -16,440 +16,289 @@
 
 <p align="center">
   <h1 align="center">🚀 UNBOUND</h1>
-  <p align="center"><strong>Тотальная война с цензурой</strong></p>
-  <p align="center"><em>Мультиплатформенная экосистема для обхода DPI-цензуры и восстановления свободы интернета</em></p>
+  <p align="center"><strong>Обход DPI-блокировок для всех платформ</strong></p>
+  <p align="center"><em>Одна программа — YouTube, Discord, Instagram, Twitter и другие заблокированные сайты</em></p>
 </p>
 
 <p align="center">
-  <a href="#-описание"><strong>Описание</strong></a> •
-  <a href="#-экосистема"><strong>Экосистема</strong></a> •
-  <a href="#-возможности"><strong>Возможности</strong></a> •
-  <a href="#-быстрый-старт"><strong>Быстрый старт</strong></a> •
-  <a href="#-как-это-работает"><strong>Как это работает</strong></a> •
-  <a href="#-сборка-из-исходников"><strong>Сборка</strong></a> •
-  <a href="#-сообщество"><strong>Сообщество</strong></a>
+  <a href="#-скачать"><strong>⬇️ Скачать</strong></a> •
+  <a href="#-установка"><strong>📦 Установка</strong></a> •
+  <a href="#-как-пользоваться"><strong>📖 Как пользоваться</strong></a> •
+  <a href="#-платформы"><strong>📱 Платформы</strong></a> •
+  <a href="#-как-это-работает"><strong>🔬 Как это работает</strong></a> •
+  <a href="#-сборка"><strong>🏗️ Сборка</strong></a> •
+  <a href="#-благодарности"><strong>🙏 Благодарности</strong></a>
 </p>
 
 <br />
 
 ---
 
-## 📖 Описание
+## ⬇️ Скачать
 
-**Unbound v2.0.0** — это не просто утилита, а целая **экосистема**. Рождённый из необходимости обхода всё более изощрённой DPI-цензуры (Deep Packet Inspection), Unbound представляет собой комплексное мультиплатформенное решение, которое работает безотказно на **десктопе, мобильных устройствах, роутерах и в браузерах**.
+| Платформа | Файл | Ссылка |
+|-----------|------|--------|
+| **Windows** | `.exe` установщик | [Releases](https://github.com/bobberdolle1/unbound/releases/latest) |
+| **Android** | `.apk` | [Releases](https://github.com/bobberdolle1/unbound/releases/latest) |
+| **Linux** | Бинарник | [Releases](https://github.com/bobberdolle1/unbound/releases/latest) |
+| **OpenWrt** | `.ipk` пакет | [Releases](https://github.com/bobberdolle1/unbound/releases/latest) |
+| **Браузер** | Расширение Chrome/Firefox | [Releases](https://github.com/bobberdolle1/unbound/releases/latest) |
+| **iOS (JB)** | `.deb` твик | [Releases](https://github.com/bobberdolle1/unbound/releases/latest) |
 
-### 🎯 Что он делает?
-
-Unbound использует передовые техники для обхода DPI-цензуры:
-
-- **🔀 Обфускация пакетов** — Модифицирует отпечатки TLS-рукопожатий для скрытия от DPI
-- **📦 Фрагментация** — Разбивает пакеты, чтобы сбить с толку DPI-системы
-- **🎭 Морфинг трафика** — Изменяет тайминги и TTL пакетов, имитируя разрешённый трафик
-- **🌐 Интеллектуальный маршрутизатор** — Автоматически подбирает оптимальную стратегию обхода для каждого сервиса
-- **⚡ Автоподбор** — Сканирует и выбирает лучший профиль для вашего провайдера за считанные секунды
-
-### ✅ Что поддерживается?
-
-| Сервис | Статус | Покрытие |
-|--------|--------|----------|
-| **YouTube** | ✅ Полное | Стриминг, 4K, комментарии |
-| **Discord** | ✅ Полное | Голос, видео, демонстрация экрана |
-| **Instagram** | ✅ Полное | Лента, сторис, рилс, личные сообщения |
-| **Twitter/X** | ✅ Полное | Лента, медиа, поиск |
-| **Facebook** | ✅ Полное | Новости, маркетплейс, мессенджер |
-| **RuTracker** | ✅ Полное | Торренты, magnet-ссылки |
-| **NordVPN/ProtonVPN** | ✅ Частичное | Подключение к VPN |
-
-> ⚠️ **Примечание**: Обход MTProto/Telegram официально не поддерживается в данной конфигурации. Основной фокус — YouTube, Discord, Twitter, Instagram.
+> Все файлы доступны на странице [GitHub Releases](https://github.com/bobberdolle1/unbound/releases/latest).
 
 ---
 
-## 🌍 Экосистема
+## 📦 Установка
 
-Unbound v2.0.0 — это **мультиплатформенная экосистема** с нативными приложениями для каждого вашего устройства:
+### Windows
 
-<p align="center">
-  <table>
-    <tr>
-      <td align="center">
-        <img src="https://img.shields.io/badge/🖥️%20Десктоп-Windows%2FmacOS-blue?style=for-the-badge" alt="Десктоп" /><br />
-        <a href="desktop/README.md"><strong>Десктопное приложение</strong></a><br />
-        <em>Нативный GUI на Wails</em><br />
-        <sup>Автоподбор • Системный трей • Один клик</sup>
-      </td>
-      <td align="center">
-        <img src="https://img.shields.io/badge/📱%20Android-34D399?style=for-the-badge&logo=android" alt="Android" /><br />
-        <a href="android/README.md"><strong>Android-приложение</strong></a><br />
-        <em>Kotlin • Material You</em><br />
-        <sup>VPN-сервис • Всегда включён</sup>
-      </td>
-      <td align="center">
-        <img src="https://img.shields.io/badge/🍎%20iOS-999?style=for-the-badge&logo=apple" alt="iOS" /><br />
-        <a href="theos/unbound-legacy/README.md"><strong>iOS-твик</strong></a><br />
-        <em>Theos • Джейлбрейк</em><br />
-        <sup>iOS 6.1.3 - 15+ • Скевоморфный UI</sup>
-      </td>
-    </tr>
-    <tr>
-      <td align="center">
-        <img src="https://img.shields.io/badge/🐧%20Linux-FBB03B?style=for-the-badge&logo=linux" alt="Linux" /><br />
-        <a href="linux/README.md"><strong>Linux CLI</strong></a><br />
-        <em>Rust • systemd</em><br />
-        <sup>Демон • nftables • Без GUI</sup>
-      </td>
-      <td align="center">
-        <img src="https://img.shields.io/badge/🌐%20OpenWrt-00B5E2?style=for-the-badge" alt="OpenWrt" /><br />
-        <a href="openwrt/README.md"><strong>Пакет для роутера</strong></a><br />
-        <em>LuCI • Makefile</em><br />
-        <sup>Вся сеть • Прозрачный режим</sup>
-      </td>
-      <td align="center">
-        <img src="https://img.shields.io/badge/🧩%20Браузер-Расширение-orange?style=for-the-badge" alt="Расширение" /><br />
-        <a href="extension-web/README.md"><strong>Веб-расширение</strong></a><br />
-        <em>Chrome • Firefox</em><br />
-        <sup>Прокси • Управление по вкладкам</sup>
-      </td>
-    </tr>
-    <tr>
-      <td align="center">
-        <img src="https://img.shields.io/badge/📺%20SmartTV-WebOS%2FtvOS-purple?style=for-the-badge" alt="TV" /><br />
-        <a href="webos/README.md"><strong>Smart TV</strong></a><br />
-        <em>WebOS • tvOS</em><br />
-        <sup>Гостиная • 4K-стриминг</sup>
-      </td>
-      <td align="center">
-        <img src="https://img.shields.io/badge/🎮%20Steam%20Deck-Decky-0f1923?style=for-the-badge&logo=steam" alt="Steam Deck" /><br />
-        <a href="decky-plugin/README.md"><strong>Плагин Decky</strong></a><br />
-        <em>Python • QuickAccess</em><br />
-        <sup>Игры • Низкая задержка</sup>
-      </td>
-      <td align="center">
-        <img src="https://img.shields.io/badge/📦%20Magisk-Root-4CAF50?style=for-the-badge" alt="Magisk" /><br />
-        <a href="magisk-module/README.md"><strong>Модуль Magisk</strong></a><br />
-        <em>Бессистемный • Root</em><br />
-        <sup>Глобальный прокси • Автозагрузка</sup>
-      </td>
-    </tr>
-  </table>
-</p>
+1. Скачайте установщик со страницы [Releases](https://github.com/bobberdolle1/unbound/releases/latest)
+2. Запустите **от имени администратора** (правая кнопка → «Запуск от имени администратора»)
+3. Следуйте инструкциям установщика
+4. Запустите Unbound из меню Пуск или с рабочего стола
 
----
+> **Важно:** Без прав администратора программа не сможет перехватывать трафик.
 
-## ✨ Возможности
+### Android
 
-### 🎯 Основные функции
-
-- **🚀 Автоподбор V2** — Параллельный сканер, который находит оптимальный профиль для вашего провайдера за секунды
-- **🔄 Системный трей** — Работает в фоновом режиме, управляется из трея
-- **📊 Мониторинг в реальном времени** — Живой пинг до ключевых сервисов, статус подключения, метрики задержки
-- **🎨 Современный интерфейс** — Уникальный дизайн в стиле «от руки» с мгновенным откликом
-- **⚙️ Система профилей** — 10+ предустановленных профилей для разных сценариев
-- **🔒 Безопасность** — Без логов, без телеметрии, открытый исходный код
-
-### 🛠️ Продвинутые функции
-
-- **🌐 Мультидвижковая архитектура** — Zapret 2 (winws), AmneziaWG, поддержка Xray
-- **📦 Интеллектуальная работа с пакетами** — Морфинг TLS-отпечатков, фрагментация пакетов, управление TTL
-- **🔍 Автообнаружение конфликтов** — Detects and resolves конфликты с другими DPI-обходчиками
-- **🔧 Набор диагностики** — Встроенные проверки системы, прав администратора
-- **🔄 Автообновление** — Бесшовные обновления из GitHub Releases
-- **🎮 Игровой фильтр** — Приоритизация игрового трафика для низкой задержки
-
-### 🏗️ Технические особенности
-
-- **Написан на Go + React** — Быстрый, эффективный, кроссплатформенный
-- **Фреймворк Wails** — Нативное десктопное приложение с веб-интерфейсом
-- **WinDivert** — Перехват пакетов на уровне ядра в Windows
-- **nfqws** — Управление через очередь Netfilter в Linux
-- **Без зависимостей** — Самодостаточные бинарники, не требует установки библиотек
-
----
-
-## 🚀 Быстрый старт
-
-### Десктоп (Windows/macOS)
-
-1. **Скачайте** последний релиз со страницы [Releases](https://github.com/your-org/unbound/releases/latest)
-2. **Запустите от имени администратора** (Windows) — Правая кнопка → «Запуск от имени администратора»
-3. **Нажмите «ПОДКЛЮЧИТЬ!»** — Готово! 🎉
-
-> 💡 **Совет**: Используйте **Автоподбор** (кнопка ⭐) для поиска оптимального профиля под вашего провайдера
+1. Скачайте APK со страницы [Releases](https://github.com/bobberdolle1/unbound/releases/latest)
+2. Разрешите установку из неизвестных источников (Настройки → Безопасность)
+3. Установите APK
+4. Откройте приложение и предоставьте разрешение VPN
+5. Нажмите **«Подключить»**
 
 ### Linux
 
 ```bash
-# Скачать бинарник
-curl -LO https://github.com/your-org/unbound/releases/latest/download/unbound-cli-linux-amd64
+# Скачать
+curl -LO https://github.com/bobberdolle1/unbound/releases/latest/download/unbound-cli-linux-amd64
 
 # Сделать исполняемым
 chmod +x unbound-cli-linux-amd64
 
-# Запустить от root
-sudo ./unbound-cli-linux-amd64 --profile "Unbound Ultimate (God Mode)"
+# Запустить
+sudo ./unbound-cli-linux-amd64 start
 ```
 
-### Android
-
-1. Скачайте APK со страницы [Releases](https://github.com/your-org/unbound/releases/latest)
-2. Установите и предоставьте разрешения VPN
-3. Переключите переключатель для активации
-
-### Роутер на OpenWrt
+### OpenWrt роутер
 
 ```bash
-# Установка через opkg (если доступно)
-opkg install nfqws-unbound
+# Скачать и установить пакет
+opkg install nfqws-unbound_*.ipk
+opkg install luci-app-unbound_*.ipk
 
-# Или сборка из исходников
-git clone https://github.com/your-org/unbound.git
-cd unbound/openwrt/unbound-wrt
-make
+# Включить
+/etc/init.d/unbound enable
+/etc/init.d/unbound start
 ```
+
+После установки откроется страница в LuCI: **Сервисы → Unbound**.
 
 ### Расширение для браузера
 
-1. Откройте интернет-магазин Chrome или Firefox
-2. Найдите «Unbound Web»
-3. Установите и настройте правила прокси
+**Chrome:**
+1. Скачайте ZIP со страницы [Releases](https://github.com/bobberdolle1/unbound/releases/latest)
+2. Распакуйте в любую папку
+3. Откройте `chrome://extensions/`
+4. Включите «Режим разработчика»
+5. Нажмите «Загрузить распакованное» → выберите папку
+
+**Firefox:**
+1. Откройте `about:debugging#/runtime/this-firefox`
+2. «Загрузить временное дополнение» → выберите любой файл из распакованной папки
+
+---
+
+## 📖 Как пользоваться
+
+### Десктоп (Windows/macOS)
+
+1. **Откройте приложение** — появится главное окно с двумя кнопками
+2. **Выберите профиль** — из выпадающего списка (рекомендуется «Unbound Ultimate»)
+3. **Нажмите «ПОДКЛЮЧИТЬ!»** — готово, трафик идёт через обход DPI
+4. **Проверьте** — откройте YouTube, Discord — должно работать
+
+**Автоподбор:** Нажмите кнопку ⭐ для автоматического поиска лучшего профиля под вашего провайдера.
+
+**Системный трей:** При закрытии окна приложение сворачивается в трей (возле часов). Правый клик по иконке → «Выход» для полного закрытия.
+
+**Настройки (шестерёнка ⚙️):**
+- Автозапуск — запускать при старте Windows
+- Тихий старт — сразу в трей
+- TCP Timestamps — улучшить совместимость
+- Очистка Discord — автоочистка кэша Discord
+
+### Android
+
+1. Откройте приложение
+2. Нажмите **«Подключить»**
+3. Разрешите VPN-подключение
+4. Всё работает — сворачивайте и пользуйтесь
+
+**Раздельное туннелирование:** Настройки → Раздельное туннелирование — выберите какие приложения идут через обход.
+
+### iOS (Jailbreak)
+
+1. Установите `.deb` через Cydia/Sileo
+2. Откройте приложение Unbound из SpringBoard
+3. Нажмите **«Подключить»**
+4. Настройки доступны в приложении «Настройки» → Unbound
+
+---
+
+## 📱 Платформы
+
+| Платформа | README | Формат |
+|-----------|--------|--------|
+| 🖥️ **Десктоп** (Windows/macOS) | — | Встроен в установщик |
+| 📱 **Android** | [android/README.md](android/README.md) | APK |
+| 🍎 **iOS** (Jailbreak) | [theos/README.md](theos/unbound-legacy/README.md) | DEB |
+| 🐧 **Linux** | [linux/README.md](linux/README.md) | Бинарник |
+| 🌐 **OpenWrt** | [openwrt/README.md](openwrt/README.md) | IPK + LuCI |
+| 🧩 **Браузер** | [extension-web/README.md](extension-web/README.md) | Расширение |
+| 📺 **WebOS** (LG TV) | [webos/README.md](webos/README.md) | IPK |
+| 📺 **tvOS** (Apple TV) | [tvos/README.md](tvos/README.md) | IPA |
+| 🎮 **Steam Deck** | [decky-plugin/README.md](decky-plugin/README.md) | Плагин |
+| 📦 **Magisk** | [magisk-module/README.md](magisk-module/README.md) | ZIP-модуль |
 
 ---
 
 ## 🔬 Как это работает
 
-### Техники обхода DPI
-
-Unbound использует комбинацию продвинутых методов для обхода обнаружения:
+Unbound модифицирует исходящие пакеты так, чтобы системы DPI (Deep Packet Inspection) не могли распознать заблокированные сервисы:
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                   Ваш запрос                            │
-└──────────────────┬──────────────────────────────────────┘
-                   │
-                   ▼
-┌─────────────────────────────────────────────────────────┐
-│  1. Модификация TLS ClientHello                         │
-│     - Изменение порядка наборов шифров                  │
-│     - Модификация расширений                            │
-└──────────────────┬──────────────────────────────────────┘
-                   │
-                   ▼
-┌─────────────────────────────────────────────────────────┐
-│  2. Фрагментация пакетов                                │
-│     - Разбиение TLS-рукопожатия на несколько пакетов    │
-│     - Сбивает с толку DPI-сигнатуры                     │
-└──────────────────┬──────────────────────────────────────┘
-                   │
-                   ▼
-┌─────────────────────────────────────────────────────────┐
-│  3. Управление TTL                                      │
-│     - АвтоTTL определяет оптимальное кол-во хопов       │
-│     - Пакеты «исчезают» до DPI-системы                  │
-└──────────────────┬──────────────────────────────────────┘
-                   │
-                   ▼
-┌─────────────────────────────────────────────────────────┐
-│  4. Атаки на тайминги                                   │
-│     - Микрозадержки между пакетами                      │
-│     - Обнаружение на основе таймингов не срабатывает    │
-└──────────────────┬──────────────────────────────────────┘
-                   │
-                   ▼
-              🌐 Интернет
+Ваш запрос → Unbound меняет пакеты → DPI не распознаёт → Сайт открывается
 ```
 
-### Процесс Автоподбора
+### Техники обхода
 
-```
-[Старт] → [Загрузка профилей] → [Параллельный тест] → [Оценка результатов] → [Выбор лучшего]
-                                                              ↓
-[Подключено] ← [Применение профиля] ← [Проверка YouTube/Discord] ← [Найден оптимальный?]
-                                                              ↓
-                                                  [Откат на безопасный режим]
-```
+| Техника | Что делает |
+|---------|-----------|
+| **Фрагментация TLS** | Разбивает TLS-рукопожатие на части — DPI не видит SNI |
+| **Поддельные пакеты** | Отправляет фейковые пакеты с маленьким TTL — путает DPI |
+| **Нарушение порядка** | Меняет порядок сегментов — DPI не собирает правильно |
+| **Управление TTL** | Подбирает количество хопов — пакеты «исчезают» до DPI |
+| **Морфинг отпечатков** | Изменяет TLS-отпечаток — не похоже на стандартный браузер |
+
+### Автоподбор
+
+Автоподбор сканирует все профили параллельно, проверяя доступность YouTube, Discord, Instagram и других сервисов. Лучший профиль выбирается автоматически по метрике успеха и задержки.
 
 ---
 
-## 🏗️ Сборка из исходников
+## 🏗️ Сборка
+
+Если хотите собрать из исходников:
 
 ### Требования
 
-- **Go 1.21+** (для десктопного приложения)
-- **Node.js 18+** (для фронтенда)
+- **Go 1.21+** (десктоп)
+- **Node.js 18+** (фронтенд)
 - **Wails CLI** (`go install github.com/wailsapp/wails/v2/cmd/wails@latest`)
-- **Rust 1.70+** (для Linux CLI)
-- **Android SDK** (для Android-приложения)
-- **Theos** (для iOS-твика)
+- **Rust 1.70+** (Linux CLI)
 
-### Десктопное приложение
+### Быстрая сборка (десктоп)
 
 ```bash
-# Клонировать репозиторий
-git clone https://github.com/your-org/unbound.git
+git clone https://github.com/bobberdolle1/unbound.git
 cd unbound
-
-# Установить зависимости
 npm install --prefix frontend
-
-# Собрать
 wails build
-
-# Результат: build/bin/unbound.exe
 ```
+
+Результат: `build/bin/unbound.exe`
 
 ### Все платформы
 
 ```bash
-# Запустить скрипт сборки
 ./scripts/build_all.sh
-
-# Или собрать по отдельности:
-cd linux && cargo build --release
-cd ../android && ./gradlew assembleRelease
-cd ../extension-web && npm run build
 ```
+
+Подробные инструкции по сборке: [docs/BUILDING.md](docs/BUILDING.md)
 
 ---
 
-## 📊 Структура проекта
+## 📂 Структура проекта
 
 ```
 unbound/
-├── 📱 android/              # Android-приложение (Kotlin)
-├── 🖥️ desktop/              # Документация десктопного приложения
-├── 🧩 extension-web/         # Расширение для браузера (Chrome + Firefox)
-├── ⚙️ engine/               # Основное ядро на Go
-│   ├── providers/           # Провайдеры DPI-обхода для каждой ОС
-│   ├── lists/               # Удалённые списки IP/доменов
-│   ├── lua_scripts/         # Пользовательские скрипты обхода
-│   └── tester/              # Инструменты тестирования обхода
-├── 🌐 frontend/             # React UI (фронтенд Wails)
-├── 🐧 linux/                # Linux CLI (Rust)
-├── 🍎 macos/                # Документация macOS
-├── 🎮 decky-plugin/         # Плагин Steam Deck Decky Loader
-├── 📦 magisk-module/        # Модуль Magisk для Android
-├── 🌐 openwrt/              # Пакет OpenWrt + интерфейс LuCI
-├── 🎨 theos/                # iOS-твик (Theos)
-├── 📺 tvos/                 # Платформа tvOS
-├── 📺 webos/                # Платформа WebOS
-├── 🌍 website/              # Маркетинговый сайт (Astro)
-├── 📦 packaging/            # Упаковка Linux (RPM/DEB/PKGBUILD)
-├── 🛠️ scripts/              # Скрипты сборки для всех платформ
-└── 📚 CHANGELOG.md          # История версий
+├── frontend/          # React UI (Wails фронтенд)
+├── engine/            # Ядро на Go (движок, автоподбор, провайдеры)
+├── android/           # Android-приложение (Kotlin)
+├── linux/             # Linux CLI (Rust)
+├── openwrt/           # Пакет для OpenWrt + LuCI
+├── extension-web/     # Расширение Chrome/Firefox
+├── theos/             # iOS-твик (Theos)
+├── webos/             # LG WebOS
+├── tvos/              # Apple tvOS
+├── magisk-module/     # Magisk-модуль для Android
+├── decky-plugin/      # Плагин Steam Deck
+├── website/           # Сайт (Astro)
+├── docs/              # Документация
+└── scripts/           # Скрипты сборки
 ```
-
----
-
-## 🧠 Философия тотальной войны с цензурой
-
-> **«Интернет создан свободным. Мы просто сохраняем его таким.»**
-
-Цензура процветает в тишине. Каждый раз, когда государство, провайдер или корпорация решают, что вы можете, а что не можете访问, они блокируют не просто сайты — они блокируют **идеи**, **инновации** и **человеческие связи**.
-
-Unbound существует потому что:
-
-1. **Информация хочет быть свободной** — Не в смысле пиратства, а в смысле фундаментального права человека на доступ к знаниям
-2. **Технологии нейтральны** — У инструментов нет повестки. Обход DPI — это просто манипуляция пакетами, а манипуляция пакетами — это просто информатика
-3. **Open source побеждает** — Когда код прозрачен, доверие зарабатывают, а не требуют
-4. **Сообщество > Корпорации** — Мы не стартап. Мы — движение. Каждый контрибьютор, каждый баг-репорт, каждая звезда имеют значение
-
-Мы не верим в нарушение законов. Мы верим в **сомнение в границах**. Если студент в цензурируемом регионе получает доступ к образовательным ресурсам, если журналист может добраться до независимых СМИ, если семья может совершать видеозвонки через границы — это не баг. Это фича человеческого прогресса.
-
-**Это тотальная война.** Не с оружием, а с кодом. Не с силой, а со свободой.
-
----
-
-## 🙌 Как внести вклад
-
-Мы приветствуем вклад любого вида! Вот как вы можете помочь:
-
-### 💻 Код
-
-1. **Форкните репозиторий**
-2. **Создайте ветку фичи**: `git checkout -b feature/крутая-фича`
-3. **Внесите изменения**: Следуйте существующему стилю кода
-4. **Протестируйте тщательно**: Убедитесь, что изменения работают на всех целевых платформах
-5. **Закоммитьте с понятными сообщениями**: Используйте conventional commits (feat, fix, docs и т.д.)
-6. **Отправьте Pull Request**: Опишите, что изменили и почему
-
-### 🐛 Отчёты об ошибках
-
-- Используйте [Issue Tracker](https://github.com/your-org/unbound/issues)
-- Укажите вашу ОС, версию и шаги для воспроизведения
-- Приложите логи, если возможно (`%TEMP%\unbound_debug.log` в Windows)
-- Пометьте соответствующим образом (bug, enhancement, question)
-
-### 📚 Документация
-
-- Улучшайте README-файлы в подпроектах
-- Добавляйте туториалы в Wiki
-- Переводите документацию
-- Исправляйте опечатки и проясняйте инструкции
-
-### 🎨 Дизайн и UX
-
-- Улучшайте sketchy-UI дизайн
-- Создавайте иконки и ассеты
-- Предлагайте улучшения UX
-- Тестируйте на разных размерах экранов
-
-### 🌍 Переводы
-
-Мы поддерживаем несколько языков! Чтобы добавить новый язык:
-
-1. Создайте `frontend/src/i18n/locales/XX.json` (XX = код языка)
-2. Скопируйте структуру из `ru.json`
-3. Переведите все строки
-4. Отправьте PR с меткой «Translation: [Название языка]»
-
-### 🧪 Тестирование
-
-- Тестируйте на разных версиях Windows (10, 11)
-- Тестируйте на macOS и Linux
-- Пробуйте разных провайдеров и сетевые условия
-- Сообщайте, что работает, а что нет
-
-### 💡 Лучшие практики
-
-- **Будьте добры**: Мы все волонтёры
-- **Будьте ясны**: Объясняйте своё мышление
-- **Будьте терпеливы**: Ревью занимают время
-- **Будьте смелыми**: Не бойтесь пробовать
-
----
-
-## 🤝 Сообщество
-
-- **🐛 Ошибки**: [Сообщить об ошибе](https://github.com/your-org/unbound/issues)
-- **💡 Идеи**: [Запросить фичу](https://github.com/your-org/unbound/discussions)
-- **📖 Документация**: [Wiki](https://github.com/your-org/unbound/wiki)
-
----
-
-## 📜 Лицензия
-
-Этот проект распространяется под лицензией **MIT** — см. файл [LICENSE](LICENSE) для подробностей.
 
 ---
 
 ## 🙏 Благодарности
 
-- **[bol-van](https://github.com/bol-van/zapret)** — Оригинальный проект zapret
-- **[Wails](https://wails.io/)** — Фреймворк, питающий наше десктопное приложение
-- **[WinDivert](https://reqrypt.org/windivert.html)** — Библиотека манипуляции пакетами для Windows
-- **Все контрибьюторы** — [Список контрибьюторов](https://github.com/your-org/unbound/graphs/contributors)
+Без этих людей и проектов Unbound бы не существовал:
+
+- **[bol-van](https://github.com/bol-van/zapret)** — Автор zapret, основы всего движка. Без него ничего бы не было
+- **[WinDivert](https://reqrypt.org/windivert.html)** — Библиотека перехвата пакетов для Windows от basil00
+- **[Wails](https://wails.io/)** — Фреймворк для десктопного приложения на Go + веб-технологиях
+- **[Astro](https://astro.build/)** — Фреймворк для сайта
+- **[GoodbyeDPI](https://github.com/ValdikSS/GoodbyeDPI)** — Вдохновитель техник обхода DPI для Windows
+- **[ByeDPI](https://github.com/hufrea/byedpi)** — Вдохновитель техник обхода DPI для Linux
+- **[SpoofDPI](https://github.com/xvzc/SpoofDPI)** — Альтернативный движок для macOS
+- **[Magisk](https://github.com/topjohnwu/Magisk)** — Root-решение для Android от topjohnwu
+- **[Theos](https://theos.dev/)** — Фреймворк для iOS-твиков от DHowett
+- **[webosbrew](https://github.com/webosbrew)** — Платформа домашних приложений для WebOS
+- **[Cloudflare](https://cloudflare.com)** — CDN и инфраструктура
+- **[Google](https://google.com)** — Android SDK и инструменты разработки
+- **[JetBrains](https://jetbrains.com)** — IDE для разработки (GoLand, WebStorm, CLion)
+- **[Tailwind CSS](https://tailwindcss.com/)** — Стилизация интерфейсов
+- **[React](https://react.dev/)** — UI-фреймворк для фронтенда
+- **Сообществу** — Всем, кто тестировал, сообщал об ошибках и предлагал идеи
 
 ---
 
-## ⚠️ Отказ от ответственности
+## ❓ Частые вопросы
 
-Этот инструмент предоставлен исключительно в образовательных и исследовательских целях. Разработчики не несут ответственности за любое злоупотребление или юридические последствия использования данного программного обеспечения. Убедитесь, что вы соблюдаете местные законы и условия использования вашего провайдера.
+### Это безопасно?
+Да. Unbound модифицирует только **ваши собственные** исходящие пакеты. Он не перехватывает чужой трафик, не ломает чужие серверы и не hack'ит что-либо. Это легальный инструмент настройки собственного сетевого стека.
+
+### Нужен ли root/администратор?
+- **Windows:** Да, права администратора обязательны (WinDivert требует)
+- **Android:** Нет (APK через VpnService), но Magisk-модуль требует root
+- **Linux:** Да (nftables/nfqws требуют root)
+- **iOS:** Да (требуется джейлбрейк)
+- **OpenWrt:** Да (root на роутере)
+
+### Это легально?
+Зависит от вашей юрисдикции. Unbound — инструмент с открытым исходным кодом (GPL-3.0). Проконсультируйтесь с местным законодательством.
+
+### Какие сервисы работают?
+YouTube, Discord, Instagram, Twitter/X, Facebook, RuTracker и другие. Список пополняется.
+
+### Почему не Telegram?
+MTProto/Telegram не поддерживается в данной конфигурации. Фокус на YouTube, Discord, Instagram, Twitter.
+
+### Программа бесплатная?
+Да, полностью бесплатна и открыта (GPL-3.0). Никакой телеметрии, никакой рекламы, никаких подписок.
+
+---
+
+## 📜 Лицензия
+
+**GNU General Public License v3.0 (GPL-3.0)**
+
+Этот проект — свободное ПО. Вы можете распространять и/или модифицировать его на условиях GPL-3.0. См. файл [LICENSE](LICENSE).
 
 ---
 
 <p align="center">
-  <sub>Создано с ❤️ командой Unbound • 2024-2026</sub>
-</p>
-
-<p align="center">
-  <sub>🚀 Тотальная война с цензурой! 🚀</sub>
+  <sub>Сделано <a href="https://github.com/bobberdolle1"><strong>bobberdolle1</strong></a> • 2024-2026</sub>
 </p>

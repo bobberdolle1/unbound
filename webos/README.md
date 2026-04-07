@@ -219,4 +219,4 @@ WebOS использует **nfqws** (очередь netfilter) вместо tpw
 
 ## Лицензия
 
-MIT
+GPL-3.0

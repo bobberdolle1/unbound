@@ -160,4 +160,4 @@ tvos/UnboundTV/UnboundTV/Resources/youtube.txt
 
 ## Лицензия
 
-MIT
+GPL-3.0

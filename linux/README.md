@@ -94,4 +94,4 @@ sudo systemctl enable --now unbound.service
 
 ## Лицензия
 
-MIT
+GPL-3.0

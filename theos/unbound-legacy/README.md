@@ -206,4 +206,4 @@ launchctl start com.unbound.tpws
 
 ## Лицензия
 
-MIT
+GPL-3.0

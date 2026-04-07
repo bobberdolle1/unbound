@@ -153,4 +153,4 @@ function FindProxyForURL(url, host) {
 
 ## Лицензия
 
-Та же, что и у основного проекта Unbound.
+GPL-3.0 — та же, что и у основного проекта Unbound.
