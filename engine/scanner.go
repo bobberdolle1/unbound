@@ -20,7 +20,6 @@ import (
 var defaultTestTargets = []string{
 	"https://discord.com",
 	"https://cdn.discordapp.com/attachments/1234567890/1234567890/test.txt",
-	"https://api.telegram.org/",
 	"https://googlevideo.com",
 	"https://youtube.com",
 }
@@ -135,7 +134,7 @@ func RunAutoTune(ctx context.Context, updateLog func(string)) (Profile, error) {
 
 			cmd := exec.CommandContext(ctx, winwsPath, args...)
 			cmd.Dir = assets.BinDir
-			cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+			cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
 
 			if err := cmd.Start(); err != nil {
 				return
@@ -144,7 +143,9 @@ func RunAutoTune(ctx context.Context, updateLog func(string)) (Profile, error) {
 			// Wait a bit or exit if context is cancelled
 			select {
 			case <-ctx.Done():
-				exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", cmd.Process.Pid)).Run()
+				killCmd := exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", cmd.Process.Pid))
+				killCmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
+				killCmd.Run()
 				return
 			case <-time.After(500 * time.Millisecond):
 			}
@@ -163,7 +164,9 @@ func RunAutoTune(ctx context.Context, updateLog func(string)) (Profile, error) {
 				}
 			}
 
-			exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", cmd.Process.Pid)).Run()
+			killCmd1 := exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", cmd.Process.Pid))
+			killCmd1.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
+			killCmd1.Run()
 
 			if ctx.Err() != nil {
 				return
@@ -189,7 +192,9 @@ func RunAutoTune(ctx context.Context, updateLog func(string)) (Profile, error) {
 	wg.Wait()
 
 	// Kill any dangling processes just in case
-	exec.Command("taskkill", "/F", "/T", "/IM", "winws2.exe").Run()
+	killCmd2 := exec.Command("taskkill", "/F", "/T", "/IM", "winws2.exe")
+	killCmd2.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
+	killCmd2.Run()
 
 	if bestScore <= 0 {
 		logAndUpdate("All profiles failed. Selecting first profile as fallback...")

@@ -47,6 +47,7 @@ func main() {
 		Frameless:         true,
 		DisableResize:     true,
 		HideWindowOnClose: true,
+		OnBeforeClose:     app.onBeforeClose,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},

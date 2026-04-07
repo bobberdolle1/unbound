@@ -1,0 +1,138 @@
+---
+---
+
+<footer class="footer">
+  <div class="container">
+    <div class="footer-content">
+      <div class="footer-brand">
+        <a href="#" class="footer-logo">
+          <span class="logo-icon">⚡</span>
+          <span class="logo-text">UNBOUND</span>
+        </a>
+        <p>Free, open-source DPI bypass. Community-driven. GPL-3.0 licensed.</p>
+      </div>
+      <div class="footer-links">
+        <div class="footer-column">
+          <h4>Project</h4>
+          <a href="https://github.com/bobberdolle1/unbound" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://github.com/bobberdolle1/unbound/releases" target="_blank" rel="noopener">Releases</a>
+          <a href="https://github.com/bobberdolle1/unbound/issues" target="_blank" rel="noopener">Issues</a>
+          <a href="https://github.com/bobberdolle1/unbound/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a>
+        </div>
+        <div class="footer-column">
+          <h4>Credits</h4>
+          <a href="https://github.com/bol-van/zapret" target="_blank" rel="noopener">Zapret2 Engine</a>
+          <a href="https://wails.io" target="_blank" rel="noopener">Wails Framework</a>
+          <a href="https://github.com/baschny/windivert" target="_blank" rel="noopener">WinDivert</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <p>&copy; 2026 Unbound Project. Released under <a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank" rel="noopener">GPL-3.0</a>.</p>
+    </div>
+  </div>
+</footer>
+
+<style>
+.footer {
+  padding: 4rem 2rem 2rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.footer-content {
+  display: flex;
+  justify-content: space-between;
+  gap: 3rem;
+  margin-bottom: 3rem;
+}
+
+.footer-brand {
+  max-width: 300px;
+}
+
+.footer-logo {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-decoration: none;
+  font-weight: 800;
+  font-size: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.footer-logo .logo-text {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: 2px;
+}
+
+.footer-brand p {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.footer-links {
+  display: flex;
+  gap: 4rem;
+}
+
+.footer-column h4 {
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 1rem;
+}
+
+.footer-column a {
+  display: block;
+  color: rgba(255, 255, 255, 0.4);
+  text-decoration: none;
+  font-size: 0.9rem;
+  margin-bottom: 0.5rem;
+  transition: color 0.2s;
+}
+
+.footer-column a:hover {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.footer-bottom {
+  padding-top: 2rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  text-align: center;
+}
+
+.footer-bottom p {
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 0.85rem;
+}
+
+.footer-bottom a {
+  color: #667eea;
+  text-decoration: none;
+}
+
+.footer-bottom a:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 768px) {
+  .footer-content {
+    flex-direction: column;
+  }
+  .footer-links {
+    gap: 2rem;
+  }
+}
+</style>

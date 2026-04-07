@@ -1,8 +1,8 @@
 Package: com.unbound.legacy
 Name: Unbound Legacy
-Version: 1.0.0
+Version: 2.0.0
 Architecture: iphoneos-arm
-Description: Total-war DPI/censorship bypass for jailbroken iOS. Supports iOS 6.1.3 (skeuomorphic UI) and iOS 15+ (modern flat UI). Integrates zapret tpws engine with system-wide SOCKS proxy switching.
+Description: Тотальная война с DPI-цензурой для джейлбрейкнутых iOS. Поддержка iOS 6.1.3 (скевоморфный UI) и iOS 15+ (современный плоский UI). Интеграция двигателя tpws из zapret с системным переключением SOCKS-прокси.
 Maintainer: Unbound Team <unbound@example.com>
 Section: Networking
 Depends: mobilesubstrate | ellekit, firmware (>= 6.1), preferenceloader

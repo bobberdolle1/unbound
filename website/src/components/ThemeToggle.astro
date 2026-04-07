@@ -1,0 +1,79 @@
+---
+---
+
+<div class="theme-toggle" id="themeToggle" title="Toggle Easter Egg Theme">
+  <div class="toggle-track">
+    <div class="toggle-thumb" id="themeThumb">
+      <span class="toggle-icon dark">🌑</span>
+      <span class="toggle-icon easter">🎨</span>
+    </div>
+  </div>
+</div>
+
+<style>
+.theme-toggle {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  z-index: 9999;
+}
+
+.toggle-track {
+  width: 80px;
+  height: 36px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 100px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  padding: 3px;
+  backdrop-filter: blur(10px);
+}
+
+.toggle-track:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.toggle-thumb {
+  width: 30px;
+  height: 30px;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transform: translateX(0);
+  overflow: hidden;
+}
+
+.toggle-thumb.easter-active {
+  transform: translateX(44px);
+  background: linear-gradient(135deg, #ff6b6b, #feca57, #48dbfb);
+}
+
+.toggle-icon {
+  font-size: 0.8rem;
+  position: absolute;
+  transition: opacity 0.2s;
+}
+
+.toggle-icon.dark {
+  opacity: 1;
+}
+
+.toggle-icon.easter {
+  opacity: 0;
+}
+
+.toggle-thumb.easter-active .toggle-icon.dark {
+  opacity: 0;
+}
+
+.toggle-thumb.easter-active .toggle-icon.easter {
+  opacity: 1;
+}
+</style>

@@ -7,7 +7,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=nfqws-unbound
-PKG_VERSION:=2024.04.01
+PKG_VERSION:=2.0.0
 PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git

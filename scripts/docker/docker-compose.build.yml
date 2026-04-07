@@ -1,0 +1,54 @@
+# ============================================================================
+# UNBOUND — Docker Compose for Build Orchestration
+# ============================================================================
+# Usage:
+#   docker compose -f scripts/docker/docker-compose.build.yml build linux
+#   docker compose -f scripts/docker/docker-compose.build.yml build openwrt
+#   docker compose -f scripts/docker/docker-compose.build.yml build android
+#   docker compose -f scripts/docker/docker-compose.build.yml build --parallel linux android
+# ============================================================================
+
+services:
+  # ── Linux x86_64 ──────────────────────────────────────────────────────────
+  linux:
+    build:
+      context: ../..
+      dockerfile: scripts/docker/Dockerfile.linux
+      args:
+        VERSION: "1.0.4"
+        DEBUG: "0"
+    volumes:
+      - ../../build/bin-linux:/app/build/bin
+    environment:
+      - GOOS=linux
+      - GOARCH=amd64
+
+  # ── OpenWrt (mipsel) ──────────────────────────────────────────────────────
+  openwrt:
+    build:
+      context: ../../openwrt/unbound-wrt
+      dockerfile: ../../scripts/docker/Dockerfile.openwrt
+      args:
+        VERSION: "1.0.4"
+        ARCH: mipsel_24kc
+    volumes:
+      - ../../dist/openwrt:/output
+
+  # ── Android APK ────────────────────────────────────────────────────────────
+  android:
+    build:
+      context: ../..
+      dockerfile: scripts/docker/Dockerfile.android
+      args:
+        VERSION: "1.0.4"
+        ANDROID_SDK_VERSION: "34"
+    volumes:
+      - ../../dist:/output
+
+  # ── Steam Deck / Decky Plugin ──────────────────────────────────────────────
+  decky:
+    build:
+      context: ../..
+      dockerfile: scripts/docker/Dockerfile.decky
+    volumes:
+      - ../../dist/decky:/output

@@ -1,0 +1,18 @@
+{
+  "name": "com.unbound.desktop",
+  "description": "Unbound Desktop - Native messaging host for Unbound Web extension",
+  "path": "unbound-host",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://<YOUR_CHROME_EXTENSION_ID>/",
+    "chrome-extension://<ANOTHER_CHROME_EXTENSION_ID>/",
+    "chrome-extension://aebcdefghijklmnopqrstuvwxyz12345/"
+  ],
+  "_notes": {
+    "path": "Replace with actual path to your host binary. On Windows: unbound-host.exe",
+    "allowed_origins": "Replace with actual extension IDs after building/installing the extension",
+    "windows_registry": "On Windows, register at HKLM\\SOFTWARE\\Google\\Chrome\\NativeMessagingHosts\\com.unbound.desktop",
+    "macos_registry": "On macOS, register at ~/Library/Application Support/Google/Chrome/NativeMessagingHosts/",
+    "linux_registry": "On Linux, use /etc/opt/chrome/native-messaging-hosts/ or ~/.config/google-chrome/NativeMessagingHosts/"
+  }
+}

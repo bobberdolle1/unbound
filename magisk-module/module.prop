@@ -1,0 +1,8 @@
+id=unbound-core
+name=Unbound Core
+version=v2.0.0
+versionCode=200
+author=Unbound Team
+description=Системный обход DPI/цензуры через nfqws и iptables. Маршрутизация трафика через NFQUEUE для прозрачного проксирования. Поддержка хотспота и поприложений маршрутизации.
+minMagisk=24000
+updateJson=https://raw.githubusercontent.com/unbound/updater/magisk-module.json

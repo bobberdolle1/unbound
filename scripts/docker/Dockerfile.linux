@@ -1,0 +1,66 @@
+# ============================================================================
+# UNBOUND — Linux Build Image (Docker)
+# ============================================================================
+# Cross-compiles the Go binary for Linux x86_64.
+# Usage:
+#   docker build -t unbound-linux-builder \
+#       --build-arg VERSION=1.0.4 \
+#       --build-arg DEBUG=0 \
+#       -f scripts/docker/Dockerfile.linux .
+# ============================================================================
+
+FROM golang:1.23-bookworm AS builder
+
+ARG VERSION=0.0.0
+ARG DEBUG=0
+
+WORKDIR /app
+
+# Install Node.js for frontend build
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy go module files first (layer caching)
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy full source
+COPY . .
+
+# Build frontend
+RUN if [ -d frontend ]; then \
+        cd frontend && \
+        npm install --include=dev && \
+        npm run build; \
+    fi
+
+# Build Linux binary
+RUN set -ex; \
+    LDFLAGS="-s -w -X main.version=${VERSION}"; \
+    if [ "$DEBUG" != "1" ]; then \
+        go build \
+            -trimpath \
+            -ldflags "$LDFLAGS" \
+            -o build/bin/unbound-linux \
+            ./...; \
+    else \
+        go build \
+            -gcflags "all=-N -l" \
+            -o build/bin/unbound-linux \
+            ./...; \
+    fi
+
+# ── Minimal runtime image ────────────────────────────────────────────────────
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app/build/bin/unbound-linux /usr/local/bin/unbound
+
+RUN chmod +x /usr/local/bin/unbound
+
+ENTRYPOINT ["/usr/local/bin/unbound"]
+CMD ["--cli"]

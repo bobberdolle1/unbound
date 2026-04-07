@@ -1,76 +1,76 @@
-# Unbound for WebOS (LG Smart TVs)
+# Unbound для WebOS (LG Smart TV)
 
-DPI/censorship bypass engine for rooted LG WebOS TVs using the webosbrew homebrew platform.
+Двигатель обхода DPI/цензуры для рутированных LG WebOS TV через платформу webosbrew.
 
-## Architecture
+## Архитектура
 
 ```
-Unbound WebOS App (Enact/React)
+Приложение Unbound WebOS (Enact/React)
     │
-    ├── UnboundPanel.js            # Main UI with D-pad navigation
-    └── services/UnboundService.js # Luna service client
+    ├── UnboundPanel.js            # Главный UI с навигацией D-pad
+    └── services/UnboundService.js # Клиент сервиса Luna
          │
          ▼
-webosbrew Root Execution Service
+Сервис выполнения root webosbrew
     (org.webosbrew.hbchannel.service)
          │
          ▼
-Shell Service Scripts
-    ├── unbound-service.sh         # Engine management daemon
-    └── unbound-init.sh            # Boot-time initialization
+Скрипты сервисного сервиса
+    ├── unbound-service.sh         # Демон управления двигателем
+    └── unbound-init.sh            # Инициализация при загрузке
          │
          ▼
-nfqws Engine (C binary)
-    (Cross-compiled from bol-van/zapret)
+Двигатель nfqws (бинарник C)
+    (Кросс-компилирован из bol-van/zapret)
          │
          ▼
-iptables NFQUEUE Rules
-    (Routes YouTube traffic through DPI bypass)
+Правила iptables NFQUEUE
+    (Направляет трафик YouTube через обход DPI)
 ```
 
-## How It Works
+## Как это работает
 
-1. **User taps CONNECT** in the Enact UI (navigated via TV remote D-pad)
-2. **UnboundService.js** calls the webosbrew root execution service
-3. **Root service** starts the `nfqws` binary with profile-specific arguments
-4. **iptables rules** redirect port 443 traffic to NFQUEUE 200
-5. **nfqws** intercepts packets and applies DPI bypass techniques
-6. **Modified packets** bypass DPI inspection, unblocking YouTube and other services
+1. **Пользователь нажимает ПОДКЛЮЧИТЬ** в UI Enact (навигация через D-pad пульта)
+2. **UnboundService.js** вызывает сервис выполнения root webosbrew
+3. **Root-сервис** запускает бинарник `nfqws` с аргументами профиля
+4. **Правила iptables** перенаправляют трафик порта 443 в NFQUEUE 200
+5. **nfqws** перехватывает пакеты и применяет техники обхода DPI
+6. **Изменённые пакеты** обходят DPI-инспекцию, разблокируя YouTube и другие сервисы
 
-## Prerequisites
+## Требования
 
-- **Rooted LG WebOS TV** (via RootMyTV or similar exploit)
-- **webosbrew Homebrew Channel** installed
-- **SSH access** to the TV (for deployment and debugging)
-- **WebOS NDK** installed at `/opt/webos-sdk-x86_64` (for building nfqws)
-- **Node.js 18+** and npm (for building the Enact frontend)
+- **Рутированный LG WebOS TV** (через RootMyTV или аналогичный эксплойт)
+- **webosbrew Homebrew Channel** установлен
+- **Доступ по SSH** к ТВ (для развёртывания и отладки)
+- **WebOS NDK** установлен в `/opt/webos-sdk-x86_64` (для сборки nfqws)
+- **Node.js 18+** и npm (для сборки фронтенда Enact)
 
-## Building
+## Сборка
 
-### Step 1: Build the nfqws Engine (Linux/macOS only)
+### Шаг 1: Сборка двигателя nfqws (только Linux/macOS)
 
-The nfqws binary must be cross-compiled for WebOS ARM using the WebOS NDK:
+Бинарник nfqws необходимо кросс-компилировать для WebOS ARM через WebOS NDK:
 
 ```bash
 cd webos/native/nfqws
 
-# Option A: Using Make (requires WebOS NDK)
+# Вариант А: Через Make (требует WebOS NDK)
 make WEBOS_SDK_PATH=/opt/webos-sdk-x86_64 package
 
-# Option B: Using CMake
+# Вариант Б: Через CMake
 mkdir build && cd build
 cmake -DCMAKE_TOOLCHAIN_FILE=/opt/webos-sdk-x86_64/1.0.g/sysroots/x86_64-webossdk-linux/usr/share/cmake/OEToolchainConfig.cmake ..
 make
 ```
 
-**Dependencies** (must be cross-compiled first):
+**Зависимости** (должны быть кросс-компилированы заранее):
 - `libnetfilter_queue`
 - `libnfnetlink`
 - `libmnl`
 
-The Makefile will automatically download and build these dependencies.
+Makefile автоматически скачает и соберёт эти зависимости.
 
-### Step 2: Build the Enact Frontend
+### Шаг 2: Сборка фронтенда Enact
 
 ```bash
 cd webos
@@ -78,221 +78,145 @@ npm install
 npm run build
 ```
 
-This produces a packaged app in the `dist/` directory.
+Результат — упакованное приложение в директории `dist/`.
 
-### Step 3: Package for webosbrew
+### Шаг 3: Упаковка для webosbrew
 
 ```bash
-# Install webOS CLI tools
+# Установить CLI-инструменты webOS
 npm install -g @webosose/ares-cli
 
-# Package the app
+# Упаковать приложение
 ares-package ./dist com.unbound.app
 
-# This creates: com.unbound.app_1.0.0_all.ipk
+# Результат: com.unbound.app_2.0.0_all.ipk
 ```
 
-## Installing on TV
+## Установка на ТВ
 
-### Via SSH/SCP
+### Через SSH/SCP
 
 ```bash
-# Transfer the IPK to the TV
-scp com.unbound.app_1.0.0_all.ipk root@<TV_IP>:/media/developer/
+# Передать IPK на ТВ
+scp com.unbound.app_2.0.0_all.ipk root@<IP_ТВ>:/media/developer/
 
-# SSH into the TV
-ssh root@<TV_IP>
+# Подключиться по SSH
+ssh root@<IP_ТВ>
 
-# Install the app
-luna-send-pub -n 1 luna://com.webos.appInstallService/dev/install '{"id":"com.unbound.app","ipkUrl":"/media/developer/com.unbound.app_1.0.0_all.ipk"}'
+# Установить приложение
+luna-send-pub -n 1 luna://com.webos.appInstallService/dev/install '{"id":"com.unbound.app","ipkUrl":"/media/developer/com.unbound.app_2.0.0_all.ipk"}'
 
-# Verify installation
+# Проверить установку
 ls -la /media/developer/apps/usr/palm/applications/com.unbound.app/
 ```
 
-### Via webosbrew Homebrew Channel
+### Через webosbrew Homebrew Channel
 
-If you have the Homebrew Channel installed, you can sideload apps through its interface.
+Если установлен Homebrew Channel, можно устанавливать приложения через его интерфейс.
 
-## Setting Up Boot-Time Service
+## Настройка автозагрузки
 
-To ensure Unbound starts on TV boot:
+Для запуска Unbound при включении ТВ:
 
 ```bash
-# SSH into the TV
-ssh root@<TV_IP>
+# Подключиться по SSH
+ssh root@<IP_ТВ>
 
-# Copy the init script to webosbrew init.d
+# Скопировать init-скрипт в init.d webosbrew
 cp services/unbound-init.sh /var/lib/webosbrew/init.d/unbound
 chmod +x /var/lib/webosbrew/init.d/unbound
 
-# Copy the service script
+# Скопировать скрипт сервиса
 cp services/unbound-service.sh /media/developer/apps/usr/palm/applications/com.unbound.app/services/
 chmod +x /media/developer/apps/usr/palm/applications/com.unbound.app/services/unbound-service.sh
 ```
 
-**Important**: Disable Fast Boot in TV settings to ensure init.d scripts run reliably.
+**Важно**: Отключите «Быстрый запуск» в настройках ТВ для надёжного выполнения init.d-скриптов.
 
-## Usage
+## Использование
 
-### Navigating the UI
+### Навигация по UI
 
-The interface is fully navigable with the TV remote's D-pad:
+Интерфейс полностью управляется через D-pad пульта ТВ:
 
-1. **CONNECT/DISCONNECT** button — Main toggle (auto-focused)
-2. **Profile buttons** — Select bypass strategy
-3. **Settings** button — View engine info
+1. Кнопка **ПОДКЛЮЧИТЬ/ОТКЛЮЧИТЬ** — главный переключатель (автофокус)
+2. **Кнопки профилей** — выбор стратегии обхода
+3. Кнопка **Настройки** — информация о двигателе
 
-### Profiles
+### Профили
 
-| Profile | nfqws Arguments | Use Case |
-|---------|----------------|----------|
-| **Default** | `--dpi-desync=split --dpi-desync-pos=2 --dpi-desync-repeats=6` | Most ISPs |
-| **Aggressive** | `--dpi-desync=fake,split --dpi-desync-pos=1,midsld --dpi-desync-repeats=11 --fake-ttl=1` | Stubborn DPI |
-| **Lite** | `--dpi-desync=split --dpi-desync-pos=2 --dpi-desync-repeats=3` | Light censorship |
+| Профиль | Аргументы nfqws | Применение |
+|---------|----------------|------------|
+| **По умолчанию** | `--dpi-desync=split --dpi-desync-pos=2 --dpi-desync-repeats=6` | Большинство провайдеров |
+| **Агрессивный** | `--dpi-desync=fake,split --dpi-desync-pos=1,midsld --dpi-desync-repeats=11 --fake-ttl=1` | Упрямые DPI |
+| **Лёгкий** | `--dpi-desync=split --dpi-desync-pos=2 --dpi-desync-repeats=3` | Лёгкая цензура |
 
-### Domain Lists
+### Списки доменов
 
-Edit the YouTube domain list to add/remove domains:
+Отредактируйте список YouTube для добавления/удаления доменов:
 ```
 webos/native/nfqws/lists/youtube.txt
 ```
 
-After editing, rebuild and reinstall the app.
+После редактирования пересоберите и переустановите приложение.
 
-## Troubleshooting
+## Диагностика
 
-### App won't launch
+### Приложение не запускается
 
-- Check webOS Developer Mode is enabled
-- Verify the app is installed correctly:
+- Убедитесь, что режим разработчика webOS включён
+- Проверьте корректность установки приложения:
   ```bash
   luna-send-pub -n 1 luna://com.webos.applicationManager/dev/listApps
   ```
 
-### nfqws fails to start
+### nfqws не запускается
 
-- Check root access is working:
+- Проверьте работу root-доступа:
   ```bash
   luna-send-pub -n 1 luna://org.webosbrew.hbchannel.service/exec '{"command":"whoami"}'
   ```
-  Should return "root"
+  Должно вернуть «root»
 
-- Check nfqws binary exists and is executable:
+- Проверьте наличие и исполняемость бинарника nfqws:
   ```bash
   ls -la /media/developer/apps/usr/palm/applications/com.unbound.app/bin/nfqws
   ```
 
-### iptables rules not applied
+### Правила iptables не применены
 
-- Check iptables status:
+- Проверьте статус iptables:
   ```bash
   iptables -L -n -v
   ```
-- Look for UNBOUND_CHAIN in the output
+- Ищите UNBOUND_CHAIN в выводе
 
-### YouTube still blocked
+### YouTube всё ещё заблокирован
 
-- Try the "Aggressive" profile
-- Check nfqws logs:
+- Попробуйте профиль «Агрессивный»
+- Проверьте логи nfqws:
   ```bash
   tail -f /var/log/messages | grep nfqws
   ```
-- Verify the hostlist file path is correct
+- Убедитесь, что путь к файлу hostlist корректен
 
-## Platform Limitations
+## Ограничения платформы
 
-### WebOS-Specific Considerations
+### Особенности WebOS
 
-1. **Root access required**: Unlike tvOS, WebOS requires a rooted TV to manipulate iptables
-2. **Early boot execution**: init.d scripts run before network is ready; the script waits up to 30s
-3. **Fast Boot interference**: TV's Fast Boot feature may skip init.d execution
-4. **System updates**: May break root access; re-root after major updates
+1. **Требуется root**: В отличие от tvOS, WebOS требует рутированного ТВ для манипуляции iptables
+2. **Выполнение на ранней загрузке**: init.d-скрипты запускаются до готовности сети; скрипт ждёт до 30 сек
+3. **Помехи быстрого запуска**: Функция «Быстрый запуск» ТВ может пропускать выполнение init.d
+4. **Обновления системы**: Могут сломать root-доступ; перерутируйте после крупных обновлений
 
-### Engine Choice: nfqws vs tpws
+### Выбор двигателя: nfqws или tpws
 
-WebOS uses **nfqws** (netfilter queue) instead of tpws because:
-- WebOS runs Linux with full iptables support
-- Root access allows NFQUEUE manipulation
-- More efficient than SOCKS proxy mode (transparent interception)
-- Lower memory footprint (important for TV hardware)
+WebOS использует **nfqws** (очередь netfilter) вместо tpws, потому что:
+- WebOS работает на Linux с полной поддержкой iptables
+- Root-доступ позволяет манипуляцию NFQUEUE
+- Эффективнее режима SOCKS-прокси (прозрачный перехват)
+- Меньший расход памяти (важно для железа ТВ)
 
-## Development Notes
+## Лицензия
 
-### Enact Framework
-
-The UI uses the Enact framework, which provides:
-- **Spotlight**: D-pad focus management
-- **Moonstone**: TV-optimized UI components
-- **Panels**: Navigation structure
-
-Key concepts:
-- Every focusable element needs a `spotlightId`
-- Use `@enact/spotlight` for focus state management
-- Test with actual TV remote (simulator D-pad ≠ real remote)
-
-### Luna Service Communication
-
-The app communicates with the system via Luna services:
-
-```javascript
-// Call root execution service
-const bridge = new PalmServiceBridge();
-bridge.call('org.webosbrew.hbchannel.service/exec', 
-  JSON.stringify({ command: 'iptables -L' }), 
-  (response) => { /* handle */ });
-```
-
-### Cross-Compilation Gotchas
-
-1. **Sysroot mismatch**: WebOS NDK uses an older glibc (2.26); avoid newer C features
-2. **Missing libraries**: Many standard libs not in SDK; build dependencies manually
-3. **FPU settings**: WebOS TVs use `softfp` ABI, not `hardfp`
-4. **Strip the binary**: `arm-webos-linux-gnueabi-strip` reduces binary size by ~60%
-
-## File Structure
-
-```
-webos/
-├── appinfo/
-│   └── appinfo.json                 # WebOS app metadata
-├── src/
-│   ├── index.js                     # Entry point
-│   ├── App.js                       # Root component with Spotlight
-│   └── components/
-│       ├── UnboundPanel.js          # Main UI panel
-│       └── UnboundPanel.module.less # Styles
-├── services/
-│   ├── unbound-service.sh           # Management daemon
-│   └── unbound-init.sh              # Boot-time setup
-├── native/
-│   └── nfqws/
-│       ├── Makefile                 # Cross-compilation build
-│       ├── CMakeLists.txt           # Alternative CMake build
-│       └── lists/
-│           └── youtube.txt          # Domain hostlist
-├── web/
-│   └── index.html                   # HTML entry point
-├── package.json                     # npm dependencies
-└── README.md                        # This file
-```
-
-## Comparison with Other Platforms
-
-| Feature | WebOS (rooted) | tvOS (sandboxed) |
-|---------|----------------|------------------|
-| **Engine** | nfqws (NFQUEUE) | tpws (SOCKS proxy) |
-| **Traffic interception** | iptables NFQUEUE | NEPacketTunnelProvider |
-| **Root required** | Yes (webosbrew) | No |
-| **System-wide** | Yes | Yes (when tunnel active) |
-| **Build toolchain** | WebOS NDK (Yocto) | Xcode (clang) |
-| **UI framework** | Enact (React) | SwiftUI |
-
-## Future Work
-
-- [ ] Add support for nftables (newer WebOS versions)
-- [ ] Implement Luna service as proper Node.js daemon
-- [ ] Add autotune profile detection
-- [ ] Support custom hostlists via USB import
-- [ ] Add connection metrics dashboard
-- [ ] QUIC/UDP bypass support (currently TCP-only)
+MIT

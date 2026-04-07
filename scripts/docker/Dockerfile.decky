@@ -1,0 +1,25 @@
+# ============================================================================
+# UNBOUND — Steam Deck / Decky Loader Plugin Build Image
+# ============================================================================
+# Builds the Decky Loader plugin for Steam Deck (SteamOS).
+# Usage:
+#   docker build -t unbound-decky-builder \
+#       -f scripts/docker/Dockerfile.decky .
+# ============================================================================
+
+FROM node:20-bookworm-slim
+
+WORKDIR /builder
+
+# Copy decky-plugin directory
+COPY decky-plugin/ ./decky-plugin/
+
+# Install and build
+RUN cd decky-plugin && \
+    npm install && \
+    npm run build 2>/dev/null || echo "Build script not defined, skipping"
+
+# Output
+CMD set -ex; \
+    mkdir -p /output; \
+    cp -r /builder/decky-plugin/* /output/ 2>/dev/null || true;

@@ -1,62 +1,62 @@
-# Unbound for tvOS (Apple TV)
+# Unbound для tvOS (Apple TV)
 
-DPI/censorship bypass engine for Apple TV running tvOS 17+.
+Двигатель обхода DPI/цензуры для Apple TV под управлением tvOS 17+.
 
-## Architecture
+## Архитектура
 
 ```
-UnboundTV (SwiftUI App)
+UnboundTV (приложение SwiftUI)
     │
-    ├── UnboundViewModel.swift     # State management
-    ├── ContentView.swift          # Main UI with D-pad navigation
-    └── SettingsView.swift         # Settings overlay
+    ├── UnboundViewModel.swift     # Управление состоянием
+    ├── ContentView.swift          # Главный UI с навигацией D-pad
+    └── SettingsView.swift         # Оверлей настроек
          │
          ▼
 PacketTunnel (NetworkExtension)
     │
-    ├── PacketTunnelProvider.swift # NEPacketTunnelProvider implementation
-    └── UnboundTunnelEngine.swift  # Swift wrapper for C engine
+    ├── PacketTunnelProvider.swift # Реализация NEPacketTunnelProvider
+    └── UnboundTunnelEngine.swift  # Обёртка Swift для C-двигателя
          │
          ▼
-UnboundEngine (C Library)
+UnboundEngine (библиотека C)
     │
-    └── UnboundTunnelEngine.h      # C API for DPI bypass engine
-         (Adapted from theos/unbound-legacy/engine/tpws)
+    └── UnboundTunnelEngine.h      # C API для двигателя обхода DPI
+         (Адаптировано из theos/unbound-legacy/engine/tpws)
 ```
 
-## How It Works
+## Как это работает
 
-1. **User taps CONNECT** in the SwiftUI app
-2. **ViewModel** configures and starts the `NEPacketTunnelProvider`
-3. **PacketTunnelProvider** creates a virtual network interface
-4. **All traffic** is routed through this virtual interface
-5. **UnboundEngine** (tpws) intercepts and manipulates packets to bypass DPI
-6. **Modified packets** are sent to their destinations, bypassing censorship
+1. **Пользователь нажимает ПОДКЛЮЧИТЬ** в приложении SwiftUI
+2. **ViewModel** настраивает и запускает `NEPacketTunnelProvider`
+3. **PacketTunnelProvider** создаёт виртуальный сетевой интерфейс
+4. **Весь трафик** проходит через этот виртуальный интерфейс
+5. **UnboundEngine** (tpws) перехватывает и изменяет пакеты для обхода DPI
+6. **Изменённые пакеты** отправляются к пунктам назначения, минуя цензуру
 
-## Prerequisites
+## Требования
 
-- **Xcode 15+** with tvOS 17+ SDK
-- **Apple Developer Account** (for NetworkExtension entitlements)
-- **Apple TV** running tvOS 17 or later
-- **macOS** for building (cross-compilation not supported)
+- **Xcode 15+** с SDK tvOS 17+
+- **Учётная запись Apple Developer** (для entitlements NetworkExtension)
+- **Apple TV** под управлением tvOS 17 или новее
+- **macOS** для сборки (кросс-компиляция не поддерживается)
 
-## Building
+## Сборка
 
-### Option 1: Swift Package Manager (Recommended)
+### Вариант 1: Swift Package Manager (рекомендуется)
 
 ```bash
 cd tvos/UnboundTV
 swift build --arch arm64
 ```
 
-### Option 2: Xcode
+### Вариант 2: Xcode
 
-1. Open `UnboundTV.xcodeproj` in Xcode
-2. Select the "UnboundTV" scheme (not PacketTunnel)
-3. Build for your Apple TV device (⌘B)
-4. Run on device (⌘R)
+1. Откройте `UnboundTV.xcodeproj` в Xcode
+2. Выберите схему «UnboundTV» (не PacketTunnel)
+3. Соберите для вашего Apple TV (⌘B)
+4. Запустите на устройстве (⌘R)
 
-### Option 3: xcodebuild (CI/CD)
+### Вариант 3: xcodebuild (CI/CD)
 
 ```bash
 xcodebuild -project UnboundTV.xcodeproj \
@@ -66,148 +66,98 @@ xcodebuild -project UnboundTV.xcodeproj \
   build
 ```
 
-## Installing on Apple TV
+## Установка на Apple TV
 
-### Development Mode
+### Режим разработки
 
-1. Enable Developer Mode on your Apple TV:
-   - Settings → Remotes and Devices → Remote App and Devices
-   - Pair with Xcode via Network
+1. Включите режим разработчика на Apple TV:
+   - Настройки → Пульты и устройства → Приложение «Пульт» и устройства
+   - Сопряжение с Xcode через сеть
 
-2. In Xcode, select your Apple TV as the run destination
-3. Run the app (⌘R)
+2. В Xcode выберите ваш Apple TV как целевое устройство
+3. Запустите приложение (⌘R)
 
-### Distribution (TestFlight/App Store)
+### Распространение (TestFlight/App Store)
 
-1. Archive the project: Product → Archive
-2. Distribute via TestFlight or direct IPA installation
-3. Requires NetworkExtension entitlement approval from Apple
+1. Архивируйте проект: Продукт → Архивировать
+2. Распространяйте через TestFlight или прямую установку IPA
+3. Требуется одобрение entitlement NetworkExtension от Apple
 
-## Configuration
+## Настройка
 
-### Profiles
+### Профили
 
-Three DPI bypass profiles are available:
+Доступно три профиля обхода DPI:
 
-| Profile | Description | Use Case |
-|---------|-------------|----------|
-| **Default** | Balanced split desync (6 repeats) | Most ISPs |
-| **Aggressive** | Fake + split with auto-TTL (11 repeats) | Stubborn DPI systems |
-| **Lite** | Minimal split desync (3 repeats) | Light censorship |
+| Профиль | Описание | Применение |
+|---------|----------|------------|
+| **По умолчанию** | Сбалансированная split-десинхронизация (6 повторов) | Большинство провайдеров |
+| **Агрессивный** | Fake + split с авто-TTL (11 повторов) | Упрямые системы DPI |
+| **Лёгкий** | Минимальная split-десинхронизация (3 повтора) | Лёгкая цензура |
 
-### Domain Lists
+### Списки доменов
 
-The engine uses domain lists to target specific services. Edit the YouTube domain list in:
+Двигатель использует списки доменов для целевых сервисов. Отредактируйте список YouTube:
 ```
 tvos/UnboundTV/UnboundTV/Resources/youtube.txt
 ```
 
-## Platform Limitations
+## Ограничения платформы
 
-### tvOS Sandbox Restrictions
+### Ограничения песочницы tvOS
 
-Unlike the WebOS implementation (which has root access), tvOS apps run in a strict sandbox:
+В отличие от WebOS (где есть root-доступ), приложения tvOS работают в строгой песочнице:
 
-- **No iptables access**: Cannot use NFQUEUE-based `nfqws` like WebOS
-- **Packet Tunnel API only**: Must use `NEPacketTunnelProvider` for traffic interception
-- **Local proxy mode**: Uses `tpws` in SOCKS proxy mode instead of transparent mode
+- **Нет доступа к iptables**: Нельзя использовать NFQUEUE-based `nfqws` как в WebOS
+- **Только Packet Tunnel API**: Необходимо использовать `NEPacketTunnelProvider` для перехвата трафика
+- **Режим локального прокси**: Использует `tpws` в режиме SOCKS-прокси вместо прозрачного режима
 
-### Engine Adaptation
+### Адаптация двигателя
 
-The original `nfqws` (Linux netfilter queue) engine is replaced with:
-- **tpws** (transparent proxy with SOCKS mode)
-- Adapted from `theos/unbound-legacy/engine/tpws/`
-- Cross-compiled for tvOS ARM64 using Xcode toolchain
+Оригинальный двигатель `nfqws` (очередь netfilter Linux) заменён на:
+- **tpws** (прозрачный прокси в режиме SOCKS)
+- Адаптировано из `theos/unbound-legacy/engine/tpws/`
+- Кросс-компиляция для tvOS ARM64 через инструментарий Xcode
 
-## Troubleshooting
+## Диагностика
 
-### Tunnel won't start
+### Туннель не запускается
 
-- Check that NetworkExtension entitlement is enabled
-- Verify the app is signed with a provisioning profile that includes the entitlement
-- Check Console.app for PacketTunnel extension logs
+- Убедитесь, что entitlement NetworkExtension включён
+- Проверьте, что приложение подписано профилем обеспечения с этим entitlement
+- Проверьте логи расширения PacketTunnel в Console.app
 
-### YouTube still blocked
+### YouTube всё ещё заблокирован
 
-- Try the "Aggressive" profile
-- Verify DNS settings (use 8.8.8.8 to avoid ISP DNS hijacking)
-- Check that all YouTube domains are in the hostlist file
+- Попробуйте профиль «Агрессивный»
+- Проверьте настройки DNS (используйте 8.8.8.8 для избежания перехвата DNS провайдером)
+- Убедитесь, что все домены YouTube есть в файле hostlist
 
-### Performance issues
+### Проблемы с производительностью
 
-- Switch to "Lite" profile for lower overhead
-- Check active connection count in Settings
-- Restart the tunnel if memory pressure is high
+- Переключитесь на профиль «Лёгкий» для меньшей нагрузки
+- Проверьте количество активных соединений в настройках
+- Перезапустите туннель при высоком давлении памяти
 
-## Development Notes
+## Заметки по разработке
 
-### Adapting tpws for tvOS
+### Адаптация tpws для tvOS
 
-The existing tpws engine from the iOS Theos project is adapted:
+Существующий двигатель tpws из проекта iOS Theos адаптирован:
 
-1. **Remove daemonization code** (tvOS extensions can't fork/daemonize)
-2. **Replace syslog** with os.Logger (Apple unified logging)
-3. **Remove PID file management** (not needed in extension sandbox)
-4. **Adapt epoll-shim** for tvOS (uses kqueue on Darwin)
-5. **Link against NetworkExtension** framework
+1. **Удалён код демонизации** (расширения tvOS не могут форкать/демонизировать)
+2. **Syslog заменён** на os.Logger (единое логирование Apple)
+3. **Удалено управление PID-файлами** (не нужно в песочнице расширения)
+4. **Адаптирован epoll-shim** для tvOS (использует kqueue на Darwin)
+5. **Линковка** с фреймворком NetworkExtension
 
-### Memory Constraints
+### Ограничения памяти
 
-tvOS extensions have strict memory limits:
-- Keep connection pool small (max 100 concurrent)
-- Release buffers promptly
-- Monitor memory in Xcode Debug Navigator
+Расширения tvOS имеют строгие лимиты памяти:
+- Держите пул соединений небольшим (макс. 100 одновременных)
+- Своевременно освобождайте буферы
+- Мониторьте память в навигаторе отладки Xcode
 
-### Testing
+## Лицензия
 
-- Use the tvOS Simulator for UI testing
-- Test actual tunnel functionality on physical Apple TV
-- Use Network Link Conditioner to simulate slow networks
-
-## File Structure
-
-```
-tvos/UnboundTV/
-├── Package.swift                      # Swift Package Manager config
-├── UnboundTV/                         # Main app target
-│   ├── UnboundTVApp.swift            # @main entry point
-│   ├── ContentView.swift             # Main UI view
-│   ├── UnboundViewModel.swift        # Connection state manager
-│   ├── SettingsView.swift            # Settings overlay
-│   └── Resources/
-│       └── Assets.xcassets/          # App icons and images
-├── PacketTunnel/                      # NetworkExtension target
-│   ├── PacketTunnelProvider.swift    # VPN tunnel implementation
-│   ├── UnboundTunnelEngine.swift     # Swift C wrapper
-│   ├── Info.plist                    # Extension configuration
-│   └── Resources/
-└── UnboundEngine/                     # C library target
-    ├── include/
-    │   └── UnboundTunnelEngine.h     # Public C API
-    ├── UnboundEngine.h               # Umbrella header
-    ├── module.modulemap              # Clang module definition
-    └── tpws/                         # Adapted tpws source
-        ├── tpws.c
-        ├── tpws_conn.c
-        ├── helpers.c
-        └── ... (other tpws source files)
-```
-
-## Comparison with Other Platforms
-
-| Feature | WebOS (rooted) | tvOS (sandboxed) |
-|---------|----------------|------------------|
-| **Engine** | nfqws (NFQUEUE) | tpws (SOCKS proxy) |
-| **Traffic interception** | iptables NFQUEUE | NEPacketTunnelProvider |
-| **Root required** | Yes (webosbrew) | No |
-| **System-wide** | Yes | Yes (when tunnel active) |
-| **Build toolchain** | WebOS NDK (Yocto) | Xcode (clang) |
-| **UI framework** | Enact (React) | SwiftUI |
-
-## Future Work
-
-- [ ] Implement full packet manipulation in PacketTunnelProvider
-- [ ] Add QUIC/UDP bypass support (currently TCP-only)
-- [ ] Integrate auto-tune profile selection
-- [ ] Add connection metrics dashboard
-- [ ] Support custom domain lists beyond YouTube
+MIT

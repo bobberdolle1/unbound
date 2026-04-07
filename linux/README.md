@@ -1,61 +1,59 @@
-# Unbound Linux — DPI/Censorship Bypass Daemon & Decky Plugin
+# Unbound Linux — Демон обхода DPI/цензуры и плагин Decky
 
-High-performance DPI/censorship bypass tool for Linux, built in Rust. Wraps the
-C-based `nfqws` binary from the [zapret](https://github.com/bol-van/zapret)
-project with automated nftables rule management.
+Высокопроизводительный инструмент обхода DPI/цензуры для Linux, написанный на Rust. Обёртка над бинарным файлом `nfqws` из проекта [zapret](https://github.com/bol-van/zapret) с автоматическим управлением правилами nftables.
 
-## Architecture
+## Архитектура
 
 ```
-User Interface
-  CLI (sudo)          Decky Plugin (Game Mode)
-  unbound-cli         Preact UI + Python backend
-          \               /
-           v             v
-        unbound-cli daemon (Rust, runs as root)
-           /            \
-      nftables        nfqws (zapret)
-      rules           process
+Пользовательский интерфейс
+  CLI (sudo)              Плагин Decky (Game Mode)
+  unbound-cli             Preact UI + Python backend
+          \                   /
+           v                 v
+        unbound-cli демон (Rust, работает от root)
+           /                \
+      nftables            nfqws (zapret)
+      правила             процесс
      (NFQUEUE)
 ```
 
-## Components
+## Компоненты
 
-| File | Description |
-|------|-------------|
-| `src/main.rs` | CLI entry with `start`, `stop`, `status` subcommands + `nfqws` auto-detection |
-| `src/nftables_mgr.rs` | Dynamic nftables rule apply/remove/flush using zapret-compatible syntax |
-| `src/nfqws.rs` | Process manager: spawn/stop/monitor `nfqws` via PID file, SIGTERM to SIGKILL graceful shutdown |
-| `src/daemon.rs` | Lifecycle orchestrator: applies rules, starts nfqws, waits for SIGINT/SIGTERM, flushes everything |
-| `src/config.rs` | Daemon configuration struct with port parsing |
-| `src/error.rs` | Typed error enum |
+| Файл | Описание |
+|------|----------|
+| `src/main.rs` | Точка входа CLI с подкомандами `start`, `stop`, `status` + автоопределение `nfqws` |
+| `src/nftables_mgr.rs` | Динамическое применение/удаление/очистка правил nftables с синтаксисом, совместимым с zapret |
+| `src/nfqws.rs` | Менеджер процессов: запуск/остановка/мониторинг `nfqws` через PID-файл, плавное завершение от SIGTERM до SIGKILL |
+| `src/daemon.rs` | Оркестратор жизненного цикла: применяет правила, запускает nfqws, ожидает SIGINT/SIGTERM, очищает всё |
+| `src/config.rs` | Структура конфигурации демона с разбором портов |
+| `src/error.rs` | Типизированный enum ошибок |
 
-## Build
+## Сборка
 
 ```bash
 cargo build --release
-# Binary: ../target/release/unbound-cli
+# Бинарник: ../target/release/unbound-cli
 ```
 
-## Usage (requires root)
+## Использование (требуются права root)
 
 ```bash
-# Start with defaults (queue 200, auto-detect interface)
+# Запуск с настройками по умолчанию (queue 200, автоопределение интерфейса)
 sudo unbound-cli start
 
-# Start with specific interface and queue
+# Запуск с указанием интерфейса и очереди
 sudo unbound-cli start --iface eth0 --queue 200
 
-# Check status
+# Проверка статуса
 sudo unbound-cli status
 
-# Stop (flushes nftables rules automatically)
+# Остановка (автоматически очищает правила nftables)
 sudo unbound-cli stop
 ```
 
-## nftables Rules
+## Правила nftables
 
-When active, the daemon creates:
+При работе демон создаёт:
 
 ```
 table inet unbound {
@@ -71,10 +69,9 @@ table inet unbound {
 }
 ```
 
-Rules are **automatically removed** on daemon shutdown (SIGINT/SIGTERM/crash),
-ensuring the user is never left without internet.
+Правила **автоматически удаляются** при завершении демона (SIGINT/SIGTERM/сбой), чтобы пользователь никогда не остался без интернета.
 
-## systemd Service
+## Сервис systemd
 
 ```bash
 sudo cp ../packaging/unbound.service /etc/systemd/system/
@@ -82,19 +79,19 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now unbound.service
 ```
 
-## Dependencies
+## Зависимости
 
-- **Runtime:** `nftables`, `libnetfilter_queue`, `nfqws` (from zapret)
-- **Build:** `cargo`, `rust`
+- **Для работы:** `nftables`, `libnetfilter_queue`, `nfqws` (из zapret)
+- **Для сборки:** `cargo`, `rust`
 
-## Packaging
+## Упаковка
 
-See `../packaging/` for:
+См. `../packaging/` для:
 - `PKGBUILD` — Arch Linux AUR
 - `build-deb.sh` — Debian/Ubuntu
 - `build-rpm.sh` — Fedora/RHEL
-- `unbound.service` — systemd service file
+- `unbound.service` — файл сервиса systemd
 
-## License
+## Лицензия
 
 MIT

@@ -1,73 +1,73 @@
 # Unbound Legacy
 
-> DPI/censorship bypass for jailbroken iOS devices.
-> Supports **iOS 6.1.3** (iPhone 4s, skeuomorphic UI) and **iOS 15+** (ARM64, modern flat UI) in a single DEB package.
+> Обход DPI/цензуры для джейлбрейкнутых iOS-устройств.
+> Поддержка **iOS 6.1.3** (iPhone 4s, скевоморфный UI) и **iOS 15+** (ARM64, современный плоский UI) в одном DEB-пакете.
 
-## Architecture
+## Архитектура
 
 ```
 ┌──────────────────────────────────────────────────┐
 │              Unbound Legacy                       │
 ├────────────────┬─────────────────────────────────┤
-│  Application   │ Skeuomorphic (iOS 6) / Modern   │
+│  Приложение    │ Скевоморфный (iOS 6) / Современный│
 │                │ Objective-C, CoreGraphics, UIKit│
 ├────────────────┼─────────────────────────────────┤
-│  Proxy Manager │ SCPreferences API -- SOCKS      │
-│                │ proxy injection, no reboot      │
+│  Менеджер прокси│ API SCPreferences — внедрение   │
+│                │ SOCKS-прокси, без перезагрузки  │
 ├────────────────┼─────────────────────────────────┤
-│  Tweak         │ Cydia Substrate / ElleKit hooks │
-│                │ SpringBoard + Preferences       │
+│  Твик          │ Хуки Cydia Substrate / ElleKit  │
+│                │ SpringBoard + Настройки         │
 ├────────────────┼─────────────────────────────────┤
-│  C Engine      │ Ported from bol-van/zapret      │
+│  C Двигатель   │ Портировано из bol-van/zapret   │
 │  (tpws)        │ epoll→kqueue shim, ARMv7+ARM64  │
 ├────────────────┼─────────────────────────────────┤
 │  Launch Daemon │ com.unbound.tpws.plist           │
-│                │ Auto-start, KeepAlive            │
+│                │ Автозапуск, KeepAlive            │
 └────────────────┴─────────────────────────────────┘
 ```
 
-## Project Structure
+## Структура проекта
 
 ```
 theos/unbound-legacy/
-├── Makefile                          # Main Theos build (dual-arch)
-├── control                           # DEB metadata
-├── README.md                         # This file
+├── Makefile                          # Основная сборка Theos (двойная архитектура)
+├── control                           # Метаданные DEB
+├── README.md                         # Этот файл
 │
 ├── engine/
-│   ├── Makefile.tpws                 # tpws cross-compilation
+│   ├── Makefile.tpws                 # Кросс-компиляция tpws
 │   └── tpws/
 │       ├── darwin_compat.h           # epoll→kqueue, signalfd, timerfd shim
-│       ├── tpws.h                    # tpws public API
-│       ├── ios_main.c                # iOS daemon entry point
-│       ├── Entitlements.xml          # ldid entitlements for binary
+│       ├── tpws.h                    # Публичный API tpws
+│       ├── ios_main.c                # Точка входа демона iOS
+│       ├── Entitlements.xml          # ldid entitlements для бинарника
 │       ├── epoll-shim/
-│       │   ├── include/sys/epoll.h   # epoll API declarations
-│       │   └── src/epoll_shim.c      # Full kqueue-backed implementation
+│       │   ├── include/sys/epoll.h   # Объявления API epoll
+│       │   └── src/epoll_shim.c      # Полная реализация на базе kqueue
 │       └── macos/
-│           ├── net/pfvar.h           # PF NAT lookup structures
-│           └── sys/socket.h          # Darwin socket options
+│           ├── net/pfvar.h           # Структуры PF NAT
+│           └── sys/socket.h          # Опции сокетов Darwin
 │
-├── unboundApp/                       # Application
-│   ├── UnboundAppDelegate.h/m        # Version-based UI routing
-│   ├── UnboundProxyManager.h/m       # Shared proxy/daemon manager
-│   ├── iOS6/                         # Skeuomorphic UI
+├── unboundApp/                       # Приложение
+│   ├── UnboundAppDelegate.h/m        # Маршрутизация UI по версии
+│   ├── UnboundProxyManager.h/m       # Общий менеджер прокси/демона
+│   ├── iOS6/                         # Скевоморфный UI
 │   │   ├── UnboundSkeuomorphicViewController.h/m
 │   │   ├── UnboundLinenBackgroundView.h/m
 │   │   ├── UnboundLeatherPanelView.h/m
 │   │   ├── UnboundGlossyButton.h/m
 │   │   └── UnboundSkeuomorphicSwitch.h/m
-│   └── Modern/                       # Modern iOS 15+ UI
+│   └── Modern/                       # Современный UI iOS 15+
 │       └── UnboundModernViewController.h/m
 │
 ├── unboundTweak/
-│   ├── Tweak.xm                      # Logos tweak (SpringBoard + Preferences)
-│   └── UnboundProxyManager.m         # Tweak proxy manager (non-ARC)
+│   ├── Tweak.xm                      # Logos-твик (SpringBoard + Настройки)
+│   └── UnboundProxyManager.m         # Менеджер прокси твика (non-ARC)
 │
-├── layout/                           # Files installed to device
+├── layout/                           # Файлы, устанавливаемые на устройство
 │   ├── DEBIAN/
-│   │   ├── postinst                  # Post-install (PF rules, permissions)
-│   │   └── prerm                     # Pre-remove cleanup
+│   │   ├── postinst                  # Пост-установка (правила PF, права)
+│   │   └── prerm                     # Предварительная очистка
 │   ├── Library/LaunchDaemons/
 │   │   └── com.unbound.tpws.plist
 │   └── Applications/Unbound.app/
@@ -75,141 +75,135 @@ theos/unbound-legacy/
 │       └── Entitlements.plist
 │
 └── scripts/
-    ├── build.sh                      # Bash build (Linux/macOS/WSL)
-    └── build.ps1                     # PowerShell build (Windows+WSL)
+    ├── build.sh                      # Bash-сборка (Linux/macOS/WSL)
+    └── build.ps1                     # PowerShell-сборка (Windows+WSL)
 ```
 
-## Building
+## Сборка
 
-### Prerequisites
+### Требования
 
-1. **Theos** -- https://theos.dev/docs/installation
-2. **iOS 6.1 SDK** -- place at `$THEOS/sdks/iPhoneOS6.1.sdk`
-3. **iOS 16.4+ SDK** -- usually bundled with Theos
-4. **clang** with ARM cross-compilation
-5. **ldid** (optional, for device signing)
+- **Theos** установлен (https://theos.dev)
+- **Xcode** или **Clang** (для кросс-компиляции)
+- **ldid** (для подписи entitlements)
+- **dpkg-deb** (для упаковки DEB)
 
-### Quick Build
+### Сборка через скрипт
 
 ```bash
+# Linux/macOS/WSL
 cd theos/unbound-legacy
-
-# Both architectures
 ./scripts/build.sh
 
-# Specific architecture
-./scripts/build.sh armv7   # iOS 6 only
-./scripts/build.sh arm64   # Modern iOS only
-
-# Clean
-./scripts/build.sh clean
-
-# Deploy
-./scripts/build.sh install 192.168.1.100
-```
-
-### Windows (via WSL)
-
-```powershell
-cd theos\unbound-legacy
+# Windows (через WSL)
 .\scripts\build.ps1
-.\scripts\build.ps1 -Deploy -DeviceIP 192.168.1.100
 ```
 
-### Manual
+### Ручная сборка
 
 ```bash
-export THEOS=$HOME/theos
 cd theos/unbound-legacy
-make -f engine/Makefile.tpws   # engine first
-make package                    # then everything
+
+# Собрать tpws
+make -C engine -f Makefile.tpws
+
+# Собрать DEB-пакет
+make package
 ```
 
-Output: `packages/com.unbound.legacy_1.0.0_iphoneos-arm.deb`
+Результат: `packages/com.unbound.legacy_2.0.0_iphoneos-arm.deb`
 
-## Installation
+## Установка
 
 ```bash
-scp packages/com.unbound.legacy_1.0.0_iphoneos-arm.deb root@device:/tmp/
-ssh root@device "dpkg -i /tmp/com.unbound.legacy_1.0.0_iphoneos-arm.deb"
+# Передать DEB на устройство
+scp packages/com.unbound.legacy_2.0.0_iphoneos-arm.deb root@<IP-УСТРОЙСТВА>:/var/root/
+
+# Установить через SSH
+ssh root@<IP-УСТРОЙСТВА>
+dpkg -i /var/root/com.unbound.legacy_2.0.0_iphoneos-arm.deb
+uicache
 ```
 
-## Usage
+Или установите через Cydia/Sileo как локальный DEB-пакет.
 
-### From the App
-1. Open **Unbound** on the device
-2. Toggle **Engine** on
-3. Configure port (default: 1993) and strategy
-4. System SOCKS proxy is auto-set to `127.0.0.1:1993`
+## Использование
 
-### From Preferences (iOS 6)
-The tweak injects an "Unbound Legacy" entry into stock Settings.app
+### iOS 6.1.3 (iPhone 4s)
 
-### From Darwin Notification
-```objc
-[[NSNotificationCenter defaultCenter] postNotificationName:@"com.unbound.toggle"
-    object:nil userInfo:@{@"enabled": @YES, @"port": @1993}];
-```
+После установки откроется приложение Unbound с классическим скевоморфным интерфейсом:
 
-### CLI
+1. Нажмите **«Подключить»** для запуска tpws
+2. Выберите профиль (По умолчанию / Агрессивный / Лёгкий)
+3. Приложение внедряет SOCKS-прокси через `SCPreferences`
+4. Весь HTTP/HTTPS-трафик проходит через tpws
+
+### iOS 15+
+
+На современных устройствах открывается минималистичный плоский интерфейс:
+
+1. Переключатель в шапке — подключить/отключить
+2. Кнопка «Настройки» — выбор профиля и информации
+3. Твик интегрируется в системные настройки (Настройки → Unbound)
+
+### Твик
+
+Твик добавляет:
+- Индикатор статуса в строке состояния SpringBoard
+- Быстрый переключатель в Центре управления
+- Страницу настроек в приложении «Настройки»
+
+## Архитектура двигателя
+
+### tpws (Transparent Proxy Web Server)
+
+Портированный двигатель из проекта zapret:
+
+- **Перехват трафика**: Захватывает исходящие соединения на указанных портах
+- **Манипуляция пакетами**: Применяет техники обхода DPI (split, fake, disorder)
+- **kqueue**: Эмуляция epoll через kqueue для Darwin-систем
+- **Демон**: Работает как launchd-демон с автозапуском
+
+### Внедрение прокси
+
+Приложение использует `SCPreferences` API для установки системного SOCKS-прокси:
+
+1. Приложение создаёт SOCKS-прокси на `127.0.0.1:1080`
+2. `SCPreferences` записывает настройки в системную конфигурацию
+3. Все приложения, поддерживающие системный прокси, используют его
+4. При отключении настройки восстанавливаются
+
+## Профили
+
+| Профиль | Аргументы tpws | Применение |
+|---------|---------------|------------|
+| **По умолчанию** | `--split-pos=2 --split-repeats=6` | Большинство провайдеров |
+| **Агрессивный** | `--split-pos=1 --split-repeats=11 --fake-ttl=1` | Упрямые DPI |
+| **Лёгкий** | `--split-pos=2 --split-repeats=3` | Лёгкая цензура |
+
+## Диагностика
+
+### tpws не запускается
+
 ```bash
-unbound-tpws --port 1993        # start
-killall unbound-tpws            # stop
-cat /var/run/unbound-tpws.pid   # check PID
+# Проверить статус демона
+launchctl list | grep unbound
+
+# Проверить логи
+cat /var/log/syslog | grep tpws
+
+# Перезапустить вручную
+launchctl stop com.unbound.tpws
+launchctl start com.unbound.tpws
 ```
 
-## How It Works
+### Прокси не отключается после удаления
 
-### tpws Engine
-Port of bol-van/zapret `tpws` to iOS via:
-- **epoll → kqueue** shim for async I/O
-- **signalfd / timerfd / eventfd** stubs
-- **SO_NOSIGPIPE** socket option for Darwin
-- iOS daemon wrapper with PID file + signal handling
-
-### Proxy Injection
-Uses `SCPreferences` API (same as Apple's Settings app):
-```objc
-SCPreferencesRef ref = SCPreferencesCreate(NULL, CFSTR("com.unbound.legacy"), NULL);
-/* ... modify SOCKSProxy, SOCKSPort, HTTPProxy, etc. ... */
-SCPreferencesCommitChanges(ref);
-SCPreferencesApplyChanges(ref);  // applies without reboot!
+```bash
+# Сбросить настройки прокси вручную
+/usr/libexec/PlistBuddy -c "Delete :HTTPProxy" /Library/Preferences/SystemConfiguration/preferences.plist
 ```
 
-### PF Redirect Rules (transparent mode)
-```
-rdr pass on lo0 inet proto tcp from any to any port 80  -> 127.0.0.1 port 1993
-rdr pass on lo0 inet proto tcp from any to any port 443 -> 127.0.0.1 port 1993
-```
+## Лицензия
 
-## Skeuomorphic UI (iOS 6)
-
-All textures drawn procedurally with Core Graphics -- **no image assets**:
-
-| Component | Technique |
-|-----------|-----------|
-| Linen Background | Fine-line cross-hatch texture + noise grain |
-| Leather Panels | Multi-stop gradient, grain, stitched border, gloss overlay |
-| Glossy Buttons | Gradient fill + top-half gloss reflection + inner shadow |
-| On/Off Switch | Green/grey split track + glossy knob + embossed labels |
-
-## Compatibility
-
-| Device | iOS | Arch | UI |
-|--------|-----|------|-----|
-| iPhone 4s | 6.1.3 | ARMv7 (32-bit) | Skeuomorphic |
-| iPhone 5/5c | 6-10 | ARMv7/ARM64 | Skeuomorphic |
-| iPhone 5s-11 | 7-14 | ARM64 | Modern (transitional) |
-| iPhone 12+ | 15-17 | ARM64 | Modern |
-
-## Troubleshooting
-
-- **Engine won't start**: check `/var/log/unbound-tpws.log`
-- **Proxy not applying**: verify Wi-Fi is active network; check Settings → Wi-Fi → HTTP Proxy
-- **PF rules**: `pfctl -s info` to check; `pfctl -f /etc/unbound/pf.conf` to reload
-
-## Credits
-
-- **tpws**: [bol-van/zapret](https://github.com/bol-van/zapret)
-- **Proxy API**: [karajan/iOS-ProxyTool](https://github.com/karajanyp/iOS-ProxyTool)
-- **Theos**: [theos/theos](https://github.com/theos/theos)
+MIT

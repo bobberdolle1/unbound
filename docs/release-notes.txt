@@ -1,73 +1,27 @@
-UNBOUND v2.0.0 - DPI Engine Orchestrator Release
-================================================
+# Заметки о выпуске UNBOUND v2.0.0
 
-🚀 MAJOR FEATURES
+## МАЖОРНЫЕ ВОЗМОЖНОСТИ
 
-[Smart Prober Technology]
-- TLS certificate verification to detect TSPU MITM attacks
-- TTFB (Time-To-First-Byte) measurement for connection quality
-- Connection reset detection (ECONNRESET) from DPI interference
-- Certificate chain validation against known CAs (DigiCert, Let's Encrypt, Google Trust Services)
-- Protection against certificate spoofing by Russian TSPU systems
+- **Мультиплатформенная экосистема** — Полная поддержка Windows, macOS, Linux, Android, iOS, OpenWrt, браузеров, Smart TV, Steam Deck
+- **Автоподбор V2** — Параллельный сканер с таймаутом 5 секунд на зонд
+- **Системный трей** — Полноценная интеграция с треем, сворачивание вместо выхода
+- **Обновлённый интерфейс** — Современный дизайн с мониторингом в реальном времени
+- **Повышенная безопасность** — HideWindow на всех дочерних процессах
+- **Полная русификация** — Весь UI, уведомления, документация на русском языке
 
-[Live Ping Indicator]
-- Real-time latency monitoring in UI (updates every 5 seconds)
-- Color-coded status: Green (<100ms), Yellow (100-300ms), Red (>300ms)
-- Automatic connection health checks
-- Visual feedback for DPI bypass effectiveness
+## Исправления
 
-[Multi-Engine Architecture]
-- Unified DPIEngine interface for multiple bypass engines
-- Support for GoodbyeDPI, Zapret2, Zapret1
-- Dynamic engine switching via orchestrator
-- Cross-platform abstraction (Windows/Linux/macOS ready)
+- Исправлено сохранение настроек
+- Исправлено поведение при закрытии окна
+- Убрано зависание Автоподбора
+- Убрано мигание консоли при AutoTune
+- Убраны неподдерживаемые упоминания Telegram
 
-[Enhanced Auto-Tune]
-- Integrated Smart Prober for accurate profile testing
-- Certificate validation prevents false positives
-- Scoring system based on success rate + latency
-- Automatic selection of best performing profile
+## Поддерживаемые сервисы
 
-🔧 TECHNICAL IMPROVEMENTS
-
-- Refactored engine architecture with clean interfaces
-- Removed circular dependencies in module structure
-- Added engine/engine.go - DPIEngine interface
-- Added engine/prober.go - Smart connection testing
-- Added engine/orchestrator.go - Multi-engine manager
-- Updated scanner.go with Smart Prober integration
-- Added GetCurrentPing() API for live monitoring
-
-📦 INSTALLATION
-
-Windows:
-1. Download unbound.exe from releases
-2. Run as Administrator (required for WinDivert)
-3. Click CONNECT or run Auto-Tune
-
-⚠️ BREAKING CHANGES
-
-- Removed legacy build configurations (darwin/Info.plist, windows/installer)
-- Engine architecture completely refactored
-- Auto-Tune now requires 2-3 minutes for full scan (was 1-2 minutes)
-
-🐛 BUG FIXES
-
-- Fixed import cycles in engine package
-- Improved WinDivert cleanup on application exit
-- Better error handling in TLS handshake verification
-
-📝 KNOWN ISSUES
-
-- Live ping may show 0ms briefly during engine restart
-- Some antivirus software may flag WinDivert driver
-- Auto-Tune requires stable internet connection
-
-🙏 CREDITS
-
-- Zapret project by bol-van for the core DPI bypass engine
-- Wails framework for Go + React desktop apps
-- WinDivert for packet interception on Windows
-
----
-Full Changelog: https://github.com/bobberdolle1/unbound/compare/v1.0.0...v2.0.0
+- ✅ YouTube — Полный стриминг 4K
+- ✅ Discord — Голос, видео, демонстрация экрана
+- ✅ Instagram — Лента, сторис, рилс, личные сообщения
+- ✅ Twitter/X — Лента, медиа, поиск
+- ✅ Facebook — Новости, маркетплейс
+- ✅ RuTracker — Торрент-доступ

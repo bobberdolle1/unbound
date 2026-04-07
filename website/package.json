@@ -1,0 +1,18 @@
+{
+  "name": "unbound-website",
+  "type": "module",
+  "version": "2.0.0",
+  "description": "Landing page for Unbound - Total War against Censorship",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "deploy": "npm run build && gh-pages -d dist"
+  },
+  "dependencies": {
+    "astro": "^5.1.0"
+  },
+  "devDependencies": {
+    "gh-pages": "^6.3.0"
+  }
+}

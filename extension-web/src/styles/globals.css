@@ -1,0 +1,60 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Base styles */
+:root {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Light theme (Doodle Jump Minimalism) */
+.light {
+  --bg-primary: #f7f5f0;
+  --bg-surface: #ffffff;
+  --color-primary: #5cb85c;
+  --color-primary-hover: #4cae4c;
+  --color-accent: #f0ad4e;
+  --text-primary: #333333;
+  --text-muted: #888888;
+  --border-color: #e0ddd5;
+}
+
+/* Dark theme (Modern Dark) */
+.dark {
+  --bg-primary: #1a1a2e;
+  --bg-surface: #16213e;
+  --color-primary: #0f3460;
+  --color-primary-hover: #1a4a7a;
+  --color-accent: #e94560;
+  --text-primary: #eaeaea;
+  --text-muted: #a0a0b0;
+  --border-color: #2a2a4a;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}

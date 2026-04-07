@@ -1,0 +1,12 @@
+# Placeholder file. Actual nfqws binaries should be placed in:
+# - binaries/arm64/nfqws (arm64-v8a)
+# - binaries/arm/nfqws (armeabi-v7a)
+# - binaries/x86_64/nfqws (x86_64)
+# - binaries/x86/nfqws (x86)
+#
+# Build nfqws from the Zapret repository:
+# https://github.com/bol-van/zapret
+#
+# Cross-compile using Android NDK:
+#   $ANDROID_NDK/toolchains/llvm/prebuilt/windows-x86_64/bin/aarch64-linux-android29-clang \
+#       -o nfqws nfqws.c -lnetfilter_queue

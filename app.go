@@ -48,7 +48,7 @@ func (a *App) startup(ctx context.Context) {
 	assets, err := engine.ExtractAssets()
 	if err != nil {
 		logger.Errorf("App", "Failed to extract assets: %v", err)
-		notifMgr.Error("Startup Error", "Failed to extract required files")
+		notifMgr.Error("Ошибка запуска", "Не удалось извлечь необходимые файлы")
 		wailsruntime.LogErrorf(ctx, "Failed to extract assets: %v", err)
 		return
 	}
@@ -63,7 +63,7 @@ func (a *App) startup(ctx context.Context) {
 		for _, err := range validationResult.Errors {
 			logger.Errorf("App", "Validation error: %s", err)
 		}
-		notifMgr.Error("Startup Failed", "Critical files missing. Please reinstall the application.")
+		notifMgr.Error("Ошибка запуска", "Критические файлы отсутствуют. Переустановите приложение.")
 		wailsruntime.LogError(ctx, "Startup validation failed - see logs for details")
 		return
 	}
@@ -74,7 +74,7 @@ func (a *App) startup(ctx context.Context) {
 	}
 	
 	if len(validationResult.Warnings) > 0 {
-		notifMgr.Warning("Startup Warning", "Some optional components are missing")
+		notifMgr.Warning("Предупреждение", "Некоторые необязательные компоненты отсутствуют")
 	}
 	
 	logger.Info("App", "Startup validation passed")
@@ -233,10 +233,10 @@ func (a *App) ClearDiscordCache() error {
 	logger.Info("App", "Clearing Discord cache")
 	err := engine.ClearDiscordCache()
 	if err == nil {
-		notifMgr.Success("Cleanup", "Discord cache cleared successfully")
+		notifMgr.Success("Очистка", "Кэш Discord успешно очищен")
 	} else {
 		logger.Errorf("App", "Failed to clear Discord cache: %v", err)
-		notifMgr.Error("Cleanup Failed", "Could not clear Discord cache")
+		notifMgr.Error("Ошибка очистки", "Не удалось очистить кэш Discord")
 	}
 	return err
 }
@@ -280,7 +280,7 @@ func (a *App) AutoTune() string {
 	a.autoTuneCancel = cancel
 	
 	logger.Info("App", "AutoTune process started")
-	notifMgr.Info("AutoTune", "Starting profile optimization...")
+	notifMgr.Info("Автоподбор", "Начинаем оптимизацию профиля...")
 	wailsruntime.EventsEmit(a.ctx, "autotune_start", true)
 	
 	defer func() {
@@ -298,7 +298,7 @@ func (a *App) AutoTune() string {
 	result, err := engine.RunAutoTuneV2WithContext(tuneCtx, provider, allProfiles)
 	if err != nil {
 		logger.Errorf("App", "AutoTune failed: %v", err)
-		notifMgr.Error("AutoTune Failed", "Could not find optimal profile")
+		notifMgr.Error("Ошибка автоподбора", "Не удалось найти оптимальный профиль")
 		wailsruntime.EventsEmit(a.ctx, "autotune_log", "❌ Auto-Tune failed or cancelled")
 		return "Failed"
 	}
@@ -360,7 +360,7 @@ func (a *App) GetLivePing() map[string]interface{} {
 }
 
 func (a *App) GetAppVersion() string {
-	return "1.0.4"
+	return "2.0.0"
 }
 
 func (a *App) EnableAutoStart() error {
@@ -449,4 +449,12 @@ func (a *App) KillConflicts() error {
 func (a *App) ShowNotification(title string, message string) {
 	notifMgr := engine.GetNotificationManager()
 	notifMgr.Info(title, message)
+}
+
+func (a *App) HideWindowToTray() {
+	a.HideToTray()
+}
+
+func (a *App) ShowWindowFromTray() {
+	a.ShowFromTray()
 }

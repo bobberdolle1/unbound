@@ -30,9 +30,6 @@ var trustedIssuers = map[string][]string{
 	"youtube.com": {
 		"Google Trust Services", "GTS",
 	},
-	"telegram.org": {
-		"DigiCert", "Let's Encrypt",
-	},
 }
 
 func ProbeConnection(ctx context.Context, targetURL string, engine DPIEngine) (ProbeResult, error) {

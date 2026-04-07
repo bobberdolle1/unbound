@@ -37,7 +37,6 @@ var testTargets = []Target{
 	{Name: "YouTube",   URL: "https://www.youtube.com/favicon.ico",        Priority: 30},
 	{Name: "Discord",   URL: "https://discord.com/favicon.ico",            Priority: 30},
 	{Name: "Instagram", URL: "https://www.instagram.com/favicon.ico",      Priority: 20},
-	{Name: "Telegram",  URL: "https://web.telegram.org/favicon.ico",       Priority: 20},
 	// Средний приоритет — часто блокируемые
 	{Name: "Twitter/X", URL: "https://twitter.com/favicon.ico",            Priority: 15},
 	{Name: "Facebook",  URL: "https://www.facebook.com/favicon.ico",       Priority: 15},
@@ -147,10 +146,27 @@ func testBypassParallel(profileName string) *AutoTuneResult {
 		wg.Add(1)
 		go func(t Target) {
 			defer wg.Done()
-			status := testTarget(t.URL)
-			mu.Lock()
-			result.Results[t.Name] = status
-			mu.Unlock()
+			// Add strict 5-second timeout per probe
+			probeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			
+			done := make(chan TargetStatus, 1)
+			go func() {
+				status := testTargetWithContext(probeCtx, t.URL)
+				done <- status
+			}()
+			
+			select {
+			case status := <-done:
+				mu.Lock()
+				result.Results[t.Name] = status
+				mu.Unlock()
+			case <-probeCtx.Done():
+				logger.Warnf("AutoTune", "Target %s timed out after 5s", t.Name)
+				mu.Lock()
+				result.Results[t.Name] = TargetStatus{OK: false, Error: "timeout after 5s"}
+				mu.Unlock()
+			}
 		}(target)
 	}
 
@@ -190,12 +206,16 @@ func testBypassParallel(profileName string) *AutoTuneResult {
 }
 
 func testTarget(url string) TargetStatus {
+	return testTargetWithContext(context.Background(), url)
+}
+
+func testTargetWithContext(ctx context.Context, url string) TargetStatus {
 	logger := GetLogger()
 	start := time.Now()
 	
 	// Используем HEAD для скорости (как probe.trolling.website)
 	client := &http.Client{
-		Timeout: 8 * time.Second, // увеличен таймаут как у probe.trolling.website
+		Timeout: 5 * time.Second, // Strict 5-second timeout
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
 				MinVersion: tls.VersionTLS12,
@@ -203,7 +223,6 @@ func testTarget(url string) TargetStatus {
 			},
 			DisableKeepAlives: true,
 		},
-		// Не следуем редиректам для скорости (favicon может редиректить)
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 3 {
 				return http.ErrUseLastResponse
@@ -212,18 +231,24 @@ func testTarget(url string) TargetStatus {
 		},
 	}
 
-	req, _ := http.NewRequest("HEAD", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "HEAD", url, nil)
+	if err != nil {
+		return TargetStatus{OK: false, Error: err.Error()}
+	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
 
 	resp, err := client.Do(req)
 	if err != nil {
 		// Попробуем GET если HEAD не сработал
-		req2, _ := http.NewRequest("GET", url, nil)
-		req2.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-		resp2, err2 := client.Do(req2)
+		req2, err2 := http.NewRequestWithContext(ctx, "GET", url, nil)
 		if err2 != nil {
-			logger.Debugf("AutoTune", "Цель %s недоступна: %v", url, err2)
 			return TargetStatus{OK: false, Error: err2.Error()}
+		}
+		req2.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+		resp2, err3 := client.Do(req2)
+		if err3 != nil {
+			logger.Debugf("AutoTune", "Цель %s недоступна: %v", url, err3)
+			return TargetStatus{OK: false, Error: err3.Error()}
 		}
 		defer resp2.Body.Close()
 		latency := time.Since(start)

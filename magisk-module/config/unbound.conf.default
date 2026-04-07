@@ -1,0 +1,51 @@
+# ============================================================================
+# Unbound Core — Default Configuration
+# ============================================================================
+# Copy this file to /data/adb/modules/unbound-core/etc/unbound.conf
+# and modify as needed.
+# ============================================================================
+
+# NFQUEUE queue number (must match iptables rules)
+nfqueue_num=200
+
+# Path to nfqws binary
+nfqws_path=/data/adb/modules/unbound-core/bin/nfqws
+
+# nfqws arguments (leave empty for defaults)
+# Common options:
+#   --qnum=N          : NFQUEUE number
+#   --daemon          : Run as daemon
+#   --pidfile=FILE    : PID file location
+#   --log-file=FILE   : Log file location
+#   --user=USER       : Drop privileges to USER
+#   --new             : Enable multi-profile mode
+#   --dpi-desync=...  : DPI desync strategy
+nfqws_args=
+
+# iptables mode: "iptables" or "nftables"
+iptables_mode=iptables
+
+# Ports to filter (comma-separated)
+filter_ports=80,443
+
+# Connection bytes filter (outgoing:incoming)
+filter_connbytes_out=1:6
+filter_connbytes_in=1:3
+
+# Firewall mark for nfqws-generated packets
+fwmark=0x40000000
+fwmark_mask=0x40000000
+
+# Enable IPv6 rules
+enable_ipv6=true
+
+# Enable hotspot/tethering forwarding
+enable_hotspot=true
+
+# Excluded app UIDs (comma-separated, leave empty for none)
+# Find UIDs with: ls /data/data/ | grep <package_name>
+# Example: excluded_uids=10085,10092,10103
+excluded_uids=
+
+# Debug mode (print logs to stdout)
+debug_mode=false

@@ -7,9 +7,9 @@ function cn(...inputs: ClassValue[]) {
 }
 
 // @ts-ignore
-import { GetEngineNames, GetProfiles, StartEngine, StopEngine, GetLogs, AutoTune, CancelAutoTune, GetSettings, SaveSettings, GetLivePing, ShowNotification, EnableAutoStart, DisableAutoStart, IsAutoStartEnabled, CheckConflicts, KillConflicts, CheckPrivileges, RunDiagnostics, ClearDiscordCache, EnableTCPTimestamps, KillWinws2, GetAppVersion } from '../wailsjs/go/main/App';
+import { GetEngineNames, GetProfiles, StartEngine, StopEngine, GetLogs, AutoTune, CancelAutoTune, GetSettings, SaveSettings, GetLivePing, ShowNotification, EnableAutoStart, DisableAutoStart, IsAutoStartEnabled, CheckConflicts, KillConflicts, CheckPrivileges, RunDiagnostics, ClearDiscordCache, EnableTCPTimestamps, KillWinws2, GetAppVersion, HideWindowToTray } from '../wailsjs/go/main/App';
 // @ts-ignore
-import { EventsOn, WindowMinimise, Quit } from '../wailsjs/runtime/runtime';
+import { EventsOn, WindowMinimise, EventsEmit } from '../wailsjs/runtime/runtime';
 
 // === SKETCHY ICONS ===
 const SketchySpinner = ({ className }: { className?: string }) => (
@@ -159,7 +159,7 @@ export default function App() {
     autoStart: false,
     startMinimized: false,
     defaultProfile: 'Unbound Ultimate (God Mode)',
-    startupProfileMode: 'Last Used',
+    startupProfileMode: 'Последний использованный',
     gameFilter: true,
     autoUpdateEnabled: true,
     showLogs: true,
@@ -389,12 +389,12 @@ export default function App() {
         autoStart: autoStartEnabled,
         startMinimized: loadedSettings.startMinimized || false,
         defaultProfile: loadedSettings.defaultProfile || 'Unbound Ultimate (God Mode)',
-        startupProfileMode: loadedSettings.startupProfileMode || 'Last Used',
+        startupProfileMode: loadedSettings.startupProfileMode || 'Последний использованный',
         gameFilter: loadedSettings.gameFilter !== undefined ? loadedSettings.gameFilter : false,
         autoUpdateEnabled: loadedSettings.autoUpdateEnabled !== undefined ? loadedSettings.autoUpdateEnabled : true,
         showLogs: loadedSettings.showLogs !== undefined ? loadedSettings.showLogs : true,
-        enableTCPTimestamps: false,
-        discordCacheAutoClean: false
+        enableTCPTimestamps: loadedSettings.enableTCPTimestamps || false,
+        discordCacheAutoClean: loadedSettings.discordCacheAutoClean || false
       });
     } catch (err) {
       console.error(err);
@@ -583,7 +583,7 @@ export default function App() {
           <button onClick={WindowMinimise} className="hover:text-black font-marker text-xl leading-none" title="Свернуть">
             _
           </button>
-          <button onClick={Quit} className="hover:text-red-500 font-marker text-xl leading-none pb-1" title="Закрыть">
+          <button onClick={HideWindowToTray} className="hover:text-red-500 font-marker text-xl leading-none pb-1" title="Закрыть в трей">
             X
           </button>
         </div>
@@ -794,20 +794,20 @@ export default function App() {
                 onChange={() => setSettings({...settings, showLogs: !settings.showLogs})} 
               />
 
-              <DoodleCheckbox 
-                id="enableTCPTimestamps" 
+              <DoodleCheckbox
+                id="enableTCPTimestamps"
                 label="TCP Timestamps"
                 desc="Улучшить совместимость с некоторыми провайдерами"
-                checked={settings.enableTCPTimestamps} 
-                onChange={() => setSettings({...settings, enableTCPTimestamps: !settings.enableTCPTimestamps})} 
+                checked={settings.enableTCPTimestamps}
+                onChange={() => setSettings({...settings, enableTCPTimestamps: !settings.enableTCPTimestamps})}
               />
 
-              <DoodleCheckbox 
-                id="discordCacheAutoClean" 
+              <DoodleCheckbox
+                id="discordCacheAutoClean"
                 label="Очистка Discord"
                 desc="Автоматически очищать кэш Discord при запуске"
-                checked={settings.discordCacheAutoClean} 
-                onChange={() => setSettings({...settings, discordCacheAutoClean: !settings.discordCacheAutoClean})} 
+                checked={settings.discordCacheAutoClean}
+                onChange={() => setSettings({...settings, discordCacheAutoClean: !settings.discordCacheAutoClean})}
               />
 
               <div className="flex flex-col gap-2 p-3 bg-white border-2 border-gray-800 rounded-xl relative z-50 shadow-[2px_2px_0_#222]">
@@ -815,9 +815,9 @@ export default function App() {
                   <span className="text-lg font-bold text-gray-900 block leading-none">Профиль при запуске</span>
                   <span className="text-xs text-gray-600 block mt-1">Какой профиль загружать при старте?</span>
                 </div>
-                <DoodleSelect 
+                <DoodleSelect
                   value={settings.startupProfileMode}
-                  options={["Last Used", "Auto-Tune", ...profiles]}
+                  options={["Последний использованный", "Автоподбор", ...profiles]}
                   onChange={(val) => setSettings({...settings, startupProfileMode: val})}
                   up={true}
                 />
@@ -865,7 +865,7 @@ export default function App() {
             </div>
             
             <div className="px-4 py-2 flex justify-center opacity-40">
-              <span className="font-marker text-sm">v1.0.4 — 2026 Стабильная</span>
+              <span className="font-marker text-sm">v2.0.0 — 2026 Total War Edition</span>
             </div>
           </div>
         </div>

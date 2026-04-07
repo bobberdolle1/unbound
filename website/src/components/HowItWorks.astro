@@ -1,0 +1,174 @@
+---
+---
+
+<section id="how-it-works" class="how-it-works">
+  <div class="container">
+    <div class="section-header">
+      <span class="section-tag">Simple Setup</span>
+      <h2 class="section-title">One-Click <span class="gradient-text">Freedom</span></h2>
+      <p class="section-desc">From download to uncensored internet in under 60 seconds.</p>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <div class="step-number">01</div>
+        <div class="step-content">
+          <h3>Download & Run</h3>
+          <p>Grab the latest release, extract the archive, and run <code>unbound.exe</code> as Administrator. All dependencies (WinDivert, Lua scripts, winws2 engine) are embedded — nothing else to install.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-number">02</div>
+        <div class="step-content">
+          <h3>Hit Auto-Tune</h3>
+          <p>Click "Автоподбор" (Auto-Tune). Unbound parallel-tests 70+ bypass profiles against YouTube, Discord, Telegram, Instagram, Twitter, and RuTracker. Smart scoring finds the profile that unblocks everything.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-number">03</div>
+        <div class="step-content">
+          <h3>Connect & Forget</h3>
+          <p>Press "ПОДКЛЮЧИТЬ!" and browse freely. Enable silent auto-start in settings — Unbound launches minimized to system tray on boot. Set it and forget it.</p>
+        </div>
+      </div>
+    </div>
+    <div class="tech-note">
+      <h4>Under the Hood</h4>
+      <p>Unbound uses the <strong>zapret2</strong> (winws2) engine by bol-van, which manipulates TCP packets at the DPI level using techniques like <strong>TCP desynchronization</strong> and <strong>packet reordering (Multidisorder)</strong>. Unlike VPNs, your traffic never leaves your direct connection — only blocked domains get modified packets.</p>
+    </div>
+  </div>
+</section>
+
+<style>
+.how-it-works {
+  padding: 8rem 2rem;
+  position: relative;
+}
+
+.container {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.section-header {
+  text-align: center;
+  margin-bottom: 4rem;
+}
+
+.section-tag {
+  display: inline-block;
+  padding: 0.4rem 1rem;
+  background: rgba(102, 126, 234, 0.1);
+  border: 1px solid rgba(102, 126, 234, 0.2);
+  border-radius: 100px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #667eea;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin-bottom: 1.5rem;
+}
+
+.section-title {
+  font-size: clamp(2rem, 5vw, 3rem);
+  font-weight: 800;
+  color: #fff;
+  margin-bottom: 1rem;
+  letter-spacing: -1px;
+}
+
+.section-desc {
+  font-size: 1.1rem;
+  color: rgba(255, 255, 255, 0.5);
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.step {
+  display: flex;
+  gap: 2rem;
+  align-items: flex-start;
+  padding: 2rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  transition: all 0.3s ease;
+}
+
+.step:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(102, 126, 234, 0.2);
+}
+
+.step-number {
+  font-size: 2rem;
+  font-weight: 900;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  min-width: 60px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.step-content h3 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 0.5rem;
+}
+
+.step-content p {
+  color: rgba(255, 255, 255, 0.5);
+  line-height: 1.7;
+}
+
+.step-content code {
+  font-family: 'JetBrains Mono', monospace;
+  background: rgba(102, 126, 234, 0.1);
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.85em;
+  color: #667eea;
+}
+
+.tech-note {
+  margin-top: 3rem;
+  padding: 2rem;
+  background: rgba(102, 126, 234, 0.05);
+  border: 1px solid rgba(102, 126, 234, 0.15);
+  border-radius: 16px;
+}
+
+.tech-note h4 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 0.75rem;
+}
+
+.tech-note p {
+  color: rgba(255, 255, 255, 0.5);
+  line-height: 1.7;
+  font-size: 0.95rem;
+}
+
+.tech-note strong {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+@media (max-width: 640px) {
+  .step {
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .how-it-works {
+    padding: 4rem 1.5rem;
+  }
+}
+</style>

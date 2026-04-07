@@ -20,31 +20,31 @@ func (a *App) setupTray() {
 func (a *App) onTrayReady() {
 	systray.SetIcon(iconData)
 	systray.SetTitle("Unbound")
-	systray.SetTooltip("Unbound DPI Bypass Engine")
+	systray.SetTooltip("Unbound — двигатель обхода DPI")
 
-	mStatus := systray.AddMenuItem("Status: Stopped", "Current engine status")
+	mStatus := systray.AddMenuItem("Статус: Отключено", "Текущий статус двигателя")
 	mStatus.Disable()
-	
+
 	systray.AddSeparator()
-	
-	mShow := systray.AddMenuItem("Show Unbound", "Show application window")
-	mConnect := systray.AddMenuItem("Connect", "Start DPI Bypass")
-	mDisconnect := systray.AddMenuItem("Disconnect", "Stop DPI Bypass")
+
+	mShow := systray.AddMenuItem("Развернуть Unbound", "Показать окно приложения")
+	mConnect := systray.AddMenuItem("Подключить", "Запустить обход DPI")
+	mDisconnect := systray.AddMenuItem("Отключить", "Остановить обход DPI")
 	mDisconnect.Hide()
-	
+
 	systray.AddSeparator()
-	mQuit := systray.AddMenuItem("Quit", "Stop engine and quit application")
+	mQuit := systray.AddMenuItem("Выход", "Остановить двигатель и выйти из приложения")
 
 	// Логика обновления меню в зависимости от статуса
 	go func() {
 		for {
 			status := a.manager.GetStatus()
 			if status == providers.StatusRunning {
-				mStatus.SetTitle("Status: Connected")
+				mStatus.SetTitle("Статус: Подключено")
 				mConnect.Hide()
 				mDisconnect.Show()
 			} else {
-				mStatus.SetTitle("Status: Disconnected")
+				mStatus.SetTitle("Статус: Отключено")
 				mConnect.Show()
 				mDisconnect.Hide()
 			}
@@ -72,20 +72,24 @@ func (a *App) onTrayReady() {
 				a.StopEngine()
 
 			case <-mQuit.ClickedCh:
-				go func() {
-					a.manager.Stop()
-					time.Sleep(200 * time.Millisecond)
-					systray.Quit()
-					runtime.Quit(a.ctx)
-					time.Sleep(1 * time.Second)
-					os.Exit(0)
-				}()
+				a.manager.Stop()
+				time.Sleep(200 * time.Millisecond)
+				systray.Quit()
+				runtime.Quit(a.ctx)
+				time.Sleep(1 * time.Second)
+				os.Exit(0)
 			}
 		}
 	}()
 }
 
 func (a *App) onTrayExit() {}
+
+func (a *App) onBeforeClose() bool {
+	// When user clicks X, hide to tray instead of quitting
+	a.HideToTray()
+	return false // false = prevent default close behavior
+}
 
 func (a *App) HideToTray() {
 	runtime.WindowHide(a.ctx)

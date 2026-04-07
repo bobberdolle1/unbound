@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Unbound</string>
+    
+    <!-- Main Screen -->
+    <string name="connect">Подключить</string>
+    <string name="disconnect">Отключить</string>
+    <string name="connecting">Подключение…</string>
+    <string name="status_connected">Подключено</string>
+    <string name="status_disconnected">Отключено</string>
+    <string name="status_connecting">Подключение…</string>
+    
+    <!-- Navigation -->
+    <string name="nav_home">Главная</string>
+    <string name="nav_settings">Настройки</string>
+    <string name="nav_split_tunneling">Раздельное туннелирование</string>
+    <string name="nav_autostart">Автозапуск</string>
+    <string name="nav_about">О приложении</string>
+    
+    <!-- Settings -->
+    <string name="settings_theme">Тема оформления</string>
+    <string name="settings_theme_doodle">Doodle Jump</string>
+    <string name="settings_theme_dark">Современная тёмная</string>
+    <string name="settings_theme_light">Современная светлая</string>
+    <string name="settings_proxy">Прокси</string>
+    <string name="settings_proxy_host">Хост прокси</string>
+    <string name="settings_proxy_port">Порт прокси</string>
+    <string name="settings_dns">DNS-сервер</string>
+    <string name="settings_dns_auto">Автоматически</string>
+    
+    <!-- Autostart Rules -->
+    <string name="autostart_title">Правила автозапуска</string>
+    <string name="autostart_boot">Запуск при загрузке</string>
+    <string name="autostart_boot_desc">Автоматически подключаться при включении устройства</string>
+    <string name="autostart_wifi">Запуск на определённых Wi-Fi</string>
+    <string name="autostart_wifi_desc">Подключаться при подключении к указанным сетям</string>
+    <string name="autostart_apps">Запуск для определённых приложений</string>
+    <string name="autostart_apps_desc">Активировать только при запуске указанных приложений</string>
+    <string name="autostart_add_wifi">Добавить Wi-Fi сеть</string>
+    <string name="autostart_add_app">Добавить приложение</string>
+    
+    <!-- Split Tunneling -->
+    <string name="split_tunnel_title">Раздельное туннелирование</string>
+    <string name="split_tunnel_mode_all">Все приложения</string>
+    <string name="split_tunnel_mode_exclude">Исключить выбранные</string>
+    <string name="split_tunnel_mode_include">Использовать только выбранные</string>
+    <string name="split_tunnel_search">Поиск приложений…</string>
+    <string name="split_tunnel_system">Системные</string>
+    
+    <!-- Permissions -->
+    <string name="permission_vpn">Требуется разрешение VPN для создания локального туннеля</string>
+    <string name="permission_usage_stats">Требуется доступ к статистике использования для определения активного приложения</string>
+    <string name="permission_notification">Требуется разрешение для отображения уведомлений</string>
+    <string name="permission_location">Требуется доступ к местоположению для определения имени Wi-Fi сети</string>
+    <string name="open_settings">Открыть настройки</string>
+    
+    <!-- Notification -->
+    <string name="notification_channel_name">Служба VPN</string>
+    <string name="notification_channel_desc">Уведомления о состоянии VPN-соединения</string>
+    <string name="notification_title">Unbound активен</string>
+    <string name="notification_text">Нажмите для управления</string>
+    
+    <!-- Magisk Module -->
+    <string name="module_title">Модуль ядра (Root)</string>
+    <string name="module_not_installed">Модуль не установлен</string>
+    <string name="module_installed">Модуль установлен</string>
+    <string name="module_enable">Включить модуль</string>
+    <string name="module_disable">Отключить модуль</string>
+    <string name="module_no_root">Root-доступ не обнаружен</string>
+    
+    <!-- Misc -->
+    <string name="save">Сохранить</string>
+    <string name="cancel">Отмена</string>
+    <string name="delete">Удалить</string>
+    <string name="enabled">Включено</string>
+    <string name="disabled">Отключено</string>
+    <string name="error">Ошибка</string>
+    <string name="success">Успешно</string>
+</resources>

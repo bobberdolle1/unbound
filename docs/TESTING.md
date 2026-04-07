@@ -1,8 +1,8 @@
-# 🧪 Unbound Testing Report
+# 🧪 Отчёт по тестированию Unbound
 
-## Test Suite Results
+## Результаты набора тестов
 
-### Unit Tests (Fast)
+### Модульные тесты (быстрые)
 ```bash
 go test -v -short
 ```

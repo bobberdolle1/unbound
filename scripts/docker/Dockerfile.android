@@ -1,0 +1,77 @@
+# ============================================================================
+# UNBOUND — Android Build Image (Docker)
+# ============================================================================
+# Builds the Android APK via the Android SDK + Gradle inside Docker.
+# Usage:
+#   docker build -t unbound-android-builder \
+#       --build-arg VERSION=1.0.4 \
+#       -f scripts/docker/Dockerfile.android .
+#
+#   docker run --rm -v $(pwd)/dist:/output unbound-android-builder
+# ============================================================================
+
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+ARG VERSION=0.0.0
+ARG ANDROID_SDK_VERSION=34
+ARG NDK_VERSION=26.1.10909125
+
+WORKDIR /builder
+
+# ── Install prerequisites ───────────────────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        wget unzip curl git openjdk-17-jdk-headless \
+        file zip alignfs \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Install Android SDK CLI tools ───────────────────────────────────────────
+ENV ANDROID_HOME=/opt/android-sdk
+ENV PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
+
+RUN mkdir -p $ANDROID_HOME/cmdline-tools && \
+    cd $ANDROID_HOME/cmdline-tools && \
+    wget -q "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" \
+        -O cmdline-tools.zip && \
+    unzip cmdline-tools.zip && \
+    mv cmdline-tools latest && \
+    rm cmdline-tools.zip && \
+    yes | sdkmanager --licenses 2>/dev/null || true
+
+# Accept all SDK licenses
+RUN yes | sdkmanager \
+    "platforms;android-${ANDROID_SDK_VERSION}" \
+    "build-tools;${ANDROID_SDK_VERSION}.0.0" \
+    "ndk;${NDK_VERSION}" \
+    "platform-tools" 2>/dev/null || true
+
+# ── Install Go for native binaries ──────────────────────────────────────────
+ENV GO_VERSION=1.23.0
+RUN wget -q "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" && \
+    tar -C /usr/local -xzf "go${GO_VERSION}.linux-amd64.tar.gz" && \
+    rm "go${GO_VERSION}.linux-amd64.tar.gz"
+ENV PATH="/usr/local/go/bin:$PATH"
+
+# ── Install Node.js for frontend ────────────────────────────────────────────
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs && \
+    rm -rf /var/lib/apt/lists/*
+
+# ── Copy project ────────────────────────────────────────────────────────────
+COPY . /builder/
+
+# ── Build ───────────────────────────────────────────────────────────────────
+RUN set -ex; \
+    cd /builder/android; \
+    if [ -f "./gradlew" ]; then \
+        chmod +x ./gradlew; \
+        ./gradlew assembleRelease; \
+    else \
+        gradle assembleRelease; \
+    fi
+
+# ── Copy APKs to output ─────────────────────────────────────────────────────
+CMD set -ex; \
+    mkdir -p /output; \
+    find /builder/android -name "*.apk" -exec cp -v {} /output/ \;

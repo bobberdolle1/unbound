@@ -1,6 +1,6 @@
 {
   "name": "unbound-decky",
-  "version": "0.1.0",
+  "version": "2.0.0",
   "description": "Unbound DPI bypass Decky plugin",
   "scripts": {
     "build": "rollup -c",

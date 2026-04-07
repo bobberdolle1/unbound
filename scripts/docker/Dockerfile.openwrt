@@ -1,0 +1,33 @@
+# ============================================================================
+# UNBOUND — OpenWrt Build Image (Docker / OpenWrt SDK)
+# ============================================================================
+# Builds an IPK package for OpenWrt routers (mipsel / mips / arm).
+# Usage:
+#   docker build -t unbound-openwrt-builder \
+#       --build-arg VERSION=1.0.4 \
+#       --build-arg ARCH=mipsel_24kc \
+#       -f scripts/docker/Dockerfile.openwrt openwrt/unbound-wrt/
+# ============================================================================
+
+# Use official OpenWrt SDK image (if available), otherwise build from scratch
+FROM openwrt/sdk:23.05 AS sdk
+
+ARG VERSION=0.0.0
+ARG ARCH=mipsel_24kc
+
+WORKDIR /builder
+
+# Copy the OpenWrt package feed
+COPY . /builder/feeds/unbound/
+
+# Build the package
+RUN set -ex; \
+    ./scripts/feeds update -a && \
+    ./scripts/feeds install -a && \
+    make defconfig && \
+    make package/feeds/unbound/unbound-wrt/compile V=s
+
+# ── Extract built IPKs ──────────────────────────────────────────────────────
+FROM scratch AS export-stage
+
+COPY --from=sdk /builder/bin/packages/ /bin/packages/

@@ -1,0 +1,422 @@
+# ============================================================================
+# UNBOUND — CI/CD Build Pipeline (GitHub Actions)
+# ============================================================================
+# Triggers:
+#   - Push to main/master
+#   - Pull requests to main/master
+#   - Manual dispatch (workflow_dispatch)
+#   - Tags (v*)
+#
+# Builds:
+#   - Windows (Wails + Go)
+#   - Linux (Go native)
+#   - macOS (Wails + Go)
+#   - Android (Gradle)
+#   - OpenWrt (Docker SDK)
+#   - Steam Deck / Decky Plugin (Node.js)
+#   - Magisk Module (ZIP)
+#
+# Artifacts are uploaded per-platform and optionally released on tags.
+# ============================================================================
+
+name: Build & Release
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: 'Comma-separated targets (windows,linux,macos,android,openwrt,decky,magisk,all)'
+        required: false
+        default: 'all'
+      release:
+        description: 'Create a GitHub Release?'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  GO_VERSION: '1.23'
+  NODE_VERSION: '20'
+  JAVA_VERSION: '17'
+  ANDROID_SDK_VERSION: 34
+
+# ── Concurrency: cancel in-progress runs on same branch ──────────────────────
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ───────────────────────────────────────────────────────────────────────────
+  # Resolve version from wails.json
+  # ───────────────────────────────────────────────────────────────────────────
+  resolve-version:
+    name: Resolve Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: version
+        run: |
+          VER=$(jq -r '.info.productVersion // "0.0.0-dev"' wails.json 2>/dev/null || echo "0.0.0-dev")
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            VER="${{ github.ref_name }}"
+            VER="${VER#v}"  # strip leading 'v'
+          fi
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: $VER"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Windows (Wails GUI)
+  # ───────────────────────────────────────────────────────────────────────────
+  build-windows:
+    name: Windows (Wails)
+    runs-on: windows-latest
+    needs: resolve-version
+    env:
+      VERSION: ${{ needs.resolve-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'frontend'
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Build
+        run: |
+          wails build -clean -o unbound.exe
+        shell: pwsh
+
+      - name: Package release
+        run: |
+          $dist = "unbound-v${{ env.VERSION }}-win64"
+          New-Item -ItemType Directory -Force -Path "release/$dist"
+          Copy-Item "build\bin\unbound.exe" "release\$dist\"
+          Copy-Item "README_RELEASE.txt" "release\$dist\README.txt"
+          Compress-Archive -Path "release\$dist\*" -DestinationPath "release\$dist.zip" -Force
+        shell: pwsh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: unbound-windows
+          path: release/*.zip
+          retention-days: 30
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Linux (Go CLI/native)
+  # ───────────────────────────────────────────────────────────────────────────
+  build-linux:
+    name: Linux (Go)
+    runs-on: ubuntu-latest
+    needs: resolve-version
+    env:
+      VERSION: ${{ needs.resolve-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'frontend'
+
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
+      - name: Build Linux binary
+        run: |
+          go build -trimpath -ldflags="-s -w" -o build/bin/unbound-linux ./...
+
+      - name: Package release
+        run: |
+          mkdir -p release
+          tar -czf "release/unbound-v${VERSION}-linux-amd64.tar.gz" \
+            -C build/bin unbound-linux
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: unbound-linux
+          path: release/*.tar.gz
+          retention-days: 30
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # macOS (Wails GUI)
+  # ───────────────────────────────────────────────────────────────────────────
+  build-macos:
+    name: macOS (Wails Universal)
+    runs-on: macos-latest
+    needs: resolve-version
+    env:
+      VERSION: ${{ needs.resolve-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'frontend'
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Build
+        run: wails build -platform darwin/universal -clean
+
+      - name: Package release
+        run: |
+          mkdir -p release
+          ditto -c -k --sequesterRsrc --keepParent \
+            build/bin/Unbound.app \
+            "release/unbound-v${VERSION}-macos-universal.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: unbound-macos
+          path: release/*.zip
+          retention-days: 30
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Android (Gradle APK)
+  # ───────────────────────────────────────────────────────────────────────────
+  build-android:
+    name: Android (Gradle)
+    runs-on: ubuntu-latest
+    needs: resolve-version
+    env:
+      VERSION: ${{ needs.resolve-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept licenses
+        run: yes | sdkmanager --licenses || true
+
+      - name: Build APK
+        working-directory: android
+        run: |
+          chmod +x ./gradlew 2>/dev/null || true
+          ./gradlew assembleRelease 2>/dev/null || gradle assembleRelease
+
+      - name: Package release
+        run: |
+          mkdir -p release
+          find android -name "*.apk" -exec cp {} release/ \;
+          cd release
+          for apk in *.apk; do
+            mv "$apk" "unbound-v${VERSION}-android-${$apk##*-}" 2>/dev/null || true
+          done
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: unbound-android
+          path: release/*.apk
+          retention-days: 30
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # OpenWrt (Docker SDK → IPK)
+  # ───────────────────────────────────────────────────────────────────────────
+  build-openwrt:
+    name: OpenWrt (Docker IPK)
+    runs-on: ubuntu-latest
+    needs: resolve-version
+    if: ${{ github.event_name != 'pull_request' }}
+    env:
+      VERSION: ${{ needs.resolve-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go (for native binary)
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Cross-compile OpenWrt binary (mipsel)
+        run: |
+          GOOS=linux GOARCH=mipsle GOMIPS=softfloat \
+            go build -trimpath -ldflags="-s -w" \
+            -o build/bin/unbound-openwrt-mipsle ./...
+
+      - name: Build IPK via Docker SDK
+        run: |
+          if [ -d "openwrt/unbound-wrt" ]; then
+            docker build \
+              --build-arg VERSION=${VERSION} \
+              --build-arg ARCH=mipsel_24kc \
+              -t unbound-openwrt-builder \
+              -f scripts/docker/Dockerfile.openwrt \
+              openwrt/unbound-wrt/ || echo "IPK build skipped (SDK not available)"
+          fi
+        continue-on-error: true
+
+      - name: Package release
+        run: |
+          mkdir -p release
+          if [ -f "build/bin/unbound-openwrt-mipsle" ]; then
+            tar -czf "release/unbound-v${VERSION}-openwrt-mipsle.tar.gz" \
+              -C build/bin unbound-openwrt-mipsle
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: unbound-openwrt
+          path: release/*
+          retention-days: 30
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Steam Deck / Decky Loader Plugin
+  # ───────────────────────────────────────────────────────────────────────────
+  build-decky:
+    name: Decky Plugin (Steam Deck)
+    runs-on: ubuntu-latest
+    needs: resolve-version
+    env:
+      VERSION: ${{ needs.resolve-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache-dependency-path: decky-plugin/package-lock.json
+
+      - name: Build plugin
+        working-directory: decky-plugin
+        run: |
+          npm ci
+          npm run build || echo "Build script not defined"
+
+      - name: Package release
+        run: |
+          mkdir -p release
+          tar -czf "release/unbound-v${VERSION}-decky-plugin.tar.gz" \
+            -C decky-plugin .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: unbound-decky
+          path: release/*.tar.gz
+          retention-days: 30
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Magisk Module
+  # ───────────────────────────────────────────────────────────────────────────
+  build-magisk:
+    name: Magisk Module
+    runs-on: ubuntu-latest
+    needs: resolve-version
+    env:
+      VERSION: ${{ needs.resolve-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Package module
+        run: |
+          mkdir -p release
+          cd magisk-module
+          zip -r "../release/unbound-v${VERSION}-magisk.zip" . \
+            -x "*.git*" -x "*.DS_Store"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: unbound-magisk
+          path: release/*.zip
+          retention-days: 30
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Create GitHub Release (on tag or manual dispatch)
+  # ───────────────────────────────────────────────────────────────────────────
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs:
+      - resolve-version
+      - build-windows
+      - build-linux
+      - build-macos
+      - build-android
+      - build-openwrt
+      - build-decky
+      - build-magisk
+    if: >-
+      always() &&
+      (github.ref_type == 'tag' ||
+       (github.event_name == 'workflow_dispatch' &&
+        github.event.inputs.release == 'true'))
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', needs.resolve-version.outputs.version) }}
+          name: "Unbound v${{ needs.resolve-version.outputs.version }}"
+          body: |
+            ## Unbound v${{ needs.resolve-version.outputs.version }}
+
+            ### Platforms
+            - 🪟 Windows (Wails GUI)
+            - 🐧 Linux (CLI/GUI)
+            - 🍎 macOS (Universal)
+            - 🤖 Android (APK)
+            - 🌐 OpenWrt (IPK / mipsle)
+            - 🎮 Steam Deck (Decky Plugin)
+            - 📱 Magisk Module
+
+            ### Installation
+            See [docs/BUILDING.md](docs/BUILDING.md) for build-from-source instructions.
+          files: artifacts/**/*
+          draft: ${{ github.ref_type != 'tag' }}
+          prerelease: ${{ contains(needs.resolve-version.outputs.version, 'dev') || contains(needs.resolve-version.outputs.version, 'beta') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

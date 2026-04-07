@@ -1,0 +1,33 @@
+---
+import BaseHead from "../components/BaseHead.astro";
+import Navbar from "../components/Navbar.astro";
+import Hero from "../components/Hero.astro";
+import Features from "../components/Features.astro";
+import Download from "../components/Download.astro";
+import HowItWorks from "../components/HowItWorks.astro";
+import FAQ from "../components/FAQ.astro";
+import Footer from "../components/Footer.astro";
+import ThemeToggle from "../components/ThemeToggle.astro";
+import "../styles/global.css";
+import "../styles/themes.css";
+---
+
+<html lang="en">
+  <head>
+    <BaseHead />
+  </head>
+  <body class="theme-dark">
+    <ThemeToggle />
+    <Navbar />
+    <Hero />
+    <Features />
+    <Download />
+    <HowItWorks />
+    <FAQ />
+    <Footer />
+
+    <script is:inline src="/scripts/os-detect.js"></script>
+    <script is:inline src="/scripts/fetch-releases.js"></script>
+    <script is:inline src="/scripts/theme-manager.js"></script>
+  </body>
+</html>
