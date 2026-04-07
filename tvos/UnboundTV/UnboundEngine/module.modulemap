@@ -1,0 +1,6 @@
+framework module UnboundEngine {
+  umbrella header "UnboundEngine.h"
+  
+  export *
+  module * { export * }
+}

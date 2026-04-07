@@ -1,0 +1,143 @@
+/*
+ * UnboundPanel styles — Large, TV-friendly layout
+ * Optimized for 10-foot UI with remote navigation
+ */
+
+.container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  height: calc(100vh - 120px);
+  background: #0d0d1a;
+}
+
+.content {
+  align-items: center;
+  gap: 2rem;
+}
+
+/* Status ring with animated dot */
+.statusRing {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  border: 3px solid #333;
+  background: #1a1a2e;
+  transition: border-color 0.3s ease;
+}
+
+.statusDot {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #666;
+  transition: background 0.3s ease;
+}
+
+.connected {
+  background: #00ff88;
+  box-shadow: 0 0 20px rgba(0, 255, 136, 0.5);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 20px rgba(0, 255, 136, 0.5); }
+  50% { box-shadow: 0 0 40px rgba(0, 255, 136, 0.8); }
+}
+
+.statusText {
+  font-size: 1.5rem;
+  color: #ccc;
+  text-align: center;
+  margin-top: 1rem;
+}
+
+/* Main CONNECT button — massive, easy to hit */
+.connectButton {
+  width: 400px;
+  height: 100px;
+  font-size: 2rem;
+  font-weight: bold;
+  letter-spacing: 0.1em;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.connectButton:focus {
+  outline: 3px solid #fff;
+  outline-offset: 4px;
+  transform: scale(1.05);
+}
+
+.connectButton.disconnect {
+  background: linear-gradient(135deg, #f43b47 0%, #453a94 100%);
+}
+
+/* Profile selector */
+.profileSelector {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.profileLabel {
+  font-size: 1.2rem;
+  color: #999;
+}
+
+.profileButtons {
+  display: flex;
+  gap: 1rem;
+}
+
+.profileButtons button {
+  min-width: 120px;
+  font-size: 1rem;
+}
+
+.profileActive {
+  background: #444;
+  border: 2px solid #667eea;
+}
+
+/* Settings */
+.settingsButton {
+  margin-top: 2rem;
+  font-size: 1rem;
+  color: #888;
+}
+
+.settingsPanel {
+  margin-top: 2rem;
+  padding: 2rem;
+  background: #1a1a2e;
+  border: 1px solid #333;
+  border-radius: 8px;
+  max-width: 500px;
+}
+
+.settingsTitle {
+  font-size: 1.3rem;
+  color: #fff;
+  margin-bottom: 1rem;
+}
+
+.settingsItem {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #222;
+}
+
+.settingsItem span {
+  color: #aaa;
+  font-size: 1rem;
+}

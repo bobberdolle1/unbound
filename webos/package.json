@@ -1,0 +1,31 @@
+{
+  "name": "unbound-webos",
+  "version": "1.0.0",
+  "description": "Unbound DPI Bypass for LG WebOS",
+  "main": "src/index.js",
+  "scripts": {
+    "serve": "enact serve",
+    "build": "enact build",
+    "package": "enact pack",
+    "ares-package": "ares-package ./dist com.unbound.app",
+    "deploy": "ares-install -d target com.unbound.app.ipk"
+  },
+  "dependencies": {
+    "@enact/core": "^4.7.0",
+    "@enact/ui": "^4.7.0",
+    "@enact/spotlight": "^4.7.0",
+    "@enact/moonstone": "^4.7.0",
+    "@enact/ilib": "^4.7.0",
+    "ilib": "^14.19.0",
+    "prop-types": "^15.8.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@enact/cli": "^4.2.0",
+    "ares-cli": "^2.4.0"
+  },
+  "enact": {
+    "theme": "moonstone"
+  }
+}

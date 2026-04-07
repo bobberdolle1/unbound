@@ -1,0 +1,30 @@
+{
+  "id": "com.unbound.app",
+  "version": "1.0.0",
+  "vendor": "Unbound",
+  "type": "web",
+  "main": "index.html",
+  "title": "Unbound",
+  "icon": "icon.png",
+  "largeIcon": "largeIcon.png",
+  "iconColor": "#1a1a2e",
+  "splashBackground": "splash.png",
+  "bgImage": true,
+  "support360Video": false,
+  "supportTouch": false,
+  "requiredPermissions": [
+    "time.query",
+    "activity.operation"
+  ],
+  "vendorExtension": [
+    "com.webos.service.networkinput.getPointerInputCapability"
+  ],
+  "supportQueryableLaunchPoint": true,
+  "disableBackHistoryAPI": true,
+  "accessibilityModes": {
+    "magnifier": false,
+    "highContrast": false,
+    "grayscale": false,
+    "reduceTransparency": false
+  }
+}

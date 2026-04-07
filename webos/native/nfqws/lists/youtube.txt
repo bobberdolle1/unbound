@@ -1,0 +1,30 @@
+# YouTube domain list for Unbound WebOS
+# These domains will have their traffic routed through NFQUEUE for DPI bypass
+youtube.com
+www.youtube.com
+m.youtube.com
+youtubei.googleapis.com
+ytimg.com
+i.ytimg.com
+s.ytimg.com
+ytimg.l.google.com
+googlevideo.com
+r1---sn-4g5e6nsr.googlevideo.com
+r2---sn-4g5e6nsr.googlevideo.com
+r3---sn-4g5e6nsr.googlevideo.com
+r4---sn-4g5e6nsr.googlevideo.com
+r5---sn-4g5e6nsr.googlevideo.com
+r6---sn-4g5e6nsr.googlevideo.com
+r7---sn-4g5e6nsr.googlevideo.com
+r8---sn-4g5e6nsr.googlevideo.com
+r9---sn-4g5e6nsr.googlevideo.com
+r10---sn-4g5e6nsr.googlevideo.com
+gvt1.com
+ggpht.com
+yt3.ggpht.com
+lh3.googleusercontent.com
+video-stats.l.google.com
+creator-studio.googleapis.com
+youtube.googleapis.com
+youtube-nocookie.com
+youtu.be
