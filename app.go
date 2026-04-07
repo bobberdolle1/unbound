@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
-	"time"
+	"sync"
 	"syscall"
+	"time"
 
 	"unbound/engine"
 	"unbound/engine/providers"
@@ -308,17 +309,40 @@ func (a *App) GetLivePing() map[string]interface{} {
 	if a.manager.GetStatus() != providers.StatusRunning {
 		return map[string]interface{}{"active": false}
 	}
-	// Проверяем реальный обход — тестируем YouTube (основная заблокированная цель)
-	latency, err := engine.SimplePing(a.ctx, "https://www.youtube.com")
-	if err != nil {
-		// Fallback: пробуем Discord
-		latency2, err2 := engine.SimplePing(a.ctx, "https://discord.com")
-		if err2 != nil {
-			return map[string]interface{}{"active": true, "latency": 0, "status": "blocked"}
-		}
-		return map[string]interface{}{"active": true, "latency": latency2.Milliseconds(), "status": "ok"}
+	targets := []string{
+		"https://www.youtube.com",
+		"https://discord.com",
+		"https://x.com",
+		"https://www.instagram.com",
 	}
-	return map[string]interface{}{"active": true, "latency": latency.Milliseconds(), "status": "ok"}
+
+	var minLatency time.Duration = -1
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	for _, t := range targets {
+		wg.Add(1)
+		go func(url string) {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(a.ctx, 2*time.Second)
+			defer cancel()
+			lat, err := engine.SimplePing(ctx, url)
+			if err == nil {
+				mu.Lock()
+				if minLatency == -1 || lat < minLatency {
+					minLatency = lat
+				}
+				mu.Unlock()
+			}
+		}(t)
+	}
+	wg.Wait()
+
+	if minLatency == -1 {
+		return map[string]interface{}{"active": true, "latency": 0, "status": "blocked"}
+	}
+	
+	return map[string]interface{}{"active": true, "latency": minLatency.Milliseconds(), "status": "ok"}
 }
 
 func (a *App) GetAppVersion() string {

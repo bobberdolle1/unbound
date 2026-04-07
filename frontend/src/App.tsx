@@ -230,45 +230,7 @@ export default function App() {
         discordCacheAutoClean: loadedSettings.discordCacheAutoClean || false
       });
     }).catch(() => {});
-    
     EventsOn('status_changed', (newStatus: string) => setStatus(newStatus));
-    EventsOn('privilege_error', (msg: string) => {
-      setPrivilegeError(msg);
-    });
-    EventsOn('engine_error', (msg: string) => {
-      ShowNotification("Ошибка движка", msg);
-      setStatus("Stopped");
-    });
-    EventsOn('notification', (data: any) => {
-      // Внутреннее уведомление-тост
-      setToasts(prev => [...prev, {
-        id: Date.now(),
-        type: data.type || 'info',
-        title: data.title,
-        message: data.message
-      }]);
-      
-      setScanLogs(prev => [...prev, `🔔 ${data.title}: ${data.message}`]);
-    });
-    EventsOn('autotune_start', (running: boolean) => {
-      setIsScanning(running);
-    });
-    EventsOn('engine_log', (msg: string) => {
-      setLogs(prev => [...prev, msg]);
-    });
-    EventsOn('autotune_complete', (data: {success: boolean, profile: string}) => {
-      setScanSuccess(data.success);
-      if (data.success && data.profile) {
-        setSelectedProfile(data.profile);
-        setScanProgress(`✅ Готово! Профиль: ${data.profile}`);
-      } else {
-        setScanProgress('❌ Рабочий профиль не найден. Проверьте права администратора и соединение.');
-      }
-      setTimeout(() => {
-        setScanSuccess(null);
-        setScanProgress('');
-      }, 8000);
-    });
     
     const interval = setInterval(() => {
       if (!isScanning && status === 'Running') {
@@ -307,6 +269,48 @@ export default function App() {
       });
     }
   }, [selectedEngine]);
+
+  useEffect(() => {
+    EventsOn('privilege_error', (msg: string) => {
+      setPrivilegeError(msg);
+    });
+    EventsOn('engine_error', (msg: string) => {
+      ShowNotification("Ошибка движка", msg);
+      setStatus("Stopped");
+    });
+    EventsOn('notification', (data: any) => {
+      setToasts(prev => {
+        // Prevent exact duplicates within short timeframes if wails glitch occurs
+        if (prev.some(t => t.title === data.title && t.message === data.message)) return prev;
+        return [...prev, {
+          id: Date.now() + Math.random(),
+          type: data.type || 'info',
+          title: data.title,
+          message: data.message
+        }];
+      });
+      setScanLogs(prev => [...prev, `🔔 ${data.title}: ${data.message}`]);
+    });
+    EventsOn('autotune_start', (running: boolean) => {
+      setIsScanning(running);
+    });
+    EventsOn('engine_log', (msg: string) => {
+      setLogs(prev => [...prev, msg]);
+    });
+    EventsOn('autotune_complete', (data: {success: boolean, profile: string}) => {
+      setScanSuccess(data.success);
+      if (data.success && data.profile) {
+        setSelectedProfile(data.profile);
+        setScanProgress(`✅ Готово! Профиль: ${data.profile}`);
+      } else {
+        setScanProgress('❌ Рабочий профиль не найден. Проверьте права администратора и соединение.');
+      }
+      setTimeout(() => {
+        setScanSuccess(null);
+        setScanProgress('');
+      }, 8000);
+    });
+  }, []);
 
   useEffect(() => {
     if (isLogExpanded && settings.showLogs && !isUserScrolling) {
@@ -832,23 +836,23 @@ export default function App() {
 
             {/* Подвал настроек */}
             <div className="px-4 py-2 space-y-2 mb-2 relative z-[60]">
-               <button 
+              <button 
                 onClick={handleRunDiagnostics}
-                className="w-full flex items-center justify-center gap-2 py-2 sketch-box bg-blue-50 hover:bg-blue-100 text-blue-800 font-bold text-sm transition-all duration-150"
+                className="w-full flex items-center justify-center gap-2 py-2 sketch-box bg-blue-50 hover:bg-blue-100 text-blue-800 font-bold text-sm transition-all duration-150 hover:scale-[1.02] active:scale-[0.98]"
               >
                 <SketchyTerminal className="w-4 h-4" />
                 Диагностика
               </button>
               <button 
                 onClick={handleClearCache}
-                className="w-full flex items-center justify-center gap-2 py-2 sketch-box bg-gray-50 hover:bg-gray-100 text-gray-800 font-bold text-sm transition-all duration-150"
+                className="w-full flex items-center justify-center gap-2 py-2 sketch-box bg-gray-50 hover:bg-gray-100 text-gray-800 font-bold text-sm transition-all duration-150 hover:scale-[1.02] active:scale-[0.98]"
               >
                 <SketchyX className="w-4 h-4" />
                 Очистить кэш Discord
               </button>
               <button 
                 onClick={handleKillWinws2}
-                className="w-full flex items-center justify-center gap-2 py-2 sketch-box bg-red-50 hover:bg-red-100 text-red-800 font-bold text-sm transition-all duration-150"
+                className="w-full flex items-center justify-center gap-2 py-2 sketch-box bg-red-50 hover:bg-red-100 text-red-800 font-bold text-sm transition-all duration-150 hover:scale-[1.02] active:scale-[0.98]"
               >
                 <SketchyX className="w-4 h-4" />
                 Завершить winws2.exe
