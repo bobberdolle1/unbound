@@ -131,6 +131,20 @@ func (a *App) StartEngine(engineName string, profileName string) error {
 	logger := engine.GetLogger()
 	notifMgr := engine.GetNotificationManager()
 	
+	if engineName == "" || engineName == " " {
+		engines := a.manager.GetEngineNames()
+		if len(engines) > 0 {
+			engineName = engines[0]
+		}
+	}
+	
+	if profileName == "" || profileName == " " {
+		profiles := a.manager.GetProfiles(engineName)
+		if len(profiles) > 0 {
+			profileName = profiles[0]
+		}
+	}
+
 	logger.Infof("App", "StartEngine called: engine=%s, profile=%s", engineName, profileName)
 	wailsruntime.LogInfof(a.ctx, "StartEngine called: engine=%s, profile=%s", engineName, profileName)
 	
@@ -177,12 +191,12 @@ func (a *App) StartEngine(engineName string, profileName string) error {
 	
 	if err == nil {
 		logger.Infof("App", "Engine started successfully: %s", profileName)
-		notifMgr.Success("Engine Started", fmt.Sprintf("Profile: %s", profileName))
+		notifMgr.Success("Успешный запуск", fmt.Sprintf("Профиль: %s", profileName))
 		wailsruntime.EventsEmit(a.ctx, "status_changed", "Running")
 		wailsruntime.LogInfof(a.ctx, "Started: %s", profileName)
 	} else {
 		logger.Errorf("App", "Failed to start engine: %v", err)
-		notifMgr.Error("Engine Failed", fmt.Sprintf("Failed to start: %v", err))
+		notifMgr.Error("Ошибка запуска", fmt.Sprintf("Не удалось произвести запуск: %v", err))
 		wailsruntime.LogErrorf(a.ctx, "Start failed: %v", err)
 		wailsruntime.EventsEmit(a.ctx, "engine_error", err.Error())
 	}
