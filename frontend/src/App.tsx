@@ -248,12 +248,7 @@ export default function App() {
         message: data.message
       }]);
       
-      // Системное уведомление если разрешено
-      if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification(data.title, { body: data.message });
-      } else {
-        setScanLogs(prev => [...prev, `🔔 ${data.title}: ${data.message}`]);
-      }
+      setScanLogs(prev => [...prev, `🔔 ${data.title}: ${data.message}`]);
     });
     EventsOn('autotune_start', (running: boolean) => {
       setIsScanning(running);
@@ -266,12 +261,6 @@ export default function App() {
       if (data.success && data.profile) {
         setSelectedProfile(data.profile);
         setScanProgress(`✅ Готово! Профиль: ${data.profile}`);
-        if ('Notification' in window && Notification.permission === 'granted') {
-          new Notification('Автоподбор завершён', {
-            body: `Найден рабочий профиль: ${data.profile}`,
-            icon: '/icon.png'
-          });
-        }
       } else {
         setScanProgress('❌ Рабочий профиль не найден. Проверьте права администратора и соединение.');
       }
