@@ -335,8 +335,18 @@ export default function App() {
         console.log('[DEBUG] Stopping engine...');
         await StopEngine();
       } else {
-        console.log('[DEBUG] Starting engine:', selectedEngine, selectedProfile);
-        await StartEngine(selectedEngine, selectedProfile);
+        let eToStart = selectedEngine;
+        if (!eToStart && engines.length > 0) {
+          eToStart = engines[0];
+          setSelectedEngine(eToStart);
+        }
+        let pToStart = selectedProfile;
+        if (!pToStart && profiles.length > 0) {
+          pToStart = profiles[0];
+          setSelectedProfile(pToStart);
+        }
+        console.log('[DEBUG] Starting engine:', eToStart, pToStart);
+        await StartEngine(eToStart || "", pToStart || "");
       }
     } catch (err) {
       console.error('[ERROR] toggleConnection failed:', err);
