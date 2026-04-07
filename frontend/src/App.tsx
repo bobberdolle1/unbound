@@ -175,61 +175,6 @@ export default function App() {
   const logsContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
-    }
-    
-    // Проверка прав при запуске
-    const checkAdmin = async () => {
-      try {
-        const hasPriv = await CheckPrivileges();
-        if (!hasPriv) {
-          setPrivilegeError('Требуются права администратора. Перезапустите приложение от имени администратора.');
-        }
-      } catch (err) {
-        console.error('Privilege check failed:', err);
-        setPrivilegeError('Требуются права администратора. Перезапустите приложение от имени администратора.');
-      }
-    };
-    
-    checkAdmin();
-    
-    // Проверка конфликтов при запуске
-    const checkConflicts = async () => {
-      try {
-        const conflicts = await CheckConflicts();
-        if (conflicts && conflicts.length > 0) {
-          setConflictWarning(conflicts);
-        }
-      } catch (err) {
-        console.error('Conflict check failed:', err);
-      }
-    };
-    
-    checkConflicts();
-    
-    GetEngineNames().then((engines: string[]) => {
-      console.log('[DEBUG] Loaded engines:', engines);
-      setEngines(engines || []);
-      if (engines && engines.length > 0) {
-        console.log('[DEBUG] Setting selectedEngine to:', engines[0]);
-        setSelectedEngine(engines[0]);
-      }
-    });
-    
-    GetSettings().then((loadedSettings: any) => {
-      setSettings({
-        autoStart: loadedSettings.autoStart || false,
-        startMinimized: loadedSettings.startMinimized || false,
-        defaultProfile: loadedSettings.defaultProfile || 'Unbound Ultimate (God Mode)',
-        startupProfileMode: loadedSettings.startupProfileMode || 'Last Used',
-        gameFilter: loadedSettings.gameFilter !== undefined ? loadedSettings.gameFilter : false,
-        autoUpdateEnabled: loadedSettings.autoUpdateEnabled !== undefined ? loadedSettings.autoUpdateEnabled : true,
-        showLogs: loadedSettings.showLogs !== undefined ? loadedSettings.showLogs : true,
-        enableTCPTimestamps: loadedSettings.enableTCPTimestamps || false,
-        discordCacheAutoClean: loadedSettings.discordCacheAutoClean || false
-      });
-    }).catch(() => {});
     EventsOn('status_changed', (newStatus: string) => setStatus(newStatus));
     
     const interval = setInterval(() => {
@@ -253,6 +198,51 @@ export default function App() {
       clearInterval(pingInterval);
     };
   }, [isScanning, status]);
+
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+    
+    const checkAdmin = async () => {
+      try {
+        const hasPriv = await CheckPrivileges();
+        if (!hasPriv) {
+          setPrivilegeError('Требуются права администратора. Перезапустите приложение от имени администратора.');
+        }
+      } catch (err) {
+        setPrivilegeError('Требуются права администратора. Перезапустите приложение от имени администратора.');
+      }
+    };
+    checkAdmin();
+    
+    const checkConflicts = async () => {
+      try {
+        const conflicts = await CheckConflicts();
+        if (conflicts && conflicts.length > 0) setConflictWarning(conflicts);
+      } catch (err) {}
+    };
+    checkConflicts();
+    
+    GetEngineNames().then((e: string[]) => {
+      setEngines(e || []);
+      if (e && e.length > 0) setSelectedEngine(e[0]);
+    });
+    
+    GetSettings().then((s: any) => {
+      setSettings({
+        autoStart: s.autoStart || false,
+        startMinimized: s.startMinimized || false,
+        defaultProfile: s.defaultProfile || 'Unbound Ultimate (God Mode)',
+        startupProfileMode: s.startupProfileMode || 'Last Used',
+        gameFilter: s.gameFilter !== undefined ? s.gameFilter : false,
+        autoUpdateEnabled: s.autoUpdateEnabled !== undefined ? s.autoUpdateEnabled : true,
+        showLogs: s.showLogs !== undefined ? s.showLogs : true,
+        enableTCPTimestamps: s.enableTCPTimestamps || false,
+        discordCacheAutoClean: s.discordCacheAutoClean || false
+      });
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (selectedEngine) {
