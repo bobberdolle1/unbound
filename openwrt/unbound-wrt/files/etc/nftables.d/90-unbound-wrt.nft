@@ -1,0 +1,37 @@
+#!/usr/sbin/nft -f
+#
+# /etc/nftables.d/90-unbound-wrt.nft
+#
+# Intercepts HTTP/HTTPS traffic (TCP 80/443) from br-lan and redirects
+# it to NFQUEUE 200 for DPI bypass processing by nfqws.
+#
+# Excludes: local network destinations, router itself.
+#
+
+table inet fw4 {
+
+    chain unbound_wrt_forward {
+        type filter hook forward priority -1; policy accept;
+
+        iifname "br-lan" goto unbound_wrt_lan_check
+    }
+
+    chain unbound_wrt_lan_check {
+        # Bypass: broadcast and multicast
+        ip daddr 224.0.0.0/4 return
+        ip daddr 255.255.255.255 return
+
+        # Bypass: RFC1918 local subnets
+        ip daddr 10.0.0.0/8 return
+        ip daddr 172.16.0.0/12 return
+        ip daddr 192.168.0.0/16 return
+
+        # Bypass: link-local
+        ip daddr 169.254.0.0/16 return
+
+        # Intercept: HTTP and HTTPS only
+        tcp dport { 80, 443 } queue num 200
+
+        return
+    }
+}
