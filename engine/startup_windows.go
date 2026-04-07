@@ -9,7 +9,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
+
+
 
 const (
 	taskName        = "UnboundDPIBypass"
@@ -57,6 +60,7 @@ func EnableAutoStart() error {
 
 	logger.Infof("Startup", "Creating scheduled task: %s", taskName)
 	cmd := exec.Command("schtasks.exe", args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: CREATE_NO_WINDOW}
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		logger.Errorf("Startup", "Failed to create scheduled task: %v, output: %s", err, string(output))
@@ -72,6 +76,7 @@ func DisableAutoStart() error {
 	logger.Info("Startup", "Disabling auto-start")
 	
 	cmd := exec.Command("schtasks.exe", "/Delete", "/TN", taskName, "/F")
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: CREATE_NO_WINDOW}
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		outputStr := string(output)
@@ -92,6 +97,7 @@ func IsAutoStartEnabled() (bool, error) {
 	logger.Debug("Startup", "Checking auto-start status")
 	
 	cmd := exec.Command("schtasks.exe", "/Query", "/TN", taskName, "/FO", "LIST")
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: CREATE_NO_WINDOW}
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		outputStr := string(output)
@@ -111,6 +117,7 @@ func IsAutoStartEnabled() (bool, error) {
 
 func GetAutoStartTaskInfo() (map[string]string, error) {
 	cmd := exec.Command("schtasks.exe", "/Query", "/TN", taskName, "/FO", "LIST", "/V")
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: CREATE_NO_WINDOW}
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("failed to query task info: %w", err)

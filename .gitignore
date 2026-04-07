@@ -40,7 +40,7 @@ go.work
 *.swo
 *~
 .kiro
-
+.gemini
 # OS
 .DS_Store
 Thumbs.db

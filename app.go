@@ -141,7 +141,7 @@ func (a *App) StartEngine(engineName string, profileName string) error {
 	if err != nil {
 		logger.Errorf("App", "Privilege check error: %v", err)
 		wailsruntime.LogErrorf(a.ctx, "Privilege check error: %v", err)
-		notifMgr.Error("Privilege Error", "Failed to check administrator privileges")
+		notifMgr.Error("Ошибка прав", "Не удалось проверить права администратора")
 		wailsruntime.EventsEmit(a.ctx, "privilege_error", fmt.Sprintf("Privilege check failed: %v", err))
 		return err
 	}
@@ -152,8 +152,8 @@ func (a *App) StartEngine(engineName string, profileName string) error {
 	if !hasPriv {
 		logger.Error("App", "Administrator privileges required but not granted")
 		wailsruntime.LogError(a.ctx, "Administrator privileges required")
-		notifMgr.Error("Admin Required", "Please restart the application as administrator")
-		wailsruntime.EventsEmit(a.ctx, "privilege_error", "Administrator privileges required. Please restart the application as administrator.")
+		notifMgr.Error("Ошибка прав", "Запустите приложение от имени администратора")
+		wailsruntime.EventsEmit(a.ctx, "privilege_error", "Требуются права администратора. Перезапустите приложение от имени администратора.")
 		return fmt.Errorf("administrator privileges required")
 	}
 	
@@ -399,7 +399,9 @@ func (a *App) KillConflicts() error {
 	}
 	
 	// Сброс драйвера WinDivert
-	exec.Command("sc", "stop", "WinDivert").Run()
+	cmdReset := exec.Command("sc", "stop", "WinDivert")
+	cmdReset.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: CREATE_NO_WINDOW}
+	cmdReset.Run()
 	
 	logger.Info("App", "Конфликтующие процессы и драйверы остановлены")
 	notifMgr.Success("Конфликты устранены", "Все конфликтующие процессы и драйверы остановлены")
