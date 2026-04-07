@@ -1,0 +1,11 @@
+#!/bin/bash
+set -e
+echo "[Unbound] prerm..."
+PF="/var/run/unbound-tpws.pid"
+[ -f "$PF" ] && { P=$(cat "$PF"); [ -n "$P" ] && kill -0 "$P" 2>/dev/null && { kill -TERM "$P" 2>/dev/null||true; sleep 1; kill -0 "$P" 2>/dev/null && kill -KILL "$P" 2>/dev/null||true; }; }
+killall unbound-tpws 2>/dev/null || true
+launchctl unload -w /Library/LaunchDaemons/com.unbound.tpws.plist 2>/dev/null || true
+command -v pfctl >/dev/null 2>&1 && pfctl -F all 2>/dev/null || true
+killall -HUP SpringBoard 2>/dev/null || true
+echo "[Unbound] prerm complete."
+exit 0

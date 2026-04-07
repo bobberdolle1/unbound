@@ -1,0 +1,19 @@
+#!/bin/bash
+set -e
+echo "[Unbound] postinst..."
+BIN="/usr/local/bin/unbound-tpws"
+[ -f "$BIN" ] && chmod 755 "$BIN"
+command -v ldid >/dev/null 2>&1 && [ -f "$BIN" ] && ldid -S "$BIN" 2>/dev/null || true
+mkdir -p /etc/unbound && chmod 755 /etc/unbound
+touch /var/log/unbound-tpws.log && chmod 644 /var/log/unbound-tpws.log
+cat > /etc/unbound/pf.conf << 'EOF'
+rdr pass on lo0 inet proto tcp from any to any port 80  -> 127.0.0.1 port 1993
+rdr pass on lo0 inet proto tcp from any to any port 443 -> 127.0.0.1 port 1993
+EOF
+chmod 644 /etc/unbound/pf.conf
+command -v pfctl >/dev/null 2>&1 && { pfctl -e 2>/dev/null||true; pfctl -f /etc/unbound/pf.conf 2>/dev/null||true; }
+PL="/Library/LaunchDaemons/com.unbound.tpws.plist"
+[ -f "$PL" ] && { chmod 644 "$PL"; chown root:wheel "$PL"; launchctl load -w "$PL" 2>/dev/null||true; }
+killall -HUP SpringBoard 2>/dev/null || true
+echo "[Unbound] postinst complete."
+exit 0

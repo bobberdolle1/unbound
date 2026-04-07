@@ -1,0 +1,46 @@
+# Unbound Legacy -- tpws Engine Cross-Compilation for iOS
+# Targets: armv7 (iOS 6.1.3) + arm64 (iOS 15+)
+
+CC ?= clang
+OPTIMIZE ?= -Os
+
+COMMON_CFLAGS = -std=gnu99 $(OPTIMIZE) -ffunction-sections -fdata-sections \
+	-Wno-address-of-packed-member -Ddarwin -DIOS
+
+COMMON_LDFLAGS = -Wl,-dead_strip
+COMMON_LIBS = -lz -lpthread
+
+SRC_CORE = tpws.c tpws_conn.c helpers.c hostlist.c protocol.c tamper.c \
+	   resolver.c redirect.c params.c pools.c sec.c gzip.c ipset.c
+
+SRC_EPOLL = epoll-shim/src/epoll_shim.c
+INCLUDES = -I. -Imacos -Iepoll-shim/include
+
+# armv7 (iOS 6.1.3)
+ARMV7_CFLAGS = $(COMMON_CFLAGS) $(INCLUDES) -miphoneos-version-min=6.1 -arch armv7
+
+# arm64 (iOS 15+)
+ARM64_CFLAGS = $(COMMON_CFLAGS) $(INCLUDES) -miphoneos-version-min=15.0 -arch arm64
+
+all: tpws-universal
+
+tpws-armv7:
+	$(CC) $(ARMV7_CFLAGS) -o tpws-armv7 $(SRC_CORE) $(SRC_EPOLL) $(COMMON_LIBS) $(COMMON_LDFLAGS)
+	strip tpws-armv7
+
+tpws-arm64:
+	$(CC) $(ARM64_CFLAGS) -o tpws-arm64 $(SRC_CORE) $(SRC_EPOLL) $(COMMON_LIBS) $(COMMON_LDFLAGS)
+	strip tpws-arm64
+
+tpws-universal: tpws-armv7 tpws-arm64
+	lipo -create -output tpws tpws-armv7 tpws-arm64
+	rm -f tpws-armv7 tpws-arm64
+	@echo "==> Built universal tpws (armv7 + arm64)"
+
+armv7: tpws-armv7
+arm64: tpws-arm64
+
+clean:
+	rm -f tpws tpws-armv7 tpws-arm64 *.o
+
+.PHONY: all armv7 arm64 clean tpws-universal

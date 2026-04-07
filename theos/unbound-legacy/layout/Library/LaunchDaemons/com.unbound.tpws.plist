@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>com.unbound.tpws</string>
+    <key>ProgramArguments</key><array><string>/usr/local/bin/unbound-tpws</string><string>--port</string><string>1993</string></array>
+    <key>RunAtLoad</key><true/>
+    <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+    <key>StandardOutPath</key><string>/var/log/unbound-tpws.log</string>
+    <key>StandardErrorPath</key><string>/var/log/unbound-tpws.log</string>
+    <key>ProcessType</key><string>Background</string>
+    <key>ThrottleInterval</key><integer>10</integer>
+</dict>
+</plist>
