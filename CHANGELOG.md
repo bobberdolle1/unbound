@@ -2,6 +2,45 @@
 
 Все значимые изменения проекта документируются в этом файле.
 
+## [1.1.0] - 2026-04-07
+### macOS Port — Cross-Platform Architecture
+- **SpoofDPI Engine**: Новый движок обхода DPI для macOS на базе SpoofDPI (SOCKS5 прокси). Заменяет nfqws/pf. Полная замена `engine/providers/zapret_macos.go`.
+- **Системная маршрутизация**: Автоматическая настройка SOCKS-прокси через `networksetup` с эскалацией привилегий через `osascript` (Touch ID / пароль).
+- **Автозапуск через launchd**: Генерация `.plist` в `~/Library/LaunchAgents/com.bobberdolle1.unbound.plist` вместо Windows Task Scheduler.
+- **Кроссплатформенные пути**: Конфиг перемещён из `%APPDATA%\Unbound` в `~/Library/Application Support/Unbound` (macOS) и `~/.config/Unbound` (Linux).
+- **Discord Cache**: Очистка кэша теперь указывает на `~/Library/Application Support/discord/Cache` на macOS.
+- **Детекция конфликтов**: macOS-специфичная проверка через `pgrep`/`pkill` (spoofdpi, v2ray, clash, shadowsocks, VPN).
+- **Диагностика**: Проверка наличия SpoofDPI, доступности сетевых сервисов, прав администратора.
+- **Graceful Shutdown**: При закрытии приложения SOCKS-прокси автоматически отключается через Wails `OnShutdown`, чтобы пользователь не потерял интернет.
+- **CLI режим**: Headless-режим теперь работает и на macOS (без Windows-specific `AttachConsole`).
+
+### Architectural Changes
+- **`BypassProvider` Interface**: Унифицированный интерфейс для всех платформ. Автоподбор и healthcheck теперь работают через интерфейс, а не конкретный тип.
+- **`BypassProviderWithCallbacks`**: Расширенный интерфейс для провайдеров с поддержкой callback'ов статуса и логов.
+- **Build Tag Isolation**: Все платформенно-специфичные файлы изолированы через `//go:build windows` / `//go:build darwin` / `//go:build linux`. Кросс-компиляция не ломает другие платформы.
+- **Конфигурация autostart**: `applyAutoStartSetting()` делегирована в платформенно-специфичные файлы (`config_windows.go`, `config_darwin.go`, `config_linux.go`).
+- **Диагностика**: `diagnostics.go` содержит только общий тип `DiagnosticResult`. Реализации перенесены в `diagnostics_windows.go` и `diagnostics_darwin.go`.
+
+### macOS Build
+- Добавлен `macos/README.md` — полная документация модуля (зависимости, сборка, запуск, troubleshooting).
+- Добавлен `macos/build.sh` — скрипт сборки macOS `.app` бандла (Intel, Apple Silicon, Universal).
+
+### Fixed
+- **Cross-platform compilation**: Windows, macOS (amd64/arm64), Linux код компилируется без ошибок в рамках своих build tags.
+- **Health check**: Больше не ссылается на Windows-провайдер на других платформах.
+- **Startup validator**: macOS больше не требует nfqws/dvtws; проверяет наличие spoofdpi (как warning, может быть в PATH).
+- **Scanner**: Помечен как `//go:build windows`, не мешает кросс-компиляции.
+
+## [1.0.5] — Unreleased
+### Добавлено
+- **OpenWRT-пакет (Unbound-WRT)**: Полная интеграция на уровне роутера — защита всей LAN без настройки клиентов.
+  - Пакет `nfqws-unbound`: кросс-компиляция nfqws из zapret (bol-van), оптимизация `-Os` + strip для экономии flash.
+  - `procd` init-скрипт с маппингом стратегий (multidisorder, split-tls, fake-ping, disorder+fake).
+  - Правила `fw4/nftables`: перехват TCP 80/443 с `br-lan` в NFQUEUE 200, исключение RFC1918/broadcast.
+  - UCI-конфиг по умолчанию в `/etc/config/unbound`.
+  - `luci-app-unbound`: LuCI CBI-интерфейс — переключатель вкл/выкл, выбор стратегии, исключения доменов/IP.
+  - Документация: сборка через OpenWrt SDK, установка `.ipk`, диагностика.
+
 ## [1.0.4] - 2026-04-07
 ### Добавлено
 - **Русский интерфейс**: Полный перевод UI на русский язык — все кнопки, статусы, уведомления, настройки и сообщения об ошибках.
