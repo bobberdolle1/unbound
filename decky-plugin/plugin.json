@@ -1,0 +1,11 @@
+{
+  "name": "Unbound",
+  "author": "Unbound Contributors",
+  "flags": [],
+  "api_version": 1,
+  "version": "0.1.0",
+  "publish": {
+    "tags": ["networking", "bypass", "dpi"],
+    "description": "DPI/censorship bypass toggle for Steam Deck"
+  }
+}

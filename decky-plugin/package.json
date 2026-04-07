@@ -1,0 +1,24 @@
+{
+  "name": "unbound-decky",
+  "version": "0.1.0",
+  "description": "Unbound DPI bypass Decky plugin",
+  "scripts": {
+    "build": "rollup -c",
+    "watch": "rollup -c -w",
+    "test": "echo \"No tests specified\""
+  },
+  "dependencies": {
+    "@decky/ui": "^1.0.0"
+  },
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^21.0.0",
+    "@rollup/plugin-node-resolve": "^13.0.0",
+    "@rollup/plugin-typescript": "^8.0.0",
+    "@types/react": "16.14.0",
+    "preact": "^10.5.0",
+    "rollup": "^2.0.0",
+    "rollup-plugin-import-css": "^3.0.0",
+    "tslib": "^2.3.0",
+    "typescript": "^4.5.0"
+  }
+}

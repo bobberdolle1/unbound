@@ -1,0 +1,25 @@
+[Unit]
+Description=Unbound DPI/Censorship Bypass Daemon
+Documentation=https://github.com/unbound/unbound
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+ExecStart=/usr/bin/unbound-cli start --queue 200
+ExecStop=/usr/bin/unbound-cli stop
+ExecReload=/usr/bin/unbound-cli stop && /usr/bin/unbound-cli start
+PIDFile=/run/unbound-cli.pid
+Restart=on-failure
+RestartSec=5
+WatchdogSec=30
+RuntimeDirectory=unbound
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_ADMIN
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_ADMIN
+NoNewPrivileges=false
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/run
+
+[Install]
+WantedBy=multi-user.target

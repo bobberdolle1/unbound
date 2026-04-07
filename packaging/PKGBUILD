@@ -1,0 +1,38 @@
+# Maintainer: Unbound Contributors <unbound@example.com>
+# PKGBUILD for Arch Linux -- Unbound DPI/censorship bypass
+
+pkgname=unbound-cli
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Linux DPI/censorship bypass daemon wrapping nfqws with nftables management"
+arch=('x86_64' 'aarch64')
+url="https://github.com/unbound/unbound"
+license=('MIT')
+depends=('nftables' 'libnetfilter_queue')
+makedepends=('cargo' 'rustup')
+optdepends=('zapret: provides nfqws binary')
+source=("${pkgname}-${pkgver}.tar.gz::https://github.com/unbound/unbound/archive/v${pkgver}.tar.gz"
+        "unbound.service")
+sha256sums=('SKIP' 'SKIP')
+
+prepare() {
+    cd "${srcdir}/unbound-${pkgver}/linux"
+}
+
+build() {
+    cd "${srcdir}/unbound-${pkgver}/linux"
+    cargo build --release --target-dir target
+}
+
+package() {
+    cd "${srcdir}/unbound-${pkgver}/linux"
+
+    install -Dm755 "target/release/unbound-cli" \
+        "${pkgdir}/usr/bin/unbound-cli"
+
+    install -Dm644 "${srcdir}/unbound.service" \
+        "${pkgdir}/usr/lib/systemd/system/unbound.service"
+
+    install -Dm644 "${srcdir}/../LICENSE" \
+        "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

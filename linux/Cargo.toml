@@ -1,0 +1,40 @@
+[package]
+name = "unbound-cli"
+version = "0.1.0"
+edition = "2021"
+description = "Linux DPI/censorship bypass daemon wrapping nfqws with nftables management"
+authors = ["Unbound Contributors"]
+license = "MIT"
+
+[[bin]]
+name = "unbound-cli"
+path = "src/main.rs"
+
+[dependencies]
+# CLI argument parsing
+clap = { version = "4", features = ["derive"] }
+# Async runtime
+tokio = { version = "1", features = ["full", "signal"] }
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# Signal handling & Unix primitives
+nix = { version = "0.29", features = ["signal", "process"] }
+# Process management
+which = "6"
+# Error handling
+anyhow = "1"
+thiserror = "2"
+# Shell argument parsing
+shell-words = "1"
+# Root check
+libc = "0.2"
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
+codegen-units = 1
