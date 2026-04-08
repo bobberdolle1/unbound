@@ -11,7 +11,7 @@ REM 3. Creates GitHub Release with all binaries
 REM ============================================================================
 
 set "VERSION=v2.0.0"
-set "RELEASE_TITLE=UNBOUND v2.0.0 - Total War on Censorship"
+set "RELEASE_TITLE=UNBOUND v2.0.0"
 set "REPO_ROOT=%~dp0"
 set "DIST_DIR=%REPO_ROOT%dist"
 
@@ -197,11 +197,11 @@ if not errorlevel 1 (
 REM Generate release notes
 echo [INFO] Generating release notes...
 (
-echo # 🚀 UNBOUND v2.0.0 - Total War on Censorship
+echo # 🚀 UNBOUND v2.0.0
 echo.
-echo ## What's New
+echo ## Что нового
 echo.
-echo This is a **major release** that transforms Unbound from a single desktop app into a **complete multi-platform ecosystem** for bypassing DPI censorship.
+echo Это **мажорный релиз**, который превращает Unbound из десктопного приложения в **мощную мультиплатформенную систему** для обхода DPI.
 echo.
 echo ### ✨ Major Features
 echo.
@@ -216,11 +216,11 @@ echo ### 🐛 Bug Fixes
 echo.
 echo - Fixed settings state persistence ^(checkboxes now save properly^)
 echo - Fixed window close behavior ^(minimizes to tray instead of quitting^)
-echo - Fixed AutoTune infinite hang with strict context timeouts
-echo - Removed console flashing during AutoTune on Windows
-echo - Cleaned up unsupported Telegram/MTProto references
+echo - Исправлена проблема с бесконечным зависанием AutoTune
+echo - Убрано мерцание консоли при AutoTune в Windows
+echo - Удалены устаревшие опции MTProto/Telegram
 echo.
-echo ### 📦 Platform Support
+echo ### 📦 Поддерживаемые платформы
 echo.
 echo | Platform | Format | Status |
 echo |----------|--------|--------|
@@ -239,12 +239,12 @@ echo - ✅ **YouTube** - Full 4K streaming support
 echo - ✅ **Discord** - Voice, video, screen sharing
 echo - ✅ **Instagram** - Feed, stories, reels, DMs
 echo - ✅ **Twitter/X** - Timeline, media, search
-echo - ✅ **Facebook** - News feed, marketplace
-echo - ✅ **RuTracker** - Torrent access
+echo - ✅ **Facebook** - Новостная лента, мессенджер
+echo - ✅ **RuTracker** - Доступ к ресурсу
 echo.
 echo ---
 echo.
-echo **Full Changelog**: https://github.com/OWNER/REPO/compare/v1.0.4...%VERSION%
+echo **Полный список изменений**: https://github.com/OWNER/REPO/compare/v1.0.4...%VERSION%
 ) > "%TEMP%\release_notes.md"
 
 REM Collect all artifacts
@@ -288,7 +288,7 @@ echo.
 
 REM Tag the commit
 echo [INFO] Tagging commit with %VERSION%...
-git tag -a %VERSION% -m "UNBOUND %VERSION% - Total War on Censorship"
+git tag -a %VERSION% -m "UNBOUND %VERSION% релиз"
 git push origin %VERSION%
 
 REM Commit version bumps

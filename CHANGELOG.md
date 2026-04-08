@@ -41,6 +41,63 @@
   - `luci-app-unbound`: LuCI CBI-интерфейс — переключатель вкл/выкл, выбор стратегии, исключения доменов/IP.
   - Документация: сборка через OpenWrt SDK, установка `.ipk`, диагностика.
 
+- **Unbound Web Extension**: Кросс-браузерное расширение для Chrome и Firefox (Manifest V3).
+  - **Режим Companion**: UI-панель управления, взаимодействующая с локальным демоном Unbound Desktop через Native Messaging API.
+  - **Режим Standalone Proxy**: Динамическая генерация PAC-скриптов для маршрутизации избранных доменов через внешний HTTPS/SOCKS5 прокси.
+  - **Двойная тема**: "Doodle Jump Minimalism" (светлая) и "Modern Dark" (тёмная) с мгновенным переключением.
+  - **Управление доменами**: UI для добавления/удаления доменов обхода с валидацией ввода.
+  - **Фоновый Service Worker**: Управление состоянием, переподключение, heartbeat для Manifest V3.
+  - **Кросс-браузерная сборка**: Vite + CRXJS для отдельных таргетов Chrome и Firefox.
+  - **Native Messaging Host**: `host_manifest.json` + PowerShell скрипты для регистрации на Windows/macOS/Linux.
+  - **Документация**: `README.md`, `GETTING_STARTED.md`, `PROJECT_SUMMARY.md` внутри модуля.
+
+### Build System — Централизованная система сборки
+- **Мастер-скрипты**:
+  - `build_all.sh` (Unix/macOS/Linux/WSL) — единая точка входа для 10+ платформ: `windows`, `darwin`, `linux`, `linux-steamdeck`, `android`, `ios`, `tvos`, `openwrt`, `webos`, `decky`, `magisk`, `all`.
+  - `build_all.ps1` (Windows PowerShell) — зеркало для Windows с поддержкой Docker-кросс-компиляции.
+- **Docker-образы для изолированной сборки** (`scripts/docker/`):
+  - `Dockerfile.linux` — Linux x86_64 на базе `golang:1.23-bookworm` + Node.js для фронтенда.
+  - `Dockerfile.openwrt` — OpenWrt IPK через `openwrt/sdk:23.05` (mipsel/softfloat).
+  - `Dockerfile.android` — Android APK с полным SDK + NDK внутри `ubuntu:22.04`.
+  - `Dockerfile.decky` — Decky Loader плагин для Steam Deck на `node:20-bookworm-slim`.
+  - `docker-compose.build.yml` — оркестрация всех Docker-сборок с поддержкой `--parallel`.
+- **Платформенные скрипты** (`scripts/build/`):
+  - `build_windows.ps1` — Windows Go-бинарник (с флагом `-Debug`).
+  - `build_linux.sh` — Linux Go-бинарник (с флагом `debug`).
+  - `build_android.sh` — Android APK через Gradle/gradlew.
+  - `build_openwrt.sh` — OpenWrt бинарник (нативно) или IPK (через Docker).
+  - `build_decky.sh` — Decky плагин (нативно или Docker).
+  - `build_magisk.sh` — Magisk Module ZIP.
+- **GitHub Actions CI/CD** (`.github/workflows/main.yml`):
+  - Автоматическая сборка всех платформ при push/PR/tag.
+  - Ручной запуск через `workflow_dispatch` с выбором целей и флагом релиза.
+  - Автоматическое создание GitHub Release с артефактами при теге `v*`.
+  - Артефакты по платформам с хранением 30 дней.
+- **Документация**: `docs/BUILDING.md` — полное руководство: установка зависимостей, Docker, скрипты, CI/CD, troubleshooting, заметки по каждой платформе.
+
+### Принципы
+- **Изоляция**: все новые скрипты живут в `/scripts`, `.github` и `docs` — основной код не затронут.
+- **Local-first**: всё можно собрать локально без CI. Docker опционален для кросс-компиляции.
+- **Zero pollution**: Docker-сборки не устанавливают инструменты на хост-систему.
+
+### Smart TV — Обход DPI на телевизорах (без роутера)
+- **LG WebOS (rooted)**:
+  - Кросс-компиляция `nfqws` из bol-van/zapret для WebOS ARM (`armv7a-neon-webos-linux-gnueabi`).
+  - Enact/React фронтенд с полной навигацией через D-pad пульта (Spotlight).
+  - Фоновый сервис через webosbrew (`/var/lib/webosbrew/init.d/`) — автозапуск при включении ТВ.
+  - Прозрачный перехват трафика через iptables NFQUEUE — весь HTTPS-трафик YouTube проходит через nfqws.
+  - Luna-сервис интеграция через `org.webosbrew.hbchannel.service` (root-выполнение команд).
+  - Профили: Default / Aggressive / Lite с настраиваемыми аргументами zapret.
+- **Apple tvOS (17+)**:
+  - `NEPacketTunnelProvider` через официальный NetworkExtension — без джейлбрейка.
+  - Адаптация C-движка `tpws` (из theos/unbound-legacy) для tvOS ARM64.
+  - SwiftUI интерфейс с элегантным тогглом и фокус-навигацией Siri Remote.
+  - Локальный SOCKS-прокси режим (песочница tvOS, без root).
+  - Swift Package Manager конфигурация сборки.
+- **Документация**: `docs/SMART_TV.md` — полная архитектура, инструкции сборки и деплоя.
+
+---
+
 ## [1.0.4] - 2026-04-07
 ### Добавлено
 - **Русский интерфейс**: Полный перевод UI на русский язык — все кнопки, статусы, уведомления, настройки и сообщения об ошибках.
