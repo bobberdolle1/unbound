@@ -8,8 +8,6 @@ import (
 	"syscall"
 )
 
-const CREATE_NO_WINDOW = 0x08000000
-
 func checkConflictsImpl() []string {
 	conflicts := []string{}
 

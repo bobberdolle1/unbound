@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	_ "embed"
 	"os"
 	"time"
@@ -85,10 +86,10 @@ func (a *App) onTrayReady() {
 
 func (a *App) onTrayExit() {}
 
-func (a *App) onBeforeClose() bool {
+func (a *App) onBeforeClose(ctx context.Context) bool {
 	// When user clicks X, hide to tray instead of quitting
 	a.HideToTray()
-	return false // false = prevent default close behavior
+	return true // true = prevent default close (keep app running)
 }
 
 func (a *App) HideToTray() {
