@@ -62,30 +62,28 @@
 .section-tag {
   display: inline-block;
   padding: 0.4rem 1rem;
-  background: rgba(102, 126, 234, 0.1);
-  border: 1px solid rgba(102, 126, 234, 0.2);
   border-radius: 100px;
   font-size: 0.8rem;
   font-weight: 600;
-  color: #667eea;
   text-transform: uppercase;
   letter-spacing: 2px;
   margin-bottom: 1.5rem;
+  transition: all 0.3s ease;
 }
 
 .section-title {
   font-size: clamp(2rem, 5vw, 3rem);
   font-weight: 800;
-  color: #fff;
   margin-bottom: 1rem;
   letter-spacing: -1px;
+  transition: all 0.3s ease;
 }
 
 .section-desc {
   font-size: 1.1rem;
-  color: rgba(255, 255, 255, 0.5);
   max-width: 600px;
   margin: 0 auto;
+  transition: all 0.3s ease;
 }
 
 .features-grid {
@@ -96,17 +94,12 @@
 
 .feature-card {
   padding: 2rem;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 16px;
   transition: all 0.3s ease;
 }
 
 .feature-card:hover {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(102, 126, 234, 0.3);
   transform: translateY(-4px);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
 }
 
 .feature-icon {
@@ -117,18 +110,18 @@
 .feature-card h3 {
   font-size: 1.25rem;
   font-weight: 700;
-  color: #fff;
   margin-bottom: 0.75rem;
+  transition: all 0.3s ease;
 }
 
 .feature-card p {
-  color: rgba(255, 255, 255, 0.5);
   line-height: 1.7;
   font-size: 0.95rem;
+  transition: all 0.3s ease;
 }
 
 .feature-card p strong {
-  color: rgba(255, 255, 255, 0.8);
+  opacity: 0.8;
 }
 
 @media (max-width: 1024px) {

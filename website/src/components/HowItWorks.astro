@@ -4,36 +4,36 @@
 <section id="how-it-works" class="how-it-works">
   <div class="container">
     <div class="section-header">
-      <span class="section-tag">Simple Setup</span>
-      <h2 class="section-title">One-Click <span class="gradient-text">Freedom</span></h2>
-      <p class="section-desc">From download to uncensored internet in under 60 seconds.</p>
+      <span class="section-tag">Простая установка</span>
+      <h2 class="section-title">Свобода за <span class="gradient-text">60 секунд</span></h2>
+      <p class="section-desc">От скачивания до разблокированного интернета — менее чем за минуту.</p>
     </div>
     <div class="steps">
       <div class="step">
         <div class="step-number">01</div>
         <div class="step-content">
-          <h3>Download & Run</h3>
-          <p>Grab the latest release, extract the archive, and run <code>unbound.exe</code> as Administrator. All dependencies (WinDivert, Lua scripts, winws2 engine) are embedded — nothing else to install.</p>
+          <h3>Скачайте и запустите</h3>
+          <p>Скачайте последний релиз, распакуйте архив и запустите от имени администратора. Все зависимости (WinDivert, Lua-скрипты, движок winws2) встроены — ничего дополнительно устанавливать не нужно.</p>
         </div>
       </div>
       <div class="step">
         <div class="step-number">02</div>
         <div class="step-content">
-          <h3>Hit Auto-Tune</h3>
-          <p>Click "Автоподбор" (Auto-Tune). Unbound parallel-tests 70+ bypass profiles against YouTube, Discord, Telegram, Instagram, Twitter, and RuTracker. Smart scoring finds the profile that unblocks everything.</p>
+          <h3>Нажмите «Автоподбор»</h3>
+          <p>Кликните «Автоподбор». Unbound параллельно протестирует 70+ профилей обхода на YouTube, Discord, Instagram, Twitter и RuTracker. Умная система выберет профиль, который разблокирует всё сразу.</p>
         </div>
       </div>
       <div class="step">
         <div class="step-number">03</div>
         <div class="step-content">
-          <h3>Connect & Forget</h3>
-          <p>Press "ПОДКЛЮЧИТЬ!" and browse freely. Enable silent auto-start in settings — Unbound launches minimized to system tray on boot. Set it and forget it.</p>
+          <h3>Подключите и забудьте</h3>
+          <p>Нажмите «ПОДКЛЮЧИТЬ!» и пользуйтесь интернетом свободно. Включите тихий автозапуск в настройках — Unbound запускается свёрнутым в трей. Настройте один раз и забудьте.</p>
         </div>
       </div>
     </div>
     <div class="tech-note">
-      <h4>Under the Hood</h4>
-      <p>Unbound uses the <strong>zapret2</strong> (winws2) engine by bol-van, which manipulates TCP packets at the DPI level using techniques like <strong>TCP desynchronization</strong> and <strong>packet reordering (Multidisorder)</strong>. Unlike VPNs, your traffic never leaves your direct connection — only blocked domains get modified packets.</p>
+      <h4>🔧 Под капотом</h4>
+      <p>Unbound использует движок <strong>zapret2</strong> (winws2) от bol-van, который манипулирует TCP-пакетами на уровне DPI с помощью техник <strong>TCP десинхронизации</strong> и <strong>перестановки пакетов (Multidisorder)</strong>. В отличие от VPN, ваш трафик не уходит через иностранные серверы — модифицируются только пакеты к заблокированным доменам.</p>
     </div>
   </div>
 </section>
@@ -57,30 +57,28 @@
 .section-tag {
   display: inline-block;
   padding: 0.4rem 1rem;
-  background: rgba(102, 126, 234, 0.1);
-  border: 1px solid rgba(102, 126, 234, 0.2);
   border-radius: 100px;
   font-size: 0.8rem;
   font-weight: 600;
-  color: #667eea;
   text-transform: uppercase;
   letter-spacing: 2px;
   margin-bottom: 1.5rem;
+  transition: all 0.3s ease;
 }
 
 .section-title {
   font-size: clamp(2rem, 5vw, 3rem);
   font-weight: 800;
-  color: #fff;
   margin-bottom: 1rem;
   letter-spacing: -1px;
+  transition: all 0.3s ease;
 }
 
 .section-desc {
   font-size: 1.1rem;
-  color: rgba(255, 255, 255, 0.5);
   max-width: 600px;
   margin: 0 auto;
+  transition: all 0.3s ease;
 }
 
 .steps {
@@ -94,72 +92,64 @@
   gap: 2rem;
   align-items: flex-start;
   padding: 2rem;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 16px;
   transition: all 0.3s ease;
 }
 
 .step:hover {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(102, 126, 234, 0.2);
+  transform: translateY(-2px);
 }
 
 .step-number {
   font-size: 2rem;
   font-weight: 900;
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
   min-width: 60px;
   font-family: 'JetBrains Mono', monospace;
+  transition: all 0.3s ease;
 }
 
 .step-content h3 {
   font-size: 1.25rem;
   font-weight: 700;
-  color: #fff;
   margin-bottom: 0.5rem;
+  transition: all 0.3s ease;
 }
 
 .step-content p {
-  color: rgba(255, 255, 255, 0.5);
   line-height: 1.7;
+  transition: all 0.3s ease;
 }
 
 .step-content code {
   font-family: 'JetBrains Mono', monospace;
-  background: rgba(102, 126, 234, 0.1);
   padding: 0.2rem 0.5rem;
   border-radius: 4px;
   font-size: 0.85em;
-  color: #667eea;
+  transition: all 0.3s ease;
 }
 
 .tech-note {
   margin-top: 3rem;
   padding: 2rem;
-  background: rgba(102, 126, 234, 0.05);
-  border: 1px solid rgba(102, 126, 234, 0.15);
   border-radius: 16px;
+  transition: all 0.3s ease;
 }
 
 .tech-note h4 {
   font-size: 1.1rem;
   font-weight: 700;
-  color: #fff;
   margin-bottom: 0.75rem;
+  transition: all 0.3s ease;
 }
 
 .tech-note p {
-  color: rgba(255, 255, 255, 0.5);
   line-height: 1.7;
   font-size: 0.95rem;
+  transition: all 0.3s ease;
 }
 
 .tech-note strong {
-  color: rgba(255, 255, 255, 0.8);
+  opacity: 0.8;
 }
 
 @media (max-width: 640px) {

@@ -1,6 +1,19 @@
-# Building UNBOUND
+# Building UNBOUND v2.0.0
 
-Complete guide for building UNBOUND across all supported platforms — locally and via CI.
+Полное руководство по сборке UNBOUND на всех поддерживаемых платформах.
+
+## Quick Start
+
+```bash
+# Unix / macOS / WSL — собрать всё
+./build_all.sh all
+
+# Windows PowerShell — собрать Windows
+.\build_all.ps1 windows
+
+# Linux через Docker
+./build_all.sh linux
+```
 
 ---
 

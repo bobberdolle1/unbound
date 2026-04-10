@@ -4,62 +4,62 @@
 <section id="faq" class="faq">
   <div class="container">
     <div class="section-header">
-      <span class="section-tag">FAQ</span>
-      <h2 class="section-title">Frequently Asked <span class="gradient-text">Questions</span></h2>
+      <span class="section-tag">Частые вопросы</span>
+      <h2 class="section-title">Частые <span class="gradient-text">вопросы</span></h2>
     </div>
     <div class="faq-list">
       <details class="faq-item" open>
         <summary>
-          <span>What is Unbound and how does it work?</span>
+          <span>Что такое Unbound и как он работает?</span>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
         </summary>
         <div class="faq-answer">
-          <p>Unbound is a free, open-source DPI (Deep Packet Inspection) bypass tool for Russia. It uses the <strong>zapret2</strong> engine to manipulate TCP packets — specifically using techniques like TCP desynchronization and packet reordering (Multidisorder) — so that DPI systems like TSPU cannot properly analyze and block your traffic to sites like YouTube, Discord, Twitter, and Instagram.</p>
+          <p>Unbound — бесплатная программа с открытым кодом для обхода DPI-блокировок. Использует движок <strong>zapret2</strong> для манипуляции TCP-пакетами — TCP десинхронизация и перестановка пакетов (Multidisorder) — чтобы системы DPI вроде ТСПУ не могли анализировать и блокировать ваш трафик к YouTube, Discord, Twitter и Instagram.</p>
         </div>
       </details>
       <details class="faq-item">
         <summary>
-          <span>How is this different from a VPN?</span>
+          <span>Чем это отличается от VPN?</span>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
         </summary>
         <div class="faq-answer">
-          <p>VPNs route all your traffic through a foreign server, which slows down your connection. Unbound only modifies packets to blocked domains — your bank, government sites, and unblocked services work normally. <strong>Zero speed loss</strong> for your regular browsing.</p>
+          <p>VPN маршрутизирует весь трафик через иностранный сервер, что замедляет соединение. Unbound модифицирует только пакеты к заблокированным доменам — банки, госучреждения и разблокированные сайты работают как обычно. <strong>Нулевая потеря скорости</strong> для обычного серфинга.</p>
         </div>
       </details>
       <details class="faq-item">
         <summary>
-          <span>Why does it need Administrator rights?</span>
+          <span>Зачем нужны права администратора?</span>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
         </summary>
         <div class="faq-answer">
-          <p>Unbound uses the WinDivert driver to intercept and modify network packets at the kernel level. This requires Administrator privileges. The program registers itself with Windows Task Scheduler for silent auto-start without repeated UAC prompts.</p>
+          <p>Unbound использует драйвер WinDivert для перехвата и модификации сетевых пакетов на уровне ядра. Это требует прав администратора. Программа регистрируется в планировщике задач Windows для тихого автозапуска без повторных запросов UAC.</p>
         </div>
       </details>
       <details class="faq-item">
         <summary>
-          <span>What if Auto-Tune doesn't find a working profile?</span>
+          <span>Что делать, если Автоподбор не нашёл рабочий профиль?</span>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
         </summary>
         <div class="faq-answer">
-          <p>Auto-Tune tests 70+ profiles against multiple targets simultaneously. In rare cases, your ISP may require a specific combination. Try manual profile selection, check the "Dev Diary" log for details, and report your results on GitHub Issues.</p>
+          <p>Автоподбор тестирует 70+ профилей одновременно. В редких случаях ваш провайдер может требовать уникальную комбинацию. Попробуйте ручной выбор профиля, проверьте лог «Дневник разработчика» и сообщите о результатах на GitHub Issues.</p>
         </div>
       </details>
       <details class="faq-item">
         <summary>
-          <span>Is this legal?</span>
+          <span>Это легально?</span>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
         </summary>
         <div class="faq-answer">
-          <p>Unbound is an open-source tool (GPL-3.0) that modifies only your own outbound packets. It does not hack, spoof, or intercept other people's traffic. Whether using it violates local laws depends on your jurisdiction — consult local regulations.</p>
+          <p>Unbound — инструмент с открытым кодом (GPL-3.0), модифицирующий только ваши исходящие пакеты. Он не взламывает, не спуфит и не перехватывает чужой трафик. Законность зависит от вашей юрисдикции — проконсультируйтесь с местным законодательством.</p>
         </div>
       </details>
       <details class="faq-item">
         <summary>
-          <span>What is "Discord Hygiene"?</span>
+          <span>Что такое «Очистка Discord»?</span>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
         </summary>
         <div class="faq-answer">
-          <p>A built-in feature that automatically cleans the Discord client cache on startup. This prevents session poisoning and resolves the endless "Connecting..." issue that often plagues Discord users in blocked regions.</p>
+          <p>Встроенная функция автоматической очистки кэша клиента Discord при запуске. Предотвращает «отравление» сессии и решает проблему бесконечного «Подключение...», которая часто встречается у пользователей Discord в заблокированных регионах.</p>
         </div>
       </details>
     </div>
@@ -85,23 +85,21 @@
 .section-tag {
   display: inline-block;
   padding: 0.4rem 1rem;
-  background: rgba(102, 126, 234, 0.1);
-  border: 1px solid rgba(102, 126, 234, 0.2);
   border-radius: 100px;
   font-size: 0.8rem;
   font-weight: 600;
-  color: #667eea;
   text-transform: uppercase;
   letter-spacing: 2px;
   margin-bottom: 1.5rem;
+  transition: all 0.3s ease;
 }
 
 .section-title {
   font-size: clamp(2rem, 5vw, 3rem);
   font-weight: 800;
-  color: #fff;
   margin-bottom: 1rem;
   letter-spacing: -1px;
+  transition: all 0.3s ease;
 }
 
 .faq-list {
@@ -111,20 +109,13 @@
 }
 
 .faq-item {
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 12px;
   overflow: hidden;
   transition: all 0.3s ease;
 }
 
-.faq-item:hover {
-  border-color: rgba(255, 255, 255, 0.1);
-}
-
 .faq-item[open] {
-  border-color: rgba(102, 126, 234, 0.3);
-  background: rgba(102, 126, 234, 0.03);
+  border-color: var(--accent, #667eea);
 }
 
 .faq-item summary {
@@ -135,7 +126,6 @@
   cursor: pointer;
   list-style: none;
   font-weight: 600;
-  color: #fff;
   font-size: 1rem;
   transition: color 0.2s;
 }
@@ -145,7 +135,6 @@
 }
 
 .faq-item summary svg {
-  color: rgba(255, 255, 255, 0.4);
   transition: transform 0.3s ease;
   flex-shrink: 0;
 }
@@ -159,12 +148,12 @@
 }
 
 .faq-answer p {
-  color: rgba(255, 255, 255, 0.5);
   line-height: 1.7;
+  transition: all 0.3s ease;
 }
 
 .faq-answer strong {
-  color: rgba(255, 255, 255, 0.8);
+  opacity: 0.8;
 }
 
 @media (max-width: 640px) {

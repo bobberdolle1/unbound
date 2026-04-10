@@ -92,27 +92,27 @@ echo.
 REM Create dist directory
 if not exist "%DIST_DIR%" mkdir "%DIST_DIR%"
 
-REM Check if build_all.ps1 exists
-if exist "scripts\build_all.ps1" (
+REM Check if build_all.ps1 exists in root
+if exist "build_all.ps1" (
     echo [INFO] Running build orchestration script...
-    powershell -ExecutionPolicy Bypass -File "scripts\build_all.ps1"
+    powershell -ExecutionPolicy Bypass -File "build_all.ps1" windows
     if errorlevel 1 (
         echo [ERROR] Build script failed!
         pause
         exit /b 1
     )
     echo [SUCCESS] Build complete!
-) else (
-    echo [WARN] scripts\build_all.ps1 not found. Building manually...
-    
+) else if exist "scripts\build_all.ps1" (
+    echo [WARN] Build scripts not found. Building manually...
+
     REM Build Wails desktop app
     echo [INFO] Building desktop app (Wails)...
-    wails build -platform windows/amd64
+    wails build -clean -o unbound.exe
     if exist "build\bin\unbound.exe" (
         copy "build\bin\unbound.exe" "%DIST_DIR%\unbound-desktop-windows-amd64.exe"
         echo [SUCCESS] Desktop Windows build complete
     )
-    
+
     REM Build Browser Extension
     if exist "extension-web" (
         echo [INFO] Building Browser Extension...
@@ -324,7 +324,7 @@ echo   1. Review the draft release: https://github.com/OWNER/REPO/releases
 echo   2. Test all binaries on respective platforms
 echo   3. Publish the release when ready
 echo.
-echo   🚀 Total War on Censorship! 🚀
+echo   🚀 Ультимативный обход блокировок! 🚀
 echo.
 
 pause

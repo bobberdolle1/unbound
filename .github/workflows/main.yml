@@ -396,27 +396,60 @@ jobs:
         with:
           path: artifacts/
 
+      - name: List artifacts
+        run: |
+          echo "Downloaded artifacts:"
+          find artifacts/ -type f | head -50
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', needs.resolve-version.outputs.version) }}
           name: "Unbound v${{ needs.resolve-version.outputs.version }}"
           body: |
-            ## Unbound v${{ needs.resolve-version.outputs.version }}
+            ## 🚀 Unbound v${{ needs.resolve-version.outputs.version }}: Глобальное обновление
 
-            ### Platforms
-            - 🪟 Windows (Wails GUI)
-            - 🐧 Linux (CLI/GUI)
-            - 🍎 macOS (Universal)
-            - 🤖 Android (APK)
-            - 🌐 OpenWrt (IPK / mipsle)
-            - 🎮 Steam Deck (Decky Plugin)
-            - 📱 Magisk Module
+            Это **мажорный релиз**, который превращает Unbound из одного десктопного приложения в **полную мультиплатформенную экосистему** для обхода DPI-цензуры.
 
-            ### Installation
-            See [docs/BUILDING.md](docs/BUILDING.md) for build-from-source instructions.
-          files: artifacts/**/*
+            ### ✨ Что нового
+
+            - **🌍 Мультиплатформенная экосистема** — Desktop, Android, iOS, Linux, OpenWrt, расширения для браузеров
+            - **🎯 Автоподбор V2** — Параллельный сканер, находящий оптимальные профили за секунды
+            - **🔄 Интеграция с системным треем** — Работает в фоне, управляется из трея
+            - **🎨 Обновлённый интерфейс** — Современный дизайн с мониторингом в реальном времени
+            - **⚡ Улучшенная производительность** — Строгий таймаут 5 секунд на зонд, никаких зависаний
+            - **🔒 Повышенная безопасность** — HideWindow на всех дочерних процессах, никаких мигающих окон
+
+            ### 📦 Поддерживаемые платформы
+
+            | Платформа | Формат | Статус |
+            |-----------|--------|--------|
+            | **Desktop (Windows/macOS)** | Нативное приложение | ✅ Готово |
+            | **Android** | APK | ✅ Готово |
+            | **Linux** | CLI-бинарник | ✅ Готово |
+            | **OpenWrt** | IPK пакет | ✅ Готово |
+            | **Браузер** | Расширение | ✅ Готово |
+            | **Steam Deck** | Decky плагин | ✅ Готово |
+            | **Magisk** | ZIP-модуль | ✅ Готово |
+
+            ### 🐛 Исправления
+
+            - Исправлено сохранение настроек
+            - Исправлено поведение при закрытии окна (сворачивается в трей)
+            - Исправлено зависание Автоподбора
+            - Убрано мигание консоли
+
+            ---
+
+            📖 [Установка](README.md) • [Документация](docs/BUILDING.md) • [Исходный код](https://github.com/bobberdolle1/unbound)
+          files: |
+            artifacts/**/*.zip
+            artifacts/**/*.tar.gz
+            artifacts/**/*.apk
+            artifacts/**/*.exe
+            artifacts/**/*.ipk
           draft: ${{ github.ref_type != 'tag' }}
           prerelease: ${{ contains(needs.resolve-version.outputs.version, 'dev') || contains(needs.resolve-version.outputs.version, 'beta') }}
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
