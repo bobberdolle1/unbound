@@ -1,0 +1,5 @@
+<!-- This is a placeholder. Replace with actual 16x16 PNG icon -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <rect width="16" height="16" fill="#5cb85c" rx="2"/>
+  <path d="M8 3 L12 8 L8 8 L8 13 L4 8 L8 8 Z" fill="white"/>
+</svg>
