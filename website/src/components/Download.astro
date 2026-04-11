@@ -275,11 +275,10 @@
 .download-grid,
 .download-grid-secondary,
 .download-grid-tertiary {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--s-2);
-  margin-bottom: var(--s-4);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--s-3);
+  margin-bottom: var(--s-5);
   width: 100%;
 }
 
@@ -290,12 +289,16 @@
 /* ── Card wrapper (layout only) ──────────────────────────── */
 .download-card {
   position: relative;
-  flex: 1 1 240px;
-  max-width: 280px;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
 }
 
 /* ── Glass panel (Liquid Material) ───────────────────────── */
 .card-glass {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   padding: var(--s-4) var(--s-3);
   background: var(--bg-card);
   border: 1px solid var(--border-color);
@@ -314,6 +317,9 @@
 }
 
 .card-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   text-align: center;
 }
 
@@ -382,6 +388,7 @@
   font-size: 0.875rem;
   transition: all 0.2s ease;
   width: 100%;
+  margin-top: auto;
 }
 
 .btn-icon {

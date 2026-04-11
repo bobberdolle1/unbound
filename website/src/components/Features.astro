@@ -124,9 +124,8 @@
 }
 
 .features-grid {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 16px;
 }
 
@@ -136,9 +135,7 @@
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   transition: background 0.2s ease, border-color 0.2s ease;
-  flex: 1 1 calc(33.333% - 16px);
-  min-width: 280px;
-  max-width: 400px;
+  width: 100%;
 }
 
 .feature-card:hover {
