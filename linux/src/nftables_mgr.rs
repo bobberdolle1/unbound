@@ -130,7 +130,7 @@ pub fn apply_rules(config: &DaemonConfig) -> Result<()> {
 
     let output = child.wait().map_err(UnboundError::Io)?;
 
-    if !output.status.success() {
+    if !output.success() {
         return Err(UnboundError::Nftables(
             "nft command failed".into(),
         ));
