@@ -4,71 +4,71 @@
 <section id="faq" class="faq">
   <div class="container">
     <div class="section-header">
-      <span class="section-tag">FAQ</span>
-      <h2 class="section-title">Technical Details</h2>
+      <span class="section-tag">Частые вопросы</span>
+      <h2 class="section-title">Технические детали</h2>
     </div>
     <div class="faq-list">
       <details class="faq-item" open>
         <summary>
-          <span>What is Unbound — technically?</span>
+          <span>Что такое Unbound — технически?</span>
           <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
         </summary>
         <div class="faq-answer">
-          <p>Unbound is a Go wrapper around the <strong>Zapret 2</strong> engine (winws2 binary) and the <strong>WinDivert 2.2</strong> kernel packet filter. It provides a system-tray GUI that configures, launches, and monitors winws2 — the same DPI-evasion engine used by GoodbyeDPI and Zapret, but with automated profile selection and conflict detection.</p>
+          <p>Unbound — это Go-обёртка вокруг движка <strong>Zapret 2</strong> (бинарный файл winws2) и ядерного фильтра пакетов <strong>WinDivert 2.2</strong>. Предоставляет GUI в системном трее, который конфигурирует, запускает и мониторит winws2 — тот же движок обхода DPI, что используется в GoodbyeDPI и Zapret, но с автоматическим выбором профилей и обнаружением конфликтов.</p>
         </div>
       </details>
       <details class="faq-item">
         <summary>
-          <span>How does the WinDivert engine work?</span>
+          <span>Как работает движок WinDivert?</span>
           <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
         </summary>
         <div class="faq-answer">
-          <p>WinDivert installs a WFP (Windows Filtering Platform) callout driver at <strong>L3 (Network Layer)</strong> and <strong>L4 (Transport Layer)</strong>. It intercepts raw TCP/UDP packets before they reach the network stack. Winws2 then applies evasion techniques — TCP desynchronization, packet reordering (multidisorder), TTL manipulation, and HTTP/DPI-specific field obfuscation — before reinjecting modified packets. The target server reassembles the stream normally; DPI systems cannot reconstruct the original TLS handshake.</p>
+          <p>WinDivert устанавливает драйвер WFP (Windows Filtering Platform) на уровнях <strong>L3 (сетевой)</strong> и <strong>L4 (транспортный)</strong>. Он перехватывает сырые TCP/UDP-пакеты до того, как они достигнут сетевого стека. Затем winws2 применяет техники обхода — десинхронизацию TCP, перестановку пакетов (multidisorder), манипуляцию TTL и обфускацию полей HTTP/DPI — перед повторной инъекцией изменённых пакетов. Целевой сервер корректно собирает поток; системы DPI не могут восстановить оригинальное TLS-рукопожатие.</p>
         </div>
       </details>
       <details class="faq-item">
         <summary>
-          <span>What filter levels does it operate on?</span>
+          <span>На каких уровнях фильтрации он работает?</span>
           <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
         </summary>
         <div class="faq-answer">
-          <p><strong>L3 (Network):</strong> IP-level filtering by destination/source address. <strong>L4 (Transport):</strong> TCP/UDP port and flag filtering. WinDivert captures packets at these layers — it does not operate at L7 (Application). DPI evasion is achieved by manipulating transport-layer characteristics (TCP sequence numbers, TTL, window size) that cause DPI parsers to lose stream synchronization while the endpoint TCP stack recovers correctly.</p>
+          <p><strong>L3 (сетевой):</strong> IP-фильтрация по адресу назначения/источника. <strong>L4 (транспортный):</strong> фильтрация по портам и флагам TCP/UDP. WinDivert перехватывает пакеты на этих уровнях — он не работает на L7 (прикладном). Обход DPI достигается манипуляцией транспортными характеристиками (номера последовательности TCP, TTL, размер окна), которые вызывают потерю синхронизации у парсеров DPI, при этом TCP-стек конечной точки корректно восстанавливает поток.</p>
         </div>
       </details>
       <details class="faq-item">
         <summary>
-          <span>How is this different from a VPN?</span>
+          <span>Чем это отличается от VPN?</span>
           <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
         </summary>
         <div class="faq-answer">
-          <p>A VPN creates an encrypted tunnel to a remote server, routing <em>all</em> traffic through it — adding latency and reducing bandwidth. Unbound modifies only packets destined for domains on the blocklist. Everything else — local banking, government services, CDNs — traverses the network unmodified. Zero overhead for non-blocked traffic. No remote infrastructure involved.</p>
+          <p>VPN создаёт зашифрованный туннель до удалённого сервера, направляя <em>весь</em> трафик через него — добавляя задержку и снижая пропускную способность. Unbound модифицирует только пакеты, адресованные доменам из списка блокировки. Всё остальное — местные банки, госуслуги, CDN — проходит через сеть без изменений. Нулевые накладные расходы для незаблокированного трафика. Без удалённой инфраструктуры.</p>
         </div>
       </details>
       <details class="faq-item">
         <summary>
-          <span>Why are administrator privileges required?</span>
+          <span>Почему требуются права администратора?</span>
           <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
         </summary>
         <div class="faq-answer">
-          <p>WinDivert is a kernel-mode WFP callout driver. Installing and binding it requires <strong>SeLoadDriverPrivilege</strong> — an admin-only right. Once installed, the driver persists across reboots. Unbound registers a Task Scheduler entry for silent startup (no UAC prompt on boot) and runs as a background process in the system tray.</p>
+          <p>WinDivert — это драйвер WFP в режиме ядра. Для его установки и привязки требуется <strong>SeLoadDriverPrivilege</strong> — право, доступное только администраторам. После установки драйвер сохраняется между перезагрузками. Unbound регистрирует задачу в планировщике для тихого запуска (без запроса UAC при загрузке) и работает как фоновый процесс в системном трее.</p>
         </div>
       </details>
       <details class="faq-item">
         <summary>
-          <span>What about macOS and Linux support?</span>
+          <span>Как насчёт поддержки macOS и Linux?</span>
           <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
         </summary>
         <div class="faq-answer">
-          <p><strong>macOS:</strong> Uses <strong>SpoofDPI</strong> — a SOCKS5 proxy approach with system network configuration. <strong>Linux:</strong> Uses <strong>nfqws</strong> with iptables/nftables NFQUEUE for packet-level manipulation (equivalent to WinDivert on Windows). The Go desktop wrapper handles launch automation on both platforms. A standalone <strong>Rust CLI</strong> is also available for headless deployment.</p>
+          <p><strong>macOS:</strong> использует <strong>SpoofDPI</strong> — подход с SOCKS5-прокси и системной настройкой сети. <strong>Linux:</strong> использует <strong>nfqws</strong> с iptables/nftables NFQUEUE для манипуляции пакетами (аналог WinDivert на Windows). Go-обёртка автоматизирует запуск на обеих платформах. Также доступен отдельный <strong>Rust CLI</strong> для headless-развёртывания.</p>
         </div>
       </details>
       <details class="faq-item">
         <summary>
-          <span>What conflicts should I be aware of?</span>
+          <span>Какие конфликты следует учитывать?</span>
           <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
         </summary>
         <div class="faq-answer">
-          <p>Since WinDivert operates at L3, concurrent packet-level filters cause undefined behavior. Unbound detects and blocks launch when the following are running: <strong>GoodbyeDPI</strong>, <strong>Zapret</strong> (nfqws/winws instances), <strong>OpenVPN</strong> (TAP adapter conflicts), <strong>Cloudflare WARP</strong>, and commercial VPN clients (ExpressVPN, NordVPN). Close conflicting processes before launching.</p>
+          <p>Поскольку WinDivert работает на L3, одновременные фильтры на уровне пакетов вызывают неопределённое поведение. Unbound обнаруживает и блокирует запуск, когда работают следующие программы: <strong>GoodbyeDPI</strong>, <strong>Zapret</strong> (экземпляры nfqws/winws), <strong>OpenVPN</strong> (конфликты адаптера TAP), <strong>Cloudflare WARP</strong> и коммерческие VPN-клиенты (ExpressVPN, NordVPN). Закройте конфликтующие процессы перед запуском.</p>
         </div>
       </details>
     </div>

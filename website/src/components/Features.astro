@@ -4,9 +4,9 @@
 <section id="features" class="features">
   <div class="container">
     <div class="section-header">
-      <span class="section-tag">Engine</span>
-      <h2 class="section-title">Technical Architecture</h2>
-      <p class="section-desc">Packet-level DPI evasion. No tunnels, no proxies. WinDivert intercepts and modifies TCP streams in kernel space.</p>
+      <span class="section-tag">Движок</span>
+      <h2 class="section-title">Техническая архитектура</h2>
+      <p class="section-desc">Обход DPI на уровне пакетов. Без туннелей, без прокси. WinDivert перехватывает и модифицирует TCP-потоки в пространстве ядра.</p>
     </div>
     <div class="features-grid">
       <div class="feature-card">
@@ -17,8 +17,8 @@
             <path d="M2 12l10 5 10-5"/>
           </svg>
         </div>
-        <h3>WinDivert Packet Interception</h3>
-        <p>WinDivert v2.2 kernel driver captures, filters, and modifies raw TCP/UDP packets at the network layer (L3). Winws2 engine performs TCP desynchronization and packet reordering — the core mechanism that breaks DPI signature matching.</p>
+        <h3>Перехват пакетов WinDivert</h3>
+        <p>Ядерный драйвер WinDivert v2.2 захватывает, фильтрует и модифицирует сырые TCP/UDP-пакеты на сетевом уровне (L3). Движок winws2 выполняет десинхронизацию TCP и перестановку пакетов — ключевой механизм, разрушающий сигнатурный анализ DPI.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon-wrap">
@@ -26,8 +26,8 @@
             <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
           </svg>
         </div>
-        <h3>Zero Throughput Overhead</h3>
-        <p>Only packets destined for blocked domains are modified. All other traffic — banking, government, CDN — passes through unaltered. No encapsulation, no remote hops, no MTU penalty. Full native bandwidth is preserved.</p>
+        <h3>Нулевые потери пропускной способности</h3>
+        <p>Модифицируются только пакеты, адресованные заблокированным доменам. Весь остальной трафик — банки, госуслуги, CDN — проходит без изменений. Без инкапсуляции, без удалённых узлов, без штрафов MTU. Сохраняется полная нативная полоса пропускания.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon-wrap">
@@ -36,8 +36,8 @@
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
           </svg>
         </div>
-        <h3>Parallel Profile Probing</h3>
-        <p>Auto-detection concurrently test-fires profiles against canonical endpoints (YouTube, Discord, Instagram, Twitter, RuTracker). The selection algorithm picks the minimal-modification profile that resolves all targets — no brute force, no guesswork.</p>
+        <h3>Параллельное зондирование профилей</h3>
+        <p>Автоопределение параллельно тестирует профили на канонических конечных точках (YouTube, Discord, Instagram, Twitter, RuTracker). Алгоритм выбирает профиль с минимальными модификациями, который разблокирует все цели — без перебора, без догадок.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon-wrap">
@@ -46,8 +46,8 @@
             <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
           </svg>
         </div>
-        <h3>GPL-3.0 — Fully Auditable</h3>
-        <p>Every dependency ships inline: Lua DPI-evasion scripts, WinDivert driver binaries, winws2 engine — compiled into a single executable. No hidden fetch calls, no telemetry, no external dependencies. Source is the artifact.</p>
+        <h3>GPL-3.0 — полностью аудируемый</h3>
+        <p>Каждая зависимость поставляется встроенной: Lua-скрипты обхода DPI, драйверы WinDivert, движок winws2 — скомпилированы в один исполняемый файл. Без скрытых запросов, без телеметрии, без внешних зависимостей. Исходный код — это артефакт.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon-wrap">
@@ -57,8 +57,8 @@
             <line x1="12" y1="17" x2="12.01" y2="17"/>
           </svg>
         </div>
-        <h3>Conflict Detection</h3>
-        <p>Enumerates running services and flags incompatibilities with GoodbyeDPI, Zapret, OpenVPN, Cloudflare WARP, and commercial VPN clients. WinDivert operates at L3 — concurrent packet-level filters cause undefined behavior and are blocked preemptively.</p>
+        <h3>Обнаружение конфликтов</h3>
+        <p>Перечисляет запущенные сервисы и помечает несовместимости с GoodbyeDPI, Zapret, OpenVPN, Cloudflare WARP и коммерческими VPN-клиентами. WinDivert работает на L3 — одновременные фильтры на уровне пакетов вызывают неопределённое поведение и блокируются превентивно.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon-wrap">
@@ -67,8 +67,8 @@
             <line x1="12" y1="19" x2="20" y2="19"/>
           </svg>
         </div>
-        <h3>Silent Scheduled Launch</h3>
-        <p>Registers a Windows Task Scheduler entry for UAC-bypassed startup into the system tray. No console window, no elevation prompt on boot. Runs as a background process with the same kernel-level privileges required at install time.</p>
+        <h3>Тихий плановый запуск</h3>
+        <p>Регистрирует задачу в планировщике Windows для запуска в обход UAC в системный трей. Без консольного окна, без запроса повышения прав при загрузке. Работает как фоновый процесс с теми же ядерными привилегиями, которые требуются при установке.</p>
       </div>
     </div>
   </div>
