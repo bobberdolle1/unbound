@@ -60,7 +60,7 @@
   text-align: center;
   padding: 8rem 2rem 4rem;
   position: relative;
-  overflow: hidden;
+  overflow-x: clip;
   isolation: isolate;
 }
 
@@ -76,6 +76,8 @@
     radial-gradient(ellipse 60% 50% at 85% 20%, rgba(168, 85, 247, 0.10) 0%, transparent 55%),
     radial-gradient(ellipse 70% 55% at 50% 90%, rgba(59, 130, 246, 0.08) 0%, transparent 50%),
     radial-gradient(ellipse 50% 40% at 70% 60%, rgba(14, 165, 233, 0.06) 0%, transparent 45%);
+  mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
   animation: mesh-drift 30s ease-in-out infinite alternate;
 }
 
