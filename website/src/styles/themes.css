@@ -17,51 +17,113 @@ body.theme-dark {
   --shadow-card: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
 }
 
-/* 2. iOS 6 SKEUOMORPHIC — Classic Linen/Leather */
+/* 2. iOS 6 SKEUOMORPHIC — Classic Linen & Glass */
 body.theme-skeuomorphic {
-  --bg-primary: #c8c5be;
-  --bg-secondary: #b8b5ae;
-  --bg-card: #e8e5de;
-  --bg-navbar: #4a4a4a;
-  --border-color: #a09d96;
-  --text-primary: #2c2c2c;
-  --text-secondary: #5a5a5a;
-  --accent: #1e88e5;
-  --accent-secondary: #1565c0;
+  --bg-primary: #5c6270;
+  --bg-secondary: #dcdedd;
+  --bg-card: linear-gradient(180deg, #f5f5f5 0%, #e0e0e0 100%);
+  --bg-navbar: linear-gradient(180deg, #8792a3 0%, #5b6574 50%, #4a5363 51%, #3b4352 100%);
+  --border-color: #8c8f95;
+  --text-primary: #333333;
+  --text-secondary: #555555;
+  --accent: linear-gradient(180deg, #51a4f9 0%, #297be7 50%, #155bd3 51%, #0036a1 100%);
+  --accent-secondary: linear-gradient(180deg, #81c4ff 0%, #499bef 50%, #257bd3 51%, #1046a1 100%);
   --ui-radius: 8px;
-  --font-main: -apple-system, 'Helvetica Neue', sans-serif;
+  --font-main: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --shadow-card: inset 0 1px 0 rgba(255,255,255,0.8), 0 2px 5px rgba(0,0,0,0.4);
 }
 
 body.theme-skeuomorphic {
-  background:
-    repeating-linear-gradient(0deg, transparent, transparent 1px, rgba(0, 0, 0, 0.01) 1px, rgba(0, 0, 0, 0.01) 2px),
-    repeating-linear-gradient(90deg, transparent, transparent 1px, rgba(0, 0, 0, 0.01) 1px, rgba(0, 0, 0, 0.01) 2px),
-    linear-gradient(180deg, #ddd9d2 0%, #c8c5be 30%, #b8b5ae 100%);
+  background-color: #5c6270;
+  background-image: 
+    linear-gradient(rgba(255,255,255,.07) 2px, transparent 2px),
+    linear-gradient(90deg, rgba(255,255,255,.07) 2px, transparent 2px),
+    linear-gradient(rgba(255,255,255,.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px);
+  background-size: 100px 100px, 100px 100px, 20px 20px, 20px 20px;
   background-attachment: fixed;
 }
 
-/* 3. DOODLE JUMP — Notebook Paper */
+body.theme-skeuomorphic .hero-title, body.theme-skeuomorphic .section-title {
+  color: #ffffff;
+  text-shadow: 0 -1px 2px rgba(0,0,0,0.8);
+}
+
+body.theme-skeuomorphic .card-glass, 
+body.theme-skeuomorphic .feature-card,
+body.theme-skeuomorphic .faq-item {
+  background: var(--bg-card);
+  border: 1px solid #7c7e82;
+  box-shadow: var(--shadow-card);
+  border-radius: var(--ui-radius);
+}
+
+body.theme-skeuomorphic .btn {
+  background: var(--accent);
+  color: white;
+  border: 1px solid #0f2b60;
+  box-shadow: inset 0 1px 1px rgba(255,255,255,0.5), 0 2px 4px rgba(0,0,0,0.4);
+  text-shadow: 0 -1px 1px rgba(0,0,0,0.8);
+  font-weight: bold;
+}
+
+/* 3. DOODLE JUMP — Notebook Paper & Ink */
 body.theme-doodle {
-  --bg-primary: #fff9c4;
-  --bg-secondary: #fff59d;
+  --bg-primary: #fdfae3;
+  --bg-secondary: #f4ecce;
   --bg-card: #ffffff;
-  --bg-navbar: #fff9c4;
-  --border-color: #222222;
+  --bg-navbar: #fdfae3;
+  --border-color: #2e3b82;
   --text-primary: #1a1a1a;
-  --text-secondary: #5a5a5a;
+  --text-secondary: #333333;
   --accent: #b2ff59;
   --accent-secondary: #76ff03;
-  --ui-radius: 4px;
-  --font-main: 'Comic Neue', cursive;
-  --font-accent: 'Permanent Marker', cursive;
+  --ui-radius: 2px;
+  --font-main: "Comic Sans MS", "Comic Sans", "Comic Neue", cursive;
+  --font-accent: "Comic Sans MS", cursive;
 }
 
 body.theme-doodle {
-  background-image:
-    linear-gradient(90deg, rgba(30, 144, 255, 0.15) 1px, transparent 1px),
-    linear-gradient(rgba(30, 144, 255, 0.15) 1px, transparent 1px);
-  background-size: 30px 30px;
+  background-color: #ffffff;
+  background-image: 
+    linear-gradient(90deg, transparent 50px, #ab4848 50px, #ab4848 52px, transparent 52px),
+    linear-gradient(#add8e6 1px, transparent 1px);
+  background-size: 100% 100%, 100% 24px;
   background-attachment: fixed;
+}
+
+body.theme-doodle .card-glass, 
+body.theme-doodle .feature-card,
+body.theme-doodle .download-card,
+body.theme-doodle .faq-item {
+  background: rgba(255, 255, 255, 0.85);
+  border: 2px solid #2e3b82;
+  border-radius: 255px 15px 225px 15px/15px 225px 15px 255px;
+  box-shadow: 4px 4px 0px rgba(46, 59, 130, 0.2);
+  transform: rotate(-0.5deg);
+}
+
+body.theme-doodle .feature-card:nth-child(even) {
+  transform: rotate(0.8deg);
+}
+
+body.theme-doodle .btn {
+  background: white;
+  border: 2px dashed #2e3b82;
+  color: #2e3b82;
+  font-weight: bold;
+  border-radius: 255px 15px 225px 15px/15px 225px 15px 255px;
+}
+
+body.theme-doodle .btn:hover {
+  background: #2e3b82;
+  color: white;
+  border: 2px solid #2e3b82;
+}
+
+body.theme-doodle .hero-title, body.theme-doodle .section-title {
+  color: #2e3b82;
+  text-decoration: underline dashed #ab4848;
 }
 
 /* 4. LIQUID GLASS — Ultra Modern Translucence */

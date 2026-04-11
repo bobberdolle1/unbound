@@ -78,9 +78,17 @@
   left: 50%;
   transform: translateX(-50%);
   z-index: 9999;
-  max-width: 90vw;
+  max-width: 95vw;
+  
+  /* Glassmorphism applied directly to wrapper to prevent shadow clipping */
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 24px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  
   overflow-x: auto;
-  padding: 8px;
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
@@ -92,13 +100,8 @@
 .theme-switcher {
   display: flex;
   gap: 8px;
-  padding: 6px;
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 20px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  padding: 8px;
+  width: max-content;
 }
 
 .theme-btn {
