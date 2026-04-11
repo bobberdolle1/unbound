@@ -7,7 +7,7 @@
 *Zero latency. Zero overhead. Zero VPN.*
 
 [![Версия](https://img.shields.io/badge/Release-2.0.0-ff6b6b?style=for-the-badge&logo=rocket)](#) 
-[![Лицензия](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](#)
+[![Лицензия](https://img.shields.io/badge/License-GPL-3.0-blue?style=for-the-badge)](#)
 [![Русский Язык](https://img.shields.io/badge/Язык-Русский_🇷🇺-brightgreen?style=for-the-badge)](#)
 
 <img src="./docs/screenshot.jpg" alt="Unbound Interface" width="100%" style="border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.4); max-width: 800px; margin: 20px 0;" />
@@ -121,7 +121,7 @@ wails build -m
 
 ## 📜 Поддержать проект
 
-Исходный код распространяется под лицензией **MIT License**. Модификации, форки и коммерция разрешены.
+Исходный код распространяется под лицензией **GPL-3.0 License**. Модификации, форки и коммерция разрешены.
 Если проект был полезен — **поставьте ему ⭐ на GitHub**, это здорово помогает развитию!
 
 <div align="center">

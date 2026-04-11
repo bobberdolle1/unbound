@@ -45,13 +45,20 @@ body.theme-skeuomorphic {
 }
 
 body.theme-skeuomorphic .hero-title, 
+body.theme-skeuomorphic .hero-subtitle,
+body.theme-skeuomorphic .hero-subtitle strong,
 body.theme-skeuomorphic .section-title,
 body.theme-skeuomorphic .section-tag,
 body.theme-skeuomorphic .section-desc,
 body.theme-skeuomorphic .nav-link,
-body.theme-skeuomorphic .logo-text {
+body.theme-skeuomorphic .logo-text,
+body.theme-skeuomorphic .stat-value,
+body.theme-skeuomorphic .stat-label,
+body.theme-skeuomorphic .gradient-text {
   color: #ffffff;
   text-shadow: 0 -1px 2px rgba(0,0,0,0.8);
+  -webkit-text-fill-color: #ffffff;
+  background: none;
 }
 
 body.theme-skeuomorphic .card-glass, 
