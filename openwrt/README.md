@@ -1,168 +1,80 @@
-# Unbound-WRT — Пакет обхода DPI для OpenWrt
+# 🌐 Unbound OpenWrt — Демон обхода для Маршрутизаторов
 
-Прозрачный обход DPI/цензуры на уровне роутера для всей локальной сети. Нулевая настройка на клиентских устройствах.
+Абсолютно прозрачный обход DPI и цензуры прямо на сетевом роутере. Обеспечивает свободным интернетом все устройства в вашей домашней сети (WiFi/LAN) без необходимости устанавливать клиенты локально.
 
-## Структура директорий
+---
 
-```
-openwrt/
-├── README.md                          # Этот файл
-├── unbound-wrt/                       # Основной пакет nfqws
-│   ├── Makefile                       # Makefile пакета OpenWrt
-│   └── files/
-│       ├── etc/config/unbound         # Конфигурация UCI по умолчанию
-│       ├── etc/init.d/unbound         # init-скрипт procd
-│       └── etc/nftables.d/90-unbound-wrt.nft  # Правила fw4/nftables
-│
-└── luci-app-unbound/                  # Веб-интерфейс LuCI
-    ├── Makefile                       # Makefile пакета LuCI
-    └── luasrc/
-        ├── controller/unbound.lua     # Регистрация в меню + API статуса
-        └── model/cbi/unbound/unbound.lua  # Модель конфигурации CBI
+## 🔬 Принцип работы
+
+Пакеты из вашей сети (от смарт-телевизоров до телефонов) перехватываются сетевым файрволом роутера `fw4 (nftables)` до их выхода в интернет. 
+
+```mermaid
+graph TD
+    A[Домашняя сеть LAN] -->|br-lan| B(fw4 / nftables)
+    B -->|Исключения RFC1918| C{NFQUEUE 200}
+    C -->|Перехват| D[Демон nfqws]
+    D -->|Десинхронизация DPI| E(Ваш провайдер / WAN)
+    E --> F[Освобожденный интернет]
+    style D fill:#fbbf24,color:#000
 ```
 
-## Архитектура
+---
 
-```
-Клиенты LAN (без настройки)
-    │ br-lan (TCP 80/443)
-    ▼
-fw4 / nftables (90-unbound-wrt.nft)
-  - Перехватывает forward-трафик с br-lan
-  - Исключения: RFC1918, широковещательные, сам роутер
-  - Отправляет подходящие пакеты в NFQUEUE 200
-    ▼
-Демон nfqws (управляется procd)
-  - Получает пакеты через NFQUEUE 200
-  - Применяет стратегию: disorder, split-tls, fake и т.д.
-  - Повторно вводит изменённые пакеты в стек ядра
-    ▼
-WAN / Аплинк
-```
+## 🚀 Установка (Для пользователей)
 
-## Сборка
+Для вашего удобства скомпилирован пакет, который автоматически внедряется в веб-интерфейс (LuCI).
 
-### Требования
-
-- OpenWrt SDK, соответствующий вашей целевой версии (22.03 или 23.05)
-- `libnetfilter-queue` и `libnetfilter-conntrack` в фидах SDK
-
-### Шаги
-
-1. **Клонируйте OpenWrt SDK:**
+1. Скачайте `.ipk` плагины `unbound-wrt` и `luci-app-unbound` из релизов.
+2. Подключитесь к роутеру:
    ```bash
-   wget https://downloads.openwrt.org/releases/23.05.0/targets/<arch>/<target>/openwrt-sdk-23.05.0-<arch>-<target>.Linux-x86_64.tar.xz
-   tar xf openwrt-sdk-*.tar.xz
-   cd openwrt-sdk-*
+   scp *.ipk root@192.168.1.1:/tmp/
    ```
-
-2. **Скопируйте пакеты в SDK:**
+3. Установите через opkg:
    ```bash
-   cp -r /path/to/unbound-wrt package/
-   cp -r /path/to/luci-app-unbound package/
+   ssh root@192.168.1.1
+   opkg install /tmp/nfqws-unbound_*.ipk
+   opkg install /tmp/luci-app-unbound_*.ipk
    ```
-
-3. **Обновите фиды:**
+4. Включите автозапуск:
    ```bash
-   ./scripts/feeds update -a
-   ./scripts/feeds install -a
+   /etc/init.d/unbound enable && /etc/init.d/unbound start
    ```
 
-4. **Выберите пакеты в menuconfig:**
-   ```bash
-   make menuconfig
-   ```
-   - `Network > Web Servers/Proxies > nfqws-unbound` → установите в `M`
-   - `LuCI > 3. Applications > luci-app-unbound` → установите в `M`
+Теперь в веб-интерфейсе OpenWrt (LuCI) в меню **Сервисы** появится вкладка **Unbound-WRT**, где можно графически настраивать стратегии и исключения!
 
-5. **Скомпилируйте:**
-   ```bash
-   make package/nfqws-unbound/compile V=s
-   make package/luci-app-unbound/compile V=s
-   ```
+---
 
-6. **Результат — файлы `.ipk`:**
-   ```
-   bin/packages/<arch>/base/nfqws-unbound_*.ipk
-   bin/packages/<arch>/luci/luci-app-unbound_*.ipk
-   ```
+## 🛠 Сборка из исходников (OpenWrt SDK)
 
-## Установка
+Если архитектура вашего роутера отличается (напр., экзотический `mipsel_24kc` или старый `ar71xx`), вам придется собрать пакет самостоятельно.
 
+### 1. Подготовка SDK
+Найдите и скачайте Linux SDK именно для вашей версии OpenWrt (21.0, 22.03, 23.05).
 ```bash
-# Передать на роутер
-scp bin/packages/*/base/nfqws-unbound_*.ipk root@192.168.1.1:/tmp/
-scp bin/packages/*/luci/luci-app-unbound_*.ipk root@192.168.1.1:/tmp/
-
-# Установить на роутере
-ssh root@192.168.1.1
-opkg install /tmp/nfqws-unbound_*.ipk
-opkg install /tmp/luci-app-unbound_*.ipk
-
-# Включить и запустить
-/etc/init.d/unbound enable
-/etc/init.d/unbound start
+wget https://downloads.openwrt.org/releases/23.05.0/targets/ath79/generic/openwrt-sdk-23.05.0-ath79-generic_gcc-12.3.0_musl.Linux-x86_64.tar.xz
+tar xf openwrt-sdk-*.tar.xz
+cd openwrt-sdk-*
 ```
 
-## Настройка
-
-### Через веб-интерфейс LuCI
-
-Перейдите в **Сервисы > Unbound-WRT** в LuCI:
-
-| Настройка | Описание |
-|-----------|----------|
-| **Включить** | Главный переключатель двигателя обхода DPI |
-| **Стратегия обхода** | Стратегия изменения пакетов (см. ниже) |
-| **Исключённые домены** | Домены, обходящие nfqws (по одному на строку) |
-| **Исключённые IP** | Диапазоны IP/CIDR, обходящие nfqws (по одному на строку) |
-
-### Через CLI (UCI)
-
+### 2. Подключение модулей
 ```bash
-uci set unbound.@general[0].enabled='1'
-uci set unbound.@general[0].strategy='multidisorder'
-uci set unbound.@general[0].exclude_ips='192.168.1.100 10.0.0.0/8'
-uci commit unbound
-/etc/init.d/unbound restart
+cp -r /path/to/unbound/openwrt/unbound-wrt package/
+cp -r /path/to/unbound/openwrt/luci-app-unbound package/
+./scripts/feeds update -a && ./scripts/feeds install -a
 ```
 
-## Стратегии обхода
-
-| Стратегия | Описание | Лучше всего для |
-|-----------|----------|-----------------|
-| **Multidisorder** | Нарушает порядок сегментов пакетов | Общее назначение |
-| **Split TLS** | Разбивает TLS ClientHello | Блокировка SNI на основе TLS |
-| **Fake Ping** | Вводит поддельные пакеты с низким TTL | Агрессивный DPI |
-| **Disorder + Fake** | Комбинирует disorder + поддельные пакеты | Максимальное уклонение |
-
-## Установленные файлы
-
-| Путь | Назначение |
-|------|-----------|
-| `/usr/bin/nfqws` | Демон NFQUEUE (кросс-компилированный C-бинарник) |
-| `/etc/init.d/unbound` | Скрипт управления сервисом procd |
-| `/etc/config/unbound` | Файл конфигурации UCI |
-| `/etc/nftables.d/90-unbound-wrt.nft` | Правила перехвата nftables |
-
-## Диагностика
-
+### 3. Компиляция
 ```bash
-# Проверка статуса сервиса
-/etc/init.d/unbound status
-logread | grep nfqws
+make menuconfig
+# Network > Web Servers/Proxies > nfqws-unbound (Установить как M)
+# LuCI > 3. Applications > luci-app-unbound (Установить как M)
 
-# Проверка правил nftables
-nft list chain inet fw4 unbound_wrt_forward
-nft list chain inet fw4 unbound_wrt_lan_check
-
-# Проверка получения пакетов NFQUEUE
-nft list ruleset | grep queue
-
-# Тест подключения с клиента LAN
-tcpdump -i br-lan tcp port 443
+# Сборка пакетов
+make package/nfqws-unbound/compile V=s
+make package/luci-app-unbound/compile V=s
 ```
 
-## Лицензия
+Ваши `.ipk` файлы будут ждать вас в подпапке `bin/packages/`.
 
-GPL-3.0-only
+---
+**Лицензия**: GPL-3.0
