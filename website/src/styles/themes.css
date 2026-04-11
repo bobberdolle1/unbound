@@ -123,7 +123,6 @@ body.theme-doodle .btn:hover {
 
 body.theme-doodle .hero-title, body.theme-doodle .section-title {
   color: #2e3b82;
-  text-decoration: underline dashed #ab4848;
 }
 
 /* 4. LIQUID GLASS — Ultra Modern Translucence */
@@ -238,19 +237,73 @@ body.theme-macos26::before {
   backdrop-filter: blur(var(--ui-blur));
 }
 
-/* 8. WINDOWS 8 — Metro Tiles */
+/* 8. WINDOWS 8 — True Metro UI */
 body.theme-win8 {
-  --bg-primary: #0078d7;
-  --bg-secondary: #005a9e;
-  --bg-card: rgba(0, 0, 0, 0.15);
-  --bg-navbar: rgba(0, 120, 215, 0.9);
-  --border-color: rgba(255, 255, 255, 0.2);
+  --bg-primary: #111111;
+  --bg-secondary: #1d1d1d;
+  --bg-card: #2d89ef; /* Metro Blue */
+  --bg-navbar: #000000;
+  --border-color: transparent;
   --text-primary: #ffffff;
-  --text-secondary: rgba(255, 255, 255, 0.8);
-  --accent: #ffffff;
-  --accent-secondary: #e2e8f0;
+  --text-secondary: rgba(255, 255, 255, 0.85);
+  --accent: #2b5797;
+  --accent-secondary: #00a300; /* Metro Green */
   --ui-radius: 0px;
-  --font-main: 'Segoe UI', system-ui, sans-serif;
+  --font-main: 'Segoe UI', 'Segoe WP', sans-serif;
+  --shadow-card: none;
+}
+
+body.theme-win8 {
+  background-color: #111111;
+  background-image: 
+    linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px),
+    linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px);
+  background-size: 80px 80px;
+  background-attachment: fixed;
+}
+
+/* Base flat tiles */
+body.theme-win8 .card-glass,
+body.theme-win8 .feature-card,
+body.theme-win8 .faq-item {
+  background: var(--bg-card);
+  box-shadow: none;
+  border: none;
+  padding: 32px;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+/* Coloring specific tiles */
+body.theme-win8 .download-card .card-glass {
+  background: #00a300; /* Green for download */
+}
+body.theme-win8 .feature-card {
+  background: #9f00a7; /* Purple for features */
+}
+body.theme-win8 .faq-item {
+  background: #ff0097; /* Magenta for FAQ */
+}
+
+/* 3D Pivot click effect */
+body.theme-win8 .card-glass:active,
+body.theme-win8 .feature-card:active,
+body.theme-win8 .faq-item:active,
+body.theme-win8 .btn:active {
+  transform: perspective(600px) rotateX(2deg) rotateY(-2deg) scale(0.97);
+}
+
+body.theme-win8 .btn {
+  background: transparent;
+  border: 2px solid #ffffff;
+  color: #ffffff;
+  border-radius: 0px;
+  font-weight: 600;
+  text-transform: lowercase;
+}
+
+body.theme-win8 .btn:hover {
+  background: #ffffff;
+  color: #111111;
 }
 
 body.theme-win8 .card-aura {

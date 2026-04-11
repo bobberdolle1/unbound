@@ -1,0 +1,177 @@
+---
+---
+
+<section id="installation" class="installation section">
+  <div class="container">
+    <div class="section-header">
+      <span class="section-tag">Инструкция</span>
+      <h2 class="section-title">Как запустить Unbound</h2>
+      <p class="section-desc">Выберите платформу, чтобы увидеть шаги для запуска DPI-обходчика.</p>
+    </div>
+
+    <div class="install-grid">
+      <!-- Windows -->
+      <div class="install-card">
+        <h3><span class="os-icon">🪟</span> Windows</h3>
+        <p>Не требует установки драйвера (WinDivert встроен в бинарник).</p>
+        <ol>
+          <li>Распакуйте архив <code>unbound-windows-amd64.zip</code></li>
+          <li>Запустите <code>unbound.exe</code> от имени Администратора.</li>
+          <li>Никаких дополнительных настроек не требуется.</li>
+        </ol>
+      </div>
+
+      <!-- macOS -->
+      <div class="install-card">
+        <h3><span class="os-icon">🍎</span> macOS</h3>
+        <p>Работает через pf (Packet Filter) и сырые сокеты.</p>
+        <ol>
+          <li>Распакуйте: <code>tar -xvf unbound-darwin-amd64.tar.gz</code></li>
+          <li>Запустите в терминале: <br><code>sudo ./unbound</code></li>
+          <li>(Опционально) добавьте в демоны launchd для автозапуска.</li>
+        </ol>
+      </div>
+
+      <!-- Linux -->
+      <div class="install-card">
+        <h3><span class="os-icon">🐧</span> Linux</h3>
+        <p>Использует NFQUEUE/nftables для перехвата пакетов.</p>
+        <ol>
+          <li>Распакуйте бинарник: <code>tar -xvf unbound-linux-amd64.tar.gz</code></li>
+          <li>Запустите от рута: <br><code>sudo ./unbound</code></li>
+          <li>Правила iptables/nftables интегрируются на лету.</li>
+        </ol>
+      </div>
+
+      <!-- Android -->
+      <div class="install-card">
+        <h3><span class="os-icon">🤖</span> Android</h3>
+        <p>Работает через локальный VpnService без root-прав.</p>
+        <ol>
+          <li>Скачайте и установите <code>app-release.apk</code>.</li>
+          <li>Создайте профиль и разрешите VPN-соединение.</li>
+          <li>Нажмите кнопку <b>Connect</b> для туннелирования.</li>
+        </ol>
+      </div>
+
+      <!-- OpenWRT -->
+      <div class="install-card">
+        <h3><span class="os-icon">🌐</span> OpenWRT</h3>
+        <p>Разворачивается прямо на роутере для всей домашней сети.</p>
+        <ol>
+          <li>Загрузите пакет на роутер через SCP/SFTP.</li>
+          <li>Установите пакет: <code>opkg install unbound_2...ipk</code></li>
+          <li>Активируйте в веб-интерфейсе LuCI → Services.</li>
+        </ol>
+      </div>
+
+      <!-- iOS -->
+      <div class="install-card">
+        <h3><span class="os-icon">📱</span> iOS</h3>
+        <p>Доступно в виде нативного демона только для Jailbreak.</p>
+        <ol>
+          <li>Откройте пакетный менеджер (Sileo / Zebra).</li>
+          <li>Установите <code>.deb</code> пакет из архива.</li>
+          <li>Unbound автоматически запустится как фоновая служба.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .installation {
+    padding: var(--s-8) 0;
+  }
+  
+  .section-header {
+    text-align: center;
+    margin-bottom: var(--s-6);
+  }
+  
+  .section-tag {
+    display: inline-block;
+    padding: var(--s-1) var(--s-2);
+    border-radius: 100px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.09375em;
+    margin-bottom: var(--s-2);
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+  }
+  
+  .section-title {
+    font-size: clamp(2rem, 5vw, 2.5rem);
+    font-weight: 700;
+    margin: 0 0 var(--s-1);
+    letter-spacing: -0.03em;
+    color: var(--text-primary);
+  }
+  
+  .section-desc {
+    font-size: 0.9375rem;
+    line-height: 1.6;
+    max-width: 560px;
+    margin: 0 auto;
+    color: var(--text-secondary);
+  }
+
+  .install-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: var(--s-4);
+  }
+
+  .install-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--ui-radius);
+    padding: var(--s-4);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s ease, border-color 0.2s ease;
+  }
+  
+  .install-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+  }
+
+  .install-card h3 {
+    margin-top: 0;
+    margin-bottom: var(--s-2);
+    color: var(--text-primary);
+    font-size: 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  
+  .install-card p {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin-bottom: var(--s-3);
+  }
+
+  .install-card ol {
+    margin: 0;
+    padding-left: 1.25rem;
+    color: var(--text-primary);
+    font-size: 0.95rem;
+  }
+
+  .install-card li {
+    margin-bottom: var(--s-1);
+  }
+
+  .install-card code {
+    background: var(--bg-secondary);
+    padding: 0.1rem 0.3rem;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 0.85em;
+    color: var(--accent);
+  }
+</style>
