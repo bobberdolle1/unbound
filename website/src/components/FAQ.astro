@@ -4,68 +4,73 @@
 <section id="faq" class="faq">
   <div class="container">
     <div class="section-header">
-      <span class="section-tag card-aura text-secondary-aura">Частые вопросы</span>
-      <h2 class="section-title text-primary-aura">Частые <span class="gradient-text">вопросы</span></h2>
+      <span class="section-tag">FAQ</span>
+      <h2 class="section-title">Technical Details</h2>
     </div>
     <div class="faq-list">
-      <details class="faq-item card-aura" open>
-        <summary class="text-primary-aura">
-          <span>Что такое Unbound и как он работает?</span>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      <details class="faq-item" open>
+        <summary>
+          <span>What is Unbound — technically?</span>
+          <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
         </summary>
-        <div class="faq-answer text-secondary-aura">
-          <p>Unbound — бесплатная программа с открытым кодом для обхода DPI-блокировок. Использует движок <strong>winws2</strong> для манипуляции TCP-пакетами — TCP десинхронизация и перестановка пакетов (Multidisorder) — чтобы системы DPI не могли анализировать и блокировать ваш трафик к YouTube, Discord, Twitter и Instagram.</p>
+        <div class="faq-answer">
+          <p>Unbound is a Go wrapper around the <strong>Zapret 2</strong> engine (winws2 binary) and the <strong>WinDivert 2.2</strong> kernel packet filter. It provides a system-tray GUI that configures, launches, and monitors winws2 — the same DPI-evasion engine used by GoodbyeDPI and Zapret, but with automated profile selection and conflict detection.</p>
         </div>
       </details>
-      <details class="faq-item card-aura">
-        <summary class="text-primary-aura">
-          <span>Чем это отличается от VPN?</span>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      <details class="faq-item">
+        <summary>
+          <span>How does the WinDivert engine work?</span>
+          <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
         </summary>
-        <div class="faq-answer text-secondary-aura">
-          <p>VPN маршрутизирует весь трафик через иностранный сервер, что замедляет соединение. Unbound модифицирует только пакеты к заблокированным доменам — банки, госучреждения и разблокированные сайты работают как обычно. <strong>Нулевая потеря скорости</strong> для обычного серфинга.</p>
+        <div class="faq-answer">
+          <p>WinDivert installs a WFP (Windows Filtering Platform) callout driver at <strong>L3 (Network Layer)</strong> and <strong>L4 (Transport Layer)</strong>. It intercepts raw TCP/UDP packets before they reach the network stack. Winws2 then applies evasion techniques — TCP desynchronization, packet reordering (multidisorder), TTL manipulation, and HTTP/DPI-specific field obfuscation — before reinjecting modified packets. The target server reassembles the stream normally; DPI systems cannot reconstruct the original TLS handshake.</p>
         </div>
       </details>
-      <details class="faq-item card-aura">
-        <summary class="text-primary-aura">
-          <span>Зачем нужны права администратора?</span>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      <details class="faq-item">
+        <summary>
+          <span>What filter levels does it operate on?</span>
+          <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
         </summary>
-        <div class="faq-answer text-secondary-aura">
-          <p>Unbound использует драйвер WinDivert для перехвата и модификации сетевых пакетов на уровне ядра. Это требует прав администратора. Программа регистрируется в планировщике задач Windows для тихого автозапуска без повторных запросов UAC.</p>
+        <div class="faq-answer">
+          <p><strong>L3 (Network):</strong> IP-level filtering by destination/source address. <strong>L4 (Transport):</strong> TCP/UDP port and flag filtering. WinDivert captures packets at these layers — it does not operate at L7 (Application). DPI evasion is achieved by manipulating transport-layer characteristics (TCP sequence numbers, TTL, window size) that cause DPI parsers to lose stream synchronization while the endpoint TCP stack recovers correctly.</p>
         </div>
       </details>
-      <details class="faq-item card-aura">
-        <summary class="text-primary-aura">
-           <span>Работает ли Unbound на macOS и Linux?</span>
-           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      <details class="faq-item">
+        <summary>
+          <span>How is this different from a VPN?</span>
+          <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
         </summary>
-        <div class="faq-answer text-secondary-aura">
-           <p>Да! На <strong>macOS</strong> Unbound использует <strong>SpoofDPI</strong> (SOCKS5-прокси) с системной настройкой. На <strong>Linux</strong> используется <strong>nfqws</strong> с iptables/nftables NFQUEUE. Для десктопа Go-обёртка автоматизирует запуск, также доступен отдельный <strong>Rust CLI</strong>.</p>
+        <div class="faq-answer">
+          <p>A VPN creates an encrypted tunnel to a remote server, routing <em>all</em> traffic through it — adding latency and reducing bandwidth. Unbound modifies only packets destined for domains on the blocklist. Everything else — local banking, government services, CDNs — traverses the network unmodified. Zero overhead for non-blocked traffic. No remote infrastructure involved.</p>
         </div>
       </details>
-      <details class="faq-item card-aura">
-        <summary class="text-primary-aura">
-          <span>А что насчёт iOS 6 и iPhone 4s?</span>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      <details class="faq-item">
+        <summary>
+          <span>Why are administrator privileges required?</span>
+          <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
         </summary>
-        <div class="faq-answer text-secondary-aura">
-          <p>Да! Существует специальная <strong>legacy-версия</strong> для iOS 6.1.3+ (iPhone 4s, ARMv7). Она использует портированный движок <strong>tpws</strong> с совместимостью kqueue, системный SOCKS-прокси и скевоморфный интерфейс. Требуется джейлбрейк (Cydia Substrate).</p>
+        <div class="faq-answer">
+          <p>WinDivert is a kernel-mode WFP callout driver. Installing and binding it requires <strong>SeLoadDriverPrivilege</strong> — an admin-only right. Once installed, the driver persists across reboots. Unbound registers a Task Scheduler entry for silent startup (no UAC prompt on boot) and runs as a background process in the system tray.</p>
         </div>
       </details>
-      <details class="faq-item card-aura">
-        <summary class="text-primary-aura">
-          <span>Что за тема «Liquid Glass»?</span>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      <details class="faq-item">
+        <summary>
+          <span>What about macOS and Linux support?</span>
+          <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
         </summary>
-        <div class="faq-answer text-secondary-aura">
-          <p>Это эксклюзивная тема в обновлении v2.5.0, использующая <strong>экстремальное размытие фона</strong> и прозрачность. Она вдохновлена дизайном macOS Sonoma и iOS 17/18, создавая эффект "живого стекла" на вашем рабочем столе.</p>
+        <div class="faq-answer">
+          <p><strong>macOS:</strong> Uses <strong>SpoofDPI</strong> — a SOCKS5 proxy approach with system network configuration. <strong>Linux:</strong> Uses <strong>nfqws</strong> with iptables/nftables NFQUEUE for packet-level manipulation (equivalent to WinDivert on Windows). The Go desktop wrapper handles launch automation on both platforms. A standalone <strong>Rust CLI</strong> is also available for headless deployment.</p>
         </div>
       </details>
-    </div>
-  </div>
-</section>
-
+      <details class="faq-item">
+        <summary>
+          <span>What conflicts should I be aware of?</span>
+          <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </summary>
+        <div class="faq-answer">
+          <p>Since WinDivert operates at L3, concurrent packet-level filters cause undefined behavior. Unbound detects and blocks launch when the following are running: <strong>GoodbyeDPI</strong>, <strong>Zapret</strong> (nfqws/winws instances), <strong>OpenVPN</strong> (TAP adapter conflicts), <strong>Cloudflare WARP</strong>, and commercial VPN clients (ExpressVPN, NordVPN). Close conflicting processes before launching.</p>
+        </div>
+      </details>
     </div>
   </div>
 </section>
@@ -77,7 +82,7 @@
 }
 
 .container {
-  max-width: 800px;
+  max-width: 720px;
   margin: 0 auto;
 }
 
@@ -88,81 +93,111 @@
 
 .section-tag {
   display: inline-block;
-  padding: 0.4rem 1rem;
+  padding: 4px 12px;
   border-radius: 100px;
-  font-size: 0.8rem;
-  font-weight: 600;
+  font-size: 0.75rem;
+  font-weight: 500;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   text-transform: uppercase;
-  letter-spacing: 2px;
-  margin-bottom: 1.5rem;
-  transition: all 0.3s ease;
+  letter-spacing: 1.5px;
+  margin-bottom: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.5);
 }
 
 .section-title {
-  font-size: clamp(2rem, 5vw, 3rem);
-  font-weight: 800;
-  margin-bottom: 1rem;
-  letter-spacing: -1px;
-  transition: all 0.3s ease;
+  font-size: clamp(2rem, 5vw, 2.5rem);
+  font-weight: 700;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  margin: 0;
+  letter-spacing: -0.03em;
+  color: rgba(255, 255, 255, 0.95);
 }
 
 .faq-list {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 8px;
 }
 
 .faq-item {
   border-radius: 12px;
   overflow: hidden;
-  transition: all 0.3s ease;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.faq-item:hover {
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .faq-item[open] {
-  border-color: var(--accent, #667eea);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 .faq-item summary {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 1.25rem 1.5rem;
+  gap: 16px;
+  padding: 16px 20px;
   cursor: pointer;
   list-style: none;
-  font-weight: 600;
-  font-size: 1rem;
-  transition: color 0.2s;
+  font-weight: 500;
+  font-size: 0.875rem;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: rgba(255, 255, 255, 0.85);
+  transition: color 0.2s ease;
 }
 
 .faq-item summary::-webkit-details-marker {
   display: none;
 }
 
-.faq-item summary svg {
-  transition: transform 0.3s ease;
+.faq-chevron {
+  width: 16px;
+  height: 16px;
   flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.35);
+  transition: transform 0.2s ease;
 }
 
-.faq-item[open] summary svg {
+.faq-item[open] .faq-chevron {
   transform: rotate(180deg);
 }
 
 .faq-answer {
-  padding: 0 1.5rem 1.5rem;
+  padding: 0 20px 20px;
 }
 
 .faq-answer p {
-  line-height: 1.7;
-  transition: all 0.3s ease;
+  line-height: 1.6;
+  font-size: 0.8125rem;
+  color: rgba(255, 255, 255, 0.4);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  margin: 0;
 }
 
 .faq-answer strong {
-  opacity: 0.8;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 500;
 }
 
 @media (max-width: 640px) {
   .faq {
     padding: 4rem 1.5rem;
+  }
+  .section-header {
+    margin-bottom: 3rem;
+  }
+  .faq-item summary {
+    padding: 16px;
+  }
+  .faq-answer {
+    padding: 0 16px 16px;
   }
 }
 </style>

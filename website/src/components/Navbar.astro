@@ -1,19 +1,24 @@
 ---
 ---
 
-<nav class="navbar card-aura">
+<nav class="navbar">
+  <div class="navbar-glass"></div>
   <div class="nav-container">
-    <a href="#" class="nav-logo text-primary-aura">
-      <span class="logo-icon">⚡</span>
+    <a href="/" class="nav-logo">
+      <svg class="logo-mark" width="20" height="20" viewBox="0 0 20 20" fill="none">
+        <rect x="1" y="1" width="18" height="18" rx="5" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M7 10L9 12L13 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
       <span class="logo-text">UNBOUND</span>
     </a>
     <div class="nav-links">
-      <a href="#features" class="text-secondary-aura hover:text-primary-aura">Возможности</a>
-      <a href="#download" class="text-secondary-aura hover:text-primary-aura">Скачать</a>
-      <a href="#how-it-works" class="text-secondary-aura hover:text-primary-aura">Как работает</a>
-      <a href="#faq" class="text-secondary-aura hover:text-primary-aura">FAQ</a>
-      <a href="https://github.com/bobberdolle1/unbound" target="_blank" rel="noopener" class="nav-github btn-primary">
-        GitHub
+      <a href="#features" class="nav-link">Architecture</a>
+      <a href="#download" class="nav-link">Download</a>
+      <a href="#how-it-works" class="nav-link">Protocol</a>
+      <a href="#faq" class="nav-link">FAQ</a>
+      <a href="https://github.com/bobberdolle1/unbound" target="_blank" rel="noopener" class="nav-link nav-link--github">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+        Source
       </a>
     </div>
   </div>
@@ -26,63 +31,135 @@
   left: 0;
   right: 0;
   z-index: 1000;
-  transition: all 0.3s ease;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  height: 56px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* ── Liquid Glass Refraction Layer ─────────────────────────────── */
+.navbar-glass {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 1) 60%, rgba(0, 0, 0, 0) 100%);
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 1) 60%, rgba(0, 0, 0, 0) 100%);
+}
+
+/* Subtle inner highlight — macOS Tahoe signature */
+.navbar-glass::before {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 10%;
+  right: 10%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
+}
+
+/* Mesh refraction shimmer */
+.navbar-glass::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.02) 45%,
+    rgba(255, 255, 255, 0.04) 50%,
+    rgba(255, 255, 255, 0.02) 55%,
+    transparent 100%
+  );
+  animation: shimmer 8s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0%, 100% { transform: translateX(-100%); }
+  50% { transform: translateX(100%); }
+}
+
+/* ── Nav Container — Base-8 Grid ───────────────────────────────── */
 .nav-container {
+  position: relative;
+  z-index: 1;
   max-width: 1200px;
   margin: 0 auto;
-  padding: 0.75rem 2rem;
+  padding: 0 32px;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
+/* ── Logo ──────────────────────────────────────────────────────── */
 .nav-logo {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 10px;
   text-decoration: none;
-  font-weight: 800;
-  font-size: 1.25rem;
+  color: #fff;
 }
 
-.logo-icon {
-  font-size: 1.5rem;
+.logo-mark {
+  color: rgba(255, 255, 255, 0.9);
+  transition: color 0.2s ease;
 }
 
 .logo-text {
-  letter-spacing: 2px;
-  transition: all 0.3s ease;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 2.5px;
+  color: rgba(255, 255, 255, 0.95);
+  transition: color 0.2s ease;
 }
 
+/* ── Nav Links ─────────────────────────────────────────────────── */
 .nav-links {
   display: flex;
   align-items: center;
-  gap: 2rem;
+  gap: 8px;
 }
 
-.nav-links a {
-  font-size: 0.9rem;
+.nav-link {
+  font-size: 13px;
   font-weight: 500;
-  transition: color 0.2s ease;
+  color: rgba(255, 255, 255, 0.5);
   text-decoration: none;
-}
-
-.nav-github {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1.25rem;
+  padding: 6px 12px;
   border-radius: 8px;
-  font-weight: 700;
+  transition: color 0.2s ease, background 0.2s ease;
+  white-space: nowrap;
 }
 
+.nav-link:hover {
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* ── GitHub Button — Pill Style ────────────────────────────────── */
+.nav-link--github {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.nav-link--github:hover {
+  color: rgba(255, 255, 255, 0.95);
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+/* ── Responsive ────────────────────────────────────────────────── */
 @media (max-width: 768px) {
-  .nav-links {
+  .nav-link:not(.nav-link--github) {
     display: none;
+  }
+  .nav-container {
+    padding: 0 24px;
   }
 }
 </style>

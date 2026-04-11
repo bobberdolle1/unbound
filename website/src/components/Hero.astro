@@ -2,49 +2,55 @@
 ---
 
 <section class="hero">
-  <div class="hero-bg"></div>
+  <div class="hero-mesh-gradient" aria-hidden="true"></div>
+  <div class="hero-refraction-layer" aria-hidden="true"></div>
   <div class="hero-content">
-    <div class="hero-badge card-aura">
+    <div class="hero-badge glass-chip">
       <span class="badge-dot"></span>
-      <span>v2.5.0 — Aura Design Edition</span>
+      <span>v2.5.0 — Open Source</span>
     </div>
     <h1 class="hero-title">
-      Обход<br />
-      <span class="gradient-text">DPI-блокировок</span>
+      Open Source DPI Bypass<br />
+      <span class="gradient-text">for macOS Tahoe, iOS 26 & Windows</span>
     </h1>
-    <p class="hero-subtitle text-secondary-aura">
-      Бесплатная программа с открытым кодом для разблокировки YouTube, Discord, Instagram, Twitter/X.
-      Работает на <strong>Windows, Android, Linux, iOS, OpenWrt</strong> — <strong>без потери скорости</strong>.
+    <p class="hero-subtitle">
+      A high-performance <strong>Zapret 2 wrapper</strong> powered by the <strong>WinDivert packet-filtering engine</strong>.
+      Transparent traffic redirection at the network layer — <strong>zero latency, zero overhead</strong>.
     </p>
     <div class="hero-actions">
-      <a href="#download" class="btn btn-primary">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        Скачать бесплатно
+      <a href="#download" class="btn btn-primary glass-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Download
       </a>
-      <a href="#how-it-works" class="btn btn-secondary card-aura">
-        Как это работает
+      <a href="#how-it-works" class="btn btn-secondary glass-btn">
+        How It Works
       </a>
     </div>
-    <div class="hero-stats card-aura">
+    <div class="hero-stats glass-panel">
       <div class="stat">
         <span class="stat-value">70+</span>
-        <span class="stat-label text-secondary-aura">Профилей</span>
+        <span class="stat-label">Profiles</span>
       </div>
-      <div class="stat-divider"></div>
+      <div class="stat-divider" aria-hidden="true"></div>
       <div class="stat">
-        <span class="stat-value">0%</span>
-        <span class="stat-label text-secondary-aura">Потери</span>
+        <span class="stat-value">0ms</span>
+        <span class="stat-label">Added Latency</span>
       </div>
-      <div class="stat-divider"></div>
+      <div class="stat-divider" aria-hidden="true"></div>
       <div class="stat">
-        <span class="stat-value">6</span>
-        <span class="stat-label text-secondary-aura">Платформ</span>
+        <span class="stat-value">L3/L4</span>
+        <span class="stat-label">Packet Filter</span>
       </div>
     </div>
   </div>
 </section>
 
 <style>
+/* ─────────────────────────────────────────────
+   HERO — Liquid Glass / macOS Tahoe Aesthetic
+   Base-8 spacing · Inter/Geist typography
+   ───────────────────────────────────────────── */
+
 .hero {
   min-height: 100vh;
   display: flex;
@@ -55,142 +61,373 @@
   padding: 8rem 2rem 4rem;
   position: relative;
   overflow: hidden;
+  isolation: isolate;
 }
 
-.hero-bg {
+/* ── Mesh Gradient Background ────────────── */
+
+.hero-mesh-gradient {
   position: absolute;
   inset: 0;
+  z-index: -2;
   pointer-events: none;
-  background: radial-gradient(circle at 50% 50%, var(--bg-secondary) 0%, var(--bg-primary) 100%);
-  opacity: 0.8;
-  z-index: -1;
+  background:
+    radial-gradient(ellipse 80% 60% at 20% 10%, rgba(99, 102, 241, 0.12) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 50% at 85% 20%, rgba(168, 85, 247, 0.10) 0%, transparent 55%),
+    radial-gradient(ellipse 70% 55% at 50% 90%, rgba(59, 130, 246, 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse 50% 40% at 70% 60%, rgba(14, 165, 233, 0.06) 0%, transparent 45%);
+  animation: mesh-drift 30s ease-in-out infinite alternate;
 }
+
+@keyframes mesh-drift {
+  0%   { transform: translate(0, 0) scale(1); }
+  33%  { transform: translate(-2%, 1%) scale(1.02); }
+  66%  { transform: translate(1%, -1%) scale(0.98); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+
+/* ── Refraction Layer (backdrop-filter blur) ── */
+
+.hero-refraction-layer {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  backdrop-filter: blur(40px) saturate(1.4);
+  -webkit-backdrop-filter: blur(40px) saturate(1.4);
+  background: rgba(255, 255, 255, 0.015);
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, black 20%, transparent 70%);
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, black 20%, transparent 70%);
+}
+
+/* ── Content Container ───────────────────── */
 
 .hero-content {
   max-width: 800px;
+  width: 100%;
   position: relative;
-  z-index: 100;
+  z-index: 1;
 }
+
+/* ── Badge Chip ───────────────────────────── */
 
 .hero-badge {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1.25rem;
-  font-size: 0.85rem;
-  margin-bottom: 2rem;
+  gap: 8px;
+  padding: 8px 20px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  margin-bottom: 32px;
+  color: var(--text-secondary);
+}
+
+.glass-chip {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 100px;
+  backdrop-filter: blur(20px) saturate(1.3);
+  -webkit-backdrop-filter: blur(20px) saturate(1.3);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 2px 8px rgba(0, 0, 0, 0.12);
 }
 
 .badge-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 10px var(--accent);
-  animation: pulse-dot 2s infinite;
+  background: #34d399;
+  box-shadow: 0 0 8px rgba(52, 211, 153, 0.6);
+  animation: pulse-dot 2s ease-in-out infinite;
+  flex-shrink: 0;
 }
 
 @keyframes pulse-dot {
   0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.5); opacity: 0.5; }
+  50%      { transform: scale(1.4); opacity: 0.5; }
 }
 
+/* ── Title ────────────────────────────────── */
+
 .hero-title {
-  font-size: clamp(3rem, 8vw, 5.5rem);
-  font-weight: 900;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-size: clamp(2.5rem, 7vw, 4.5rem);
+  font-weight: 800;
   line-height: 1.05;
-  margin-bottom: 1.5rem;
-  letter-spacing: -2px;
+  letter-spacing: -0.035em;
+  margin-bottom: 24px;
   color: var(--text-primary);
 }
 
 .gradient-text {
-  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-secondary) 100%);
+  background: linear-gradient(135deg, #818cf8 0%, #6366f1 30%, #3b82f6 60%, #0ea5e9 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
+/* ── Subtitle ─────────────────────────────── */
+
 .hero-subtitle {
-  font-size: clamp(1rem, 2vw, 1.25rem);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: clamp(1rem, 2vw, 1.125rem);
+  font-weight: 400;
   line-height: 1.7;
-  margin-bottom: 2.5rem;
-  max-width: 650px;
+  color: var(--text-secondary);
+  margin-bottom: 40px;
+  max-width: 640px;
   margin-left: auto;
   margin-right: auto;
 }
 
-.hero-actions {
-  display: flex;
-  gap: 1.5rem;
-  justify-content: center;
-  flex-wrap: wrap;
-  margin-bottom: 4rem;
-}
-
-.btn-secondary {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 1rem 2rem;
+.hero-subtitle strong {
   font-weight: 600;
   color: var(--text-primary);
 }
 
-.hero-stats {
+/* ── Action Buttons ───────────────────────── */
+
+.hero-actions {
   display: flex;
-  align-items: center;
+  gap: 16px;
   justify-content: center;
-  gap: 3rem;
-  padding: 2rem 4rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 48px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 28px;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1;
+  border-radius: 14px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1),
+              box-shadow 0.25s ease,
+              background 0.25s ease,
+              border-color 0.25s ease;
+  white-space: nowrap;
+}
+
+.btn svg {
+  flex-shrink: 0;
+}
+
+.glass-btn {
+  position: relative;
+  overflow: hidden;
+}
+
+.glass-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.12) 0%,
+    rgba(255, 255, 255, 0) 50%
+  );
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.glass-btn:hover::before {
+  opacity: 1;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #6366f1, #4f46e5);
+  color: #ffffff;
+  border: 1px solid rgba(99, 102, 241, 0.5);
+  box-shadow:
+    0 4px 16px rgba(99, 102, 241, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 8px 28px rgba(99, 102, 241, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.btn-secondary:hover {
+  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+/* ── Stats Panel ──────────────────────────── */
+
+.hero-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 32px;
+  padding: 16px 32px;
+}
+
+.glass-panel {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  backdrop-filter: blur(24px) saturate(1.3);
+  -webkit-backdrop-filter: blur(24px) saturate(1.3);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 72px;
 }
 
 .stat-value {
-  display: block;
-  font-size: 2.5rem;
-  font-weight: 900;
-  color: var(--text-primary);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  font-size: 1.75rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
   line-height: 1;
-  margin-bottom: 0.5rem;
+  color: var(--text-primary);
+  background: linear-gradient(135deg, #c7d2fe, #a5b4fc, #818cf8);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .stat-label {
-  font-size: 0.75rem;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  letter-spacing: 2px;
-  font-weight: 700;
+  color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 .stat-divider {
   width: 1px;
-  height: 50px;
-  background: var(--border-color);
+  height: 40px;
+  flex-shrink: 0;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgba(255, 255, 255, 0.12) 20%,
+    rgba(255, 255, 255, 0.12) 80%,
+    transparent
+  );
 }
 
+/* ── Scroll Indicator ─────────────────────── */
 
 .hero-scroll {
   position: absolute;
-  bottom: 2rem;
-  animation: bounce 2s infinite;
+  bottom: 32px;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .hero-scroll a {
-  transition: color 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  color: var(--text-secondary);
+  opacity: 0.5;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  animation: scroll-bounce 2s ease-in-out infinite;
 }
 
-@keyframes bounce {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(8px); }
+.hero-scroll a:hover {
+  opacity: 1;
+  transform: translateY(2px);
 }
+
+@keyframes scroll-bounce {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(6px); }
+}
+
+/* ── Responsive ───────────────────────────── */
 
 @media (max-width: 640px) {
+  .hero {
+    padding: 6rem 1.5rem 3rem;
+    min-height: auto;
+  }
+
+  .hero-title {
+    font-size: clamp(2rem, 9vw, 3rem);
+    letter-spacing: -0.03em;
+  }
+
+  .hero-subtitle {
+    font-size: 1rem;
+    margin-bottom: 32px;
+  }
+
+  .hero-actions {
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 32px;
+  }
+
+  .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
   .hero-stats {
     flex-direction: column;
-    gap: 1rem;
+    gap: 16px;
+    padding: 24px;
+    width: 100%;
+    max-width: 240px;
   }
+
   .stat-divider {
     width: 40px;
     height: 1px;
+  }
+
+  .stat {
+    min-width: unset;
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-mesh-gradient,
+  .badge-dot,
+  .hero-scroll a {
+    animation: none;
   }
 }
 </style>

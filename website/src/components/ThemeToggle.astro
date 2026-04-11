@@ -41,34 +41,32 @@
 
 <script is:inline>
 (function() {
-  const saved = localStorage.getItem('unbound-theme') || 'light';
+  const saved = localStorage.getItem('unbound-theme') || 'theme-light';
   
   function setTheme(theme) {
     // Remove all theme classes first
     const themeClasses = Array.from(document.body.classList).filter(c => c.startsWith('theme-'));
     themeClasses.forEach(c => document.body.classList.remove(c));
     
-    // Add new theme class
-    document.body.classList.add('theme-' + theme);
+    // Add the selected theme class (always, including theme-light)
+    document.body.classList.add(theme);
     localStorage.setItem('unbound-theme', theme);
     
-    // Update buttons
+    // Update buttons (handling both 'light' and 'theme-light' data-theme mappings)
     document.querySelectorAll('.theme-btn').forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.theme === theme);
+      const btnTheme = btn.dataset.theme === 'light' ? 'theme-light' : 'theme-' + btn.dataset.theme;
+      btn.classList.toggle('active', btnTheme === theme);
     });
-
-    // Save for App sync
-    if (window.wails) {
-       // Future logic for app sync
-    }
   }
 
+  // Initial set
   setTheme(saved);
 
   document.addEventListener('click', function(e) {
     const btn = e.target.closest('.theme-btn');
     if (!btn) return;
-    setTheme(btn.dataset.theme);
+    const targetTheme = btn.dataset.theme === 'light' ? 'theme-light' : 'theme-' + btn.dataset.theme;
+    setTheme(targetTheme);
   });
 })();
 </script>
