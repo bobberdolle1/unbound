@@ -182,8 +182,8 @@
               <line x1="13" y1="24" x2="19" y2="24" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
             </svg>
             <h3>iOS</h3>
-            <p class="os-version">iOS · iPhone и iPad</p>
-            <p class="os-detail">Туннель Network Extension</p>
+            <p class="os-version">iOS · Jailbreak (Rootless/Rootful)</p>
+            <p class="os-detail">Нативный демон (Daemon)</p>
             <span class="btn btn-secondary">
               <svg class="btn-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M6 8h4M8 6v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
               Скоро
@@ -272,29 +272,26 @@
 }
 
 /* ── Grid ────────────────────────────────────────────────── */
-.download-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: var(--s-2);
-  margin-bottom: var(--s-4);
-}
-
+.download-grid,
 .download-grid-secondary,
 .download-grid-tertiary {
-  max-width: 900px;
-  margin-left: auto;
-  margin-right: auto;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--s-2);
+  margin-bottom: var(--s-4);
+  width: 100%;
 }
 
 .download-grid-tertiary {
-  grid-template-columns: repeat(2, 1fr);
-  max-width: 580px;
   margin-bottom: var(--s-6);
 }
 
 /* ── Card wrapper (layout only) ──────────────────────────── */
 .download-card {
   position: relative;
+  flex: 1 1 240px;
+  max-width: 280px;
 }
 
 /* ── Glass panel (Liquid Material) ───────────────────────── */
@@ -446,22 +443,10 @@
 }
 
 /* ── Responsive ──────────────────────────────────────────── */
-@media (max-width: 1024px) {
-  .download-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  .download-grid-secondary,
-  .download-grid-tertiary {
-    grid-template-columns: repeat(2, 1fr);
-    max-width: none;
-  }
-}
-
 @media (max-width: 640px) {
-  .download-grid,
-  .download-grid-secondary,
-  .download-grid-tertiary {
-    grid-template-columns: 1fr;
+  .download-card {
+    max-width: 100%;
+    flex: 1 1 100%;
   }
   .download {
     padding: var(--s-8) var(--s-3);
