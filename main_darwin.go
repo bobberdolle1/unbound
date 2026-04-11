@@ -15,11 +15,13 @@ func registerHeadlessProvider(manager *providers.ProviderManager, assets *engine
 	provider := providers.NewZapretMacOSProvider(assets.BinDir)
 
 	// Register profiles
-	for _, p := range engine.GetProfiles(assets.LuaDir) {
-		provider.(*providers.ZapretMacOSProvider).RegisterProfile(p.Name, p.Args)
-	}
-	for _, p := range engine.GetAdvancedProfiles(assets.LuaDir) {
-		provider.(*providers.ZapretMacOSProvider).RegisterProfile(p.Name, p.Args)
+	if cbProvider, ok := provider.(providers.BypassProviderWithCallbacks); ok {
+		for _, p := range engine.GetProfiles(assets.LuaDir) {
+			cbProvider.RegisterProfile(p.Name, p.Args)
+		}
+		for _, p := range engine.GetAdvancedProfiles(assets.LuaDir) {
+			cbProvider.RegisterProfile(p.Name, p.Args)
+		}
 	}
 
 	manager.Register(provider)

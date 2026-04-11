@@ -1,42 +1,44 @@
 ---
 ---
 
-<footer class="footer">
+<footer class="footer card-aura">
   <div class="container">
     <div class="footer-content">
       <div class="footer-brand">
-        <a href="#" class="footer-logo">
+        <a href="#" class="footer-logo text-primary-aura">
           <span class="logo-icon">⚡</span>
           <span class="logo-text">UNBOUND</span>
         </a>
-        <p>Free, open-source DPI bypass. Community-driven. GPL-3.0 licensed.</p>
+        <p class="text-secondary-aura">Free, open-source DPI bypass. Community-driven. GPL-3.0 licensed.</p>
       </div>
       <div class="footer-links">
         <div class="footer-column">
-          <h4>Project</h4>
-          <a href="https://github.com/bobberdolle1/unbound" target="_blank" rel="noopener">GitHub</a>
-          <a href="https://github.com/bobberdolle1/unbound/releases" target="_blank" rel="noopener">Releases</a>
-          <a href="https://github.com/bobberdolle1/unbound/issues" target="_blank" rel="noopener">Issues</a>
-          <a href="https://github.com/bobberdolle1/unbound/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a>
+          <h4 class="text-primary-aura">Project</h4>
+          <a href="https://github.com/bobberdolle1/unbound" target="_blank" rel="noopener" class="text-secondary-aura">GitHub</a>
+          <a href="https://github.com/bobberdolle1/unbound/releases" target="_blank" rel="noopener" class="text-secondary-aura">Releases</a>
+          <a href="https://github.com/bobberdolle1/unbound/issues" target="_blank" rel="noopener" class="text-secondary-aura">Issues</a>
         </div>
         <div class="footer-column">
-          <h4>Credits</h4>
-          <a href="https://github.com/bol-van/zapret" target="_blank" rel="noopener">Zapret2 Engine</a>
-          <a href="https://wails.io" target="_blank" rel="noopener">Wails Framework</a>
-          <a href="https://github.com/baschny/windivert" target="_blank" rel="noopener">WinDivert</a>
+          <h4 class="text-primary-aura">Credits</h4>
+          <a href="https://github.com/bol-van/zapret" target="_blank" rel="noopener" class="text-secondary-aura">Zapret2 Engine</a>
+          <a href="https://wails.io" target="_blank" rel="noopener" class="text-secondary-aura">Wails Framework</a>
         </div>
       </div>
     </div>
     <div class="footer-bottom">
-      <p>&copy; 2026 Unbound Project. Released under <a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank" rel="noopener">GPL-3.0</a>.</p>
+      <p class="text-secondary-aura">&copy; 2026 Unbound Project. Released under <a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank" rel="noopener" class="text-primary-aura">GPL-3.0</a>.</p>
     </div>
   </div>
 </footer>
 
 <style>
 .footer {
-  padding: 4rem 2rem 2rem;
-  transition: all 0.3s ease;
+  padding: 6rem 2rem 3rem;
+  margin-top: 4rem;
+  border-bottom: none;
+  border-left: none;
+  border-right: none;
+  border-radius: 0;
 }
 
 .container {
@@ -48,11 +50,11 @@
   display: flex;
   justify-content: space-between;
   gap: 3rem;
-  margin-bottom: 3rem;
+  margin-bottom: 4rem;
 }
 
 .footer-brand {
-  max-width: 300px;
+  max-width: 320px;
 }
 
 .footer-logo {
@@ -61,73 +63,70 @@
   gap: 0.5rem;
   text-decoration: none;
   font-weight: 800;
-  font-size: 1.25rem;
-  margin-bottom: 1rem;
+  font-size: 1.5rem;
+  margin-bottom: 1.5rem;
 }
 
-.footer-logo .logo-text {
+.logo-text {
   letter-spacing: 2px;
-  transition: all 0.3s ease;
 }
 
 .footer-brand p {
-  font-size: 0.9rem;
+  font-size: 1rem;
   line-height: 1.6;
-  transition: all 0.3s ease;
 }
 
 .footer-links {
   display: flex;
-  gap: 4rem;
+  gap: 5rem;
 }
 
 .footer-column h4 {
   font-size: 0.85rem;
-  font-weight: 700;
+  font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 1px;
-  margin-bottom: 1rem;
-  transition: all 0.3s ease;
+  letter-spacing: 2px;
+  margin-bottom: 1.5rem;
 }
 
 .footer-column a {
   display: block;
-  font-size: 0.9rem;
-  margin-bottom: 0.5rem;
-  transition: color 0.2s;
+  font-size: 1rem;
+  margin-bottom: 0.75rem;
   text-decoration: none;
+  transition: all 0.2s ease;
 }
 
 .footer-column a:hover {
-  opacity: 0.8;
+  transform: translateX(4px);
 }
 
 .footer-bottom {
-  padding-top: 2rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  padding-top: 3rem;
+  border-top: 1px solid var(--border-color);
   text-align: center;
 }
 
 .footer-bottom p {
-  font-size: 0.85rem;
-  transition: all 0.3s ease;
+  font-size: 0.9rem;
 }
 
 .footer-bottom a {
   text-decoration: none;
-  transition: all 0.3s ease;
-}
-
-.footer-bottom a:hover {
-  text-decoration: underline;
+  font-weight: 600;
 }
 
 @media (max-width: 768px) {
   .footer-content {
     flex-direction: column;
+    text-align: center;
+  }
+  .footer-logo {
+    justify-content: center;
   }
   .footer-links {
-    gap: 2rem;
+    justify-content: center;
+    gap: 3rem;
   }
 }
 </style>

@@ -1,120 +1,169 @@
 @import "tailwindcss";
-@import url('https://fonts.googleapis.com/css2?family=Comic+Neue:wght@400;700&family=Permanent+Marker&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Comic+Neue:wght@400;700&family=Permanent+Marker&family=VT323&display=swap');
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+:root {
+  /* Default: Standard White */
+  --ui-bg: #f8fafc;
+  --ui-panel: #ffffff;
+  --ui-panel-transparent: rgba(255, 255, 255, 0.8);
+  --ui-accent: #3b82f6;
+  --ui-accent-hover: #2563eb;
+  --ui-text: #0f172a;
+  --ui-text-muted: #64748b;
+  --ui-border: #e2e8f0;
+  --ui-radius: 12px;
+  --ui-blur: 8px;
+  --font-main: 'Inter', system-ui, sans-serif;
+  --font-accent: 'Inter', system-ui, sans-serif;
 }
 
-body {
-  font-family: 'Comic Neue', cursive;
-  background-color: #fdfdfc;
-  /* Notebook paper background */
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   THEME CLASSES FOR THE APP
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+/* 1. DOODLE JUMP (Legacy Default) */
+body.theme-doodle {
+  --ui-bg: #fdfdfc;
+  --ui-panel: rgba(255, 255, 255, 0.9);
+  --ui-accent: #93c54b;
+  --ui-accent-hover: #7eb03a;
+  --ui-text: #222;
+  --ui-text-muted: #4b5563;
+  --ui-border: #222;
+  --ui-radius: 15px 255px 15px 225px/255px 15px 225px 15px;
+  --font-main: 'Comic Neue', cursive;
+  --font-accent: 'Permanent Marker', cursive;
+}
+
+body.theme-doodle {
   background-image: 
     linear-gradient(90deg, transparent 79px, rgba(171, 206, 212, 0.6) 79px, rgba(171, 206, 212, 0.6) 81px, transparent 81px),
     linear-gradient(rgba(0, 0, 0, 0.08) 1px, transparent 1px);
   background-size: 100% 24px;
-  background-position: 0 40px; /* Offset for header */
-  color: #222;
+}
+
+/* 2. MODERN DARK */
+body.theme-dark {
+  --ui-bg: #0f172a;
+  --ui-panel: #1e293b;
+  --ui-panel-transparent: rgba(30, 41, 59, 0.7);
+  --ui-accent: #3b82f6;
+  --ui-accent-hover: #60a5fa;
+  --ui-text: #f8fafc;
+  --ui-text-muted: #94a3b8;
+  --ui-border: #334155;
+  --ui-radius: 12px;
+}
+
+/* 3. LIQUID GLASS (macOS inspired) */
+body.theme-liquid-glass {
+  --ui-bg: #000;
+  --ui-panel: rgba(255, 255, 255, 0.08);
+  --ui-panel-transparent: rgba(255, 255, 255, 0.05);
+  --ui-accent: #ffffff;
+  --ui-accent-hover: #e0e0e0;
+  --ui-text: #fff;
+  --ui-text-muted: rgba(255, 255, 255, 0.5);
+  --ui-border: rgba(255, 255, 255, 0.1);
+  --ui-radius: 20px;
+  --ui-blur: 25px;
+}
+
+body.theme-liquid-glass {
+  background: radial-gradient(circle at 50% 50%, #1e1b4b 0%, #000000 100%);
+}
+
+/* 4. WINDOWS 95 */
+body.theme-win95 {
+  --ui-bg: #008080;
+  --ui-panel: #c0c0c0;
+  --ui-accent: #000080;
+  --ui-accent-hover: #101080;
+  --ui-text: #000;
+  --ui-text-muted: #404040;
+  --ui-border: #808080;
+  --ui-radius: 0px;
+  --font-main: 'Tahoma', sans-serif;
+}
+
+/* 5. GHOST IN THE SHELL (Cyberpunk) */
+body.theme-ghost {
+  --ui-bg: #050505;
+  --ui-panel: rgba(0, 255, 0, 0.05);
+  --ui-accent: #00ff41;
+  --ui-accent-hover: #00cc33;
+  --ui-text: #00ff41;
+  --ui-text-muted: #008f11;
+  --ui-border: #00ff41;
+  --ui-radius: 2px;
+  --ui-blur: 0px;
+  --font-main: 'VT323', monospace;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   CORE APP STYLES
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+body {
+  font-family: var(--font-main);
+  background-color: var(--ui-bg);
+  color: var(--ui-text);
   overflow: hidden;
   user-select: none;
-  --wails-draggable: drag;
+  transition: background 0.4s ease, color 0.4s ease;
   -webkit-app-region: drag;
 }
 
-#root {
-  width: 100vw;
-  height: 100vh;
+.font-marker { font-family: var(--font-accent); }
+
+.sketch-box {
+  background: var(--ui-panel);
+  border: 2px solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  backdrop-filter: blur(var(--ui-blur));
+  box-shadow: 4px 4px 0 var(--ui-border);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Scrollbar hiding */
-::-webkit-scrollbar {
-  width: 0px;
-  height: 0px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: transparent;
-}
-
-/* Firefox */
-* {
-  scrollbar-width: none;
-}
-
-/* IE/Edge */
-* {
-  -ms-overflow-style: none;
-}
-
-.font-marker {
-  font-family: 'Permanent Marker', cursive;
-}
-
-/* Hand-drawn button style (Doodle Jump platform) */
 .doodle-btn {
-  background-color: #93c54b; /* Classic doodle jump green */
-  border: 3px solid #222;
-  border-radius: 255px 15px 225px 15px/15px 225px 15px 255px; /* Sketchy irregular shape */
-  box-shadow: 2px 4px 0px rgba(0,0,0,0.8);
-  transition: all 0.1s;
-  color: #222;
+  background: var(--ui-accent);
+  color: var(--ui-bg);
+  border: 2px solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  box-shadow: 0 4px 0 var(--ui-border);
+  font-family: var(--font-accent);
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.doodle-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 0 var(--ui-border);
+  background: var(--ui-accent-hover);
 }
 
 .doodle-btn:active:not(:disabled) {
   transform: translateY(2px);
-  box-shadow: 0px 2px 0px rgba(0,0,0,0.8);
+  box-shadow: 0 2px 0 var(--ui-border);
 }
 
 .doodle-btn:disabled {
-  background-color: #e2e8f0;
-  color: #94a3b8;
-  border-color: #94a3b8;
-  box-shadow: 2px 4px 0px #94a3b8;
+  opacity: 0.5;
+  filter: grayscale(1);
   cursor: not-allowed;
-  transform: translateY(0);
 }
 
-.doodle-btn-red {
-  background-color: #fca5a5; /* Red platform style for disconnect */
-}
-
-/* Sketchy container / card */
-.sketch-box {
-  background: rgba(255, 255, 255, 0.85);
-  border: 3px solid #222;
-  border-radius: 15px 255px 15px 225px/255px 15px 225px 15px;
-  box-shadow: 3px 3px 0 #222;
-}
-
-/* Small sketch input/select */
 .sketch-input {
-  background: transparent;
-  border: 2px solid #222;
-  border-radius: 225px 15px 255px 15px/15px 225px 15px 255px;
+  background: var(--ui-panel-transparent);
+  border: 2px solid var(--ui-border);
+  border-radius: var(--ui-radius);
+  color: var(--ui-text);
+  padding: 0.5rem 1rem;
 }
 
-.bounce-anim {
-  animation: bounce-soft 1.5s infinite ease-in-out;
-}
+/* Scrollbar hiding logic preserved */
+::-webkit-scrollbar { width: 0; height: 0; }
+* { scrollbar-width: none; -ms-overflow-style: none; }
 
-@keyframes bounce-soft {
-  0%, 100% { transform: translateY(0) rotate(-2deg); }
-  50% { transform: translateY(-8px) rotate(2deg); }
-}
+.app-drag { -webkit-app-region: drag; }
+.app-no-drag { -webkit-app-region: no-drag; }
 
-.app-drag {
-  --wails-draggable: drag;
-  -webkit-app-region: drag;
-}
-
-.app-no-drag {
-  --wails-draggable: no-drag;
-  -webkit-app-region: no-drag;
-}

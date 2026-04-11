@@ -116,7 +116,7 @@ build_windows() {
     local debug_flag=""
     [ "$DEBUG_MODE" = true ] && debug_flag="-debug"
 
-    wails build -clean -o "unbound.exe" $debug_flag
+    wails build -platform windows/amd64 -clean -o "unbound.exe" $debug_flag
 
     local out="$BUILD_DIR/bin"
     mkdir -p "$DIST_DIR/unbound-v${ver}-win64"
@@ -157,7 +157,7 @@ build_linux() {
     [ "$DEBUG_MODE" = true ] && debug_flag="-tags debug"
 
     # Build CLI mode binary for Linux
-    go build -o "$BUILD_DIR/bin/unbound-linux" $debug_flag ./...
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$BUILD_DIR/bin/unbound-linux" $debug_flag .
 
     log_ok "Linux binary built: $BUILD_DIR/bin/unbound-linux"
 }
@@ -230,7 +230,7 @@ build_openwrt() {
         require_cmd go "https://go.dev/dl/"
         GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build \
             -o "$BUILD_DIR/bin/unbound-openwrt-mipsle" \
-            -ldflags="-s -w" ./...
+            -ldflags="-s -w" .
 
         # Package as IPK
         if command -v docker &>/dev/null; then
@@ -315,7 +315,7 @@ build_all() {
     echo -e "  ${YELLOW}•${NC} Linux"
     echo -e "  ${YELLOW}•${NC} OpenWrt"
     echo -e "  ${YELLOW}•${NC} Android"
-    echo -e "  ${YELLOW}•${NCYAN}•${NC} Decky Plugin"
+    echo -e "  ${CYAN}•${NC} Decky Plugin"
     echo -e "  ${YELLOW}•${NC} Magisk Module"
     echo -e "  ${YELLOW}•${NC} webOS"
 

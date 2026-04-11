@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"sync"
 	"syscall"
 
@@ -24,6 +23,8 @@ type ZapretMacOSProvider struct {
 	binPath        string
 	currentProfile string
 	pfAnchor       string
+	statusCallback func(Status)
+	logCallback    func(string)
 }
 
 func NewZapretMacOSProvider(binPath string) BypassProvider {
@@ -57,8 +58,6 @@ func (e *ZapretMacOSProvider) GetProfiles() []string {
 func (e *ZapretMacOSProvider) getProfileConfig(profileName string) ([]string, string) {
 	var nfqwsArgs []string
 	var pfRules string
-
-	queueNum := "200"
 
 	basePfRules := `
 anchor "com.unbound.zapret"
@@ -253,4 +252,20 @@ func (e *ZapretMacOSProvider) addLog(msg string) {
 	if len(e.logs) > 100 {
 		e.logs = e.logs[1:]
 	}
+	if e.logCallback != nil {
+		e.logCallback(msg)
+	}
+}
+
+func (e *ZapretMacOSProvider) SetStatusCallback(cb func(Status)) {
+	e.statusCallback = cb
+}
+
+func (e *ZapretMacOSProvider) SetLogCallback(cb func(string)) {
+	e.logCallback = cb
+}
+
+func (e *ZapretMacOSProvider) RegisterProfile(name string, args []string) {
+	// Not fully implemented for macOS yet (manual mapping in getProfileConfig)
+	e.addLog("Dynamic profile registration not fully supported on macOS yet.")
 }

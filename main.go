@@ -57,6 +57,7 @@ func main() {
 		Bind: []interface{}{
 			app,
 		},
+		Menu:             getAppMenu(app),
 		Windows: &windows.Options{
 			WebviewIsTransparent: false,
 			WindowIsTranslucent:  false,
@@ -77,17 +78,7 @@ func main() {
 }
 
 func runHeadlessMode(profileName string, debugMode bool) {
-	// Attach to parent console for Windows GUI subsystem
-	kernel32 := syscall.NewLazyDLL("kernel32.dll")
-	attachConsole := kernel32.NewProc("AttachConsole")
-	attachConsole.Call(uintptr(0xFFFFFFFF)) // ATTACH_PARENT_PROCESS = -1
-	
-	// Reopen stdout and stderr to ensure output works
-	stdout, _ := os.OpenFile("CONOUT$", os.O_WRONLY, 0)
-	if stdout != nil {
-		os.Stdout = stdout
-		os.Stderr = stdout
-	}
+	attachConsole()
 
 	fmt.Println("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	fmt.Println("🚀 UNBOUND - Headless CLI Mode")
@@ -115,8 +106,7 @@ func runHeadlessMode(profileName string, debugMode bool) {
 	}
 
 	manager := providers.NewProviderManager()
-	provider := providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir, listsDir, debugMode, true)
-	manager.Register(provider)
+	registerHeadlessProvider(manager, assets, listsDir, debugMode)
 
 	hasPriv, err := manager.CheckPrivileges()
 	if err != nil {

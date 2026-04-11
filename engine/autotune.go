@@ -46,7 +46,7 @@ var testTargets = []Target{
 	{Name: "Proton",    URL: "https://proton.me/favicon.ico",              Priority: 10},
 }
 
-func RunAutoTuneV2WithContext(ctx context.Context, provider *providers.Zapret2WindowsProvider, profiles []Profile) (*AutoTuneResult, error) {
+func RunAutoTuneV2WithContext(ctx context.Context, provider providers.BypassProvider, profiles []Profile) (*AutoTuneResult, error) {
 	logger := GetLogger()
 	notifMgr := GetNotificationManager()
 	

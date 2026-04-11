@@ -1,3 +1,5 @@
+//go:build windows
+
 package main
 
 import (
@@ -7,9 +9,14 @@ import (
 	"time"
 
 	"github.com/getlantern/systray"
+	"github.com/wailsapp/wails/v2/pkg/menu"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"unbound/engine/providers"
 )
+
+func getAppMenu(a *App) *menu.Menu {
+	return nil
+}
 
 //go:embed build/appicon.png
 var iconData []byte
@@ -88,12 +95,8 @@ func (a *App) onTrayExit() {}
 
 func (a *App) onBeforeClose(ctx context.Context) bool {
 	// When user clicks X, hide to tray instead of quitting
-	a.HideToTray()
+	a.HideWindowToTray()
 	return true // true = prevent default close (keep app running)
-}
-
-func (a *App) HideToTray() {
-	runtime.WindowHide(a.ctx)
 }
 
 func (a *App) ShowFromTray() {

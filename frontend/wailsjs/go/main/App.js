@@ -66,8 +66,8 @@ export function GetStructuredLogs() {
   return window['go']['main']['App']['GetStructuredLogs']();
 }
 
-export function HideToTray() {
-  return window['go']['main']['App']['HideToTray']();
+export function HideWindowToTray() {
+  return window['go']['main']['App']['HideWindowToTray']();
 }
 
 export function IsAutoStartEnabled() {
@@ -96,6 +96,10 @@ export function ShowFromTray() {
 
 export function ShowNotification(arg1, arg2) {
   return window['go']['main']['App']['ShowNotification'](arg1, arg2);
+}
+
+export function ShowWindowFromTray() {
+  return window['go']['main']['App']['ShowWindowFromTray']();
 }
 
 export function StartEngine(arg1, arg2) {

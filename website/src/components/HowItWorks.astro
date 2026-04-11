@@ -4,36 +4,104 @@
 <section id="how-it-works" class="how-it-works">
   <div class="container">
     <div class="section-header">
-      <span class="section-tag">Простая установка</span>
-      <h2 class="section-title">Свобода за <span class="gradient-text">60 секунд</span></h2>
-      <p class="section-desc">От скачивания до разблокированного интернета — менее чем за минуту.</p>
+      <span class="section-tag card-aura text-secondary-aura">Простая установка</span>
+      <h2 class="section-title text-primary-aura">Свобода за <span class="gradient-text">60 секунд</span></h2>
+      <p class="section-desc text-secondary-aura">От скачивания до разблокированного интернета — менее чем за минуту.</p>
     </div>
     <div class="steps">
-      <div class="step">
-        <div class="step-number">01</div>
+      <div class="step card-aura">
+        <div class="step-number text-primary-aura">01</div>
         <div class="step-content">
-          <h3>Скачайте и запустите</h3>
-          <p>Скачайте последний релиз, распакуйте архив и запустите от имени администратора. Все зависимости (WinDivert, Lua-скрипты, движок winws2) встроены — ничего дополнительно устанавливать не нужно.</p>
+          <h3 class="text-primary-aura">Скачайте и запустите</h3>
+          <p class="text-secondary-aura">Скачайте последний релиз, распакуйте архив и запустите от имени администратора. Все зависимости (WinDivert, Lua-скрипты, движок winws2) встроены — ничего дополнительно устанавливать не нужно.</p>
         </div>
       </div>
-      <div class="step">
-        <div class="step-number">02</div>
+      <div class="step card-aura">
+        <div class="step-number text-primary-aura">02</div>
         <div class="step-content">
-          <h3>Нажмите «Автоподбор»</h3>
-          <p>Кликните «Автоподбор». Unbound параллельно протестирует 70+ профилей обхода на YouTube, Discord, Instagram, Twitter и RuTracker. Умная система выберет профиль, который разблокирует всё сразу.</p>
+          <h3 class="text-primary-aura">Нажмите «Автоподбор»</h3>
+          <p class="text-secondary-aura">Кликните «Автоподбор». Unbound параллельно протестирует 70+ профилей обхода на YouTube, Discord, Instagram, Twitter и RuTracker. Умная система выберет профиль, который разблокирует всё сразу.</p>
         </div>
       </div>
-      <div class="step">
-        <div class="step-number">03</div>
+      <div class="step card-aura">
+        <div class="step-number text-primary-aura">03</div>
         <div class="step-content">
-          <h3>Подключите и забудьте</h3>
-          <p>Нажмите «ПОДКЛЮЧИТЬ!» и пользуйтесь интернетом свободно. Включите тихий автозапуск в настройках — Unbound запускается свёрнутым в трей. Настройте один раз и забудьте.</p>
+          <h3 class="text-primary-aura">Подключите и забудьте</h3>
+          <p class="text-secondary-aura">Нажмите «ПОДКЛЮЧИТЬ!» и пользуйтесь интернетом свободно. Включите тихий автозапуск в настройках — Unbound запускается свёрнутым в трей. Настройте один раз и забудьте.</p>
         </div>
       </div>
     </div>
-    <div class="tech-note">
-      <h4>🔧 Под капотом</h4>
-      <p>Unbound использует движок <strong>zapret2</strong> (winws2) от bol-van, который манипулирует TCP-пакетами на уровне DPI с помощью техник <strong>TCP десинхронизации</strong> и <strong>перестановки пакетов (Multidisorder)</strong>. В отличие от VPN, ваш трафик не уходит через иностранные серверы — модифицируются только пакеты к заблокированным доменам.</p>
+    <div class="tech-note card-aura">
+      <h4 class="text-primary-aura">🔧 Под капотом</h4>
+      <p class="text-secondary-aura">Unbound использует движок <strong>winws2</strong> (Zapret 2) от bol-van, который манипулирует TCP-пакетами на уровне DPI с помощью техник <strong>TCP десинхронизации</strong> и <strong>перестановки пакетов (Multidisorder)</strong>. В отличие от VPN, ваш трафик не уходит через иностранные серверы — модифицируются только пакеты к заблокированным доменам.</p>
+    </div>
+
+    <div class="platforms-section">
+      <div class="section-header">
+        <span class="section-tag card-aura text-secondary-aura">Все платформы</span>
+        <h2 class="section-title text-primary-aura">Nuances для <span class="gradient-text">каждой ОС</span></h2>
+        <p class="section-desc text-secondary-aura">Unbound работает везде — но каждая платформа имеет свои особенности. Вот что нужно знать.</p>
+      </div>
+
+      <div class="platform-cards">
+        <div class="platform-card card-aura">
+          <div class="platform-icon">🪟</div>
+          <h3 class="text-primary-aura">Windows</h3>
+          <p class="text-secondary-aura"><strong>Движок: winws2 (Zapret 2)</strong></p>
+          <p class="text-secondary-aura">Использует WinDivert для перехвата пакетов на уровне ядра. Lua-скрипты управляют стратегиями обхода: TLS-фрагментация, fake-пакеты с управляемым TTL, перестановка сегментов (multidisorder), TCP timestamp manipulation, MD5-сигнатуры и QUIC-подмена. 70+ профилей с Автоподбором — всё встроено, ничего устанавливать не нужно.</p>
+          <div class="platform-tag card-aura text-secondary-aura">WinDivert kernel driver</div>
+          <div class="platform-tag card-aura text-secondary-aura">Lua-скрипты</div>
+          <div class="platform-tag card-aura text-secondary-aura">Автоподбор 70+ профилей</div>
+        </div>
+
+        <div class="platform-card card-aura">
+          <div class="platform-icon">🍎</div>
+          <h3 class="text-primary-aura">macOS</h3>
+          <p class="text-secondary-aura"><strong>Движок: SpoofDPI (SOCKS5-прокси)</strong></p>
+          <p class="text-secondary-aura">Не требует root при запуске — эскалация через <code>osascript</code> (Touch ID/пароль) только для применения системного прокси через <code>networksetup</code>. Автозапуск через <code>launchd</code>. Graceful shutdown предотвращает потерю интернета при выходе. Для продвинутых: можно использовать <strong>nfqws</strong> напрямую с <code>pf</code> (Packet Filter) — <code>divert-packet port 700</code> перенаправляет трафик, требует root.</p>
+          <div class="platform-tag card-aura text-secondary-aura">SOCKS5 прокси</div>
+          <div class="platform-tag card-aura text-secondary-aura">osascript эскалация</div>
+          <div class="platform-tag card-aura text-secondary-aura">launchd автозапуск</div>
+        </div>
+
+        <div class="platform-card card-aura">
+          <div class="platform-icon">🐧</div>
+          <h3 class="text-primary-aura">Linux</h3>
+          <p class="text-secondary-aura"><strong>Движок: nfqws + iptables/nftables NFQUEUE</strong></p>
+          <p class="text-secondary-aura">Go-обёртка автоматизирует запуск nfqws с iptables mangle-правилами (connbytes 1:6, mark exclusion <code>0x40000000</code>). Также доступен отдельный <strong>Rust CLI</strong> (<code>unbound-cli</code>) с поддержкой nftables и systemd-сервиса. Требует root. Для прямого запуска nfqws: <code>nfqws --port=700 --dpi-desync=multidisorder</code> + iptables <code>-j NFQUEUE --queue-num 200</code>. Пакеты: PKGBUILD (Arch), deb (Debian/Ubuntu), rpm (Fedora/RHEL).</p>
+          <div class="platform-tag card-aura text-secondary-aura">nfqws + NFQUEUE</div>
+          <div class="platform-tag card-aura text-secondary-aura">iptables / nftables</div>
+          <div class="platform-tag card-aura text-secondary-aura">systemd сервис</div>
+        </div>
+
+        <div class="platform-card card-aura">
+          <div class="platform-icon">📱</div>
+          <h3 class="text-primary-aura">iOS / Legacy</h3>
+          <p class="text-secondary-aura"><strong>Движок: tpws (SCPreferences SOCKS-прокси)</strong></p>
+          <p class="text-secondary-aura">Работает даже на <strong>iPhone 4s с iOS 6.1.3</strong> (ARMv7)! Портированный tpws с kqueue/epoll shim, системный прокси через <code>SCPreferences</code>, скевоморфный интерфейс в стиле iOS 6. Требуется джейлбрейк (Cydia Substrate / ElleKit). Три профиля: Default, Aggressive, Lite. Для tvOS — через NEPacketTunnelProvider (без джейлбрейка, но нужна NetworkExtension entitlement).</p>
+          <div class="platform-tag card-aura text-secondary-aura">iOS 6.1.3+</div>
+          <div class="platform-tag card-aura text-secondary-aura">Джейлбрейк</div>
+          <div class="platform-tag card-aura text-secondary-aura">Скевоморфный UI</div>
+        </div>
+
+        <div class="platform-card card-aura">
+          <div class="platform-icon">🤖</div>
+          <h3 class="text-primary-aura">Android</h3>
+          <p class="text-secondary-aura"><strong>Без root: VpnService + ByeDPI (SOCKS5).</strong> TUN-интерфейс <code>10.0.0.2/24</code> перенаправляет трафик на локальный SOCKS5-прокси. <strong>С root: nfqws + iptables/nftables</strong> через Magisk/KernelSU модуль. Поддержка разделения туннелей (split tunneling), фильтрации по UID и проброса на хотспот.</p>
+          <div class="platform-tag card-aura text-secondary-aura">Без root: VpnService</div>
+          <div class="platform-tag card-aura text-secondary-aura">Root: nfqws + Magisk</div>
+          <div class="platform-tag card-aura text-secondary-aura">Split tunneling</div>
+        </div>
+
+        <div class="platform-card card-aura">
+          <div class="platform-icon">📡</div>
+          <h3 class="text-primary-aura">Роутеры / Smart TV</h3>
+          <p class="text-secondary-aura"><strong>OpenWrt:</strong> nfqws с fw4/nftables, <code>procd</code> init-скрипт, LuCI GUI (Сервисы > Unbound). <strong>LG WebOS:</strong> nfqws для ARMv7, iptables NFQUEUE, D-pad интерфейс, автозапуск через webosbrew. Прозрачный обход DPI для всех устройств в сети.</p>
+          <div class="platform-tag card-aura text-secondary-aura">OpenWrt + LuCI</div>
+          <div class="platform-tag card-aura text-secondary-aura">WebOS (ARM)</div>
+          <div class="platform-tag card-aura text-secondary-aura">Прозрачный обход</div>
+        </div>
+      </div>
     </div>
   </div>
 </section>
@@ -63,7 +131,6 @@
   text-transform: uppercase;
   letter-spacing: 2px;
   margin-bottom: 1.5rem;
-  transition: all 0.3s ease;
 }
 
 .section-title {
@@ -71,14 +138,12 @@
   font-weight: 800;
   margin-bottom: 1rem;
   letter-spacing: -1px;
-  transition: all 0.3s ease;
 }
 
 .section-desc {
   font-size: 1.1rem;
   max-width: 600px;
   margin: 0 auto;
-  transition: all 0.3s ease;
 }
 
 .steps {
@@ -91,74 +156,77 @@
   display: flex;
   gap: 2rem;
   align-items: flex-start;
-  padding: 2rem;
-  border-radius: 16px;
-  transition: all 0.3s ease;
-}
-
-.step:hover {
-  transform: translateY(-2px);
+  padding: 2.5rem;
 }
 
 .step-number {
-  font-size: 2rem;
+  font-size: 2.5rem;
   font-weight: 900;
-  min-width: 60px;
-  font-family: 'JetBrains Mono', monospace;
-  transition: all 0.3s ease;
+  min-width: 80px;
+  opacity: 0.3;
 }
 
 .step-content h3 {
-  font-size: 1.25rem;
+  font-size: 1.5rem;
   font-weight: 700;
-  margin-bottom: 0.5rem;
-  transition: all 0.3s ease;
+  margin-bottom: 0.75rem;
 }
 
 .step-content p {
-  line-height: 1.7;
-  transition: all 0.3s ease;
-}
-
-.step-content code {
-  font-family: 'JetBrains Mono', monospace;
-  padding: 0.2rem 0.5rem;
-  border-radius: 4px;
-  font-size: 0.85em;
-  transition: all 0.3s ease;
+  line-height: 1.8;
+  font-size: 1.1rem;
 }
 
 .tech-note {
-  margin-top: 3rem;
-  padding: 2rem;
-  border-radius: 16px;
-  transition: all 0.3s ease;
+  margin-top: 4rem;
+  padding: 2.5rem;
 }
 
 .tech-note h4 {
-  font-size: 1.1rem;
+  font-size: 1.25rem;
   font-weight: 700;
-  margin-bottom: 0.75rem;
-  transition: all 0.3s ease;
+  margin-bottom: 1rem;
 }
 
-.tech-note p {
-  line-height: 1.7;
-  font-size: 0.95rem;
-  transition: all 0.3s ease;
+.platforms-section {
+  margin-top: 8rem;
 }
 
-.tech-note strong {
-  opacity: 0.8;
+.platform-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 2rem;
+}
+
+.platform-card {
+  padding: 2.5rem;
+}
+
+.platform-icon {
+  font-size: 3rem;
+  margin-bottom: 1.5rem;
+}
+
+.platform-card h3 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+}
+
+.platform-tag {
+  display: inline-block;
+  padding: 0.4rem 1rem;
+  border-radius: 100px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  margin-right: 0.5rem;
+  margin-top: 1rem;
 }
 
 @media (max-width: 640px) {
   .step {
     flex-direction: column;
     gap: 1rem;
-  }
-  .how-it-works {
-    padding: 4rem 1.5rem;
   }
 }
 </style>

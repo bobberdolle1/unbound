@@ -34,7 +34,7 @@ export function GetStatus():Promise<string>;
 
 export function GetStructuredLogs():Promise<Array<string>>;
 
-export function HideToTray():Promise<void>;
+export function HideWindowToTray():Promise<void>;
 
 export function IsAutoStartEnabled():Promise<boolean>;
 
@@ -49,6 +49,8 @@ export function SaveSettings(arg1:engine.Settings):Promise<void>;
 export function ShowFromTray():Promise<void>;
 
 export function ShowNotification(arg1:string,arg2:string):Promise<void>;
+
+export function ShowWindowFromTray():Promise<void>;
 
 export function StartEngine(arg1:string,arg2:string):Promise<void>;
 

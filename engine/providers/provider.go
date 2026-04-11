@@ -21,3 +21,11 @@ type BypassProvider interface {
 	GetStatus() Status
 	GetLogs() []string
 }
+
+// BypassProviderWithCallbacks расширяет базовый интерфейс поддержкой обратных вызовов
+type BypassProviderWithCallbacks interface {
+	BypassProvider
+	SetStatusCallback(func(Status))
+	SetLogCallback(func(string))
+	RegisterProfile(string, []string)
+}

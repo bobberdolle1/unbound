@@ -6,21 +6,13 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"syscall"
 )
 
 const CREATE_NO_WINDOW = 0x08000000
 
-type DiagnosticResult struct {
-	Component string
-	Status    string
-	Details   string
-	IsError   bool
-}
-
 func EnableTCPTimestamps() error {
 	cmd := exec.Command("netsh", "interface", "tcp", "set", "global", "timestamps=enabled")
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: CREATE_NO_WINDOW}
+	cmd.SysProcAttr = GetHiddenSysProcAttr()
 	return cmd.Run()
 }
 
@@ -46,7 +38,7 @@ func RunDiagnostics() []DiagnosticResult {
 
 func checkAdminPrivileges() DiagnosticResult {
 	cmd := exec.Command("net", "session")
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: CREATE_NO_WINDOW}
+	cmd.SysProcAttr = GetHiddenSysProcAttr()
 	if err := cmd.Run(); err != nil {
 		return DiagnosticResult{"Privileges", "Error", "Admin rights required.", true}
 	}
@@ -55,7 +47,7 @@ func checkAdminPrivileges() DiagnosticResult {
 
 func checkTCPTimestamps() DiagnosticResult {
 	cmd := exec.Command("netsh", "interface", "tcp", "show", "global")
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: CREATE_NO_WINDOW}
+	cmd.SysProcAttr = GetHiddenSysProcAttr()
 	out, _ := cmd.Output()
 	if strings.Contains(strings.ToLower(string(out)), "enabled") {
 		return DiagnosticResult{"TCP Stack", "OK", "Timestamps enabled.", false}
@@ -67,7 +59,7 @@ func checkConflictingProcesses() DiagnosticResult {
 	conflicts := []string{"goodbyedpi.exe", "winws.exe", "nfqws.exe"}
 	found := []string{}
 	cmd := exec.Command("tasklist")
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: CREATE_NO_WINDOW}
+	cmd.SysProcAttr = GetHiddenSysProcAttr()
 	out, _ := cmd.Output()
 	for _, c := range conflicts {
 		if strings.Contains(strings.ToLower(string(out)), c) {

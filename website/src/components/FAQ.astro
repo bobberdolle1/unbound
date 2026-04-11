@@ -4,64 +4,68 @@
 <section id="faq" class="faq">
   <div class="container">
     <div class="section-header">
-      <span class="section-tag">Частые вопросы</span>
-      <h2 class="section-title">Частые <span class="gradient-text">вопросы</span></h2>
+      <span class="section-tag card-aura text-secondary-aura">Частые вопросы</span>
+      <h2 class="section-title text-primary-aura">Частые <span class="gradient-text">вопросы</span></h2>
     </div>
     <div class="faq-list">
-      <details class="faq-item" open>
-        <summary>
+      <details class="faq-item card-aura" open>
+        <summary class="text-primary-aura">
           <span>Что такое Unbound и как он работает?</span>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
         </summary>
-        <div class="faq-answer">
-          <p>Unbound — бесплатная программа с открытым кодом для обхода DPI-блокировок. Использует движок <strong>zapret2</strong> для манипуляции TCP-пакетами — TCP десинхронизация и перестановка пакетов (Multidisorder) — чтобы системы DPI вроде ТСПУ не могли анализировать и блокировать ваш трафик к YouTube, Discord, Twitter и Instagram.</p>
+        <div class="faq-answer text-secondary-aura">
+          <p>Unbound — бесплатная программа с открытым кодом для обхода DPI-блокировок. Использует движок <strong>winws2</strong> для манипуляции TCP-пакетами — TCP десинхронизация и перестановка пакетов (Multidisorder) — чтобы системы DPI не могли анализировать и блокировать ваш трафик к YouTube, Discord, Twitter и Instagram.</p>
         </div>
       </details>
-      <details class="faq-item">
-        <summary>
+      <details class="faq-item card-aura">
+        <summary class="text-primary-aura">
           <span>Чем это отличается от VPN?</span>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
         </summary>
-        <div class="faq-answer">
+        <div class="faq-answer text-secondary-aura">
           <p>VPN маршрутизирует весь трафик через иностранный сервер, что замедляет соединение. Unbound модифицирует только пакеты к заблокированным доменам — банки, госучреждения и разблокированные сайты работают как обычно. <strong>Нулевая потеря скорости</strong> для обычного серфинга.</p>
         </div>
       </details>
-      <details class="faq-item">
-        <summary>
+      <details class="faq-item card-aura">
+        <summary class="text-primary-aura">
           <span>Зачем нужны права администратора?</span>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
         </summary>
-        <div class="faq-answer">
+        <div class="faq-answer text-secondary-aura">
           <p>Unbound использует драйвер WinDivert для перехвата и модификации сетевых пакетов на уровне ядра. Это требует прав администратора. Программа регистрируется в планировщике задач Windows для тихого автозапуска без повторных запросов UAC.</p>
         </div>
       </details>
-      <details class="faq-item">
-        <summary>
-          <span>Что делать, если Автоподбор не нашёл рабочий профиль?</span>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      <details class="faq-item card-aura">
+        <summary class="text-primary-aura">
+           <span>Работает ли Unbound на macOS и Linux?</span>
+           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
         </summary>
-        <div class="faq-answer">
-          <p>Автоподбор тестирует 70+ профилей одновременно. В редких случаях ваш провайдер может требовать уникальную комбинацию. Попробуйте ручной выбор профиля, проверьте лог «Дневник разработчика» и сообщите о результатах на GitHub Issues.</p>
+        <div class="faq-answer text-secondary-aura">
+           <p>Да! На <strong>macOS</strong> Unbound использует <strong>SpoofDPI</strong> (SOCKS5-прокси) с системной настройкой. На <strong>Linux</strong> используется <strong>nfqws</strong> с iptables/nftables NFQUEUE. Для десктопа Go-обёртка автоматизирует запуск, также доступен отдельный <strong>Rust CLI</strong>.</p>
         </div>
       </details>
-      <details class="faq-item">
-        <summary>
-          <span>Это легально?</span>
+      <details class="faq-item card-aura">
+        <summary class="text-primary-aura">
+          <span>А что насчёт iOS 6 и iPhone 4s?</span>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
         </summary>
-        <div class="faq-answer">
-          <p>Unbound — инструмент с открытым кодом (GPL-3.0), модифицирующий только ваши исходящие пакеты. Он не взламывает, не спуфит и не перехватывает чужой трафик. Законность зависит от вашей юрисдикции — проконсультируйтесь с местным законодательством.</p>
+        <div class="faq-answer text-secondary-aura">
+          <p>Да! Существует специальная <strong>legacy-версия</strong> для iOS 6.1.3+ (iPhone 4s, ARMv7). Она использует портированный движок <strong>tpws</strong> с совместимостью kqueue, системный SOCKS-прокси и скевоморфный интерфейс. Требуется джейлбрейк (Cydia Substrate).</p>
         </div>
       </details>
-      <details class="faq-item">
-        <summary>
-          <span>Что такое «Очистка Discord»?</span>
+      <details class="faq-item card-aura">
+        <summary class="text-primary-aura">
+          <span>Что за тема «Liquid Glass»?</span>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
         </summary>
-        <div class="faq-answer">
-          <p>Встроенная функция автоматической очистки кэша клиента Discord при запуске. Предотвращает «отравление» сессии и решает проблему бесконечного «Подключение...», которая часто встречается у пользователей Discord в заблокированных регионах.</p>
+        <div class="faq-answer text-secondary-aura">
+          <p>Это эксклюзивная тема в обновлении v2.5.0, использующая <strong>экстремальное размытие фона</strong> и прозрачность. Она вдохновлена дизайном macOS Sonoma и iOS 17/18, создавая эффект "живого стекла" на вашем рабочем столе.</p>
         </div>
       </details>
+    </div>
+  </div>
+</section>
+
     </div>
   </div>
 </section>

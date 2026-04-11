@@ -23,8 +23,12 @@ android {
         // BuildConfig fields for the local proxy
         buildConfigField("String", "PROXY_HOST", "\"127.0.0.1\"")
         buildConfigField("int", "PROXY_PORT", "1080")
-    }
 
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        }
+    }
+    
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -58,11 +62,6 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
-    }
-
-    // Native library configuration for cross-compiled proxy
-    ndk {
-        abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
     }
 }
 

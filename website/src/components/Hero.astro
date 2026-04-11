@@ -4,15 +4,15 @@
 <section class="hero">
   <div class="hero-bg"></div>
   <div class="hero-content">
-    <div class="hero-badge">
+    <div class="hero-badge card-aura">
       <span class="badge-dot"></span>
-      <span>v2.0.0 — Мультиплатформенная версия</span>
+      <span>v2.5.0 — Aura Design Edition</span>
     </div>
     <h1 class="hero-title">
       Обход<br />
       <span class="gradient-text">DPI-блокировок</span>
     </h1>
-    <p class="hero-subtitle">
+    <p class="hero-subtitle text-secondary-aura">
       Бесплатная программа с открытым кодом для разблокировки YouTube, Discord, Instagram, Twitter/X.
       Работает на <strong>Windows, Android, Linux, iOS, OpenWrt</strong> — <strong>без потери скорости</strong>.
     </p>
@@ -21,31 +21,26 @@
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Скачать бесплатно
       </a>
-      <a href="#how-it-works" class="btn btn-secondary">
+      <a href="#how-it-works" class="btn btn-secondary card-aura">
         Как это работает
       </a>
     </div>
-    <div class="hero-stats">
+    <div class="hero-stats card-aura">
       <div class="stat">
         <span class="stat-value">70+</span>
-        <span class="stat-label">Профилей обхода</span>
+        <span class="stat-label text-secondary-aura">Профилей</span>
       </div>
       <div class="stat-divider"></div>
       <div class="stat">
         <span class="stat-value">0%</span>
-        <span class="stat-label">Потери скорости</span>
+        <span class="stat-label text-secondary-aura">Потери</span>
       </div>
       <div class="stat-divider"></div>
       <div class="stat">
-        <span class="stat-value">6 платформ</span>
-        <span class="stat-label">Поддержка</span>
+        <span class="stat-value">6</span>
+        <span class="stat-label text-secondary-aura">Платформ</span>
       </div>
     </div>
-  </div>
-  <div class="hero-scroll">
-    <a href="#features">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-    </a>
   </div>
 </section>
 
@@ -66,13 +61,15 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  transition: all 0.4s ease;
+  background: radial-gradient(circle at 50% 50%, var(--bg-secondary) 0%, var(--bg-primary) 100%);
+  opacity: 0.8;
+  z-index: -1;
 }
 
 .hero-content {
   max-width: 800px;
   position: relative;
-  z-index: 1;
+  z-index: 100;
 }
 
 .hero-badge {
@@ -80,22 +77,22 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 1.25rem;
-  border-radius: 100px;
   font-size: 0.85rem;
   margin-bottom: 2rem;
-  transition: all 0.3s ease;
 }
 
 .badge-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
   animation: pulse-dot 2s infinite;
 }
 
 @keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.5); opacity: 0.5; }
 }
 
 .hero-title {
@@ -104,11 +101,14 @@
   line-height: 1.05;
   margin-bottom: 1.5rem;
   letter-spacing: -2px;
-  transition: all 0.3s ease;
+  color: var(--text-primary);
 }
 
 .gradient-text {
-  transition: all 0.3s ease;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-secondary) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .hero-subtitle {
@@ -118,70 +118,55 @@
   max-width: 650px;
   margin-left: auto;
   margin-right: auto;
-  transition: all 0.3s ease;
-}
-
-.hero-subtitle strong {
-  opacity: 0.9;
 }
 
 .hero-actions {
   display: flex;
-  gap: 1rem;
+  gap: 1.5rem;
   justify-content: center;
   flex-wrap: wrap;
   margin-bottom: 4rem;
 }
 
-.btn {
+.btn-secondary {
   display: inline-flex;
   align-items: center;
   gap: 0.75rem;
   padding: 1rem 2rem;
-  border-radius: 12px;
-  font-size: 1rem;
   font-weight: 600;
-  text-decoration: none;
-  transition: all 0.3s ease;
-  cursor: pointer;
-  border: none;
+  color: var(--text-primary);
 }
 
 .hero-stats {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 2rem;
-  padding: 1.5rem 2.5rem;
-  border-radius: 16px;
-  backdrop-filter: blur(10px);
-  display: inline-flex;
-  transition: all 0.3s ease;
-}
-
-.stat {
-  text-align: center;
+  gap: 3rem;
+  padding: 2rem 4rem;
 }
 
 .stat-value {
   display: block;
-  font-size: 1.75rem;
-  font-weight: 800;
-  transition: all 0.3s ease;
+  font-size: 2.5rem;
+  font-weight: 900;
+  color: var(--text-primary);
+  line-height: 1;
+  margin-bottom: 0.5rem;
 }
 
 .stat-label {
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   text-transform: uppercase;
-  letter-spacing: 1px;
-  transition: all 0.3s ease;
+  letter-spacing: 2px;
+  font-weight: 700;
 }
 
 .stat-divider {
   width: 1px;
-  height: 40px;
-  transition: all 0.3s ease;
+  height: 50px;
+  background: var(--border-color);
 }
+
 
 .hero-scroll {
   position: absolute;

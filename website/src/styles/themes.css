@@ -1,795 +1,296 @@
-/* ================================================================
-   THEMES — iOS 6 Skeuomorphic + Doodle Jump + Modern Dark
-   ================================================================ */
-
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   iOS 6 SKEUOMORPHIC — Leather, Linen, Glass, Emboss, Stitch
+   THEME DEFINITIONS — THE AURA COLLECTION
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
-/* Navbar — dark glossy bar like iOS nav */
-body.theme-skeuomorphic .navbar {
+/* 1. DARK THEME — Modern Slate/Blue */
+body.theme-dark {
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-card: rgba(30, 41, 59, 0.7);
+  --bg-navbar: rgba(15, 23, 42, 0.8);
+  --border-color: #334155;
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --accent: #3b82f6;
+  --accent-secondary: #60a5fa;
+  --ui-radius: 12px;
+  --shadow-card: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+}
+
+/* 2. iOS 6 SKEUOMORPHIC — Classic Linen/Leather */
+body.theme-skeuomorphic {
+  --bg-primary: #c8c5be;
+  --bg-secondary: #b8b5ae;
+  --bg-card: #e8e5de;
+  --bg-navbar: #4a4a4a;
+  --border-color: #a09d96;
+  --text-primary: #2c2c2c;
+  --text-secondary: #5a5a5a;
+  --accent: #1e88e5;
+  --accent-secondary: #1565c0;
+  --ui-radius: 8px;
+  --font-main: -apple-system, 'Helvetica Neue', sans-serif;
+}
+
+body.theme-skeuomorphic {
   background:
-    linear-gradient(180deg,
-      #6a6a6a 0%,
-      #4a4a4a 45%,
-      #3a3a3a 55%,
-      #4a4a4a 100%);
-  border-bottom: 1px solid #1a1a1a;
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.1) inset,
-    0 2px 10px rgba(0, 0, 0, 0.5);
-  backdrop-filter: none;
+    repeating-linear-gradient(0deg, transparent, transparent 1px, rgba(0, 0, 0, 0.01) 1px, rgba(0, 0, 0, 0.01) 2px),
+    repeating-linear-gradient(90deg, transparent, transparent 1px, rgba(0, 0, 0, 0.01) 1px, rgba(0, 0, 0, 0.01) 2px),
+    linear-gradient(180deg, #ddd9d2 0%, #c8c5be 30%, #b8b5ae 100%);
+  background-attachment: fixed;
+}
+
+/* 3. DOODLE JUMP — Notebook Paper */
+body.theme-doodle {
+  --bg-primary: #fff9c4;
+  --bg-secondary: #fff59d;
+  --bg-card: #ffffff;
+  --bg-navbar: #fff9c4;
+  --border-color: #222222;
+  --text-primary: #1a1a1a;
+  --text-secondary: #5a5a5a;
+  --accent: #b2ff59;
+  --accent-secondary: #76ff03;
+  --ui-radius: 4px;
+  --font-main: 'Comic Neue', cursive;
+  --font-accent: 'Permanent Marker', cursive;
+}
+
+body.theme-doodle {
+  background-image:
+    linear-gradient(90deg, rgba(30, 144, 255, 0.15) 1px, transparent 1px),
+    linear-gradient(rgba(30, 144, 255, 0.15) 1px, transparent 1px);
+  background-size: 30px 30px;
+  background-attachment: fixed;
+}
+
+/* 4. LIQUID GLASS — Ultra Modern Translucence */
+body.theme-liquid-glass {
+  --bg-primary: #000000;
+  --bg-secondary: rgba(255, 255, 255, 0.05);
+  --bg-card: rgba(255, 255, 255, 0.08);
+  --bg-navbar: rgba(0, 0, 0, 0.3);
+  --border-color: rgba(255, 255, 255, 0.15);
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.6);
+  --accent: #ff00ff;
+  --accent-secondary: #00ffff;
+  --ui-radius: 24px;
+  --ui-blur: 25px;
+}
+
+body.theme-liquid-glass {
+  background: 
+    radial-gradient(circle at 0% 0%, #3b0764 0%, transparent 50%),
+    radial-gradient(circle at 100% 100%, #1e1b4b 0%, transparent 50%),
+    radial-gradient(circle at 50% 50%, #000000 0%, #020617 100%);
+  background-attachment: fixed;
+}
+
+/* 5. WINDOWS 95 — Retro Productivity */
+body.theme-win95 {
+  --bg-primary: #008080;
+  --bg-secondary: #c0c0c0;
+  --bg-card: #c0c0c0;
+  --bg-navbar: #c0c0c0;
+  --border-color: #808080;
+  --text-primary: #000000;
+  --text-secondary: #404040;
+  --accent: #000080;
+  --accent-secondary: #101080;
+  --ui-radius: 0px;
+  --font-main: 'MS Sans Serif', 'Tahoma', sans-serif;
+}
+
+body.theme-win95 .card-aura {
+  border-left: 2px solid #ffffff;
+  border-top: 2px solid #ffffff;
+  border-right: 2px solid #404040;
+  border-bottom: 2px solid #404040;
+  box-shadow: none;
+}
+
+/* 6. WINDOWS XP — Luna Bliss */
+body.theme-winxp {
+  --bg-primary: #245edb;
+  --bg-secondary: #ece9d8;
+  --bg-card: #ffffff;
+  --bg-navbar: #245edb;
+  --border-color: #003399;
+  --text-primary: #000000;
+  --text-secondary: #4d4d4d;
+  --accent: #ff8a00;
+  --accent-secondary: #339933;
+  --ui-radius: 8px;
+  --font-main: 'Tahoma', 'Segoe UI', sans-serif;
+}
+
+body.theme-winxp {
+  background: 
+    linear-gradient(to bottom, #738fbf 0%, #d4e4ff 100%);
+  background-attachment: fixed;
+}
+
+/* 7. macOS 26 — Spatial Futurism */
+body.theme-macos26 {
+  --bg-primary: #000000;
+  --bg-secondary: rgba(255, 255, 255, 0.03);
+  --bg-card: rgba(255, 255, 255, 0.05);
+  --bg-navbar: rgba(0, 0, 0, 0.4);
+  --border-color: rgba(255, 255, 255, 0.1);
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.5);
+  --accent: #ffffff;
+  --accent-secondary: #a0a0a0;
+  --ui-radius: 30px;
+  --ui-blur: 40px;
+}
+
+body.theme-macos26 {
+  background: 
+    linear-gradient(135deg, #1a1a1a 0%, #000000 100%);
+  overflow: hidden;
+}
+
+body.theme-macos26::before {
+  content: '';
+  position: fixed;
+  top: -50%; left: -50%; width: 200%; height: 200%;
+  background: radial-gradient(circle at center, rgba(255,255,255,0.05), transparent 40%);
+  animation: spatial-glow 20s linear infinite;
+}
+
+@keyframes spatial-glow {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
-
-body.theme-skeuomorphic .nav-container {
-  padding: 0.75rem 2rem;
-}
-
-body.theme-skeuomorphic .logo-text {
-  background: linear-gradient(180deg, #ffffff 0%, #d8d8d8 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
-  letter-spacing: 3px;
-}
-
-body.theme-skeuomorphic .nav-links a {
-  color: #e0e0e0;
-  text-shadow: 0 -1px 1px rgba(0, 0, 0, 0.5);
-}
-
-body.theme-skeuomorphic .nav-links a:hover {
-  color: #ffffff;
-}
-
-body.theme-skeuomorphic .nav-github {
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  background: linear-gradient(180deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 100%);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.15);
-}
-
-/* Hero section */
-body.theme-skeuomorphic .hero-bg {
-  background:
-    radial-gradient(ellipse at 50% 0%, rgba(255,255,255,0.15) 0%, transparent 60%),
-    repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 1px,
-      rgba(0, 0, 0, 0.015) 1px,
-      rgba(0, 0, 0, 0.015) 2px
-    );
-}
-
-body.theme-skeuomorphic .hero-title {
-  color: #1a1a1a;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6), 0 2px 3px rgba(0, 0, 0, 0.1);
-  letter-spacing: -2px;
-}
-
-body.theme-skeuomorphic .gradient-text {
-  background: linear-gradient(180deg, #4da6ff 0%, #1e88e5 40%, #1565c0 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.3));
-}
-
-body.theme-skeuomorphic .hero-subtitle {
-  color: #4a4a4a;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
-}
-
-/* Hero badge — glossy pill */
-body.theme-skeuomorphic .hero-badge {
-  background: linear-gradient(180deg, #f8f8f6 0%, #e0ddd6 50%, #d4d1ca 100%);
-  border: 1px solid #a09d96;
-  border-radius: 20px;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.9),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.05),
-    0 2px 4px rgba(0, 0, 0, 0.2);
-  color: #4a4a4a;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
-}
-
-body.theme-skeuomorphic .badge-dot {
-  background: radial-gradient(circle at 35% 35%, #6dff6d, #2ecc40);
-  box-shadow:
-    0 0 8px rgba(46, 204, 64, 0.6),
-    inset 0 -1px 2px rgba(0, 0, 0, 0.2);
-}
-
-/* Buttons — iOS 6 glossy blue */
-body.theme-skeuomorphic .btn-primary {
-  background:
-    linear-gradient(180deg,
-      #5db8f7 0%,
-      #2a9ee5 45%,
-      #1a8cd8 55%,
-      #2a9ee5 100%);
-  border: 1px solid #0e6fa0;
-  border-radius: 8px;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.4),
-    0 2px 4px rgba(0, 0, 0, 0.25),
-    0 1px 0 rgba(0, 0, 0, 0.1);
-  text-shadow: 0 -1px 1px rgba(0, 0, 0, 0.3);
-  color: #fff;
-}
-
-body.theme-skeuomorphic .btn-primary:hover {
-  background:
-    linear-gradient(180deg,
-      #6ec8ff 0%,
-      #3aaaf5 45%,
-      #2a9ee5 55%,
-      #3aaaf5 100%);
-}
-
-body.theme-skeuomorphic .btn-secondary {
-  background: linear-gradient(180deg, #f8f8f6 0%, #e0ddd6 50%, #d4d1ca 100%);
-  border: 1px solid #a09d96;
-  border-radius: 8px;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.9),
-    0 1px 3px rgba(0, 0, 0, 0.15);
-  color: #2c2c2c;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
-}
-
-body.theme-skeuomorphic .btn-secondary:hover {
-  background: linear-gradient(180deg, #ffffff 0%, #eeece6 50%, #e0ddd6 100%);
-}
-
-/* Stats bar — inset panel */
-body.theme-skeuomorphic .hero-stats {
-  background: linear-gradient(180deg, #f0ede6 0%, #e0ddd6 100%);
-  border: 1px solid #9a9790;
-  border-radius: 10px;
-  box-shadow:
-    inset 0 2px 4px rgba(0, 0, 0, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.5),
-    0 2px 4px rgba(0, 0, 0, 0.15);
-}
-
-body.theme-skeuomorphic .stat-value {
-  background: linear-gradient(180deg, #2a9ee5 0%, #1565c0 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  text-shadow: none;
-  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.3));
-}
-
-body.theme-skeuomorphic .stat-label {
-  color: #6a6a6a;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
-}
-
-body.theme-skeuomorphic .stat-divider {
-  background: linear-gradient(180deg, transparent, rgba(0,0,0,0.15), transparent);
-  box-shadow: 1px 0 0 rgba(255,255,255,0.3);
-}
-
-body.theme-skeuomorphic .hero-scroll a {
-  color: rgba(0, 0, 0, 0.3);
-}
-
-/* Section headers */
-body.theme-skeuomorphic .section-tag {
-  background: linear-gradient(180deg, #f8f8f6 0%, #e0ddd6 100%);
-  border: 1px solid #a09d96;
-  border-radius: 20px;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.8),
-    0 1px 2px rgba(0, 0, 0, 0.1);
-  color: #1e88e5;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
-}
-
-body.theme-skeuomorphic .section-title {
-  color: #1a1a1a;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
-}
-
-body.theme-skeuomorphic .section-desc {
-  color: #5a5a5a;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
-}
-
-/* Feature cards — raised panels with linen texture */
-body.theme-skeuomorphic .feature-card {
-  background:
-    linear-gradient(180deg, #f5f5f0 0%, #e8e5de 100%);
-  border: 1px solid #a09d96;
-  border-radius: 10px;
-  box-shadow:
-    0 2px 6px rgba(0, 0, 0, 0.15),
-    0 1px 2px rgba(0, 0, 0, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.7);
-}
-
-body.theme-skeuomorphic .feature-card:hover {
-  box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.2),
-    0 2px 4px rgba(0, 0, 0, 0.15),
-    inset 0 1px 0 rgba(255, 255, 255, 0.7);
-}
-
-body.theme-skeuomorphic .feature-card h3 {
-  color: #1a1a1a;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
-}
-
-body.theme-skeuomorphic .feature-card p {
-  color: #5a5a5a;
-}
-
-body.theme-skeuomorphic .feature-card p strong {
-  color: #1e88e5;
-}
-
-/* Download cards */
-body.theme-skeuomorphic .download-card {
-  background: linear-gradient(180deg, #f5f5f0 0%, #e8e5de 100%);
-  border: 1px solid #a09d96;
-  border-radius: 10px;
-  box-shadow:
-    0 2px 6px rgba(0, 0, 0, 0.15),
-    inset 0 1px 0 rgba(255, 255, 255, 0.7);
-}
-
-body.theme-skeuomorphic .download-card.highlighted {
-  border-color: #1e88e5;
-  box-shadow:
-    0 0 20px rgba(30, 136, 229, 0.15),
-    0 2px 6px rgba(0, 0, 0, 0.15),
-    inset 0 1px 0 rgba(255, 255, 255, 0.7);
-}
-
-body.theme-skeuomorphic .download-card.highlighted::before {
-  background: linear-gradient(180deg, #5db8f7 0%, #1a8cd8 100%);
-  border: 1px solid #0e6fa0;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.3);
-  text-shadow: 0 -1px 1px rgba(0,0,0,0.3);
-}
-
-body.theme-skeuomorphic .os-icon {
-  color: #4a4a4a;
-}
-
-body.theme-skeuomorphic .download-card h3 {
-  color: #1a1a1a;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
-}
-
-body.theme-skeuomorphic .os-version {
-  color: #7a7a7a;
-}
-
-body.theme-skeuomorphic .download-btn {
-  background: linear-gradient(180deg, #5db8f7 0%, #1a8cd8 100%);
-  border: 1px solid #0e6fa0;
-  border-radius: 8px;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.4),
-    0 2px 4px rgba(0, 0, 0, 0.25);
-  text-shadow: 0 -1px 1px rgba(0, 0, 0, 0.3);
-}
-
-body.theme-skeuomorphic .download-btn:hover {
-  background: linear-gradient(180deg, #6ec8ff 0%, #2a9ee5 100%);
-}
-
-body.theme-skeuomorphic .coming-soon {
-  background: linear-gradient(180deg, #e8e5de 0%, #d4d1ca 100%);
-  border: 1px solid #a09d96;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.5);
-  color: #7a7a7a;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
-}
-
-body.theme-skeuomorphic .download-note {
-  background: linear-gradient(180deg, #f0ede6 0%, #e0ddd6 100%);
-  border: 1px solid #a09d96;
-  border-radius: 10px;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.5),
-    0 1px 2px rgba(0, 0, 0, 0.1);
-}
-
-body.theme-skeuomorphic .download-note p {
-  color: #5a5a5a;
-}
-
-body.theme-skeuomorphic .download-note strong {
-  color: #1e88e5;
-}
-
-/* Steps — raised panels */
-body.theme-skeuomorphic .step {
-  background: linear-gradient(180deg, #f5f5f0 0%, #e8e5de 100%);
-  border: 1px solid #a09d96;
-  border-radius: 10px;
-  box-shadow:
-    0 2px 6px rgba(0, 0, 0, 0.15),
-    inset 0 1px 0 rgba(255, 255, 255, 0.7);
-}
-
-body.theme-skeuomorphic .step:hover {
-  box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.7);
-}
-
-body.theme-skeuomorphic .step-number {
-  background: linear-gradient(180deg, #2a9ee5 0%, #1565c0 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.3));
-}
-
-body.theme-skeuomorphic .step-content h3 {
-  color: #1a1a1a;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
-}
-
-body.theme-skeuomorphic .step-content p {
-  color: #5a5a5a;
-}
-
-body.theme-skeuomorphic .step-content code {
-  background: rgba(30, 136, 229, 0.1);
-  border: 1px solid rgba(30, 136, 229, 0.2);
-  border-radius: 4px;
-  padding: 0.15rem 0.4rem;
-  color: #1565c0;
-  font-size: 0.85em;
-}
-
-body.theme-skeuomorphic .tech-note {
-  background: linear-gradient(180deg, #e8f0fe 0%, #d4e4f7 100%);
-  border: 1px solid #90caf9;
-  border-radius: 10px;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.6),
-    0 1px 3px rgba(0, 0, 0, 0.1);
-}
-
-body.theme-skeuomorphic .tech-note h4 {
-  color: #1565c0;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
-}
-
-body.theme-skeuomorphic .tech-note p {
-  color: #4a4a4a;
-}
-
-body.theme-skeuomorphic .tech-note strong {
-  color: #0d47a1;
-}
-
-/* FAQ items */
-body.theme-skeuomorphic .faq-item {
-  background: linear-gradient(180deg, #f5f5f0 0%, #e8e5de 100%);
-  border: 1px solid #a09d96;
-  border-radius: 8px;
-  box-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.7);
-}
-
-body.theme-skeuomorphic .faq-item:hover {
-  border-color: #8a8780;
-}
-
-body.theme-skeuomorphic .faq-item[open] {
-  background: linear-gradient(180deg, #ffffff 0%, #f0ede6 100%);
-  border-color: #1e88e5;
-  box-shadow:
-    0 2px 6px rgba(0, 0, 0, 0.15),
-    inset 0 1px 0 rgba(255, 255, 255, 0.8);
-}
-
-body.theme-skeuomorphic .faq-item summary {
-  color: #1a1a1a;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
-}
-
-body.theme-skeuomorphic .faq-item summary svg {
-  color: #7a7a7a;
-}
-
-body.theme-skeuomorphic .faq-answer p {
-  color: #5a5a5a;
-}
-
-body.theme-skeuomorphic .faq-answer strong {
-  color: #1e88e5;
-}
-
-/* Footer — dark glossy bar */
-body.theme-skeuomorphic .footer {
-  background:
-    linear-gradient(180deg,
-      #5a5a5a 0%,
-      #3a3a3a 45%,
-      #2a2a2a 55%,
-      #3a3a3a 100%);
-  border-top: 1px solid #1a1a1a;
-  box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.05) inset;
-}
-
-body.theme-skeuomorphic .footer-brand p {
-  color: #b0b0b0;
-  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.5);
-}
-
-body.theme-skeuomorphic .footer-column h4 {
-  color: #d0d0d0;
-  text-shadow: 0 -1px 1px rgba(0, 0, 0, 0.5);
-}
-
-body.theme-skeuomorphic .footer-column a {
-  color: #a0a0a0;
-}
-
-body.theme-skeuomorphic .footer-column a:hover {
-  color: #e0e0e0;
-}
-
-body.theme-skeuomorphic .footer-bottom p {
-  color: #808080;
-}
-
-body.theme-skeuomorphic .footer-bottom a {
-  color: #5db8f7;
-}
-
-body.theme-skeuomorphic .footer-logo .logo-text {
-  background: linear-gradient(180deg, #ffffff 0%, #c0c0c0 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
-}
-
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   DOODLE JUMP — Hand-drawn, playful, sketchy
+   LEGACY OVERWRITES (Preserving specific CSS logic)
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
-body.theme-doodle .navbar {
-  background: #fffef5;
-  border-bottom: 3px dashed #d4c9a8;
-  backdrop-filter: none;
-  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.05);
+/* Navbar generic overrides */
+.navbar {
+  background: var(--bg-navbar);
+  border-bottom: 1px solid var(--border-color);
+  backdrop-filter: blur(var(--ui-blur));
 }
 
-body.theme-doodle .logo-text {
-  background: linear-gradient(135deg, #4caf50, #8bc34a, #ffeb3b);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  letter-spacing: 3px;
+/* 8. WINDOWS 8 — Metro Tiles */
+body.theme-win8 {
+  --bg-primary: #0078d7;
+  --bg-secondary: #0060ad;
+  --bg-card: #ffffff;
+  --bg-navbar: #0078d7;
+  --border-color: #000000;
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.7);
+  --accent: #ffffff;
+  --accent-secondary: #e2e8f0;
+  --ui-radius: 0px;
+  --font-main: 'Segoe UI', system-ui, sans-serif;
 }
 
-body.theme-doodle .nav-links a {
-  color: #5a5a5a;
-  font-weight: 600;
+body.theme-win8 .card-aura {
+  background: #ffffff;
+  color: #000000;
+  border: none;
 }
 
-body.theme-doodle .nav-links a:hover {
-  color: #4caf50;
+/* 9. iOS 26 — Holographic Surface */
+body.theme-ios26 {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f2f2f7;
+  --bg-card: rgba(255, 255, 255, 0.6);
+  --bg-navbar: rgba(255, 255, 255, 0.4);
+  --border-color: rgba(0, 0, 0, 0.05);
+  --text-primary: #000000;
+  --text-secondary: #8e8e93;
+  --accent: #5856d6;
+  --accent-secondary: #af52de;
+  --ui-radius: 40px;
+  --ui-blur: 50px;
 }
 
-body.theme-doodle .nav-github {
-  border: 2px dashed #d4c9a8;
-  border-radius: 12px;
-  background: #fffef5;
+body.theme-ios26 .card-aura {
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.05);
 }
 
-/* Hero */
-body.theme-doodle .hero-bg {
-  background:
-    radial-gradient(ellipse at 30% 20%, rgba(76, 175, 80, 0.08) 0%, transparent 50%),
-    radial-gradient(ellipse at 70% 80%, rgba(255, 235, 59, 0.08) 0%, transparent 50%),
-    #f5f5dc;
+/* 10. SPECIAL GRAVITY — Interstellar */
+body.theme-gravity {
+  --bg-primary: #000000;
+  --bg-secondary: #0a0a0a;
+  --bg-card: rgba(10, 10, 10, 0.8);
+  --bg-navbar: rgba(0, 0, 0, 0.9);
+  --border-color: #333333;
+  --text-primary: #ffffff;
+  --text-secondary: #666666;
+  --accent: #00ff00;
+  --accent-secondary: #00ffff;
+  --ui-radius: 2px;
+  --ui-blur: 5px;
 }
 
-body.theme-doodle .hero-title {
-  color: #1a1a1a;
+body.theme-gravity .hero-bg {
+  background: radial-gradient(circle at center, #111, #000);
 }
 
-body.theme-doodle .gradient-text {
-  background: linear-gradient(135deg, #4caf50, #8bc34a, #ffeb3b, #ff9800);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  background-size: 200% 200%;
-  animation: doodle-rainbow 3s ease infinite;
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   GENERIC UI REFACTOR — Components using Aura Variables
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+.hero-title { font-family: var(--font-accent, var(--font-main)); }
+.section-title { font-family: var(--font-accent, var(--font-main)); }
+.btn-primary { 
+  background: var(--accent); 
+  color: var(--bg-primary);
+  border-radius: var(--ui-radius);
+  border: 1px solid var(--border-color);
+  font-family: var(--font-main);
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.3s;
+}
+.btn-primary:hover { transform: scale(1.05); background: var(--accent-secondary); }
+
+.feature-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--ui-radius);
+  backdrop-filter: blur(var(--ui-blur));
+  padding: 2rem;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-@keyframes doodle-rainbow {
-  0%, 100% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
+.feature-card:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 12px 24px -6px rgba(0,0,0,0.1);
+  border-color: var(--accent);
 }
 
-body.theme-doodle .hero-subtitle {
-  color: #5a5a5a;
+.faq-item {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--ui-radius);
+  margin-bottom: 1rem;
+  overflow: hidden;
 }
 
-body.theme-doodle .hero-badge {
-  background: #fffef5;
-  border: 2px dashed #d4c9a8;
-  border-radius: 20px;
-  color: #5a5a5a;
-  box-shadow: 2px 2px 0 #d4c9a8;
-}
-
-body.theme-doodle .badge-dot {
-  background: #4caf50;
-  box-shadow: 0 0 8px rgba(76, 175, 80, 0.5);
-  animation: doodle-bounce 1s ease infinite;
-}
-
-@keyframes doodle-bounce {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.3); }
-}
-
-body.theme-doodle .btn-primary {
-  background: linear-gradient(135deg, #4caf50, #8bc34a);
-  border: 2px dashed #2e7d32;
-  border-radius: 16px;
-  box-shadow: 3px 3px 0 #2e7d32;
-  color: #fff;
-}
-
-body.theme-doodle .btn-primary:hover {
-  transform: translateY(-2px) rotate(-1deg);
-  box-shadow: 5px 5px 0 #2e7d32;
-}
-
-body.theme-doodle .btn-secondary {
-  background: #fffef5;
-  border: 2px dashed #d4c9a8;
-  border-radius: 16px;
-  box-shadow: 3px 3px 0 #d4c9a8;
-  color: #5a5a5a;
-}
-
-body.theme-doodle .btn-secondary:hover {
-  transform: translateY(-2px) rotate(1deg);
-  box-shadow: 5px 5px 0 #d4c9a8;
-}
-
-body.theme-doodle .hero-stats {
-  background: #fffef5;
-  border: 2px dashed #d4c9a8;
-  border-radius: 16px;
-  box-shadow: 3px 3px 0 #d4c9a8;
-}
-
-body.theme-doodle .stat-value {
-  background: linear-gradient(135deg, #4caf50, #ffeb3b);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-body.theme-doodle .stat-label {
-  color: #7a7a7a;
-}
-
-body.theme-doodle .stat-divider {
-  background: #d4c9a8;
-  width: 2px;
-  border-radius: 1px;
-}
-
-body.theme-doodle .hero-scroll a {
-  color: rgba(0, 0, 0, 0.2);
-}
-
-/* Sections */
-body.theme-doodle .section-tag {
-  background: #fffef5;
-  border: 2px dashed #4caf50;
-  border-radius: 20px;
-  color: #4caf50;
-  box-shadow: 2px 2px 0 #4caf50;
-}
-
-body.theme-doodle .section-title {
-  color: #1a1a1a;
-}
-
-body.theme-doodle .section-desc {
-  color: #5a5a5a;
-}
-
-/* Feature cards — offset shadow, sketchy border */
-body.theme-doodle .feature-card {
-  background: #fffef5;
-  border: 2px solid #d4c9a8;
-  border-radius: 16px;
-  box-shadow: 4px 4px 0 #d4c9a8;
-  transition: all 0.2s ease;
-}
-
-body.theme-doodle .feature-card:hover {
-  transform: translateY(-4px) rotate(-1deg);
-  box-shadow: 6px 6px 0 #d4c9a8;
-  border-color: #4caf50;
-}
-
-body.theme-doodle .feature-card h3 {
-  color: #1a1a1a;
-}
-
-body.theme-doodle .feature-card p {
-  color: #5a5a5a;
-}
-
-body.theme-doodle .feature-card p strong {
-  color: #4caf50;
-}
-
-/* Download */
-body.theme-doodle .download-card {
-  background: #fffef5;
-  border: 2px solid #d4c9a8;
-  border-radius: 16px;
-  box-shadow: 4px 4px 0 #d4c9a8;
-}
-
-body.theme-doodle .download-card:hover {
-  transform: translateY(-4px) rotate(0.5deg);
-  box-shadow: 6px 6px 0 #d4c9a8;
-}
-
-body.theme-doodle .download-card.highlighted {
-  border-color: #4caf50;
-  box-shadow: 4px 4px 0 #4caf50;
-}
-
-body.theme-doodle .download-card.highlighted::before {
-  background: linear-gradient(135deg, #4caf50, #8bc34a);
-  border: 2px dashed #2e7d32;
-  border-radius: 20px;
-  box-shadow: 2px 2px 0 #2e7d32;
-}
-
-body.theme-doodle .os-icon {
-  color: #5a5a5a;
-}
-
-body.theme-doodle .download-card h3 {
-  color: #1a1a1a;
-}
-
-body.theme-doodle .os-version {
-  color: #7a7a7a;
-}
-
-body.theme-doodle .download-btn {
-  background: linear-gradient(135deg, #4caf50, #8bc34a);
-  border: 2px dashed #2e7d32;
-  border-radius: 16px;
-  box-shadow: 3px 3px 0 #2e7d32;
-  color: #fff;
-}
-
-body.theme-doodle .download-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 5px 5px 0 #2e7d32;
-}
-
-body.theme-doodle .coming-soon {
-  background: #ebe5c8;
-  border: 2px dashed #d4c9a8;
-  border-radius: 16px;
-  color: #7a7a7a;
-  box-shadow: 2px 2px 0 #d4c9a8;
-}
-
-body.theme-doodle .download-note {
-  background: #fffef5;
-  border: 2px dashed #d4c9a8;
-  border-radius: 16px;
-  box-shadow: 3px 3px 0 #d4c9a8;
-}
-
-body.theme-doodle .download-note p {
-  color: #5a5a5a;
-}
-
-body.theme-doodle .download-note strong {
-  color: #4caf50;
-}
-
-/* Steps */
-body.theme-doodle .step {
-  background: #fffef5;
-  border: 2px solid #d4c9a8;
-  border-radius: 16px;
-  box-shadow: 4px 4px 0 #d4c9a8;
-}
-
-body.theme-doodle .step:hover {
-  transform: rotate(-0.5deg);
-  box-shadow: 6px 6px 0 #d4c9a8;
-}
-
-body.theme-doodle .step-number {
-  background: linear-gradient(135deg, #4caf50, #ffeb3b);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-body.theme-doodle .step-content h3 {
-  color: #1a1a1a;
-}
-
-body.theme-doodle .step-content p {
-  color: #5a5a5a;
-}
-
-body.theme-doodle .step-content code {
-  background: rgba(76, 175, 80, 0.1);
-  border: 1px dashed #4caf50;
-  border-radius: 4px;
-  padding: 0.15rem 0.4rem;
-  color: #2e7d32;
-  font-size: 0.85em;
-}
-
-body.theme-doodle .tech-note {
-  background: #fffef5;
-  border: 2px solid #d4c9a8;
-  border-radius: 16px;
-  box-shadow: 4px 4px 0 #d4c9a8;
-}
-
-body.theme-doodle .tech-note h4 {
-  color: #4caf50;
-}
-
-body.theme-doodle .tech-note p {
-  color: #5a5a5a;
-}
-
-body.theme-doodle .tech-note strong {
-  color: #2e7d32;
-}
-
-/* FAQ */
-body.theme-doodle .faq-item {
-  background: #fffef5;
-  border: 2px solid #d4c9a8;
-  border-radius: 12px;
-  box-shadow: 3px 3px 0 #d4c9a8;
-}
+summary { list-style: none; cursor: pointer; padding: 1.5rem; font-weight: 600; color: var(--text-primary); }
+.faq-answer { padding: 0 1.5rem 1.5rem; color: var(--text-secondary); }
 
 body.theme-doodle .faq-item:hover {
-  border-color: #4caf50;
+  border-color: #b2ff59;
 }
 
 body.theme-doodle .faq-item[open] {
-  border-color: #4caf50;
-  box-shadow: 3px 3px 0 #4caf50;
-  background: #f5f5e0;
+  border-color: #b2ff59;
+  box-shadow: 3px 3px 0 #b2ff59;
+  background: #fffef5;
 }
 
 body.theme-doodle .faq-item summary {
   color: #1a1a1a;
-  font-weight: 600;
+  font-weight: 700;
+  font-family: 'Comic Neue', cursive;
 }
 
 body.theme-doodle .faq-item summary svg {
@@ -801,13 +302,13 @@ body.theme-doodle .faq-answer p {
 }
 
 body.theme-doodle .faq-answer strong {
-  color: #4caf50;
+  color: #2e7d32;
 }
 
 /* Footer */
 body.theme-doodle .footer {
-  background: #ebe5c8;
-  border-top: 3px dashed #d4c9a8;
+  background: #fff59d;
+  border-top: 3px solid #1e90ff;
 }
 
 body.theme-doodle .footer-brand p {
@@ -815,7 +316,8 @@ body.theme-doodle .footer-brand p {
 }
 
 body.theme-doodle .footer-column h4 {
-  color: #2c2c2c;
+  color: #1a1a1a;
+  font-family: 'Permanent Marker', cursive;
 }
 
 body.theme-doodle .footer-column a {
@@ -823,7 +325,7 @@ body.theme-doodle .footer-column a {
 }
 
 body.theme-doodle .footer-column a:hover {
-  color: #4caf50;
+  color: #2e7d32;
 }
 
 body.theme-doodle .footer-bottom p {
@@ -831,29 +333,30 @@ body.theme-doodle .footer-bottom p {
 }
 
 body.theme-doodle .footer-bottom a {
-  color: #4caf50;
+  color: #2e7d32;
 }
 
 body.theme-doodle .footer-logo .logo-text {
-  background: linear-gradient(135deg, #4caf50, #8bc34a);
+  background: linear-gradient(135deg, #b2ff59, #76ff03);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+  font-family: 'Permanent Marker', cursive;
 }
 
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   MODERN DARK — Clean, minimal, glassmorphism
+   MODERN DARK — Clean, minimal, Blue/Slate professional
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
 body.theme-dark .navbar {
   backdrop-filter: blur(20px);
-  background: rgba(10, 10, 15, 0.8);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(15, 23, 42, 0.8);
+  border-bottom: 1px solid rgba(51, 65, 85, 0.5);
 }
 
 body.theme-dark .logo-text {
-  background: linear-gradient(135deg, #667eea, #764ba2);
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -861,48 +364,50 @@ body.theme-dark .logo-text {
 }
 
 body.theme-dark .nav-links a {
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(248, 250, 252, 0.7);
 }
 
 body.theme-dark .nav-links a:hover {
-  color: #fff;
+  color: #f8fafc;
 }
 
 body.theme-dark .nav-github {
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(51, 65, 85, 0.5);
   border-radius: 8px;
 }
 
 body.theme-dark .nav-github:hover {
-  border-color: rgba(255, 255, 255, 0.3);
-  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(59, 130, 246, 0.5);
+  background: rgba(59, 130, 246, 0.05);
 }
 
 body.theme-dark .hero-bg {
   background:
-    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(102, 126, 234, 0.15), transparent),
-    radial-gradient(ellipse 60% 40% at 80% 60%, rgba(118, 75, 162, 0.1), transparent);
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(59, 130, 246, 0.15), transparent),
+    radial-gradient(ellipse 60% 40% at 80% 60%, rgba(37, 99, 235, 0.1), transparent);
 }
 
 body.theme-dark .hero-title {
-  color: #fff;
+  color: #f8fafc;
 }
 
 body.theme-dark .gradient-text {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 50%, #1d4ed8 100%);
+  color: var(--accent);
+  background: none;
+  -webkit-background-clip: initial;
+  -webkit-text-fill-color: initial;
+  background-clip: initial;
 }
 
 body.theme-dark .hero-subtitle {
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-secondary);
 }
 
 body.theme-dark .hero-badge {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.7);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
 }
 
 body.theme-dark .badge-dot {
@@ -910,93 +415,93 @@ body.theme-dark .badge-dot {
 }
 
 body.theme-dark .btn-primary {
-  background: linear-gradient(135deg, #667eea, #764ba2);
   color: #fff;
-  box-shadow: 0 4px 20px rgba(102, 126, 234, 0.4);
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  box-shadow: 0 4px 20px rgba(59, 130, 246, 0.4);
 }
 
 body.theme-dark .btn-primary:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 30px rgba(102, 126, 234, 0.5);
+  box-shadow: 0 8px 30px rgba(59, 130, 246, 0.5);
 }
 
 body.theme-dark .btn-secondary {
-  background: rgba(255, 255, 255, 0.05);
-  color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(248, 250, 252, 0.05);
+  color: #f8fafc;
+  border: 1px solid rgba(51, 65, 85, 0.5);
 }
 
 body.theme-dark .btn-secondary:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(248, 250, 252, 0.1);
+  border-color: rgba(59, 130, 246, 0.5);
 }
 
 body.theme-dark .hero-stats {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(248, 250, 252, 0.03);
+  border: 1px solid rgba(51, 65, 85, 0.5);
 }
 
 body.theme-dark .stat-value {
-  background: linear-gradient(135deg, #667eea, #764ba2);
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
 body.theme-dark .stat-label {
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(248, 250, 252, 0.5);
 }
 
 body.theme-dark .stat-divider {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(51, 65, 85, 0.5);
 }
 
 body.theme-dark .hero-scroll a {
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(248, 250, 252, 0.4);
 }
 
 body.theme-dark .section-tag {
-  background: rgba(102, 126, 234, 0.1);
-  border: 1px solid rgba(102, 126, 234, 0.2);
-  color: #667eea;
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  color: #3b82f6;
 }
 
 body.theme-dark .section-title {
-  color: #fff;
+  color: #f8fafc;
 }
 
 body.theme-dark .section-desc {
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(248, 250, 252, 0.5);
 }
 
 body.theme-dark .feature-card {
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(248, 250, 252, 0.02);
+  border: 1px solid rgba(51, 65, 85, 0.5);
   border-radius: 16px;
 }
 
 body.theme-dark .feature-card:hover {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(102, 126, 234, 0.3);
+  background: rgba(248, 250, 252, 0.04);
+  border-color: rgba(59, 130, 246, 0.5);
   transform: translateY(-4px);
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
 }
 
 body.theme-dark .feature-card h3 {
-  color: #fff;
+  color: #f8fafc;
 }
 
 body.theme-dark .feature-card p {
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(248, 250, 252, 0.5);
 }
 
 body.theme-dark .feature-card p strong {
-  color: rgba(255, 255, 255, 0.8);
+  color: rgba(248, 250, 252, 0.8);
 }
 
 body.theme-dark .download-card {
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(248, 250, 252, 0.02);
+  border: 1px solid rgba(51, 65, 85, 0.5);
   border-radius: 20px;
 }
 
@@ -1005,167 +510,167 @@ body.theme-dark .download-card:hover {
 }
 
 body.theme-dark .download-card.highlighted {
-  border-color: rgba(102, 126, 234, 0.5);
-  background: rgba(102, 126, 234, 0.05);
-  box-shadow: 0 0 40px rgba(102, 126, 234, 0.15);
+  border-color: rgba(59, 130, 246, 0.5);
+  background: rgba(59, 130, 246, 0.05);
+  box-shadow: 0 0 40px rgba(59, 130, 246, 0.15);
 }
 
 body.theme-dark .download-card.highlighted::before {
-  background: linear-gradient(135deg, #667eea, #764ba2);
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
 }
 
 body.theme-dark .os-icon {
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(248, 250, 252, 0.7);
 }
 
 body.theme-dark .download-card h3 {
-  color: #fff;
+  color: #f8fafc;
 }
 
 body.theme-dark .os-version {
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(248, 250, 252, 0.4);
 }
 
 body.theme-dark .download-btn {
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  color: #fff;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: #f8fafc;
 }
 
 body.theme-dark .download-btn:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+  box-shadow: 0 8px 25px rgba(59, 130, 246, 0.4);
 }
 
 body.theme-dark .coming-soon {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.4);
+  background: rgba(248, 250, 252, 0.05);
+  border: 1px solid rgba(51, 65, 85, 0.5);
+  color: rgba(248, 250, 252, 0.4);
 }
 
 body.theme-dark .download-note {
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(248, 250, 252, 0.02);
+  border: 1px solid rgba(51, 65, 85, 0.5);
 }
 
 body.theme-dark .download-note p {
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(248, 250, 252, 0.5);
 }
 
 body.theme-dark .download-note strong {
-  color: rgba(255, 255, 255, 0.8);
+  color: rgba(248, 250, 252, 0.8);
 }
 
 body.theme-dark .step {
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(248, 250, 252, 0.02);
+  border: 1px solid rgba(51, 65, 85, 0.5);
   border-radius: 16px;
 }
 
 body.theme-dark .step:hover {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(102, 126, 234, 0.2);
+  background: rgba(248, 250, 252, 0.04);
+  border-color: rgba(59, 130, 246, 0.5);
 }
 
 body.theme-dark .step-number {
-  background: linear-gradient(135deg, #667eea, #764ba2);
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
 body.theme-dark .step-content h3 {
-  color: #fff;
+  color: #f8fafc;
 }
 
 body.theme-dark .step-content p {
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(248, 250, 252, 0.5);
 }
 
 body.theme-dark .step-content code {
-  background: rgba(102, 126, 234, 0.1);
-  color: #667eea;
+  background: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
 }
 
 body.theme-dark .tech-note {
-  background: rgba(102, 126, 234, 0.05);
-  border: 1px solid rgba(102, 126, 234, 0.15);
+  background: rgba(59, 130, 246, 0.05);
+  border: 1px solid rgba(59, 130, 246, 0.2);
   border-radius: 16px;
 }
 
 body.theme-dark .tech-note h4 {
-  color: #fff;
+  color: #f8fafc;
 }
 
 body.theme-dark .tech-note p {
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(248, 250, 252, 0.5);
 }
 
 body.theme-dark .tech-note strong {
-  color: rgba(255, 255, 255, 0.8);
+  color: rgba(248, 250, 252, 0.8);
 }
 
 body.theme-dark .faq-item {
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(248, 250, 252, 0.02);
+  border: 1px solid rgba(51, 65, 85, 0.5);
   border-radius: 12px;
 }
 
 body.theme-dark .faq-item:hover {
-  border-color: rgba(255, 255, 255, 0.1);
+  border-color: rgba(59, 130, 246, 0.5);
 }
 
 body.theme-dark .faq-item[open] {
-  border-color: rgba(102, 126, 234, 0.3);
-  background: rgba(102, 126, 234, 0.03);
+  border-color: rgba(59, 130, 246, 0.5);
+  background: rgba(59, 130, 246, 0.03);
 }
 
 body.theme-dark .faq-item summary {
-  color: #fff;
+  color: #f8fafc;
 }
 
 body.theme-dark .faq-item summary svg {
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(248, 250, 252, 0.4);
 }
 
 body.theme-dark .faq-answer p {
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(248, 250, 252, 0.5);
 }
 
 body.theme-dark .faq-answer strong {
-  color: rgba(255, 255, 255, 0.8);
+  color: rgba(248, 250, 252, 0.8);
 }
 
 body.theme-dark .footer {
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
-  background: rgba(0, 0, 0, 0.3);
+  border-top: 1px solid rgba(51, 65, 85, 0.5);
+  background: rgba(15, 23, 42, 0.3);
 }
 
 body.theme-dark .footer-brand p {
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(248, 250, 252, 0.4);
 }
 
 body.theme-dark .footer-column h4 {
-  color: #fff;
+  color: #f8fafc;
 }
 
 body.theme-dark .footer-column a {
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(248, 250, 252, 0.4);
 }
 
 body.theme-dark .footer-column a:hover {
-  color: rgba(255, 255, 255, 0.8);
+  color: rgba(248, 250, 252, 0.8);
 }
 
 body.theme-dark .footer-bottom p {
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(248, 250, 252, 0.3);
 }
 
 body.theme-dark .footer-bottom a {
-  color: #667eea;
+  color: #3b82f6;
 }
 
 body.theme-dark .footer-logo .logo-text {
-  background: linear-gradient(135deg, #667eea, #764ba2);
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;

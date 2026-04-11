@@ -145,6 +145,7 @@ export default function App() {
   const [diagResults, setDiagResults] = useState<any[]>([]);
   const [isDiagRunning, setIsDiagRunning] = useState<boolean>(false);
   
+  const [theme, setThemeState] = useState<string>(localStorage.getItem('unbound-theme') || 'light');
   const [settings, setSettings] = useState<{
     autoStart: boolean, 
     startMinimized: boolean, 
@@ -173,6 +174,14 @@ export default function App() {
   const [toasts, setToasts] = useState<Array<{id: number, type: string, title: string, message: string}>>([]);
   const logsEndRef = useRef<HTMLDivElement>(null);
   const logsContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // Sync theme to body
+    const classes = Array.from(document.body.classList).filter(c => c.startsWith('theme-'));
+    classes.forEach(c => document.body.classList.remove(c));
+    document.body.classList.add(`theme-${theme}`);
+    localStorage.setItem('unbound-theme', theme);
+  }, [theme]);
 
   useEffect(() => {
     EventsOn('status_changed', (newStatus: string) => setStatus(newStatus));
@@ -812,6 +821,34 @@ export default function App() {
 
               <div className="flex flex-col gap-2 p-3 bg-white border-2 border-gray-800 rounded-xl relative z-50 shadow-[2px_2px_0_#222]">
                 <div>
+                  <span className="text-lg font-bold text-gray-900 block leading-none">Тема интерфейса</span>
+                  <span className="text-xs text-gray-600 block mt-1">Выберите стиль (v2.5.0)</span>
+                </div>
+                <DoodleSelect
+                  value={theme === 'light' ? 'Standard White' : 
+                         theme === 'dark' ? 'Modern Dark' :
+                         theme === 'doodle' ? 'Doodle Jump' :
+                         theme === 'liquid-glass' ? 'Liquid Glass' :
+                         theme === 'win95' ? 'Windows 95' :
+                         theme === 'ghost' ? 'Ghost in the Shell' : theme}
+                  options={['Standard White', 'Modern Dark', 'Doodle Jump', 'Liquid Glass', 'Windows 95', 'Ghost in the Shell']}
+                  onChange={(val) => {
+                    const themeMap: Record<string, string> = {
+                      'Standard White': 'light',
+                      'Modern Dark': 'dark',
+                      'Doodle Jump': 'doodle',
+                      'Liquid Glass': 'liquid-glass',
+                      'Windows 95': 'win95',
+                      'Ghost in the Shell': 'ghost'
+                    };
+                    setThemeState(themeMap[val]);
+                  }}
+                  up={true}
+                />
+              </div>
+
+              <div className="flex flex-col gap-2 p-3 bg-white border-2 border-gray-800 rounded-xl relative z-50 shadow-[2px_2px_0_#222]">
+                <div>
                   <span className="text-lg font-bold text-gray-900 block leading-none">Профиль при запуске</span>
                   <span className="text-xs text-gray-600 block mt-1">Какой профиль загружать при старте?</span>
                 </div>
@@ -865,7 +902,7 @@ export default function App() {
             </div>
             
             <div className="px-4 py-2 flex justify-center opacity-40">
-              <span className="font-marker text-sm">v2.0.0 — 2026 Total War Edition</span>
+              <span className="font-marker text-sm">v2.5.0 — Aura Design Edition</span>
             </div>
           </div>
         </div>

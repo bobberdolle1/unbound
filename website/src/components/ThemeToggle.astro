@@ -1,30 +1,66 @@
 ---
 ---
 
+<div class="theme-switcher-wrapper">
 <div class="theme-switcher" id="themeSwitcher">
-  <button class="theme-btn active" data-theme="skeuomorphic" title="iOS 6 Скевоморфизм">
+  <button class="theme-btn active" data-theme="light" title="Standard White">
+    <span class="theme-icon">☀️</span>
+  </button>
+  <button class="theme-btn" data-theme="dark" title="Modern Dark">
+    <span class="theme-icon">🌙</span>
+  </button>
+  <button class="theme-btn" data-theme="skeuomorphic" title="iOS 6 Classic">
     <span class="theme-icon">🍎</span>
   </button>
   <button class="theme-btn" data-theme="doodle" title="Doodle Jump">
     <span class="theme-icon">🐣</span>
   </button>
-  <button class="theme-btn" data-theme="dark" title="Тёмная тема">
-    <span class="theme-icon">🌙</span>
+  <button class="theme-btn" data-theme="liquid-glass" title="Liquid Glass">
+    <span class="theme-icon">💧</span>
   </button>
+  <button class="theme-btn" data-theme="ios26" title="iOS 26 (Future)">
+    <span class="theme-icon">💠</span>
+  </button>
+  <button class="theme-btn" data-theme="macos26" title="macOS 26 (Spatial)">
+    <span class="theme-icon">💻</span>
+  </button>
+  <button class="theme-btn" data-theme="win95" title="Windows 95">
+    <span class="theme-icon">💾</span>
+  </button>
+  <button class="theme-btn" data-theme="winxp" title="Windows XP">
+    <span class="theme-icon">🌄</span>
+  </button>
+  <button class="theme-btn" data-theme="win8" title="Windows 8">
+    <span class="theme-icon">📊</span>
+  </button>
+  <button class="theme-btn" data-theme="gravity" title="Special Gravity">
+    <span class="theme-icon">🕳️</span>
+  </button>
+</div>
 </div>
 
 <script is:inline>
 (function() {
-  const themes = ['skeuomorphic', 'doodle', 'dark'];
-  const saved = localStorage.getItem('unbound-theme') || 'skeuomorphic';
-  document.body.className = 'theme-' + saved;
-
+  const saved = localStorage.getItem('unbound-theme') || 'light';
+  
   function setTheme(theme) {
-    document.body.className = 'theme-' + theme;
+    // Remove all theme classes first
+    const themeClasses = Array.from(document.body.classList).filter(c => c.startsWith('theme-'));
+    themeClasses.forEach(c => document.body.classList.remove(c));
+    
+    // Add new theme class
+    document.body.classList.add('theme-' + theme);
     localStorage.setItem('unbound-theme', theme);
+    
+    // Update buttons
     document.querySelectorAll('.theme-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.theme === theme);
     });
+
+    // Save for App sync
+    if (window.wails) {
+       // Future logic for app sync
+    }
   }
 
   setTheme(saved);
@@ -38,104 +74,85 @@
 </script>
 
 <style>
-.theme-switcher {
+.theme-switcher-wrapper {
   position: fixed;
-  bottom: 2rem;
-  right: 2rem;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 9999;
+  max-width: 90vw;
+  overflow-x: auto;
+  padding: 8px;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.theme-switcher-wrapper::-webkit-scrollbar {
+  display: none;
+}
+
+.theme-switcher {
   display: flex;
-  gap: 0.5rem;
-  padding: 0.5rem;
-  border-radius: 16px;
-  transition: all 0.3s ease;
+  gap: 8px;
+  padding: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 20px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 }
 
 .theme-btn {
-  width: 44px;
-  height: 44px;
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
   border: none;
   border-radius: 12px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.2rem;
-  transition: all 0.2s ease;
-  background: rgba(255, 255, 255, 0.1);
+  font-size: 1.25rem;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(10px);
 }
 
 .theme-btn:hover {
-  transform: scale(1.1);
-  background: rgba(255, 255, 255, 0.2);
+  transform: translateY(-4px) scale(1.1);
+  background: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
 }
 
 .theme-btn.active {
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  border-color: transparent;
-  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
-  transform: scale(1.05);
+  background: var(--accent);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0 20px var(--accent);
+  transform: translateY(-2px);
 }
 
 .theme-icon {
   line-height: 1;
 }
 
-/* Skeuomorphic theme toggle style */
-body.theme-skeuomorphic .theme-switcher {
-  background: linear-gradient(180deg, #f0ede6 0%, #e0ddd6 100%);
-  border: 1px solid #a09d96;
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.6),
-    0 2px 6px rgba(0,0,0,0.15);
-  border-radius: 10px;
+/* Animations */
+@keyframes dock-bounce {
+  0% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+  100% { transform: translateY(0); }
 }
 
-body.theme-skeuomorphic .theme-btn {
-  background: linear-gradient(180deg, #f5f5f0 0%, #e8e5de 100%);
-  border: 1px solid #a09d96;
-  border-radius: 8px;
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.7),
-    0 1px 3px rgba(0,0,0,0.1);
-}
-
-body.theme-skeuomorphic .theme-btn:hover {
-  background: linear-gradient(180deg, #ffffff 0%, #eeece6 100%);
-}
-
-body.theme-skeuomorphic .theme-btn.active {
-  background: linear-gradient(180deg, #5db8f7 0%, #1a8cd8 100%);
-  border: 1px solid #0e6fa0;
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.4),
-    0 2px 4px rgba(0,0,0,0.25);
-}
-
-/* Doodle theme toggle style */
-body.theme-doodle .theme-switcher {
-  background: #fffef5;
-  border: 2px dashed #d4c9a8;
-  border-radius: 12px;
-  box-shadow: 3px 3px 0 #d4c9a8;
-}
-
-body.theme-doodle .theme-btn {
-  background: #fffef5;
-  border: 2px dashed #d4c9a8;
-  border-radius: 10px;
-  box-shadow: 2px 2px 0 #d4c9a8;
-}
-
-body.theme-doodle .theme-btn:hover {
-  transform: scale(1.1) rotate(-3deg);
-  box-shadow: 4px 4px 0 #d4c9a8;
-}
-
-body.theme-doodle .theme-btn.active {
-  background: linear-gradient(135deg, #4caf50, #8bc34a);
-  border: 2px dashed #2e7d32;
-  box-shadow: 3px 3px 0 #2e7d32;
+@media (max-width: 640px) {
+  .theme-switcher-wrapper {
+    bottom: 1rem;
+    padding: 4px;
+  }
+  .theme-btn {
+    width: 38px;
+    height: 38px;
+    font-size: 1.1rem;
+  }
 }
 </style>

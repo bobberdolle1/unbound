@@ -1,21 +1,15 @@
-//go:build windows
-
 package engine
 
 import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-
-	"golang.org/x/sys/windows/registry"
 )
 
 const (
 	ConfigDirName      = "Unbound"
 	CustomScriptName   = "custom_profile.lua"
 	SettingsFileName   = "settings.json"
-	RegistryRunKey     = `Software\Microsoft\Windows\CurrentVersion\Run`
-	RegistryAppName    = "Unbound"
 	DefaultLuaTemplate = `-- Custom Zapret Lua Bypass Strategy
 -- Enter your custom DPI bypass logic here
 -- This script will be loaded with --lua flag when "Custom Profile" is selected
@@ -29,18 +23,6 @@ const (
 
 `
 )
-
-type Settings struct {
-	AutoStart               bool   `json:"autoStart"`
-	StartMinimized          bool   `json:"startMinimized"`
-	DefaultProfile          string `json:"defaultProfile"`
-	StartupProfileMode      string `json:"startupProfileMode"`
-	GameFilter              bool   `json:"gameFilter"`
-	AutoUpdateEnabled       bool   `json:"autoUpdateEnabled"`
-	ShowLogs                bool   `json:"showLogs"`
-	EnableTCPTimestamps     bool   `json:"enableTCPTimestamps"`
-	DiscordCacheAutoClean   bool   `json:"discordCacheAutoClean"`
-}
 
 func GetConfigDir() (string, error) {
 	userConfigDir, err := os.UserConfigDir()
@@ -154,29 +136,5 @@ func getDefaultSettings() *Settings {
 		GameFilter:         true,
 		AutoUpdateEnabled:  true,
 		ShowLogs:           true,
-	}
-}
-
-func applyAutoStartSetting(enable bool) error {
-	k, err := registry.OpenKey(registry.CURRENT_USER, RegistryRunKey, registry.ALL_ACCESS)
-	if err != nil {
-		return err
-	}
-	defer k.Close()
-
-	if enable {
-		exePath, err := os.Executable()
-		if err != nil {
-			return err
-		}
-
-		cmdLine := `"` + exePath + `" --tray`
-		return k.SetStringValue(RegistryAppName, cmdLine)
-	} else {
-		err := k.DeleteValue(RegistryAppName)
-		if err != nil && err != registry.ErrNotExist {
-			return err
-		}
-		return nil
 	}
 }

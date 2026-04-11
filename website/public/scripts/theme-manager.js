@@ -1,11 +1,11 @@
 (function () {
   "use strict";
 
-  var THEMES = ["theme-dark", "theme-skeuomorphic", "theme-doodle"];
+  var THEMES = ["theme-dark", "theme-light", "theme-skeuomorphic", "theme-doodle"];
   var STORAGE_KEY = "unbound-theme";
 
   function getCurrentTheme() {
-    return localStorage.getItem(STORAGE_KEY) || "theme-dark";
+    return localStorage.getItem(STORAGE_KEY) || "theme-light";
   }
 
   function setTheme(theme) {

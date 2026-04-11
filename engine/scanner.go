@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"unbound/engine/providers"
@@ -134,7 +133,7 @@ func RunAutoTune(ctx context.Context, updateLog func(string)) (Profile, error) {
 
 			cmd := exec.CommandContext(ctx, winwsPath, args...)
 			cmd.Dir = assets.BinDir
-			cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
+			cmd.SysProcAttr = GetHiddenSysProcAttr()
 
 			if err := cmd.Start(); err != nil {
 				return
@@ -144,7 +143,7 @@ func RunAutoTune(ctx context.Context, updateLog func(string)) (Profile, error) {
 			select {
 			case <-ctx.Done():
 				killCmd := exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", cmd.Process.Pid))
-				killCmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
+				killCmd.SysProcAttr = GetHiddenSysProcAttr()
 				killCmd.Run()
 				return
 			case <-time.After(500 * time.Millisecond):
@@ -165,7 +164,7 @@ func RunAutoTune(ctx context.Context, updateLog func(string)) (Profile, error) {
 			}
 
 			killCmd1 := exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", cmd.Process.Pid))
-			killCmd1.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
+			killCmd1.SysProcAttr = GetHiddenSysProcAttr()
 			killCmd1.Run()
 
 			if ctx.Err() != nil {
@@ -193,7 +192,7 @@ func RunAutoTune(ctx context.Context, updateLog func(string)) (Profile, error) {
 
 	// Kill any dangling processes just in case
 	killCmd2 := exec.Command("taskkill", "/F", "/T", "/IM", "winws2.exe")
-	killCmd2.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
+	killCmd2.SysProcAttr = GetHiddenSysProcAttr()
 	killCmd2.Run()
 
 	if bestScore <= 0 {

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Comic+Neue:wght@400;700&family=Permanent+Marker&display=swap');
 
 *,
 *::before,
@@ -34,8 +34,8 @@ img {
 
 /* Selection color */
 ::selection {
-  background: rgba(102, 126, 234, 0.3);
-  color: #fff;
+  background: rgba(59, 130, 246, 0.3);
+  color: #0f172a;
 }
 
 /* Scrollbar */
@@ -48,98 +48,68 @@ img {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(100, 116, 139, 0.5);
   border-radius: 5px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
+  background: rgba(100, 116, 139, 0.7);
 }
 
-/* =============================================
-   iOS 6 Skeuomorphic — DEFAULT THEME
-   Real leather, linen, glass, emboss, stitch
-   ============================================= */
-
-/* Linen background texture via CSS gradients */
-body.theme-skeuomorphic {
-  --bg-primary: #c8c5be;
-  --bg-secondary: #b8b5ae;
-  --bg-card: #e8e5de;
-  --border-color: #a09d96;
-  --text-primary: #2c2c2c;
-  --text-secondary: #5a5a5a;
-  --accent: #1e88e5;
-  --accent-secondary: #1565c0;
-  --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.6), inset 0 -1px 0 rgba(0, 0, 0, 0.05);
-  --shadow-card: 0 2px 6px rgba(0, 0, 0, 0.15), 0 1px 2px rgba(0, 0, 0, 0.1);
-  --shadow-btn: inset 0 1px 0 rgba(255, 255, 255, 0.4), 0 2px 4px rgba(0, 0, 0, 0.2), 0 1px 0 rgba(0, 0, 0, 0.1);
-  --text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
+:root {
+  /* Default: Standard White (Inter) */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8fafc;
+  --bg-card: #ffffff;
+  --bg-navbar: rgba(255, 255, 255, 0.8);
+  --border-color: #e2e8f0;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --accent: #3b82f6;
+  --accent-secondary: #2563eb;
+  --shadow-card: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --ui-radius: 12px;
+  --ui-blur: 8px;
+  --font-main: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-accent: 'Inter', system-ui, -apple-system, sans-serif;
 }
 
-body.theme-skeuomorphic {
-  background:
-    /* Linen weave texture */
-    repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 1px,
-      rgba(0, 0, 0, 0.01) 1px,
-      rgba(0, 0, 0, 0.01) 2px
-    ),
-    repeating-linear-gradient(
-      90deg,
-      transparent,
-      transparent 1px,
-      rgba(0, 0, 0, 0.01) 1px,
-      rgba(0, 0, 0, 0.01) 2px
-    ),
-    /* Base warm beige gradient */
-    linear-gradient(180deg, #ddd9d2 0%, #c8c5be 30%, #b8b5ae 100%);
-  background-attachment: fixed;
+body {
+  background: var(--bg-primary);
   color: var(--text-primary);
-  font-family: -apple-system, 'Helvetica Neue', 'Lucida Grande', sans-serif;
+  font-family: var(--font-main);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+  transition: background 0.4s cubic-bezier(0.4, 0, 0.2, 1), 
+              color 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* =============================================
-   Doodle Jump — Playful hand-drawn theme
-   ============================================= */
-body.theme-doodle {
-  --bg-primary: #f5f5dc;
-  --bg-secondary: #ebe5c8;
-  --bg-card: #fffef5;
-  --border-color: #d4c9a8;
-  --text-primary: #2c2c2c;
-  --text-secondary: #5a5a5a;
-  --accent: #4caf50;
-  --accent-secondary: #8bc34a;
+/* Base Utility Classes for Components */
+.card-aura {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--ui-radius);
+  box-shadow: var(--shadow-card);
+  backdrop-filter: blur(var(--ui-blur));
 }
 
-body.theme-doodle {
-  background:
-    radial-gradient(circle at 20% 80%, rgba(76, 175, 80, 0.06) 0%, transparent 50%),
-    radial-gradient(circle at 80% 20%, rgba(139, 195, 74, 0.06) 0%, transparent 50%),
-    radial-gradient(circle at 50% 50%, rgba(255, 235, 59, 0.03) 0%, transparent 70%),
-    #f5f5dc;
-  background-attachment: fixed;
-  color: var(--text-primary);
+.text-primary-aura { color: var(--text-primary); }
+.text-secondary-aura { color: var(--text-secondary); }
+.bg-primary-aura { background: var(--bg-primary); }
+.bg-secondary-aura { background: var(--bg-secondary); }
+
+a {
+  color: inherit;
+  text-decoration: none;
+  transition: color 0.2s ease;
 }
 
-/* =============================================
-   Modern Dark — Clean minimal
-   ============================================= */
-body.theme-dark {
-  --bg-primary: #0a0a0f;
-  --bg-secondary: rgba(255, 255, 255, 0.02);
-  --bg-card: rgba(255, 255, 255, 0.02);
-  --border-color: rgba(255, 255, 255, 0.06);
-  --text-primary: rgba(255, 255, 255, 0.8);
-  --text-secondary: rgba(255, 255, 255, 0.5);
-  --accent: #667eea;
-  --accent-secondary: #764ba2;
+img {
+  max-width: 100%;
+  display: block;
 }
 
-body.theme-dark {
-  background: #0a0a0f;
-  color: var(--text-primary);
-}
+/* Theme variable sets will be handled in themes.css */
+

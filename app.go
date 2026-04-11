@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"unbound/engine"
@@ -289,7 +288,7 @@ func (a *App) AutoTune() string {
 	}()
 
 	assets, _ := engine.ExtractAssets()
-	provider := providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir, assets.ListDir, true, false)
+	provider := providers.NewAutoTuneProvider(assets.BinDir, assets.LuaDir, assets.ListDir)
 	
 	// LOAD ALL PROFILES
 	allProfiles := append(engine.GetProfiles(assets.LuaDir), engine.GetAdvancedProfiles(assets.LuaDir)...)
@@ -408,7 +407,7 @@ func (a *App) CheckConflicts() []string {
 	
 	for _, p := range procs {
 		cmd := exec.Command("tasklist", "/FI", "IMAGENAME eq "+p.Exe, "/NH")
-		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: CREATE_NO_WINDOW}
+		cmd.SysProcAttr = engine.GetHiddenSysProcAttr()
 		out, _ := cmd.Output()
 		if strings.Contains(string(out), p.Exe) {
 			conflicts = append(conflicts, "⚠️ "+p.Desc+" запущен")
@@ -432,13 +431,13 @@ func (a *App) KillConflicts() error {
 	
 	for _, p := range procs {
 		cmd := exec.Command("taskkill", "/F", "/IM", p)
-		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: CREATE_NO_WINDOW}
+		cmd.SysProcAttr = engine.GetHiddenSysProcAttr()
 		cmd.Run()
 	}
 	
 	// Сброс драйвера WinDivert
 	cmdReset := exec.Command("sc", "stop", "WinDivert")
-	cmdReset.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: CREATE_NO_WINDOW}
+	cmdReset.SysProcAttr = engine.GetHiddenSysProcAttr()
 	cmdReset.Run()
 	
 	logger.Info("App", "Конфликтующие процессы и драйверы остановлены")
@@ -452,9 +451,12 @@ func (a *App) ShowNotification(title string, message string) {
 }
 
 func (a *App) HideWindowToTray() {
-	a.HideToTray()
+	a.manager.Stop() // Optional: the old HideToTray was just hiding window
+	// but here we call the Go method I renamed
+	wailsruntime.WindowHide(a.ctx)
 }
 
 func (a *App) ShowWindowFromTray() {
-	a.ShowFromTray()
+	wailsruntime.WindowShow(a.ctx)
+	wailsruntime.WindowUnminimise(a.ctx)
 }
