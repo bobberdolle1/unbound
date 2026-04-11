@@ -6,7 +6,12 @@ import css from "rollup-plugin-import-css";
 export default {
   input: "src/index.tsx",
   plugins: [
-    typescript({ tsconfig: "./tsconfig.json", jsx: "preserve" }),
+    typescript({ 
+      tsconfig: "./tsconfig.json",
+      jsx: "react",
+      jsxFactory: "h",
+      jsxFragmentFactory: "Fragment",
+    }),
     resolve(),
     commonjs(),
     css(),

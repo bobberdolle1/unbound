@@ -37,7 +37,7 @@ build_binary() {
     cd "$PROJECT_ROOT"
     GOOS=linux GOARCH=mipsle GOMIPS=softfloat \
         go build -trimpath -ldflags="-s -w" \
-        -o "$BUILD_DIR/unbound-openwrt-mipsle" ./...
+        -o "$BUILD_DIR/unbound-openwrt-mipsle" .
 
     log_ok "Binary: $BUILD_DIR/unbound-openwrt-mipsle"
     ls -lh "$BUILD_DIR/unbound-openwrt-mipsle"

@@ -1,9 +1,11 @@
-/// <reference types="vite/client" />
-import { definePlugin, ServerAPI } from "decky";
+import { definePlugin, PanelSection, PanelSectionRow, ToggleField, Button } from "@decky/ui";
 import { useState, useEffect } from "react";
 import { FaShieldAlt } from "react-icons/fa";
-import { BsWifiOn, BsWifiOff } from "react-icons/bs";
-import { ToggleField, Button, PanelSection, PanelSectionRow } from "decky";
+import { BsWifi, BsWifiOff } from "react-icons/bs";
+
+interface ServerAPI {
+  callPluginMethod<TArgs, TResult>(method: string, args?: TArgs): Promise<TResult>;
+}
 
 interface StatusResponse {
   success: boolean;
@@ -78,7 +80,7 @@ function UnboundPanel({ serverAPI }: { serverAPI: ServerAPI }) {
             }}
           >
             {enabled ? (
-              <BsWifiOn size={22} color="#28a050" />
+              <BsWifi size={22} color="#28a050" />
             ) : (
               <BsWifiOff size={22} color="#b43c3c" />
             )}
