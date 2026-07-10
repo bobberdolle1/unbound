@@ -105,5 +105,25 @@ func ExtractAssets() (*AssetPaths, error) {
 		return nil, fmt.Errorf("failed to extract lists: %w", err)
 	}
 
+	// Copy missing default lists to user's persistent lists directory
+	userListsDir, err := GetListsDir()
+	if err == nil {
+		entries, err := EmbeddedAssets.ReadDir("lists")
+		if err == nil {
+			for _, entry := range entries {
+				if entry.IsDir() {
+					continue
+				}
+				destPath := filepath.Join(userListsDir, entry.Name())
+				if _, err := os.Stat(destPath); os.IsNotExist(err) {
+					data, err := EmbeddedAssets.ReadFile("lists/" + entry.Name())
+					if err == nil {
+						os.WriteFile(destPath, data, 0644)
+					}
+				}
+			}
+		}
+	}
+
 	return &AssetPaths{BinDir: binDir, LuaDir: luaDir, ListDir: listDir}, nil
 }
