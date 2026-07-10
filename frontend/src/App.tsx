@@ -911,8 +911,27 @@ export default function App() {
                          theme === 'doodle' ? 'Doodle Jump' :
                          theme === 'liquid-glass' ? 'Liquid Glass' :
                          theme === 'win95' ? 'Windows 95' :
-                         theme === 'ghost' ? 'Ghost in the Shell' : theme}
-                  options={['Standard White', 'Modern Dark', 'Doodle Jump', 'Liquid Glass', 'Windows 95', 'Ghost in the Shell']}
+                         theme === 'ghost' ? 'Ghost in the Shell' :
+                         theme === 'skeuomorphic' ? 'iOS 6 Classic' :
+                         theme === 'winxp' ? 'Windows XP' :
+                         theme === 'macos26' ? 'macOS Spatial' :
+                         theme === 'win8' ? 'Windows 8 Metro' :
+                         theme === 'ios26' ? 'iOS 26 Hologram' :
+                         theme === 'gravity' ? 'Interstellar Gravity' : theme}
+                  options={[
+                    'Standard White', 
+                    'Modern Dark', 
+                    'Doodle Jump', 
+                    'Liquid Glass', 
+                    'Windows 95', 
+                    'Ghost in the Shell',
+                    'iOS 6 Classic',
+                    'Windows XP',
+                    'macOS Spatial',
+                    'Windows 8 Metro',
+                    'iOS 26 Hologram',
+                    'Interstellar Gravity'
+                  ]}
                   onChange={(val) => {
                     const themeMap: Record<string, string> = {
                       'Standard White': 'light',
@@ -920,7 +939,13 @@ export default function App() {
                       'Doodle Jump': 'doodle',
                       'Liquid Glass': 'liquid-glass',
                       'Windows 95': 'win95',
-                      'Ghost in the Shell': 'ghost'
+                      'Ghost in the Shell': 'ghost',
+                      'iOS 6 Classic': 'skeuomorphic',
+                      'Windows XP': 'winxp',
+                      'macOS Spatial': 'macos26',
+                      'Windows 8 Metro': 'win8',
+                      'iOS 26 Hologram': 'ios26',
+                      'Interstellar Gravity': 'gravity'
                     };
                     setThemeState(themeMap[val]);
                   }}

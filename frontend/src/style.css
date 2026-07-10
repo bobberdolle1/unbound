@@ -100,7 +100,125 @@ body.theme-ghost {
   --font-main: 'VT323', monospace;
 }
 
+/* 6. iOS 6 CLASSIC */
+body.theme-skeuomorphic {
+  --ui-bg: #5c6270;
+  --ui-panel: #dcdedd;
+  --ui-panel-transparent: rgba(220, 222, 221, 0.9);
+  --ui-accent: #297be7;
+  --ui-accent-hover: #155bd3;
+  --ui-text: #333333;
+  --ui-text-muted: #555555;
+  --ui-border: #8c8f95;
+  --ui-radius: 8px;
+  --font-main: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+body.theme-skeuomorphic {
+  background-color: #5c6270;
+  background-image: 
+    linear-gradient(rgba(255,255,255,.07) 2px, transparent 2px),
+    linear-gradient(90deg, rgba(255,255,255,.07) 2px, transparent 2px);
+  background-size: 20px 20px;
+}
+
+/* 7. WINDOWS XP */
+body.theme-winxp {
+  --ui-bg: #245edb;
+  --ui-panel: #ece9d8;
+  --ui-panel-transparent: rgba(236, 233, 216, 0.9);
+  --ui-accent: #ff8a00;
+  --ui-accent-hover: #e07b00;
+  --ui-text: #000000;
+  --ui-text-muted: #4d4d4d;
+  --ui-border: #003399;
+  --ui-radius: 8px;
+  --font-main: 'Tahoma', sans-serif;
+}
+
+body.theme-winxp {
+  background: linear-gradient(to bottom, #738fbf 0%, #d4e4ff 100%);
+}
+
+/* 8. macOS SPATIAL */
+body.theme-macos26 {
+  --ui-bg: #000000;
+  --ui-panel: rgba(255, 255, 255, 0.05);
+  --ui-panel-transparent: rgba(255, 255, 255, 0.03);
+  --ui-accent: #ffffff;
+  --ui-accent-hover: #a0a0a0;
+  --ui-text: #ffffff;
+  --ui-text-muted: rgba(255, 255, 255, 0.5);
+  --ui-border: rgba(255, 255, 255, 0.1);
+  --ui-radius: 30px;
+  --ui-blur: 40px;
+}
+
+body.theme-macos26 {
+  background: linear-gradient(135deg, #1a1a1a 0%, #000000 100%);
+}
+
+/* 9. WINDOWS 8 METRO */
+body.theme-win8 {
+  --ui-bg: #111111;
+  --ui-panel: #2d89ef;
+  --ui-panel-transparent: rgba(45, 137, 239, 0.85);
+  --ui-accent: #2b5797;
+  --ui-accent-hover: #00a300;
+  --ui-text: #ffffff;
+  --ui-text-muted: rgba(255, 255, 255, 0.85);
+  --ui-border: transparent;
+  --ui-radius: 0px;
+  --font-main: 'Segoe UI', sans-serif;
+}
+
+body.theme-win8 {
+  background-color: #111111;
+  background-image: 
+    linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px),
+    linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px);
+  background-size: 80px 80px;
+}
+
+/* 10. iOS 26 HOLOGRAM */
+body.theme-ios26 {
+  --ui-bg: #ffffff;
+  --ui-panel: rgba(255, 255, 255, 0.6);
+  --ui-panel-transparent: rgba(255, 255, 255, 0.4);
+  --ui-accent: #5856d6;
+  --ui-accent-hover: #af52de;
+  --ui-text: #000000;
+  --ui-text-muted: #8e8e93;
+  --ui-border: rgba(0, 0, 0, 0.05);
+  --ui-radius: 40px;
+  --ui-blur: 50px;
+}
+
+body.theme-ios26 {
+  background: radial-gradient(circle at center, #ffffff 0%, #f2f2f7 100%);
+}
+
+/* 11. INTERSTELLAR GRAVITY */
+body.theme-gravity {
+  --ui-bg: #000000;
+  --ui-panel: rgba(10, 10, 10, 0.8);
+  --ui-panel-transparent: rgba(10, 10, 10, 0.6);
+  --ui-accent: #00ff00;
+  --ui-accent-hover: #00ffff;
+  --ui-text: #ffffff;
+  --ui-text-muted: #666666;
+  --ui-border: #333333;
+  --ui-radius: 2px;
+  --ui-blur: 5px;
+}
+
+body.theme-gravity {
+  background: radial-gradient(circle at center, #111 0%, #000 100%);
+}
+
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   CORE APP STYLES
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
    CORE APP STYLES
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
