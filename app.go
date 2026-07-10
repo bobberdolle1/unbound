@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -88,6 +90,10 @@ func (a *App) startup(ctx context.Context) {
 		if settings.DiscordCacheAutoClean {
 			logger.Info("App", "Cleaning Discord cache")
 			a.ClearDiscordCache()
+		}
+		if settings.SecureDNS {
+			logger.Info("App", "Enabling secure DNS")
+			a.SetSecureDNS(true)
 		}
 	}
 
@@ -262,6 +268,9 @@ func (a *App) SaveSettings(settings *engine.Settings) error {
 		if err := engine.ClearDiscordCache(); err != nil {
 			wailsruntime.LogErrorf(a.ctx, "Failed to clear Discord cache: %v", err)
 		}
+	}
+	if err := a.SetSecureDNS(settings.SecureDNS); err != nil {
+		wailsruntime.LogErrorf(a.ctx, "Failed to set secure DNS: %v", err)
 	}
 	return engine.SaveSettings(settings)
 }
@@ -460,3 +469,93 @@ func (a *App) ShowWindowFromTray() {
 	wailsruntime.WindowShow(a.ctx)
 	wailsruntime.WindowUnminimise(a.ctx)
 }
+
+var editableLists = map[string]bool{
+	"youtube.txt":         true,
+	"discord.txt":         true,
+	"other.txt":           true,
+	"ipset-exclude.txt":   true,
+}
+
+func (a *App) GetBypassLists() []string {
+	return []string{"youtube.txt", "discord.txt", "other.txt", "ipset-exclude.txt"}
+}
+
+func (a *App) ReadBypassList(name string) (string, error) {
+	if !editableLists[name] {
+		return "", fmt.Errorf("file access denied")
+	}
+	listsDir, err := engine.GetListsDir()
+	if err != nil {
+		return "", err
+	}
+	path := filepath.Join(listsDir, name)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	return string(data), nil
+}
+
+func (a *App) SaveBypassList(name string, content string) error {
+	if !editableLists[name] {
+		return fmt.Errorf("file access denied")
+	}
+	listsDir, err := engine.GetListsDir()
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(listsDir, name)
+	return os.WriteFile(path, []byte(content), 0644)
+}
+
+func (a *App) ExportLogs(content string) (bool, error) {
+	filePath, err := wailsruntime.SaveFileDialog(a.ctx, wailsruntime.SaveDialogOptions{
+		Title:           "Сохранить лог",
+		DefaultFilename: "unbound_log.txt",
+		Filters: []wailsruntime.FileFilter{
+			{
+				DisplayName: "Текстовые файлы (*.txt)",
+				Pattern:     "*.txt",
+			},
+		},
+	})
+	if err != nil {
+		return false, err
+	}
+	if filePath == "" {
+		return false, nil // user cancelled
+	}
+	
+	err = os.WriteFile(filePath, []byte(content), 0644)
+	if err != nil {
+		return false, err
+	}
+	
+	return true, nil
+}
+
+func (a *App) SetSecureDNS(enabled bool) error {
+	var cmd *exec.Cmd
+	if enabled {
+		cmd = exec.Command("powershell", "-Command", "Get-NetAdapter | Where-Object {$_.Status -eq 'Up'} | Set-DnsClientServerAddress -ServerAddresses ('1.1.1.1','1.0.0.1')")
+	} else {
+		cmd = exec.Command("powershell", "-Command", "Get-NetAdapter | Where-Object {$_.Status -eq 'Up'} | Set-DnsClientServerAddress -ResetServerAddress")
+	}
+	cmd.SysProcAttr = engine.GetHiddenSysProcAttr()
+	return cmd.Run()
+}
+
+func (a *App) IsSecureDNSEnabled() bool {
+	cmd := exec.Command("powershell", "-Command", "Get-DnsClientServerAddress | Where-Object {$_.ServerAddresses -contains '1.1.1.1'} | Select-Object -First 1")
+	cmd.SysProcAttr = engine.GetHiddenSysProcAttr()
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return len(strings.TrimSpace(string(out))) > 0
+}
+

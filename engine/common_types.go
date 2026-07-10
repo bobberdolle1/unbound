@@ -21,6 +21,7 @@ type Settings struct {
 	ShowLogs                bool            `json:"showLogs"`
 	EnableTCPTimestamps     bool            `json:"enableTCPTimestamps"`
 	DiscordCacheAutoClean   bool            `json:"discordCacheAutoClean"`
+	SecureDNS               bool            `json:"secureDns"`
 	
 	// Internal platform-specific status
 	CurrentStatus           providers.Status `json:"-"`
