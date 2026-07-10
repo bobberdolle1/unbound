@@ -48,11 +48,15 @@ export function KillConflicts():Promise<void>;
 
 export function KillWinws2():Promise<void>;
 
+export function LoadCustomScript():Promise<string>;
+
 export function ReadBypassList(arg1:string):Promise<string>;
 
 export function RunDiagnostics():Promise<Array<engine.DiagnosticResult>>;
 
 export function SaveBypassList(arg1:string,arg2:string):Promise<void>;
+
+export function SaveCustomScript(arg1:string):Promise<void>;
 
 export function SaveSettings(arg1:engine.Settings):Promise<void>;
 

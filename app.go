@@ -512,6 +512,14 @@ func (a *App) SaveBypassList(name string, content string) error {
 	return os.WriteFile(path, []byte(content), 0644)
 }
 
+func (a *App) SaveCustomScript(content string) error {
+	return engine.SaveCustomScript(content)
+}
+
+func (a *App) LoadCustomScript() (string, error) {
+	return engine.LoadCustomScript()
+}
+
 func (a *App) ExportLogs(content string) (bool, error) {
 	filePath, err := wailsruntime.SaveFileDialog(a.ctx, wailsruntime.SaveDialogOptions{
 		Title:           "Сохранить лог",

@@ -285,3 +285,42 @@ body {
 .app-drag { -webkit-app-region: drag; }
 .app-no-drag { -webkit-app-region: no-drag; }
 
+/* AURA GLOWING EFFECTS */
+.aura-active {
+  box-shadow: inset 0 0 20px rgba(74, 222, 128, 0.15), 0 0 45px rgba(74, 222, 128, 0.3);
+  border: 2px solid var(--ui-accent, #3b82f6) !important;
+}
+.aura-autotune {
+  animation: rainbow-border 3s linear infinite;
+  box-shadow: inset 0 0 20px rgba(168, 85, 247, 0.15), 0 0 45px rgba(168, 85, 247, 0.3);
+  border: 2px solid #a855f7 !important;
+}
+.aura-connecting {
+  animation: pulse-border 1.5s ease-in-out infinite;
+  box-shadow: inset 0 0 20px rgba(59, 130, 246, 0.15), 0 0 45px rgba(59, 130, 246, 0.3);
+  border: 2px solid #3b82f6 !important;
+}
+.aura-error {
+  animation: error-pulse 1s ease-in-out infinite;
+  box-shadow: inset 0 0 20px rgba(239, 68, 68, 0.2), 0 0 45px rgba(239, 68, 68, 0.4);
+  border: 2px solid #ef4444 !important;
+}
+
+@keyframes rainbow-border {
+  0% { border-color: #a855f7; }
+  25% { border-color: #ec4899; }
+  50% { border-color: #3b82f6; }
+  75% { border-color: #10b981; }
+  100% { border-color: #a855f7; }
+}
+
+@keyframes pulse-border {
+  0%, 100% { border-color: rgba(59, 130, 246, 0.3); }
+  50% { border-color: rgba(59, 130, 246, 1); }
+}
+
+@keyframes error-pulse {
+  0%, 100% { border-color: rgba(239, 68, 68, 0.4); }
+  50% { border-color: rgba(239, 68, 68, 1); }
+}
+

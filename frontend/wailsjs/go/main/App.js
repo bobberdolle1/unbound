@@ -94,6 +94,10 @@ export function KillWinws2() {
   return window['go']['main']['App']['KillWinws2']();
 }
 
+export function LoadCustomScript() {
+  return window['go']['main']['App']['LoadCustomScript']();
+}
+
 export function ReadBypassList(arg1) {
   return window['go']['main']['App']['ReadBypassList'](arg1);
 }
@@ -104,6 +108,10 @@ export function RunDiagnostics() {
 
 export function SaveBypassList(arg1, arg2) {
   return window['go']['main']['App']['SaveBypassList'](arg1, arg2);
+}
+
+export function SaveCustomScript(arg1) {
+  return window['go']['main']['App']['SaveCustomScript'](arg1);
 }
 
 export function SaveSettings(arg1) {
