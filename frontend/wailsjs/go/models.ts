@@ -28,6 +28,7 @@ export namespace engine {
 	    showLogs: boolean;
 	    enableTCPTimestamps: boolean;
 	    discordCacheAutoClean: boolean;
+	    secureDns: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -44,6 +45,7 @@ export namespace engine {
 	        this.showLogs = source["showLogs"];
 	        this.enableTCPTimestamps = source["enableTCPTimestamps"];
 	        this.discordCacheAutoClean = source["discordCacheAutoClean"];
+	        this.secureDns = source["secureDns"];
 	    }
 	}
 

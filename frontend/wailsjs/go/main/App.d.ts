@@ -18,7 +18,11 @@ export function EnableAutoStart():Promise<void>;
 
 export function EnableTCPTimestamps():Promise<void>;
 
+export function ExportLogs(arg1:string):Promise<boolean>;
+
 export function GetAppVersion():Promise<string>;
+
+export function GetBypassLists():Promise<Array<string>>;
 
 export function GetEngineNames():Promise<Array<string>>;
 
@@ -38,13 +42,21 @@ export function HideWindowToTray():Promise<void>;
 
 export function IsAutoStartEnabled():Promise<boolean>;
 
+export function IsSecureDNSEnabled():Promise<boolean>;
+
 export function KillConflicts():Promise<void>;
 
 export function KillWinws2():Promise<void>;
 
+export function ReadBypassList(arg1:string):Promise<string>;
+
 export function RunDiagnostics():Promise<Array<engine.DiagnosticResult>>;
 
+export function SaveBypassList(arg1:string,arg2:string):Promise<void>;
+
 export function SaveSettings(arg1:engine.Settings):Promise<void>;
+
+export function SetSecureDNS(arg1:boolean):Promise<void>;
 
 export function ShowFromTray():Promise<void>;
 

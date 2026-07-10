@@ -7,7 +7,7 @@ function cn(...inputs: ClassValue[]) {
 }
 
 // @ts-ignore
-import { GetEngineNames, GetProfiles, StartEngine, StopEngine, GetLogs, AutoTune, CancelAutoTune, GetSettings, SaveSettings, GetLivePing, ShowNotification, EnableAutoStart, DisableAutoStart, IsAutoStartEnabled, CheckConflicts, KillConflicts, CheckPrivileges, RunDiagnostics, ClearDiscordCache, EnableTCPTimestamps, KillWinws2, GetAppVersion, HideWindowToTray } from '../wailsjs/go/main/App';
+import { GetEngineNames, GetProfiles, StartEngine, StopEngine, GetLogs, AutoTune, CancelAutoTune, GetSettings, SaveSettings, GetLivePing, ShowNotification, EnableAutoStart, DisableAutoStart, IsAutoStartEnabled, CheckConflicts, KillConflicts, CheckPrivileges, RunDiagnostics, ClearDiscordCache, EnableTCPTimestamps, KillWinws2, GetAppVersion, HideWindowToTray, GetBypassLists, ReadBypassList, SaveBypassList, ExportLogs } from '../wailsjs/go/main/App';
 // @ts-ignore
 import { EventsOn, WindowMinimise, EventsEmit } from '../wailsjs/runtime/runtime';
 
@@ -155,7 +155,8 @@ export default function App() {
     autoUpdateEnabled: boolean, 
     showLogs: boolean,
     enableTCPTimestamps: boolean,
-    discordCacheAutoClean: boolean
+    discordCacheAutoClean: boolean,
+    secureDns: boolean
   }>({
     autoStart: false,
     startMinimized: false,
@@ -165,7 +166,8 @@ export default function App() {
     autoUpdateEnabled: true,
     showLogs: true,
     enableTCPTimestamps: false,
-    discordCacheAutoClean: false
+    discordCacheAutoClean: false,
+    secureDns: false
   });
   const [livePingData, setLivePingData] = useState<{active: boolean, latency: number, status: string}>({active: false, latency: 0, status: 'stopped'});
   const [privilegeError, setPrivilegeError] = useState<string>('');
@@ -248,7 +250,8 @@ export default function App() {
         autoUpdateEnabled: s.autoUpdateEnabled !== undefined ? s.autoUpdateEnabled : true,
         showLogs: s.showLogs !== undefined ? s.showLogs : true,
         enableTCPTimestamps: s.enableTCPTimestamps || false,
-        discordCacheAutoClean: s.discordCacheAutoClean || false
+        discordCacheAutoClean: s.discordCacheAutoClean || false,
+        secureDns: s.secureDns || false
       });
     }).catch(() => {});
   }, []);
@@ -403,7 +406,8 @@ export default function App() {
         autoUpdateEnabled: loadedSettings.autoUpdateEnabled !== undefined ? loadedSettings.autoUpdateEnabled : true,
         showLogs: loadedSettings.showLogs !== undefined ? loadedSettings.showLogs : true,
         enableTCPTimestamps: loadedSettings.enableTCPTimestamps || false,
-        discordCacheAutoClean: loadedSettings.discordCacheAutoClean || false
+        discordCacheAutoClean: loadedSettings.discordCacheAutoClean || false,
+        secureDns: loadedSettings.secureDns || false
       });
     } catch (err) {
       console.error(err);
@@ -421,6 +425,64 @@ export default function App() {
       setIsSettingsOpen(false);
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  // Hostlist Editor States & Handlers
+  const [isHostlistOpen, setIsHostlistOpen] = useState<boolean>(false);
+  const [hostlists, setHostlists] = useState<string[]>([]);
+  const [selectedList, setSelectedList] = useState<string>('');
+  const [hostlistContent, setHostlistContent] = useState<string>('');
+  const [isSavingHostlist, setIsSavingHostlist] = useState<boolean>(false);
+
+  const handleOpenHostlistEditor = async () => {
+    try {
+      const lists = await GetBypassLists();
+      setHostlists(lists);
+      if (lists.length > 0) {
+        setSelectedList(lists[0]);
+        const content = await ReadBypassList(lists[0]);
+        setHostlistContent(content);
+      }
+      setIsHostlistOpen(true);
+    } catch (err) {
+      console.error("Failed to load hostlists:", err);
+    }
+  };
+
+  const handleSelectHostlist = async (name: string) => {
+    setSelectedList(name);
+    try {
+      const content = await ReadBypassList(name);
+      setHostlistContent(content);
+    } catch (err) {
+      console.error("Failed to read hostlist:", err);
+    }
+  };
+
+  const handleSaveHostlist = async () => {
+    setIsSavingHostlist(true);
+    try {
+      await SaveBypassList(selectedList, hostlistContent);
+      ShowNotification("Успех", `Список ${selectedList} успешно сохранен.`);
+      setIsHostlistOpen(false);
+    } catch (err) {
+      console.error("Failed to save hostlist:", err);
+      ShowNotification("Ошибка", `Не удалось сохранить список: ${err}`);
+    } finally {
+      setIsSavingHostlist(false);
+    }
+  };
+
+  const handleExportLogs = async () => {
+    try {
+      const logsStr = logs.join('\n');
+      const saved = await ExportLogs(logsStr);
+      if (saved) {
+        ShowNotification("Успех", "Лог успешно сохранен.");
+      }
+    } catch (err) {
+      console.error("Failed to export logs:", err);
     }
   };
 
@@ -712,6 +774,17 @@ export default function App() {
             <div className="flex items-center gap-3 text-gray-700 font-bold text-lg">
               <SketchyTerminal className="w-6 h-6" />
               <span>{isScanning ? 'Лог сканера' : 'Журнал'}</span>
+              {isLogExpanded && displayLogs.length > 0 && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleExportLogs();
+                  }}
+                  className="ml-3 px-3 py-1 bg-white hover:bg-gray-100 border-2 border-gray-800 text-gray-800 rounded font-marker text-xs transition-transform duration-100 hover:scale-105 active:scale-95 shadow-[1px_1px_0_#222]"
+                >
+                  Экспорт
+                </button>
+              )}
             </div>
             <div className="font-marker text-xl text-gray-500">
               {isLogExpanded ? '\\/' : '^'}
@@ -819,6 +892,14 @@ export default function App() {
                 onChange={() => setSettings({...settings, discordCacheAutoClean: !settings.discordCacheAutoClean})}
               />
 
+              <DoodleCheckbox
+                id="secureDns"
+                label="Безопасный DNS (DoH)"
+                desc="Использовать Cloudflare DNS (1.1.1.1) для защиты от DNS Spoofing"
+                checked={settings.secureDns}
+                onChange={() => setSettings({...settings, secureDns: !settings.secureDns})}
+              />
+
               <div className="flex flex-col gap-2 p-3 bg-white border-2 border-gray-800 rounded-xl relative z-50 shadow-[2px_2px_0_#222]">
                 <div>
                   <span className="text-lg font-bold text-gray-900 block leading-none">Тема интерфейса</span>
@@ -869,6 +950,13 @@ export default function App() {
               >
                 <SketchyTerminal className="w-4 h-4" />
                 Диагностика
+              </button>
+              <button 
+                onClick={handleOpenHostlistEditor}
+                className="w-full flex items-center justify-center gap-2 py-2 sketch-box bg-green-50 hover:bg-green-100 text-green-800 font-bold text-sm transition-all duration-150 hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <SketchyTerminal className="w-4 h-4 text-green-700" />
+                Редактор списков обхода
               </button>
               <button 
                 onClick={handleClearCache}
@@ -959,6 +1047,65 @@ export default function App() {
                 className="w-full py-3 text-xl font-marker doodle-btn hover:scale-[1.02] active:scale-[0.98]"
               >
                 Понятно!
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* РЕДАКТОР СПИСКОВ ОБХОДА */}
+      {isHostlistOpen && (
+        <div 
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 app-no-drag animate-in fade-in duration-200"
+          onClick={() => setIsHostlistOpen(false)}
+        >
+          <div 
+            className="w-full max-w-[360px] bg-[#fdfdfc] sketch-box flex flex-col max-h-[85vh] p-1 animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b-2 border-gray-200 mb-2">
+              <div className="flex items-center gap-2">
+                <SketchyTerminal className="w-6 h-6 text-green-600" />
+                <h2 className="text-xl font-marker text-gray-800">Списки обхода</h2>
+              </div>
+              <button onClick={() => setIsHostlistOpen(false)} className="text-gray-500 hover:text-black font-marker text-xl">X</button>
+            </div>
+
+            <div className="px-4 py-2 space-y-2 flex-1 flex flex-col overflow-hidden">
+              <div className="flex flex-col gap-1 relative z-50">
+                <span className="text-xs font-bold text-gray-600 uppercase">Выберите файл списков:</span>
+                <DoodleSelect
+                  value={selectedList}
+                  options={hostlists}
+                  onChange={handleSelectHostlist}
+                />
+              </div>
+
+              <div className="flex-1 flex flex-col min-h-[250px] mt-2 relative z-10 overflow-hidden">
+                <span className="text-xs font-bold text-gray-600 uppercase mb-1">Домены (по одному на строке):</span>
+                <textarea
+                  value={hostlistContent}
+                  onChange={(e) => setHostlistContent(e.target.value)}
+                  className="w-full flex-1 p-3 font-mono text-xs border-2 border-gray-800 rounded-xl bg-white text-gray-800 focus:outline-none resize-none overflow-y-auto select-text shadow-[inset_2px_2px_4px_rgba(0,0,0,0.05)]"
+                  placeholder="domain.com&#10;sub.domain.com"
+                  spellCheck={false}
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-4 p-4 border-t-2 border-gray-200 relative z-30">
+              <button
+                onClick={() => setIsHostlistOpen(false)}
+                className="flex-1 py-2 text-lg font-marker text-gray-600 hover:text-gray-900 hover:bg-gray-100 border-2 border-gray-800 rounded-xl shadow-[2px_2px_0_#222] transition-all duration-150 active:translate-y-1 active:shadow-none bg-white"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={handleSaveHostlist}
+                disabled={isSavingHostlist}
+                className="flex-1 py-2 text-lg font-marker doodle-btn transition-all duration-150 flex items-center justify-center gap-2"
+              >
+                {isSavingHostlist ? <SketchySpinner className="w-4 h-4" /> : 'Сохранить'}
               </button>
             </div>
           </div>

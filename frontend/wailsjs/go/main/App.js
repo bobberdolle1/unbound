@@ -34,8 +34,16 @@ export function EnableTCPTimestamps() {
   return window['go']['main']['App']['EnableTCPTimestamps']();
 }
 
+export function ExportLogs(arg1) {
+  return window['go']['main']['App']['ExportLogs'](arg1);
+}
+
 export function GetAppVersion() {
   return window['go']['main']['App']['GetAppVersion']();
+}
+
+export function GetBypassLists() {
+  return window['go']['main']['App']['GetBypassLists']();
 }
 
 export function GetEngineNames() {
@@ -74,6 +82,10 @@ export function IsAutoStartEnabled() {
   return window['go']['main']['App']['IsAutoStartEnabled']();
 }
 
+export function IsSecureDNSEnabled() {
+  return window['go']['main']['App']['IsSecureDNSEnabled']();
+}
+
 export function KillConflicts() {
   return window['go']['main']['App']['KillConflicts']();
 }
@@ -82,12 +94,24 @@ export function KillWinws2() {
   return window['go']['main']['App']['KillWinws2']();
 }
 
+export function ReadBypassList(arg1) {
+  return window['go']['main']['App']['ReadBypassList'](arg1);
+}
+
 export function RunDiagnostics() {
   return window['go']['main']['App']['RunDiagnostics']();
 }
 
+export function SaveBypassList(arg1, arg2) {
+  return window['go']['main']['App']['SaveBypassList'](arg1, arg2);
+}
+
 export function SaveSettings(arg1) {
   return window['go']['main']['App']['SaveSettings'](arg1);
+}
+
+export function SetSecureDNS(arg1) {
+  return window['go']['main']['App']['SetSecureDNS'](arg1);
 }
 
 export function ShowFromTray() {
