@@ -3,11 +3,18 @@ package engine
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"testing"
 	"unbound/engine/providers"
 )
 
 func TestAutoTune(t *testing.T) {
+	// Check privileges
+	cmd := exec.Command("net", "session")
+	if err := cmd.Run(); err != nil {
+		t.Skip("Skipping TestAutoTune - requires administrator privileges")
+	}
+
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	fmt.Println("🤖 AUTO-TUNE: Finding optimal bypass profile")
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")

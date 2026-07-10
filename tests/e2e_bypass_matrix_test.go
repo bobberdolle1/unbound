@@ -37,6 +37,12 @@ func TestE2EBypassMatrix(t *testing.T) {
 		t.Skip("Skipping E2E matrix test in short mode")
 	}
 
+	// Check privileges
+	cmd := exec.Command("net", "session")
+	if err := cmd.Run(); err != nil {
+		t.Skip("Skipping E2E matrix test - requires administrator privileges")
+	}
+
 	binPath, luaDir, err := setupTestEnvironment()
 	if err != nil {
 		t.Fatalf("Failed to setup test environment: %v", err)
