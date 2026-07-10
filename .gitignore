@@ -13,6 +13,7 @@ unbound-*.exe
 test_results.json
 test_output.txt
 RELEASE_SUMMARY.txt
+unbound-*.zip
 
 # Build output
 build/bin/

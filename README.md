@@ -1,15 +1,15 @@
 <div align="center">
-
+ 
 <img src="./build/appicon.png" alt="Unbound Logo" width="160" />
-
-# 🚀 UNBOUND v2.0
+ 
+# 🚀 UNBOUND v2.5.0
 **Мультиплатформенная пушка для прозрачного обхода DPI-блокировок.** <br>
 *Zero latency. Zero overhead. Zero VPN.*
-
-[![Версия](https://img.shields.io/badge/Release-2.0.0-ff6b6b?style=for-the-badge&logo=rocket)](#) 
+ 
+[![Версия](https://img.shields.io/badge/Release-2.5.0-ff6b6b?style=for-the-badge&logo=rocket)](#) 
 [![Лицензия](https://img.shields.io/badge/License-GPL-3.0-blue?style=for-the-badge)](#)
 [![Русский Язык](https://img.shields.io/badge/Язык-Русский_🇷🇺-brightgreen?style=for-the-badge)](#)
-
+ 
 <img src="./docs/screenshot.jpg" alt="Unbound Interface" width="100%" style="border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.4); max-width: 800px; margin: 20px 0;" />
 
 [**🌐 Скачать**](#-поддерживаемые-платформы-и-установка) &nbsp; | &nbsp; [**✨ Архитектура**](#-как-работает-движок) &nbsp; | &nbsp; [**📖 Документация**](#-компиляция-из-исходников) &nbsp; | &nbsp; [**🖥 Официальный Сайт**](https://bobberdolle1.github.io/unbound)
