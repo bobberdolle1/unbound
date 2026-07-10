@@ -10,7 +10,11 @@
 [![Лицензия](https://img.shields.io/badge/License-GPL-3.0-blue?style=for-the-badge)](#)
 [![Русский Язык](https://img.shields.io/badge/Язык-Русский_🇷🇺-brightgreen?style=for-the-badge)](#)
  
-<img src="./docs/screenshot.jpg" alt="Unbound Interface" width="100%" style="border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.4); max-width: 800px; margin: 20px 0;" />
+### 🎨 Галерея Тем Оформления (Aura Themes)
+
+| Doodle Jump (Нарисованная) | Windows XP (Ностальгия) | Liquid Glass (Неоновое стекло) |
+| :---: | :---: | :---: |
+| <img src="./docs/screenshot_doodle.png" width="250" alt="Doodle Jump Theme" /> | <img src="./docs/screenshot_xp.png" width="250" alt="Windows XP Theme" /> | <img src="./docs/screenshot_glass.png" width="250" alt="Liquid Glass Theme" /> |
 
 [**🌐 Скачать**](#-поддерживаемые-платформы-и-установка) &nbsp; | &nbsp; [**✨ Архитектура**](#-как-работает-движок) &nbsp; | &nbsp; [**📖 Документация**](#-компиляция-из-исходников) &nbsp; | &nbsp; [**🖥 Официальный Сайт**](https://bobberdolle1.github.io/unbound)
 
@@ -21,6 +25,16 @@
 <br>
 
 ## 🏆 Ключевые возможности
+
+### 💎 Премиум-интерфейс и Улучшения Windows (v2.5.0):
+* **Движок Zapret 2**: Обновлено до последней стабильной версии ядра обхода `winws2.exe`, библиотек `WinDivert.dll`/`WinDivert64.sys` и набора Lua-скриптов.
+* **Визуальный Конструктор LUA**: Удобный конструктор параметров десинхронизации (fake payload, desync position, TTL, DPI fooling) и текстовый редактор Lua-кода для полностью кастомных стратегий обхода.
+* **Встроенный Редактор Списков**: Полноценный GUI для добавления и удаления доменов в списках `youtube.txt`, `discord.txt`, `other.txt` и `ipset-exclude.txt` без открытия текстовых файлов.
+* **Защита DNS DoH**: Включение шифрования DNS-запросов через Cloudflare DNS (`1.1.1.1` и `1.0.0.1`) одной кнопкой для обхода DNS-блокировок.
+* **Свечение и Аура Статуса**: Неоновые индикаторы и UAC-свечения рамки приложения, отражающие статус соединения (подключено, автонастройка, ошибка).
+* **Интерактивный График Пинга**: SVG-линия задержки в реальном времени до заблокированных ресурсов.
+* **Единый Пульт Управления (`unbound_control.cmd`)**: Батник для быстрого старта CLI-профилей, автозагрузки, остановки служб и редактирования списков.
+
 
 <table>
   <tr>
