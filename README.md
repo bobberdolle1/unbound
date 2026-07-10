@@ -10,11 +10,29 @@
 [![Лицензия](https://img.shields.io/badge/License-GPL-3.0-blue?style=for-the-badge)](#)
 [![Русский Язык](https://img.shields.io/badge/Язык-Русский_🇷🇺-brightgreen?style=for-the-badge)](#)
  
-### 🎨 Галерея Тем Оформления (Aura Themes)
+### 🎨 Галерея Тем Оформления — 12 реальных тем
 
-| Doodle Jump (Нарисованная) | Windows XP (Ностальгия) | Liquid Glass (Неоновое стекло) |
-| :---: | :---: | :---: |
-| <img src="./docs/screenshot_doodle.png" width="250" alt="Doodle Jump Theme" /> | <img src="./docs/screenshot_xp.png" width="250" alt="Windows XP Theme" /> | <img src="./docs/screenshot_glass.png" width="250" alt="Liquid Glass Theme" /> |
+<table>
+  <tr>
+    <td align="center"><b>Default (Standard White)</b><br><img src="./docs/screenshot_default.png" width="180" alt="Default"/></td>
+    <td align="center"><b>Modern Dark</b><br><img src="./docs/screenshot_dark.png" width="180" alt="Dark"/></td>
+    <td align="center"><b>Doodle Jump</b><br><img src="./docs/screenshot_doodle.png" width="180" alt="Doodle"/></td>
+    <td align="center"><b>Liquid Glass</b><br><img src="./docs/screenshot_glass.png" width="180" alt="Glass"/></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Windows 95</b><br><img src="./docs/screenshot_win95.png" width="180" alt="Win95"/></td>
+    <td align="center"><b>Ghost in the Shell</b><br><img src="./docs/screenshot_ghost.png" width="180" alt="Ghost"/></td>
+    <td align="center"><b>iOS 6 Classic</b><br><img src="./docs/screenshot_ios6.png" width="180" alt="iOS6"/></td>
+    <td align="center"><b>Windows XP</b><br><img src="./docs/screenshot_xp.png" width="180" alt="WinXP"/></td>
+  </tr>
+  <tr>
+    <td align="center"><b>macOS Spatial</b><br><img src="./docs/screenshot_spatial.png" width="180" alt="Spatial"/></td>
+    <td align="center"><b>Windows 8 Metro</b><br><img src="./docs/screenshot_metro.png" width="180" alt="Metro"/></td>
+    <td align="center"><b>iOS 26 Hologram</b><br><img src="./docs/screenshot_hologram.png" width="180" alt="Hologram"/></td>
+    <td align="center"><b>Interstellar Gravity</b><br><img src="./docs/screenshot_interstellar.png" width="180" alt="Interstellar"/></td>
+  </tr>
+</table>
+
 
 [**🌐 Скачать**](#-поддерживаемые-платформы-и-установка) &nbsp; | &nbsp; [**✨ Архитектура**](#-как-работает-движок) &nbsp; | &nbsp; [**📖 Документация**](#-компиляция-из-исходников) &nbsp; | &nbsp; [**🖥 Официальный Сайт**](https://bobberdolle1.github.io/unbound)
 

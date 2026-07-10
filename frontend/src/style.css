@@ -217,7 +217,269 @@ body.theme-gravity {
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   CORE APP STYLES
+   PER-THEME COMPONENT OVERRIDES
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+/* ===== WINDOWS 95 — raised 3D bevel everything ===== */
+body.theme-win95 .sketch-box {
+  background: #c0c0c0;
+  border: none;
+  border-radius: 0;
+  box-shadow: inset -1px -1px 0 #000, inset 1px 1px 0 #fff, inset -2px -2px 0 #808080, inset 2px 2px 0 #dfdfdf;
+  backdrop-filter: none;
+}
+body.theme-win95 .doodle-btn {
+  background: #c0c0c0;
+  border: none;
+  border-radius: 0;
+  color: #000;
+  box-shadow: inset -1px -1px 0 #000, inset 1px 1px 0 #fff, inset -2px -2px 0 #808080, inset 2px 2px 0 #dfdfdf;
+  font-family: 'Tahoma', sans-serif;
+  font-weight: bold;
+  letter-spacing: 0;
+}
+body.theme-win95 .doodle-btn:hover:not(:disabled) {
+  transform: none;
+  box-shadow: inset -1px -1px 0 #000, inset 1px 1px 0 #fff, inset -2px -2px 0 #808080, inset 2px 2px 0 #dfdfdf;
+  background: #d0d0d0;
+}
+body.theme-win95 .doodle-btn:active:not(:disabled) {
+  box-shadow: inset 1px 1px 0 #000, inset -1px -1px 0 #fff, inset 2px 2px 0 #808080, inset -2px -2px 0 #dfdfdf;
+  transform: none;
+}
+body.theme-win95 .sketch-input {
+  border-radius: 0;
+  border: 2px inset #808080;
+  background: #fff;
+}
+
+/* ===== WINDOWS XP — luna blue gradient titlebar style ===== */
+body.theme-winxp .sketch-box {
+  background: #ece9d8;
+  border: 1px solid #7a96df;
+  border-radius: 6px;
+  box-shadow: 2px 2px 6px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.8);
+  backdrop-filter: none;
+}
+body.theme-winxp .doodle-btn {
+  background: linear-gradient(to bottom, #f5c842 0%, #ff8a00 50%, #e07000 51%, #ffa500 100%);
+  border: 1px solid #c06000;
+  border-radius: 4px;
+  color: #000;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.5);
+  font-family: 'Tahoma', sans-serif;
+  font-weight: bold;
+}
+body.theme-winxp .doodle-btn:hover:not(:disabled) {
+  background: linear-gradient(to bottom, #ffd060 0%, #ffa020 50%, #f09010 51%, #ffb530 100%);
+  transform: none;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.5);
+}
+body.theme-winxp .sketch-input {
+  background: #fff;
+  border: 1px solid #7a96df;
+  border-radius: 3px;
+}
+
+/* ===== GHOST IN THE SHELL — CRT terminal ===== */
+body.theme-ghost .sketch-box {
+  background: rgba(0, 255, 65, 0.04);
+  border: 1px solid #00ff41;
+  border-radius: 2px;
+  box-shadow: 0 0 8px rgba(0, 255, 65, 0.3), inset 0 0 15px rgba(0, 255, 65, 0.05);
+  backdrop-filter: none;
+}
+body.theme-ghost .doodle-btn {
+  background: transparent;
+  border: 1px solid #00ff41;
+  color: #00ff41;
+  border-radius: 2px;
+  box-shadow: 0 0 8px rgba(0,255,65,0.4);
+  font-family: 'VT323', monospace;
+  font-size: 1.2em;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+body.theme-ghost .doodle-btn:hover:not(:disabled) {
+  background: rgba(0,255,65,0.1);
+  box-shadow: 0 0 16px rgba(0,255,65,0.7);
+  transform: none;
+}
+body.theme-ghost .sketch-input {
+  background: transparent;
+  border: 1px solid #00ff41;
+  border-radius: 0;
+  color: #00ff41;
+  font-family: 'VT323', monospace;
+}
+
+/* ===== LIQUID GLASS — frosted glass blur ===== */
+body.theme-liquid-glass .sketch-box {
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 20px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.15);
+  backdrop-filter: blur(24px) saturate(180%);
+}
+body.theme-liquid-glass .doodle-btn {
+  background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.25);
+  color: #fff;
+  border-radius: 14px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.2);
+  backdrop-filter: blur(10px);
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+}
+body.theme-liquid-glass .doodle-btn:hover:not(:disabled) {
+  background: rgba(255,255,255,0.2);
+  box-shadow: 0 6px 28px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.3);
+  transform: translateY(-1px);
+}
+body.theme-liquid-glass .sketch-input {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 12px;
+  color: #fff;
+  backdrop-filter: blur(12px);
+}
+
+/* ===== INTERSTELLAR GRAVITY — terminal with glow ===== */
+body.theme-gravity .sketch-box {
+  background: rgba(0,255,0,0.03);
+  border: 1px solid #333;
+  border-radius: 2px;
+  box-shadow: 0 0 15px rgba(0,255,0,0.1);
+  backdrop-filter: none;
+}
+body.theme-gravity .doodle-btn {
+  background: #000;
+  border: 1px solid #00ff00;
+  color: #00ff00;
+  border-radius: 2px;
+  box-shadow: 0 0 10px rgba(0,255,0,0.5), inset 0 0 5px rgba(0,255,0,0.1);
+  font-family: monospace;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+body.theme-gravity .doodle-btn:hover:not(:disabled) {
+  background: rgba(0,255,0,0.08);
+  box-shadow: 0 0 20px rgba(0,255,0,0.8);
+  transform: none;
+}
+
+/* ===== iOS 26 HOLOGRAM — ultra rounded frosted ===== */
+body.theme-ios26 .sketch-box {
+  background: rgba(255,255,255,0.55);
+  border: none;
+  border-radius: 28px;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.9);
+  backdrop-filter: blur(40px) saturate(200%);
+}
+body.theme-ios26 .doodle-btn {
+  background: linear-gradient(135deg, #5856d6, #af52de);
+  border: none;
+  color: #fff;
+  border-radius: 22px;
+  box-shadow: 0 4px 20px rgba(88,86,214,0.4);
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+}
+body.theme-ios26 .doodle-btn:hover:not(:disabled) {
+  box-shadow: 0 6px 28px rgba(88,86,214,0.6);
+  transform: scale(1.01);
+}
+body.theme-ios26 .sketch-input {
+  background: rgba(255,255,255,0.65);
+  border: none;
+  border-radius: 16px;
+  backdrop-filter: blur(20px);
+}
+
+/* ===== macOS SPATIAL — dark glass visionOS ===== */
+body.theme-macos26 .sketch-box {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 30px;
+  box-shadow: 0 16px 60px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.1);
+  backdrop-filter: blur(40px) saturate(160%);
+}
+body.theme-macos26 .doodle-btn {
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: #fff;
+  border-radius: 20px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.15);
+  backdrop-filter: blur(20px);
+  font-weight: 500;
+}
+body.theme-macos26 .doodle-btn:hover:not(:disabled) {
+  background: rgba(255,255,255,0.18);
+  transform: none;
+}
+
+/* ===== Windows 8 METRO — flat tiles ===== */
+body.theme-win8 .sketch-box {
+  background: #2d89ef;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+body.theme-win8 .doodle-btn {
+  background: #2b5797;
+  border: none;
+  color: #fff;
+  border-radius: 0;
+  box-shadow: none;
+  font-family: 'Segoe UI', sans-serif;
+  font-weight: 300;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  font-size: 0.85em;
+}
+body.theme-win8 .doodle-btn:hover:not(:disabled) {
+  background: #00a300;
+  transform: none;
+  box-shadow: none;
+}
+body.theme-win8 .sketch-input {
+  background: rgba(255,255,255,0.1);
+  border: 2px solid rgba(255,255,255,0.3);
+  border-radius: 0;
+  color: #fff;
+}
+
+/* ===== iOS 6 SKEUOMORPHIC — leather/linen texture buttons ===== */
+body.theme-skeuomorphic .sketch-box {
+  background: linear-gradient(to bottom, #e8e8e8 0%, #d0d0d0 100%);
+  border: 1px solid #999;
+  border-radius: 10px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.8);
+  backdrop-filter: none;
+}
+body.theme-skeuomorphic .doodle-btn {
+  background: linear-gradient(to bottom, #5cadff 0%, #297be7 45%, #1464d3 51%, #3a8fff 100%);
+  border: 1px solid #1051a8;
+  color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.4);
+  font-family: 'Helvetica Neue', sans-serif;
+  font-weight: bold;
+  text-shadow: 0 -1px 0 rgba(0,0,0,0.3);
+}
+body.theme-skeuomorphic .doodle-btn:hover:not(:disabled) {
+  background: linear-gradient(to bottom, #70c0ff 0%, #3b90ff 45%, #2575e8 51%, #50a5ff 100%);
+  transform: none;
+}
+body.theme-skeuomorphic .sketch-input {
+  background: linear-gradient(to bottom, #ddd 0%, #f5f5f5 100%);
+  border: 1px solid #888;
+  border-radius: 6px;
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.15);
+}
+
+
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
    CORE APP STYLES
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
