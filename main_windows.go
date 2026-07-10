@@ -24,5 +24,19 @@ func attachConsole() {
 
 func registerHeadlessProvider(manager *providers.ProviderManager, assets *engine.AssetPaths, listsDir string, debugMode bool) {
 	provider := providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir, listsDir, debugMode, true)
+	
+	// Register built-in profiles (includes all reference profiles)
+	registered := make(map[string]bool)
+	for _, p := range engine.GetProfiles(assets.LuaDir) {
+		provider.RegisterProfile(p.Name, p.Args)
+		registered[p.Name] = true
+	}
+	for _, p := range engine.GetAdvancedProfiles(assets.LuaDir) {
+		if !registered[p.Name] {
+			provider.RegisterProfile(p.Name, p.Args)
+			registered[p.Name] = true
+		}
+	}
+
 	manager.Register(provider)
 }
