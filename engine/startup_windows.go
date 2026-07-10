@@ -44,10 +44,16 @@ func EnableAutoStart() error {
 		username = os.Getenv("USER")
 	}
 
+	taskCmd := fmt.Sprintf(`"%s"`, exePath)
+	settings, _ := GetSettings()
+	if settings != nil && settings.StartMinimized {
+		taskCmd = fmt.Sprintf(`"%s" -tray`, exePath)
+	}
+
 	args := []string{
 		"/Create",
 		"/TN", taskName,
-		"/TR", fmt.Sprintf(`"%s"`, exePath),
+		"/TR", taskCmd,
 		"/SC", "ONLOGON",
 		"/RL", "HIGHEST",
 		"/F",
