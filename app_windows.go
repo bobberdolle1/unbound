@@ -3,10 +3,10 @@
 package main
 
 import (
-	"unbound/engine"
-	"unbound/engine/providers"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"golang.org/x/sys/windows"
+	"unbound/engine"
+	"unbound/engine/providers"
 )
 
 func checkAdminPrivileges() (bool, error) {
@@ -37,24 +37,24 @@ func registerOSProviders(a *App, assets *engine.AssetPaths) {
 	if settings != nil {
 		gameFilter = settings.GameFilter
 	}
-	
+
 	listsDir, err := engine.GetListsDir()
 	if err != nil {
 		listsDir = assets.ListDir
 	}
-	
+
 	zapretProvider := providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir, listsDir, a.debugMode, gameFilter)
-	
+
 	// Register status callback for Wails events
 	zapretProvider.SetStatusCallback(func(status providers.Status) {
 		runtime.EventsEmit(a.ctx, "status_changed", status)
 	})
-	
+
 	// Register log callback for real-time logs
 	zapretProvider.SetLogCallback(func(log string) {
 		runtime.EventsEmit(a.ctx, "engine_log", log)
 	})
-	
+
 	// Register built-in profiles (includes all reference profiles)
 	registered := make(map[string]bool)
 	for _, p := range engine.GetProfiles(assets.LuaDir) {

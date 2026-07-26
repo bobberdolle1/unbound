@@ -26,7 +26,7 @@ func TestAutoTuneV2WithMockDPI(t *testing.T) {
 	}))
 	defer mockBlockedServer.Close()
 
-	testTargets = []Target{{Name:"mock1", URL:mockDPIServer.URL, Priority:10}, {Name:"mock2", URL:mockBlockedServer.URL, Priority:10}}
+	testTargets = []Target{{Name: "mock1", URL: mockDPIServer.URL, Priority: 10}, {Name: "mock2", URL: mockBlockedServer.URL, Priority: 10}}
 
 	assets, err := ExtractAssets()
 	if err != nil {

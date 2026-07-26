@@ -13,7 +13,9 @@ android {
         minSdk = 29
         targetSdk = 35
         versionCode = 2
-        versionName = "2.0.0"
+        // Hardcoding this meant every release APK claimed 2.0.0 no matter
+        // which tag built it. CI passes -PunboundVersionName=<tag>.
+        versionName = (project.findProperty("unboundVersionName") as String?) ?: "2.5.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

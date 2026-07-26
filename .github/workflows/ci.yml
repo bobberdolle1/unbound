@@ -1,0 +1,181 @@
+# ============================================================================
+# UNBOUND — Continuous Integration
+# ============================================================================
+# Fast correctness feedback on every push and pull request. Release packaging
+# lives in release.yml; the website deploy lives in pages.yml.
+#
+# The repository previously had no test, vet or lint job at all: the only
+# workflow built release artifacts, so a change that broke `go test` reached
+# master unnoticed.
+# ============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Must satisfy the `go` directive in go.mod (1.25.0). The old workflow
+  # pinned 1.23, which fails to build the module at all.
+  GO_VERSION: '1.25'
+  NODE_VERSION: '20'
+
+jobs:
+  # ───────────────────────────────────────────────────────────────────────────
+  # Frontend — must build before Go, which embeds frontend/dist
+  # ───────────────────────────────────────────────────────────────────────────
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Type-check
+        working-directory: frontend
+        run: npm run typecheck
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          retention-days: 1
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Go — formatting, vet and tests on every supported OS
+  # ───────────────────────────────────────────────────────────────────────────
+  go-test:
+    name: Go (${{ matrix.os }})
+    needs: frontend
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      # main.go embeds frontend/dist, so the Go build needs the built assets.
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
+      - name: gofmt
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          unformatted="$(gofmt -l . | grep -v '^frontend/' || true)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::These files are not gofmt-formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test -race ./...
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Cross-compilation — catches build-tag mistakes that a single-OS build hides
+  # ───────────────────────────────────────────────────────────────────────────
+  cross-build:
+    name: Cross-compile
+    needs: frontend
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: linux
+            goarch: mipsle   # OpenWrt routers
+          - goos: windows
+            goarch: amd64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
+      # The GUI needs cgo (webkit2gtk / Cocoa / WebView2), which is not
+      # available when cross-compiling, so this checks the packages that must
+      # build everywhere rather than linking the desktop binary.
+      - name: Build engine packages
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: go build ./engine/...
+
+      - name: Vet for target platform
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: go vet ./...
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Website — the Astro site must keep building; pages.yml publishes it
+  # ───────────────────────────────────────────────────────────────────────────
+  website:
+    name: Website
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - name: Install dependencies
+        working-directory: website
+        run: npm ci
+
+      - name: Build
+        working-directory: website
+        run: npm run build

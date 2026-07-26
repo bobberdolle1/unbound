@@ -12,17 +12,17 @@ type DiagnosticResult struct {
 
 // Settings represents the application settings shared across platforms
 type Settings struct {
-	AutoStart               bool            `json:"autoStart"`
-	StartMinimized          bool            `json:"startMinimized"`
-	DefaultProfile          string          `json:"defaultProfile"`
-	StartupProfileMode      string          `json:"startupProfileMode"`
-	GameFilter              bool            `json:"gameFilter"`
-	AutoUpdateEnabled       bool            `json:"autoUpdateEnabled"`
-	ShowLogs                bool            `json:"showLogs"`
-	EnableTCPTimestamps     bool            `json:"enableTCPTimestamps"`
-	DiscordCacheAutoClean   bool            `json:"discordCacheAutoClean"`
-	SecureDNS               bool            `json:"secureDns"`
-	
+	AutoStart             bool   `json:"autoStart"`
+	StartMinimized        bool   `json:"startMinimized"`
+	DefaultProfile        string `json:"defaultProfile"`
+	StartupProfileMode    string `json:"startupProfileMode"`
+	GameFilter            bool   `json:"gameFilter"`
+	AutoUpdateEnabled     bool   `json:"autoUpdateEnabled"`
+	ShowLogs              bool   `json:"showLogs"`
+	EnableTCPTimestamps   bool   `json:"enableTCPTimestamps"`
+	DiscordCacheAutoClean bool   `json:"discordCacheAutoClean"`
+	SecureDNS             bool   `json:"secureDns"`
+
 	// Internal platform-specific status
-	CurrentStatus           providers.Status `json:"-"`
+	CurrentStatus providers.Status `json:"-"`
 }
