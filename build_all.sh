@@ -70,6 +70,16 @@ resolve_version() {
     fi
 }
 
+# go_ldflags injects the resolved version into the binary.
+#
+# resolve_version() already worked out the version (including --version), but
+# nothing passed it to the compiler, so `--version 2.6.0` produced a binary that
+# still reported the value compiled into engine.Version. With Actions
+# unavailable this script is the release path, so the drift would ship.
+go_ldflags() {
+    echo "-s -w -X unbound/engine.Version=$(resolve_version)"
+}
+
 # ── Prerequisite checks ──────────────────────────────────────────────────────
 require_cmd() {
     if ! command -v "$1" &>/dev/null; then
@@ -116,7 +126,8 @@ build_windows() {
     local debug_flag=""
     [ "$DEBUG_MODE" = true ] && debug_flag="-debug"
 
-    wails build -platform windows/amd64 -clean -o "unbound.exe" $debug_flag
+    wails build -platform windows/amd64 -clean -o "unbound.exe" $debug_flag \
+        -ldflags "-X unbound/engine.Version=${ver}"
 
     local out="$BUILD_DIR/bin"
     mkdir -p "$DIST_DIR/unbound-v${ver}-win64"
@@ -139,7 +150,8 @@ build_darwin() {
     local debug_flag=""
     [ "$DEBUG_MODE" = true ] && debug_flag="-debug"
 
-    wails build -platform darwin/universal $debug_flag
+    wails build -platform darwin/universal $debug_flag \
+        -ldflags "-X unbound/engine.Version=${ver}"
 
     log_ok "macOS app built: $BUILD_DIR/bin/Unbound.app"
 }
@@ -157,7 +169,8 @@ build_linux() {
     [ "$DEBUG_MODE" = true ] && debug_flag="-tags debug"
 
     # Build CLI mode binary for Linux
-    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "$BUILD_DIR/bin/unbound-linux" $debug_flag .
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
+        -ldflags="$(go_ldflags)" -o "$BUILD_DIR/bin/unbound-linux" $debug_flag .
 
     log_ok "Linux binary built: $BUILD_DIR/bin/unbound-linux"
 }
@@ -228,9 +241,9 @@ build_openwrt() {
     if [ -d "$PROJECT_ROOT/openwrt" ]; then
         # Build the Go binary for mipsle (OpenWrt typical arch)
         require_cmd go "https://go.dev/dl/"
-        GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build \
+        GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -trimpath \
             -o "$BUILD_DIR/bin/unbound-openwrt-mipsle" \
-            -ldflags="-s -w" .
+            -ldflags="$(go_ldflags)" .
 
         # Package as IPK
         if command -v docker &>/dev/null; then

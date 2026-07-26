@@ -244,8 +244,36 @@ func (a *App) EnableTCPTimestamps() error {
 	return engine.EnableTCPTimestamps()
 }
 
+// KillWinws2 force-stops Unbound's *own* bypass engine. It backs the
+// "Завершить winws2.exe" button, the recovery action for an engine that has
+// wedged and no longer responds to a normal stop.
+//
+// It used to just call KillConflicts(), whose process list deliberately
+// excludes winws2.exe ("не наш winws2.exe") — so the one button meant to kill
+// our engine was the one button guaranteed not to, while the UI still reported
+// "Все процессы winws2 завершены".
+//
+// The name is kept because it is a Wails binding the frontend imports; the
+// behaviour is now what the label promises on every platform.
 func (a *App) KillWinws2() error {
-	return a.KillConflicts()
+	logger := engine.GetLogger()
+	notifMgr := engine.GetNotificationManager()
+
+	// Ask the managed process to exit first so it can clean up its firewall
+	// rules; force-killing skips that and strands them.
+	if err := a.manager.Stop(); err != nil {
+		logger.Warnf("App", "Graceful engine stop failed, forcing: %v", err)
+	}
+
+	if err := killOwnEngineImpl(); err != nil {
+		logger.Errorf("App", "Failed to force-stop the engine: %v", err)
+		notifMgr.Error("Ошибка", fmt.Sprintf("Не удалось завершить движок: %v", err))
+		return err
+	}
+
+	logger.Info("App", "Own bypass engine stopped")
+	wailsruntime.EventsEmit(a.ctx, "status_changed", string(providers.StatusStopped))
+	return nil
 }
 
 func (a *App) GetSettings() (*engine.Settings, error) {
@@ -431,9 +459,14 @@ func (a *App) ShowNotification(title string, message string) {
 	notifMgr.Info(title, message)
 }
 
+// HideWindowToTray hides the window while leaving the engine running.
+//
+// This used to call a.manager.Stop() first, so the "Закрыть в трей" button and
+// the window's ✕ (which routes here via onBeforeClose) silently tore down the
+// DPI bypass. Running in the background is the entire reason the app lives in
+// the tray, and nothing told the user their traffic had stopped being
+// protected — the window just disappeared.
 func (a *App) HideWindowToTray() {
-	a.manager.Stop() // Optional: the old HideToTray was just hiding window
-	// but here we call the Go method I renamed
 	wailsruntime.WindowHide(a.ctx)
 }
 

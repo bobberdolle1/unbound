@@ -72,3 +72,15 @@ func killConflictsImpl() error {
 	}
 	return nil
 }
+
+// killOwnEngineImpl force-stops Unbound's own engine.
+//
+// On Linux the engine binary is plain `nfqws`, the same name a system-wide
+// zapret service uses, so there is no safe way to force-kill "ours" by name -
+// `pkill nfqws` would take down a service the user runs independently. The
+// provider already signals its own process group on Stop(), which covers the
+// process we started; a genuinely orphaned nfqws from an earlier crash shows up
+// in CheckConflicts, where the user can decide about it explicitly.
+func killOwnEngineImpl() error {
+	return nil
+}
