@@ -7,7 +7,7 @@
 *Zero latency. Zero overhead. Zero VPN.*
  
 [![Версия](https://img.shields.io/badge/Release-2.5.0-ff6b6b?style=for-the-badge&logo=rocket)](#) 
-[![Лицензия](https://img.shields.io/badge/License-GPL-3.0-blue?style=for-the-badge)](#)
+[![Лицензия](https://img.shields.io/badge/License-GPL--3.0-blue?style=for-the-badge)](LICENSE)
 [![Русский Язык](https://img.shields.io/badge/Язык-Русский_🇷🇺-brightgreen?style=for-the-badge)](#)
  
 ### 🎨 Галерея Тем Оформления — 12 реальных тем
@@ -81,18 +81,60 @@
 
 ## 🧩 Поддерживаемые платформы и установка
 
-Unbound скомпилирован под подавляющее большинство операционных систем. **Не требует настройки — скачал, нажал одну кнопку, всё работает.**
-
-| Платформа | Технология-Драйвер | Инструкция к установке | Статус |
+| Платформа | Технология-Драйвер | Что нужно сделать | Статус |
 | :--- | :--- | :--- | :---: |
-| <img src="https://simpleicons.org/icons/windows.svg" width="16"/> **Windows 10/11** | `WinDivert` | Распакуйте ZIP и запустите `unbound.exe` от Админа. Драйвер встроен в бинарник. | ✅ |
-| <img src="https://simpleicons.org/icons/apple.svg" width="16"/> **macOS (Intel/M1+)** | `pf` + Raw Sockets | Запустите с правами суперпользователя: `sudo ./unbound-darwin-amd64`. | ✅ |
-| <img src="https://simpleicons.org/icons/linux.svg" width="16"/> **Linux** | `iptables` / `NFQUEUE` | Запустите от `root`. Правила iptables обновляются на лету. | ✅ |
-| <img src="https://simpleicons.org/icons/android.svg" width="16"/> **Android 8.0+** | `VpnService API` | Установите `app-release.apk` и разрешите локальный VPN профиль профиль. | ✅ |
-| <img src="https://simpleicons.org/icons/ios.svg" width="16"/> **iOS (Jailbreak)** | `launchd` демон | Установите `.deb` пакет через Sileo/Zebra (Rootful / Rootless). | ✅ |
-| <img src="https://simpleicons.org/icons/openwrt.svg" width="16"/> **OpenWRT** | Нативный пакет | Закиньте и установите `.ipk` через `opkg install`, настройте в LuCI. | ✅ |
+| <img src="https://simpleicons.org/icons/windows.svg" width="16"/> **Windows 10/11** | `WinDivert` | Распакуйте ZIP и запустите `unbound.exe` от администратора. Движок и драйвер встроены в бинарник. | ✅ |
+| <img src="https://simpleicons.org/icons/linux.svg" width="16"/> **Linux** | `NFQUEUE` + `iptables`/`nftables` | Поставьте `nfqws` (см. ниже) и запустите от `root`. | ✅ |
+| <img src="https://simpleicons.org/icons/apple.svg" width="16"/> **macOS (Intel/Apple Silicon)** | `pf` + divert-socket | Поставьте `nfqws`, запустите через `sudo` и подключите pf-якорь — см. ниже. | 🧪 |
+| <img src="https://simpleicons.org/icons/android.svg" width="16"/> **Android 8.0+** | `VpnService API` | Установите APK и разрешите локальный VPN-профиль. | 🧪 |
+| <img src="https://simpleicons.org/icons/ios.svg" width="16"/> **iOS (Jailbreak)** | `launchd` демон | Установите `.deb` через Sileo/Zebra (rootful / rootless). | 🧪 |
+| <img src="https://simpleicons.org/icons/openwrt.svg" width="16"/> **OpenWRT** | Нативный пакет | Установите `.ipk` через `opkg install`, настройте в LuCI. | 🧪 |
+
+> ✅ — собирается в CI и проверено на живой системе; 🧪 — код есть и собирается, но без регулярной проверки на железе. Статусы держим честными: если что-то не заработало, заводите issue.
 
 📥 **Все бинарники доступны в разделе [GitHub Releases](../../releases).**
+
+### Движок обхода на Linux и macOS
+
+Только Windows-сборка носит движок внутри себя: `winws2.exe` и драйвер WinDivert вшиты
+в бинарник. Для Linux и macOS движок `nfqws` собирается под конкретную архитектуру и
+распространяется под GPL, поэтому ставится отдельно — из пакета вашего дистрибутива или
+сборкой [zapret](https://github.com/bol-van/zapret) из исходников.
+
+Unbound ищет `nfqws` в таком порядке:
+
+1. каталог распакованных ресурсов приложения;
+2. каталог рядом с исполняемым файлом (портативная установка / AppImage);
+3. `$PATH`;
+4. `/usr/local/bin`, `/usr/bin`, `/opt/zapret`, `/opt/zapret/binaries/x86_64`,
+   `/usr/lib/zapret` (на macOS дополнительно `/opt/homebrew/bin`).
+
+Если движок не найден, приложение всё равно запустится, а панель «Диагностика» покажет,
+какие именно пути были проверены.
+
+Дополнительно на Linux нужны ядро с модулем `nfnetlink_queue` и утилита `iptables`
+**или** `nft` — что из этого доступно, Unbound определяет сам. Правила ставятся и на
+IPv4, и на IPv6, иначе часть трафика прошла бы мимо обхода.
+
+На macOS правила загружаются в отдельный pf-якорь `com.unbound.zapret`, чтобы не
+затирать вашу конфигурацию из `/etc/pf.conf`. Якорь применяется, только если он
+подключён в основном наборе — добавьте в `/etc/pf.conf` строку:
+
+```
+anchor "com.unbound.zapret"
+```
+
+Без неё Unbound напишет предупреждение в лог, а не сделает вид, что всё работает.
+
+### Запуск без графического интерфейса
+
+```bash
+sudo unbound --cli                                       # первый доступный профиль
+sudo unbound --cli --profile "YouTube QUIC Aggressive"
+unbound --list-profiles                                  # профили, доступные на этой ОС
+unbound --version
+```
+
 
 ---
 
@@ -129,25 +171,42 @@ sequenceDiagram
 
 ## 💻 Компиляция из исходников
 
-Если вы хотите собрать ядро или GUI-оболочку приложения самостоятельно:
 **Требования:**
-* Наличие `Go` v1.21+
-* Наличие `Node.js` v18+ (для сборки UI наsvelte/react)
-* Сборочный пакет `Wails` (`go install github.com/wailsapp/wails/v2/cmd/wails@latest`)
+* `Go` 1.25+ (версия задана директивой `go` в `go.mod`)
+* `Node.js` 20+ — интерфейс на React + Vite + Tailwind 4
+* `Wails` v2.13 — только для сборки GUI:
+  `go install github.com/wailsapp/wails/v2/cmd/wails@v2.13.0`
 
 ```bash
-# Клонируем проект
 git clone https://github.com/bobberdolle1/unbound.git
 cd unbound
 
-# Компиляция ядра CLI-режима под текущую архитектуру:
-go build -ldflags="-s -w" -o unbound_cli ./main.go
+# 1. Сначала интерфейс: main.go встраивает frontend/dist через //go:embed,
+#    поэтому без этого шага не соберётся даже headless-бинарник.
+cd frontend && npm ci && npm run build && cd ..
 
-# Сборка Wails графического приложения (настольные ОС)
-wails build -m
+# 2. CLI-бинарник под текущую архитектуру.
+#    Обратите внимание: сборка идёт по пакету (точка), а не по одному файлу —
+#    package main разложен по нескольким файлам с build-тегами на платформу.
+go build -trimpath -ldflags="-s -w -X unbound/engine.Version=2.5.0" -o unbound .
+
+# 3. GUI-приложение (Windows / macOS / Linux)
+wails build -clean
 ```
 
-> **Важно:** Подробные инструкции по сборке пакетов для *iOS (theos)*, *Android (gradle)*, и *OpenWRT* лежат в соответствующих папках: `/ios`, `/android`, `/openwrt`.
+Проверки, которые гоняет CI, воспроизводятся локально:
+
+```bash
+gofmt -l .            # должно быть пусто
+go vet ./...
+go test -race ./...
+
+# сборка под другую платформу — ловит ошибки в build-тегах
+GOOS=windows go vet ./...
+GOOS=darwin  go vet ./...
+```
+
+> **Важно:** Инструкции по сборке пакетов для *iOS (theos)*, *Android (gradle)* и *OpenWRT* лежат в соответствующих папках: `/theos`, `/android`, `/openwrt`.
 
 ---
 
