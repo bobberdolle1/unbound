@@ -87,12 +87,36 @@
 | <img src="https://simpleicons.org/icons/linux.svg" width="16"/> **Linux** | `NFQUEUE` + `iptables`/`nftables` | Поставьте `nfqws` (см. ниже) и запустите от `root`. | ✅ |
 | <img src="https://simpleicons.org/icons/apple.svg" width="16"/> **macOS (Intel/Apple Silicon)** | `pf` + divert-socket | Поставьте `nfqws`, запустите через `sudo` и подключите pf-якорь — см. ниже. | 🧪 |
 | <img src="https://simpleicons.org/icons/android.svg" width="16"/> **Android 8.0+** | `VpnService API` | **Не работает.** Мост TUN↔прокси не реализован; приложение намеренно отказывается включать VPN — см. ниже. | ❌ |
-| <img src="https://simpleicons.org/icons/ios.svg" width="16"/> **iOS (Jailbreak)** | `launchd` демон | Установите `.deb` через Sileo/Zebra (rootful / rootless). | 🧪 |
+| <img src="https://simpleicons.org/icons/ios.svg" width="16"/> **iOS (Jailbreak)** | `launchd` + tpws | **Не собирается.** Tweak готов, но порт движка не закончен — см. ниже. | ❌ |
 | <img src="https://simpleicons.org/icons/openwrt.svg" width="16"/> **OpenWRT** | `NFQUEUE` + nftables | Установите `.ipk` через `opkg install`, настройте в LuCI. Пакет собирает `nfqws` из исходников. | 🧪 |
 
 > ✅ — работает и проверено; 🧪 — реализация есть, но на железе не проверялась; ❌ — не работает, не пытайтесь.
 >
-> Не перечисленные в таблице каталоги `tvos/`, `webos/` и `decky-plugin/` — заготовки разной степени готовности. tvOS в текущем виде **не соберётся**: `UnboundTunnelEngine.c` вызывает `tpws_init()` и `tpws_run_loop()`, которых нет ни в одном файле репозитория.
+> Не перечисленные в таблице каталоги `webos/` и `decky-plugin/` — заготовки разной степени готовности. Плагин Steam Deck собирается и проверяется вместе с остальным (`./scripts/check.sh decky`).
+
+#### Почему iOS и tvOS не собираются
+
+Обе платформы используют `tpws` — прокси-режим движка zapret — и упираются в одно и то же.
+
+Во-первых, `Makefile.tpws` и `tvos/build-tvos.sh` компилируют 13 файлов upstream
+(`tpws.c`, `tamper.c`, `hostlist.c` и другие), которых в репозитории нет: локальны
+только точка входа `ios_main.c` и epoll-шим. Это решается — забрать их можно
+скриптом, который тянет ровно тот же закреплённый тег, что и пакет OpenWRT:
+
+```bash
+./scripts/fetch-tpws.sh          # GPL-3.0 из bol-van/zapret, тег v72.13
+```
+
+Во-вторых — и это настоящий блокер — `tpws.h` объявляет `tpws_init()` и
+`tpws_run_loop()`, которые вызывают `ios_main.c` и движок tvOS, но **не определяет
+их никто**. Upstream предоставляет обычный `main()`, который `ios_main.c` тоже
+определяет, так что символы конфликтуют при линковке. Чтобы доделать порт, нужно
+разложить upstream-овский `main()` на пару init + run-loop за этим заголовком.
+
+Раньше `theos/.../scripts/build.sh` глушил провал сборки движка
+(`2>/dev/null || echo "Engine build skipped"`) и рапортовал об успехе, собирая
+`.deb` с tweak-ом, но без движка, которым тот управляет. Теперь скрипт
+останавливается и говорит, чего именно не хватает.
 
 #### Почему Android помечен как неработающий
 

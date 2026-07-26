@@ -9,7 +9,7 @@
     "dev:firefox": "vite build --watch --mode firefox",
     "build:chrome": "vite build --mode chrome",
     "build:firefox": "vite build --mode firefox",
-    "build": "npm run build:chrome && npm run build:firefox",
+    "build": "npm run type-check && npm run build:chrome && npm run build:firefox",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {

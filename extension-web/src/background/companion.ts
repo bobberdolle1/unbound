@@ -2,7 +2,7 @@
 // This module communicates with the Unbound Desktop daemon
 
 import browser from 'webextension-polyfill';
-import { getState, setState } from '../utils/storage';
+import { setState } from '../utils/storage';
 
 let nativePort: browser.Runtime.Port | null = null;
 

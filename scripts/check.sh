@@ -12,6 +12,9 @@
 #   ./scripts/check.sh go         # gofmt + vet + tests + cross-compile
 #   ./scripts/check.sh frontend   # type-check + build the desktop UI
 #   ./scripts/check.sh website    # build the Astro site
+#   ./scripts/check.sh extension  # type-check + build the browser extension
+#   ./scripts/check.sh decky      # build the Steam Deck plugin
+#   ./scripts/check.sh shell      # parse every shell script with its shebang
 #   ./scripts/check.sh --quick    # skip cross-compilation (the slow part)
 #
 # Exit code is non-zero if any check fails, so it is usable as a pre-push hook:
@@ -57,8 +60,8 @@ QUICK=0
 for arg in "$@"; do
     case "$arg" in
         --quick) QUICK=1 ;;
-        go|frontend|website|all) TARGET="$arg" ;;
-        -h|--help) sed -n '2,20p' "$0" | sed 's/^# \?//'; exit 0 ;;
+        go|frontend|website|extension|decky|shell|all) TARGET="$arg" ;;
+        -h|--help) sed -n '2,23p' "$0" | sed 's/^# \?//'; exit 0 ;;
         *) echo "Unknown argument: $arg (try --help)" >&2; exit 2 ;;
     esac
 done
@@ -78,6 +81,82 @@ check_frontend() {
     fi
     run "tsc --noEmit"  bash -c 'cd frontend && npm run typecheck'
     run "vite build"    bash -c 'cd frontend && npm run build'
+}
+
+# ── Browser extension ────────────────────────────────────────────────────────
+# Nothing covered this before, which is how four type errors and a dead module
+# reached the tree. `npm run build` now type-checks first, so one call is enough.
+check_extension() {
+    step "Browser extension (Chrome + Firefox)"
+    if ! have npm; then
+        warn "npm not installed - skipping"
+        return
+    fi
+
+    if [ ! -d extension-web/node_modules ]; then
+        run "npm ci" bash -c 'cd extension-web && npm ci --no-audit --no-fund'
+    fi
+    if ! run "type-check + build" bash -c 'cd extension-web && npm run build'; then
+        return
+    fi
+
+    for target in chrome firefox; do
+        if [ -f "extension-web/dist/$target/manifest.json" ]; then
+            ok "$target manifest produced"
+        else
+            fail "$target build produced no manifest.json"
+        fi
+    done
+}
+
+# ── Shell scripts ────────────────────────────────────────────────────────────
+# The Magisk module ships scripts that run under Android's mksh but were
+# written with bash arrays (`read -ra`, "${arr[@]}"). mksh has no `read -a`, so
+# the per-app exclusion aborted the script and every bypass rule after it was
+# never installed. Parse each script with the interpreter its shebang names.
+check_shell() {
+    step "Shell scripts"
+
+    local checked=0
+    while IFS= read -r script; do
+        [ -f "$script" ] || continue
+
+        local interp
+        case "$(head -1 "$script")" in
+            *bash*) interp=bash ;;
+            *)      interp=sh ;;   # POSIX sh, the closest stand-in for mksh
+        esac
+        if ! have "$interp"; then
+            continue
+        fi
+
+        if ! run "$interp -n $script" "$interp" -n "$script"; then
+            continue
+        fi
+        checked=$((checked + 1))
+    done <<< "$(git ls-files '*.sh' 2>/dev/null)"
+
+    if [ "$checked" -gt 0 ]; then
+        ok "$checked scripts parsed"
+    fi
+}
+
+# ── Steam Deck plugin ────────────────────────────────────────────────────────
+check_decky() {
+    step "Decky plugin (Steam Deck)"
+    if ! have npm; then
+        warn "npm not installed - skipping"
+        return
+    fi
+    if [ ! -f decky-plugin/package.json ]; then
+        warn "decky-plugin/package.json not found - skipping"
+        return
+    fi
+
+    if [ ! -d decky-plugin/node_modules ]; then
+        run "npm ci" bash -c 'cd decky-plugin && npm ci --no-audit --no-fund'
+    fi
+    run "rollup build" bash -c 'cd decky-plugin && npm run build'
 }
 
 # ── Website ──────────────────────────────────────────────────────────────────
@@ -171,10 +250,13 @@ check_go() {
 printf '%sUnbound — local checks%s  (mirrors .github/workflows/ci.yml)\n' "$BOLD" "$NC"
 
 case "$TARGET" in
-    frontend) check_frontend ;;
-    website)  check_website ;;
-    go)       check_go ;;
-    all)      check_frontend; check_go; check_website ;;
+    frontend)  check_frontend ;;
+    website)   check_website ;;
+    extension) check_extension ;;
+    decky)     check_decky ;;
+    shell)     check_shell ;;
+    go)        check_go ;;
+    all)       check_frontend; check_go; check_website; check_extension; check_decky; check_shell ;;
 esac
 
 printf '\n'

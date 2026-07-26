@@ -70,3 +70,11 @@ go.work.sum
 # ─── OS ─────────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+
+# Upstream tpws sources fetched by scripts/fetch-tpws.sh (GPL-3.0,
+# third-party, not vendored). ios_main.c and the shims below stay tracked.
+theos/unbound-legacy/engine/tpws/*.c
+theos/unbound-legacy/engine/tpws/*.h
+!theos/unbound-legacy/engine/tpws/ios_main.c
+!theos/unbound-legacy/engine/tpws/tpws.h
+!theos/unbound-legacy/engine/tpws/darwin_compat.h

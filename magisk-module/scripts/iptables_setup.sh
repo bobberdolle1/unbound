@@ -60,12 +60,18 @@ $IPT -t mangle -A FORWARD -j UNBOUND_FORWARD
 
 # Per-app exclusion
 if [ -n "$EXCLUDED_UIDS" ]; then
-    IFS=',' read -ra UIDS <<< "$EXCLUDED_UIDS"
-    for uid in "${UIDS[@]}"; do
+    # POSIX split on commas; `read -ra` + ${UIDS[@]} are bash-only and this
+    # script runs under mksh.
+    _old_ifs="$IFS"
+    IFS=','
+    for uid in $EXCLUDED_UIDS; do
+        IFS="$_old_ifs"
         echo "  → Excluding UID: $uid"
         $IPT -t mangle -A UNBOUND_OUTPUT -m owner --uid-owner "$uid" -j RETURN
         $IPT -t mangle -A UNBOUND_FORWARD -m owner --uid-owner "$uid" -j RETURN
+        IFS=','
     done
+    IFS="$_old_ifs"
 fi
 
 # Main rules
