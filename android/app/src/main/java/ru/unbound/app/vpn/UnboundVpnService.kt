@@ -62,6 +62,28 @@ class UnboundVpnService : VpnService() {
         // Actions for broadcast control
         const val ACTION_CONNECT = "ru.unbound.ACTION_CONNECT"
         const val ACTION_DISCONNECT = "ru.unbound.ACTION_DISCONNECT"
+
+        /**
+         * Whether the TUN <-> SOCKS5 relay is actually implemented.
+         *
+         * It is not: startPacketForward() reads packets from the TUN and
+         * discards them (its body is three TODOs), and startLocalProxy() is
+         * entirely commented out while still logging that a proxy started.
+         *
+         * That combination is far worse than "the bypass does not work".
+         * setupTunInterface() routes 0.0.0.0/0 and ::/0 into the TUN, so with
+         * no relay behind it every packet the device sends is black-holed:
+         * the phone has no working internet at all, in any app, until the VPN
+         * is switched off. BootReceiver and WifiStateReceiver can also turn it
+         * on unattended, so a user could hit this at boot with no idea why
+         * their connection died.
+         *
+         * Until a relay exists, refuse to establish the interface. Flip this
+         * to true in the same change that implements one - either by bundling
+         * hev-socks5-tunnel as a native library, or a gomobile build of a
+         * tun2socks stack driving the Go engine in this repository.
+         */
+        const val PACKET_RELAY_IMPLEMENTED = false
     }
 
     private val binder = LocalBinder()
@@ -115,6 +137,20 @@ class UnboundVpnService : VpnService() {
 
     private fun startVpn() {
         if (_vpnState.value is VpnState.Connected) return
+
+        // Refuse rather than black-hole the device's traffic. See
+        // PACKET_RELAY_IMPLEMENTED for why establishing the TUN without a
+        // relay behind it is actively harmful.
+        if (!PACKET_RELAY_IMPLEMENTED) {
+            val message = "Обход трафика на Android ещё не реализован: " +
+                "нет моста между TUN-интерфейсом и прокси. Включение VPN " +
+                "оставило бы устройство без интернета, поэтому запуск отменён."
+            Log.e(TAG, message)
+            _vpnState.value = VpnState.Error(message)
+            settingsManager.setVpnConnected(false)
+            stopSelf()
+            return
+        }
 
         _vpnState.value = VpnState.Connecting
         Log.d(TAG, "Starting VPN...")
@@ -243,9 +279,12 @@ class UnboundVpnService : VpnService() {
 
                 // OPTION 2: Use a Go library via JNI (preferred for production)
                 // This would call into a Go function via cgo/JNI.
-                // For now, we simulate the proxy being started.
 
-                Log.d(TAG, "Local proxy started on 127.0.0.1:1080")
+                // This used to log "Local proxy started on 127.0.0.1:1080",
+                // which was simply untrue - both options above are commented
+                // out, so nothing is listening on that port. Anyone reading
+                // logcat to debug a dead connection was sent the wrong way.
+                Log.w(TAG, "No local proxy is started: see PACKET_RELAY_IMPLEMENTED")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to start proxy: ${e.message}", e)
                 throw e
@@ -283,15 +322,21 @@ class UnboundVpnService : VpnService() {
                     val bytesRead = inputStream.read(buffer)
                     if (bytesRead <= 0) continue
 
-                    // TODO: Parse IP packet, determine protocol
-                    // TODO: Forward to SOCKS5 proxy at 127.0.0.1:1080
-                    // TODO: Write response back to outputStream
-
-                    // Placeholder: In a real implementation, this would:
+                    // NOT IMPLEMENTED. Packets are read and dropped on the
+                    // floor, which is why PACKET_RELAY_IMPLEMENTED gates
+                    // startVpn() - reaching this loop at all means every byte
+                    // the device sends disappears.
+                    //
+                    // A working implementation needs a userspace TCP/IP stack:
                     // 1. Parse the IP header from the buffer
-                    // 2. Create a SOCKS5 connection to the destination
+                    // 2. Open a SOCKS5 connection to the destination
                     // 3. Relay data between the TUN and the SOCKS5 proxy
                     // 4. Write the response back to the TUN
+                    //
+                    // Writing that from scratch is a large undertaking; the
+                    // practical routes are bundling hev-socks5-tunnel as a
+                    // native library, or a gomobile build of a tun2socks stack
+                    // driving the Go engine already in this repository.
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) {

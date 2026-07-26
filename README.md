@@ -86,11 +86,29 @@
 | <img src="https://simpleicons.org/icons/windows.svg" width="16"/> **Windows 10/11** | `WinDivert` | Распакуйте ZIP и запустите `unbound.exe` от администратора. Движок и драйвер встроены в бинарник. | ✅ |
 | <img src="https://simpleicons.org/icons/linux.svg" width="16"/> **Linux** | `NFQUEUE` + `iptables`/`nftables` | Поставьте `nfqws` (см. ниже) и запустите от `root`. | ✅ |
 | <img src="https://simpleicons.org/icons/apple.svg" width="16"/> **macOS (Intel/Apple Silicon)** | `pf` + divert-socket | Поставьте `nfqws`, запустите через `sudo` и подключите pf-якорь — см. ниже. | 🧪 |
-| <img src="https://simpleicons.org/icons/android.svg" width="16"/> **Android 8.0+** | `VpnService API` | Установите APK и разрешите локальный VPN-профиль. | 🧪 |
+| <img src="https://simpleicons.org/icons/android.svg" width="16"/> **Android 8.0+** | `VpnService API` | **Не работает.** Мост TUN↔прокси не реализован; приложение намеренно отказывается включать VPN — см. ниже. | ❌ |
 | <img src="https://simpleicons.org/icons/ios.svg" width="16"/> **iOS (Jailbreak)** | `launchd` демон | Установите `.deb` через Sileo/Zebra (rootful / rootless). | 🧪 |
-| <img src="https://simpleicons.org/icons/openwrt.svg" width="16"/> **OpenWRT** | Нативный пакет | Установите `.ipk` через `opkg install`, настройте в LuCI. | 🧪 |
+| <img src="https://simpleicons.org/icons/openwrt.svg" width="16"/> **OpenWRT** | `NFQUEUE` + nftables | Установите `.ipk` через `opkg install`, настройте в LuCI. Пакет собирает `nfqws` из исходников. | 🧪 |
 
-> ✅ — собирается в CI и проверено на живой системе; 🧪 — код есть и собирается, но без регулярной проверки на железе. Статусы держим честными: если что-то не заработало, заводите issue.
+> ✅ — работает и проверено; 🧪 — реализация есть, но на железе не проверялась; ❌ — не работает, не пытайтесь.
+>
+> Не перечисленные в таблице каталоги `tvos/`, `webos/` и `decky-plugin/` — заготовки разной степени готовности. tvOS в текущем виде **не соберётся**: `UnboundTunnelEngine.c` вызывает `tpws_init()` и `tpws_run_loop()`, которых нет ни в одном файле репозитория.
+
+#### Почему Android помечен как неработающий
+
+`UnboundVpnService` поднимает TUN-интерфейс и заворачивает в него весь трафик
+(`addRoute("0.0.0.0", 0)` и `addRoute("::", 0)`), но петля пересылки пакетов не
+реализована — она читает пакеты и выбрасывает их, а запуск локального прокси
+целиком закомментирован. Это хуже, чем «обход не работает»: за TUN нет ничего,
+поэтому **на устройстве полностью пропадает интернет** во всех приложениях,
+пока VPN не выключат. При этом `BootReceiver` и `WifiStateReceiver` умеют
+включать VPN сами — при загрузке и при смене Wi-Fi.
+
+Поэтому сервис теперь **отказывается поднимать интерфейс** и сообщает причину,
+вместо того чтобы оставить телефон без связи. Флаг `PACKET_RELAY_IMPLEMENTED`
+в `UnboundVpnService.kt` нужно переключить в `true` тем же изменением, которое
+добавит настоящий мост: либо нативная библиотека `hev-socks5-tunnel`, либо
+gomobile-сборка tun2socks поверх Go-движка из этого репозитория.
 
 📥 **Все бинарники доступны в разделе [GitHub Releases](../../releases).**
 
