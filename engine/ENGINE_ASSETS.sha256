@@ -1,0 +1,156 @@
+# ============================================================================
+# Checksums for the vendored bypass-engine assets
+# ============================================================================
+# Regenerate with:  ./scripts/engine-assets.sh generate
+# Verify with:      ./scripts/engine-assets.sh verify   (run by scripts/check.sh)
+#
+# Provenance
+# ----------
+#   engine/core_bin/windows/winws2.exe        Zapret 2, https://github.com/bol-van/zapret2
+#   engine/core_bin/windows/WinDivert*.dll    WinDivert, bundled with the Zapret 2 release
+#   engine/core_bin/windows/WinDivert*.sys    WinDivert kernel driver, ditto
+#   engine/core_bin/windows/goodbyedpi.exe    https://github.com/ValdikSS/GoodbyeDPI
+#   engine/core_bin/*.bin                     fake-packet payloads from the Zapret 2 release
+#   engine/lua_scripts/zapret-*.lua           Zapret 2 sources; the rest are local
+#   engine/windivert.filter/*                 local WinDivert filter presets
+#
+# The binaries live only in upstream *releases*, not in upstream git, so they
+# cannot be fetched by a build script the way scripts/fetch-tpws.sh fetches
+# tpws. Updating them is a manual, deliberate step: download the release,
+# replace the files, rerun `generate`, and record the version below.
+#
+# Bundled Zapret 2 version: v1.0.3
+#   As of this manifest, every Lua script this project actually loads
+#   (zapret-lib.lua and zapret-antidpi.lua) is byte-identical to upstream
+#   v1.0.3. The one file that differs, zapret-tests.lua, is an upstream demo
+#   that nothing in this repository references.
+# ============================================================================
+e4d572e6bf6de04c648744cb7271644cb40fd6c79d718e911716d734cbb53841  engine/core_bin/1.bin
+f86d488593a65132c10e7e5b5e02f32ff8e0862988b30bebc6a671c5380f3976  engine/core_bin/2.bin
+d6d63c53bc0e1d97e913a43fc4db34f6558bb807228bf6100e3b6863f0720404  engine/core_bin/3.bin
+936c2bee4cfb80aa3c426b2dcbcc834b3fbcd1adb17172959dc569c73a14275c  engine/core_bin/4.bin
+2f43f4251be4d72dd56c91bf6cce475d379eb9ba6c4dda2be3022ea633d5e807  engine/core_bin/WinDivert32.sys
+8da085332782708d8767bcace5327a6ec7283c17cfb85e40b03cd2323a90ddc2  engine/core_bin/WinDivert64.sys
+1f892e567bdd3dfc23e8dc86933b258a67262cb66cbf16bcc3cfa704db604ba0  engine/core_bin/dht_find_node.bin
+b57f6584eb58689ccf81702b44103fa53ea31a5dba00be9c95b4059bad602e77  engine/core_bin/dht_get_peers.bin
+5bacd8cb6bd451f2374e55bc066b632e3c88fb852e3a44f19e6246c04d127be5  engine/core_bin/dtls_clienthello_w3_org.bin
+e4d094cf81b67649d0b46bd765ee6075efd03c46110994aa92816d7a42ebc96e  engine/core_bin/fake_http_lichess.bin
+72e65755eefcd229a7f39f053525d8d5d8dc2a8fefa05b904c0e545df547a537  engine/core_bin/fake_http_ovhcloud.bin
+82799540ae6a10b7acb2e8321b409bfa06a38ebb7b72cf7b9ba092d759fb1666  engine/core_bin/fake_http_postimg.bin
+019c2134c1698247a522a0f0120716513f24687fe0dd292107e52d77ba92647e  engine/core_bin/fake_http_winrar.bin
+a7341421e156184678f11b293fd8037fbc0a2dc46ef4168b4c976f754b1f85fb  engine/core_bin/fake_quic.bin
+a7341421e156184678f11b293fd8037fbc0a2dc46ef4168b4c976f754b1f85fb  engine/core_bin/fake_quic_1.bin
+f4589c57749f956bb30538197a521d7005f8b0a8723b4707e72405e51ddac50a  engine/core_bin/fake_quic_2.bin
+4a6f8a103646793bac9cdcfff9b0ed9f23ef3b43e588ac870c835d3f23fe6e28  engine/core_bin/fake_quic_3.bin
+2ccdc1d1f976183dd113e3e3b7130e91710c1d54818d18db46262a236b23f7ac  engine/core_bin/fake_syndata.bin
+417486136b2938616e10b327df4a80d80ce5de479e535e024ee5a4b20a8b7699  engine/core_bin/fake_tls_1.bin
+b20530263cf4b4ef7bfd1ecf1d071da8d74e839328bea67410dd81696c989e4c  engine/core_bin/fake_tls_2.bin
+e5938780152169f720383f80eabb309e9477369b83b5ec40cc137c397f862cde  engine/core_bin/fake_tls_3.bin
+a274651c7ee20c696b1454c25355f8c2a6c8116f7746b8686c932ff63893fdf8  engine/core_bin/fake_tls_4.bin
+de66eca5d91ecfd12593cd83218d4aee33a04674c736be4bd7b3de9ad26ba3b3  engine/core_bin/fake_tls_5.bin
+fc3d6b7ebfcc2c2ffa348737fac7ffaeb951d541806a5efdb518330b856dab8e  engine/core_bin/fake_tls_6.bin
+364ecb8ff5c99d1ab84df16c02602e241e8d49416035d0b3afbbb4b441014543  engine/core_bin/fake_tls_7.bin
+83ccbc02a89a4017ccdccbb66c1aad01a52c6db1644480977355a98e398cdb69  engine/core_bin/fake_tls_8.bin
+0e42538d33e0e66aee52395529719492719efd7520febe715fec3743f4bc0991  engine/core_bin/fake_tls_vimeo_com.bin
+472eda2fdc3f2ddda7614377eccb1cd0c6a650dd375c05257506658995470b51  engine/core_bin/http_fake_MS.bin
+f77d1cdaff02b6311d4276eeb8479830ab777d8fce4a4b116135c7768f3a284a  engine/core_bin/http_iana_org.bin
+70e5fe06407335247f07a1e45e9ef8cd2f844dbd78a6d74973908f4f233a698f  engine/core_bin/mts_ch.bin
+f4589c57749f956bb30538197a521d7005f8b0a8723b4707e72405e51ddac50a  engine/core_bin/quic_1.bin
+e4d572e6bf6de04c648744cb7271644cb40fd6c79d718e911716d734cbb53841  engine/core_bin/quic_2.bin
+f86d488593a65132c10e7e5b5e02f32ff8e0862988b30bebc6a671c5380f3976  engine/core_bin/quic_3.bin
+0e53683f2408bab1f52bc3db10c11b3a2bf238f68db64f4d0ea8aff37e07a61d  engine/core_bin/quic_4.bin
+a7ea947b0efe4690b91f6180ff16c0f750443901f0f6310d94dca9f0b8606dac  engine/core_bin/quic_5.bin
+97f544d62aaa0d85db91dbb611a3e1782647dda243777417d57096ed7e668a1c  engine/core_bin/quic_6.bin
+4a6f8a103646793bac9cdcfff9b0ed9f23ef3b43e588ac870c835d3f23fe6e28  engine/core_bin/quic_7.bin
+d6504305e15e6f63930d24ced9045001e345d3c1aeb56b1b4c329d51c7dea274  engine/core_bin/quic_initial_facebook_com.bin
+2c874e6b4adbfd9206c0b5a34a6a3e93af4c4f8552285408d61c56ed26c6f1f1  engine/core_bin/quic_initial_facebook_com_quiche.bin
+ff694e7edb1829d4746cec4d1075e26522e572325da750705fcba52a6aed8067  engine/core_bin/quic_initial_google_com.bin
+d5d77f90ff45489d246bd447c3e9f28e98891e206dc17c79d4de1da6bd0f18e8  engine/core_bin/quic_initial_rutracker_org.bin
+e0ae5ed5e3018512c8ab8ba8d7097607a65f17fa258bbd0b50596abe85f71264  engine/core_bin/quic_initial_rutracker_org_kyber_1.bin
+b32f891a670afcda91276b2dfc712c6c67ab1c02c0c3e9dbd8ac1f7cb9790c73  engine/core_bin/quic_initial_rutracker_org_kyber_2.bin
+f86d488593a65132c10e7e5b5e02f32ff8e0862988b30bebc6a671c5380f3976  engine/core_bin/quic_initial_vk_com.bin
+f4589c57749f956bb30538197a521d7005f8b0a8723b4707e72405e51ddac50a  engine/core_bin/quic_initial_www_google_com.bin
+ec07b86d54395a3620569d786846c2062f5d30fe8847ecb862703a623c4176ab  engine/core_bin/quic_short_header.bin
+96032bf86c2cd113f793285516822702cab4f89cbd2b7356f9682843fbb5420e  engine/core_bin/quic_test_00.bin
+9cd5469309780ca56c0bd97266524a48c7ee529d02c3179cfecb20b260a59641  engine/core_bin/stun.bin
+92b092ff4f9c18263ba17c108bf224f99ab6c8ede28353893504937a28dc161a  engine/core_bin/syn_packet.bin
+072a353ff8a71f44d8075ed785b18132c9a1d8d70d6db9d18485c58ea799ae4d  engine/core_bin/tls_clienthello_1.bin
+ecabfe2280b3291acc6774d34bd1dbe7e307e8b80e4fb2cfd7f033c6316df771  engine/core_bin/tls_clienthello_10.bin
+70d12b145219e8252aca422dfd4ea6214cec6ce9dbda911a3cf31aba1e437681  engine/core_bin/tls_clienthello_11.bin
+0f44d524ed295e7df3ba9cae1dda7f43701dde30c98347e4cbd3dd04d05152a3  engine/core_bin/tls_clienthello_12.bin
+b60f50c804baeefdfc711f658c1acf8c79e1b7da9a4505ce67208bdd4240869d  engine/core_bin/tls_clienthello_13.bin
+72c0bbc8d02077e28f8b41574a0673ebbdcfb4a86274c3468160b11a320e17d1  engine/core_bin/tls_clienthello_14.bin
+701fa6646f880cadaab4ef57eeddec40e61c19e74f5b9ca57ec56d62320b3fc9  engine/core_bin/tls_clienthello_15.bin
+f88d0e2c60338eda178fb0370256b575a9b4f838f35ca1d9d3771dd3f96796a4  engine/core_bin/tls_clienthello_16.bin
+7c120e7191dab6264c8fd10f227d3a87e1d5194e530907c8f82453f4c89fcb19  engine/core_bin/tls_clienthello_17.bin
+364ecb8ff5c99d1ab84df16c02602e241e8d49416035d0b3afbbb4b441014543  engine/core_bin/tls_clienthello_18.bin
+e5938780152169f720383f80eabb309e9477369b83b5ec40cc137c397f862cde  engine/core_bin/tls_clienthello_2.bin
+936c2bee4cfb80aa3c426b2dcbcc834b3fbcd1adb17172959dc569c73a14275c  engine/core_bin/tls_clienthello_2n.bin
+9db8772636bb332f1970e8767bc7d628bfa640714bd0b7e699fbe92d559e666e  engine/core_bin/tls_clienthello_3.bin
+d6d63c53bc0e1d97e913a43fc4db34f6558bb807228bf6100e3b6863f0720404  engine/core_bin/tls_clienthello_4.bin
+eefeaf09dde8d69b1f176212541f63c68b314a33a335eced99a8a29f17254da8  engine/core_bin/tls_clienthello_4pda_to.bin
+fc3d6b7ebfcc2c2ffa348737fac7ffaeb951d541806a5efdb518330b856dab8e  engine/core_bin/tls_clienthello_5.bin
+3ed1616cb512dd637037c36fb43b2585e605d9da3661a775d0e4a3f0c2a4c1ac  engine/core_bin/tls_clienthello_6.bin
+42fda11a366a5a47b27a4567f588e62deec67c502e53445e970f8bab7dd77355  engine/core_bin/tls_clienthello_7.bin
+901bab626e0cb8846b3bac443939b6b99bab0c5fd2211040bd58174091e5537e  engine/core_bin/tls_clienthello_8.bin
+aaaf593606c285662286c1eef9a7d73a8ea310268c314108d61f4a58b386ced8  engine/core_bin/tls_clienthello_9.bin
+713112c4ef1de109cb86b1d247f0b950e6a2d317cae033ec7ca5ef2e493a5722  engine/core_bin/tls_clienthello_chat_deepseek_com.bin
+ec581c9877ebc4b69e6cdab48f46e0f7b0eeb67c5fefe849f21525faa1ff4f74  engine/core_bin/tls_clienthello_gosuslugi_ru.bin
+9db8772636bb332f1970e8767bc7d628bfa640714bd0b7e699fbe92d559e666e  engine/core_bin/tls_clienthello_iana_org.bin
+741bf7660081fe572f93582735d2c36ffbb93a0e59ff8bd7a6bced05ca8ade49  engine/core_bin/tls_clienthello_max_ru.bin
+0fe5b4118d698536bb845450e3314e22969c59f69f72d90dcb4ef477327ce81d  engine/core_bin/tls_clienthello_rutracker_org_kyber.bin
+d10110e695ec16cdbed292cfbba3e779b8f08acb92bfa1023ad56a8cccd3aae6  engine/core_bin/tls_clienthello_sberbank_ru.bin
+d6d63c53bc0e1d97e913a43fc4db34f6558bb807228bf6100e3b6863f0720404  engine/core_bin/tls_clienthello_vk_com.bin
+b930e34be4a0f7fe388d4cb9886838f9a7b68fd62d3461629885e4cefcfe3805  engine/core_bin/tls_clienthello_vk_com_kyber.bin
+936c2bee4cfb80aa3c426b2dcbcc834b3fbcd1adb17172959dc569c73a14275c  engine/core_bin/tls_clienthello_www_google_com.bin
+e5938780152169f720383f80eabb309e9477369b83b5ec40cc137c397f862cde  engine/core_bin/tls_clienthello_www_google_com_2.bin
+c1e060ee19444a259b2162f8af0f3fe8c4428a1c6f694dce20de194ac8d7d9a2  engine/core_bin/windows/WinDivert.dll
+8da085332782708d8767bcace5327a6ec7283c17cfb85e40b03cd2323a90ddc2  engine/core_bin/windows/WinDivert64.sys
+103104a52e5293ce418944725df19e2bf81ad9269b9a120d71d39028e821499b  engine/core_bin/windows/cygwin1.dll
+8d412b094bb9c137ff25ba9a794d1122ecc84bb776debff6c249723a13cc31cd  engine/core_bin/windows/goodbyedpi.exe
+684c64b4d88558fafce0fa5e60025ab2aee863a93d5890e90999e185e8532b8a  engine/core_bin/windows/ip2net.exe
+154cbe6342b06d587fda3d07f97c682c03bf41ca83f6ed42cdec1dc8be248d0b  engine/core_bin/windows/killall.exe
+53071e3ed01b280fdb0ca5feb48dd6120d34478088ef058a43a79479248ffcce  engine/core_bin/windows/mdig.exe
+f4589c57749f956bb30538197a521d7005f8b0a8723b4707e72405e51ddac50a  engine/core_bin/windows/quic_initial_www_google_com.bin
+9cd5469309780ca56c0bd97266524a48c7ee529d02c3179cfecb20b260a59641  engine/core_bin/windows/stun.bin
+eefeaf09dde8d69b1f176212541f63c68b314a33a335eced99a8a29f17254da8  engine/core_bin/windows/tls_clienthello_4pda_to.bin
+4ee0870abe0a0128600b0095189987ba1d210dae8bf963bc725aff49cf922624  engine/core_bin/windows/tls_clienthello_max_ru.bin
+936c2bee4cfb80aa3c426b2dcbcc834b3fbcd1adb17172959dc569c73a14275c  engine/core_bin/windows/tls_clienthello_www_google_com.bin
+2bd9661d857794db6591510a92607da1d74e6da018887f19e832df68a9679275  engine/core_bin/windows/winws2.exe
+0af3b37b9912fbee78663711e93e090a33665759b684199ac4d0c9d9dbc468df  engine/core_bin/wireguard_initiation.bin
+8cfa32a791b31f89270f0ad2bed8db04c1ec1f97a66044f120037530610f807b  engine/core_bin/wireguard_response.bin
+ce77a3a35b5cf614f950d8871f7d1e1d76e08afad0a416bd4471724684c47f01  engine/core_bin/ya_ch.bin
+5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef  engine/core_bin/zero_1024.bin
+5341e6b2646979a70e57653007a1f310169421ec9bdd9f1a5648f75ade005af1  engine/core_bin/zero_256.bin
+076a27c79e5ace2a3d47f9dd2e83e4ff6ea8872b3c2218f66c92b89b55f36560  engine/core_bin/zero_512.bin
+3f456f4e34681aa4990b01456da8c13ecf1408a75966f518eeb7f7d85cc59750  engine/lua_scripts/custom_diag.lua
+2e26071c5b9feeade1f531eab06e477786ae3ae8be3db5ff553ae01b11af8a6f  engine/lua_scripts/custom_funcs.lua
+aa49155ef288fc116202315bf1f407018e190e1ff61b35e50df9b53157fce109  engine/lua_scripts/init_vars.lua
+4fb077b3bf936ec3fb43a7ff8ebc574fd75985def1c536f81eba0bc71d5722f2  engine/lua_scripts/zapret-16kb.lua
+9ef64f894d920e2ceea05707899f67b206d5009ba762eb5265f409264b34214c  engine/lua_scripts/zapret-antidpi.lua
+aacfde0c95c3058f8e95f5d7d244398bdc03ebf846a8f17322129fb543366a3d  engine/lua_scripts/zapret-auto.lua
+2740b1bc0e728c4283846df94783844082eabd503ce1f86e3429159e1b4e8de3  engine/lua_scripts/zapret-lib.lua
+761f96844bc4fd0d4a41596609a411fc84f61ad1574f4218358a3ee6e8de4772  engine/lua_scripts/zapret-multishake.lua
+e9581bfbca846630ada78193641d834e25abc11337ba85467d642c2d8c6fa47f  engine/lua_scripts/zapret-obfs.lua
+6866c37c92fbc62075accf94228da48af618c7f416edc682eba99b2196e05f45  engine/lua_scripts/zapret-pcap.lua
+88f6b30581635c55db48b74c77d48acaafbb23793240e67d8e8b6eca480b33a8  engine/lua_scripts/zapret-tests.lua
+74c32c05b3098fd71ba28338b710ac9a23b2cdbdffd040597f235f43f54faf2d  engine/lua_scripts/zapret-wgobfs.lua
+4b66d6121955182157deed47f463f5af84b747cee1e5b46c5aa47bbae4b6e6f3  engine/windivert.filter/windivert.all.txt
+9c2e85966bbc7990ef07b1ab5aba28e783afca3945be29b876b5bc92cd7370f5  engine/windivert.filter/windivert.discord_media+amazon.txt
+e3b050473564ac3805bcf1eb84e24a146cea58295c09c7029e137fafe1057a2b  engine/windivert.filter/windivert.discord_media+stun+sites.txt
+a8033c453ceaeeb2bc36e1fdfba7cf54265026cfc58555457f30df9539124fca  engine/windivert.filter/windivert.discord_media+stun.txt
+a775d133e5ad0704c277fa72a2973db0826e5b4228ee3f70aeba752f2a47559e  engine/windivert.filter/windivert.discord_media.txt
+850d263b269c644659d89f282986d80ac64e2b8305a22836cbb3595dff9c01da  engine/windivert.filter/windivert.sites+stun.txt
+0eb870f5ec37fb1465227f4336ef9f82b81066a303864fc4a1bf3716e5fa70c5  engine/windivert.filter/windivert.stun.txt
+6e2b64951040ba3e6a563fd023fa38bfea2f9fcd90d6bbf6100643c0b6f1ea3a  engine/windivert.filter/windivert.wireguard.txt
+e4a5899e1a26311fddf3ef6a1c79e35ead66f6dda8c639d6d5a605f33e497f28  engine/windivert.filter/windivert_part.cloudflare_tcp_80_443_AS13335_v4_remote.txt
+b69885f4de3107ae132764a9732cef518c263d731e3c69f0d7b0dce50ffa571f  engine/windivert.filter/windivert_part.discord_bidirectional.txt
+ec101b4ac40f487b93fa80074fe2192ceaf773a6891cf940d8bdd9ab603304b0  engine/windivert.filter/windivert_part.discord_media.txt
+b96f81fcfff8020f53b3b32d8b46a952e64afd036732548cf931809cfcd591d4  engine/windivert.filter/windivert_part.games_udp_bidirectional.txt
+868837959aa2244e803c92da63c90e305dd4fa89923f99cecf65485d6eadebd6  engine/windivert.filter/windivert_part.google_tcp_80_443_AS15169_v4_remote.txt
+02958a2e6dd5061a710144f41899e7a23b041aa9f21d6b4ddf6a2d9e2908f7f8  engine/windivert.filter/windivert_part.mts_tcp_80_443_AS8359_v4_remote.txt
+00a9f97714730ec14e5ccf3164dfc0462b4b137615dc0d4ce8ff7cdf7a52cbb0  engine/windivert.filter/windivert_part.quic_bidirectional.txt
+324ffd84dbb09602694fbcc7a0920e454a65258e993819bbd12499d9936f78bd  engine/windivert.filter/windivert_part.quic_initial_ietf.txt
+2a14f470b00cd9704003e0cade500086398f9222c858d9ae944bdeb89f520595  engine/windivert.filter/windivert_part.stun.txt
+cf3f44a0c90c14b31decdb099d0fa72b98f00d46f65f35213b74a6c1d31b147c  engine/windivert.filter/windivert_part.stun_bidirectional.txt
+f4329dd2050d8f678efdd3c04ba657f1707c320d5c6f4e33ad21f1b70b5c659e  engine/windivert.filter/windivert_part.wireguard.txt

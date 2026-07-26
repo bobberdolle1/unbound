@@ -15,6 +15,7 @@
 #   ./scripts/check.sh extension  # type-check + build the browser extension
 #   ./scripts/check.sh decky      # build the Steam Deck plugin
 #   ./scripts/check.sh shell      # parse every shell script with its shebang
+#   ./scripts/check.sh assets     # verify checksums of the vendored engine
 #   ./scripts/check.sh --quick    # skip cross-compilation (the slow part)
 #
 # Exit code is non-zero if any check fails, so it is usable as a pre-push hook:
@@ -60,8 +61,8 @@ QUICK=0
 for arg in "$@"; do
     case "$arg" in
         --quick) QUICK=1 ;;
-        go|frontend|website|extension|decky|shell|all) TARGET="$arg" ;;
-        -h|--help) sed -n '2,23p' "$0" | sed 's/^# \?//'; exit 0 ;;
+        go|frontend|website|extension|decky|shell|assets|all) TARGET="$arg" ;;
+        -h|--help) sed -n '2,24p' "$0" | sed 's/^# \?//'; exit 0 ;;
         *) echo "Unknown argument: $arg (try --help)" >&2; exit 2 ;;
     esac
 done
@@ -139,6 +140,20 @@ check_shell() {
     if [ "$checked" -gt 0 ]; then
         ok "$checked scripts parsed"
     fi
+}
+
+# ── Vendored engine assets ───────────────────────────────────────────────────
+# winws2.exe, the WinDivert kernel driver and the fake-packet payloads are
+# committed binaries that users run with administrator rights. Nothing recorded
+# which upstream release they came from, or whether the bytes were still the
+# ones somebody vetted.
+check_assets() {
+    step "Vendored engine assets"
+    if ! have sha256sum; then
+        warn "sha256sum not available - skipping"
+        return
+    fi
+    run "engine asset checksums" ./scripts/engine-assets.sh verify
 }
 
 # ── Steam Deck plugin ────────────────────────────────────────────────────────
@@ -255,8 +270,9 @@ case "$TARGET" in
     extension) check_extension ;;
     decky)     check_decky ;;
     shell)     check_shell ;;
+    assets)    check_assets ;;
     go)        check_go ;;
-    all)       check_frontend; check_go; check_website; check_extension; check_decky; check_shell ;;
+    all)       check_frontend; check_go; check_website; check_extension; check_decky; check_shell; check_assets ;;
 esac
 
 printf '\n'

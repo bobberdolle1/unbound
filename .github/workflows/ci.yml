@@ -191,6 +191,17 @@ jobs:
           done
 
   # ───────────────────────────────────────────────────────────────────────────
+  # Vendored engine assets — committed binaries users run as administrator,
+  # including a kernel driver, with no record of which release they came from
+  # ───────────────────────────────────────────────────────────────────────────
+  engine-assets:
+    name: Engine assets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./scripts/check.sh assets
+
+  # ───────────────────────────────────────────────────────────────────────────
   # Shell scripts — the Magisk module runs under Android's mksh, where bash
   # arrays silently abort the script mid-way through installing bypass rules
   # ───────────────────────────────────────────────────────────────────────────
