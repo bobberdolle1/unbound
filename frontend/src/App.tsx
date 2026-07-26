@@ -106,8 +106,8 @@ const DoodleSelect = ({ value, options, onChange, disabled, up }: { value: strin
   );
 };
 
-const DoodleCheckbox = ({ checked, onChange, id, label, desc }: { checked: boolean, onChange: () => void, id: string, label: string, desc: string }) => (
-  <div className="flex items-start gap-4 p-3 sketch-box cursor-pointer hover:bg-white hover:shadow-[2px_2px_0_rgba(0,0,0,0.6)] transition-all duration-150 hover:scale-[1.01]" onClick={onChange}>
+const DoodleCheckbox = ({ checked, onChange, id, label, desc }: { checked: boolean, onChange: () => void, id?: string, label: string, desc: string }) => (
+  <div id={id} role="checkbox" aria-checked={checked} tabIndex={0} className="flex items-start gap-4 p-3 sketch-box cursor-pointer hover:bg-white hover:shadow-[2px_2px_0_rgba(0,0,0,0.6)] transition-all duration-150 hover:scale-[1.01]" onClick={onChange} onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onChange(); } }}>
     <div className={cn(
       "w-7 h-7 flex-shrink-0 sketch-input flex items-center justify-center transition-all duration-200 bg-white",
       checked ? "text-green-600 scale-110" : "text-transparent scale-100"
@@ -164,7 +164,7 @@ const PingChart = ({ history }: { history: number[] }) => {
         </defs>
         <path d={areaD} fill="url(#pingGradient)" />
         <path d={pathD} fill="none" stroke="var(--ui-accent, #3b82f6)" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
-        {history.map((val, idx) => {
+        {history.map((_, idx) => {
           const [x, y] = points[idx].split(',').map(Number);
           return (
             <circle
