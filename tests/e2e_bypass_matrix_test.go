@@ -81,13 +81,13 @@ func TestE2EBypassMatrix(t *testing.T) {
 
 			if !provider.WaitReady(5 * time.Second) {
 				t.Logf("  ⚠️  Engine initialization timeout")
-				
+
 				logs := provider.GetLogs()
 				t.Logf("  📋 Engine logs (%d lines):", len(logs))
 				for _, log := range logs {
 					t.Logf("      %s", log)
 				}
-				
+
 				provider.Stop()
 				result.TCPStatus = "FAIL (timeout)"
 				result.UDPStatus = "SKIP"
@@ -301,21 +301,21 @@ func setupTestEnvironment() (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	
+
 	if strings.HasSuffix(wd, "tests") {
 		wd = filepath.Dir(wd)
 	}
-	
+
 	binPath := filepath.Join(wd, "engine", "core_bin", "windows")
 	luaDir := filepath.Join(wd, "engine", "lua_scripts")
-	
+
 	if _, err := os.Stat(filepath.Join(binPath, "winws2.exe")); os.IsNotExist(err) {
 		return "", "", fmt.Errorf("winws2.exe not found at %s", binPath)
 	}
-	
+
 	if _, err := os.Stat(filepath.Join(luaDir, "zapret-lib.lua")); os.IsNotExist(err) {
 		return "", "", fmt.Errorf("zapret-lib.lua not found at %s", luaDir)
 	}
-	
+
 	return binPath, luaDir, nil
 }

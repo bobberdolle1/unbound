@@ -1,20 +1,36 @@
 package main
 
 import (
-	"os/exec"
+	"os"
+	"runtime"
 	"testing"
 	"unbound/engine"
 )
 
+// hasElevatedPrivileges reports whether the test process can touch the network
+// stack. This previously shelled out to `net session`, which only exists on
+// Windows, so on Linux/macOS the command simply failed and the test skipped for
+// the wrong reason.
+func hasElevatedPrivileges() bool {
+	if runtime.GOOS == "windows" {
+		// An unelevated Windows process cannot open the physical drive
+		// namespace; a successful open implies an elevated token.
+		f, err := os.Open(`\\.\PHYSICALDRIVE0`)
+		if err != nil {
+			return false
+		}
+		f.Close()
+		return true
+	}
+	return os.Geteuid() == 0
+}
+
 func TestHealthCheck(t *testing.T) {
-	// Check privileges
-	cmd := exec.Command("net", "session")
-	if err := cmd.Run(); err != nil {
-		t.Skip("Skipping health check - requires administrator privileges")
+	if !hasElevatedPrivileges() {
+		t.Skip("Skipping health check - requires administrator/root privileges")
 	}
 
-	err := engine.RunHealthCheck()
-	if err != nil {
+	if err := engine.RunHealthCheck(); err != nil {
 		t.Fatalf("Health check failed: %v", err)
 	}
 }

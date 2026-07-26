@@ -1,39 +1,64 @@
-# Binaries
+# ─── Compiled binaries ──────────────────────────────────────────────────────
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
 *.bin
+*.sys
 
-# Test artifacts
+# The bundled bypass engine assets are *deliberately* versioned. Without these
+# negations the rules above silently swallow `git add` for updated binaries.
+!engine/core_bin/**
+!engine/lists/**
+!engine/lua_scripts/**
+!engine/windivert.filter/**
+!magisk-module/binaries/**
+
+# ─── Dependencies ───────────────────────────────────────────────────────────
+node_modules/
+
+# ─── Build output ───────────────────────────────────────────────────────────
+build/bin/
+/dist/
+release/
+website/dist/
+website/.astro/
+target/
+
+# Wails embeds frontend/dist, so `go build` fails on a clean clone unless the
+# directory exists. Keep the placeholder, ignore everything Vite writes there.
+frontend/dist/*
+!frontend/dist/.gitkeep
+*.ipk
+*.apk
+*.aab
+
+# ─── Test artifacts ─────────────────────────────────────────────────────────
 *.test
 test_bypass.exe
 unbound-*.exe
-test_results.json
+unbound-*.zip
+unbound-*.tar.gz
+scripts/test-results/
 test_output.txt
+coverage.out
 RELEASE_SUMMARY.txt
 
-# Build output
-build/bin/
-dist/
-frontend/dist/
-frontend/node_modules/
-
-# References & Docs
+# ─── References & local docs ────────────────────────────────────────────────
 reference/
-docs/screenshot.jpg
 
-# Temporary files
+# ─── Temporary files ────────────────────────────────────────────────────────
 *.log
 tmp/
 zapdpi.txt
 unbound_debug.log
 
-# Go workspace
+# ─── Go ─────────────────────────────────────────────────────────────────────
 go.work
+go.work.sum
 
-# IDE
+# ─── IDE / editors ──────────────────────────────────────────────────────────
 .idea/
 .vscode/
 *.swp
@@ -41,10 +66,7 @@ go.work
 *~
 .kiro
 .gemini
-# OS
+
+# ─── OS ─────────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
-release/v2.5.1/unbound-decky-plugin/node_modules/
-decky-plugin/node_modules/
-dist/decky/node_modules/
-release/

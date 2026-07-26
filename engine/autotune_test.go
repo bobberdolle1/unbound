@@ -1,3 +1,5 @@
+//go:build windows
+
 package engine
 
 import (
@@ -56,4 +58,3 @@ func TestAutoTune(t *testing.T) {
 	}
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 }
-

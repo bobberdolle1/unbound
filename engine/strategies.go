@@ -38,7 +38,7 @@ func EnsureHostlistFiles() error {
 func GetProfiles(luaDir string) []Profile {
 	listsDir, _ := GetListsDir()
 	windivertDir, _ := GetWinDivertFilterDir()
-	
+
 	return []Profile{
 		{
 			Name: "Recommended (hostfakesplit)",

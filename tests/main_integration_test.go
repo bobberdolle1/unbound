@@ -1,3 +1,5 @@
+//go:build windows
+
 package main
 
 import (
@@ -43,7 +45,7 @@ func TestProviderInitialization(t *testing.T) {
 	}
 
 	provider := providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir, assets.ListDir, false, true)
-	
+
 	if provider.Name() != "Zapret 2 (winws)" {
 		t.Errorf("Expected provider name 'Zapret 2 (winws)', got '%s'", provider.Name())
 	}
@@ -69,7 +71,7 @@ func TestPrivilegeCheck(t *testing.T) {
 
 	provider := providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir, assets.ListDir, false, true)
 	hasPriv, err := provider.CheckPrivileges()
-	
+
 	if err != nil {
 		t.Errorf("Privilege check failed: %v", err)
 	}
@@ -89,7 +91,7 @@ func TestProfileArgumentGeneration(t *testing.T) {
 	}
 
 	_ = providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir, assets.ListDir, false, true)
-	
+
 	testCases := []struct {
 		profileName string
 		mustContain []string
@@ -115,7 +117,7 @@ func TestProfileArgumentGeneration(t *testing.T) {
 // TestCustomScriptPersistence verifies custom Lua script save/load
 func TestCustomScriptPersistence(t *testing.T) {
 	testContent := "-- Test custom script\nprint('hello')"
-	
+
 	err := engine.SaveCustomScript(testContent)
 	if err != nil {
 		t.Fatalf("Failed to save custom script: %v", err)
@@ -145,14 +147,14 @@ func TestEngineStartStop(t *testing.T) {
 	}
 
 	provider := providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir, assets.ListDir, false, true)
-	
+
 	hasPriv, _ := provider.CheckPrivileges()
 	if !hasPriv {
 		t.Skip("Skipping engine test - requires administrator privileges")
 	}
 
 	ctx := context.Background()
-	
+
 	// Test starting engine
 	err = provider.Start(ctx, "Standard Split")
 	if err != nil {
@@ -197,14 +199,14 @@ func TestAutoTuneScanner(t *testing.T) {
 
 	ctx := context.Background()
 	logs := []string{}
-	
+
 	updateLog := func(msg string) {
 		logs = append(logs, msg)
 		t.Log(msg)
 	}
 
 	profile, err := engine.RunAutoTune(ctx, updateLog)
-	
+
 	if err != nil {
 		t.Logf("Auto-tune failed (expected in some networks): %v", err)
 		t.Logf("Collected %d log entries", len(logs))
@@ -218,7 +220,7 @@ func TestAutoTuneScanner(t *testing.T) {
 // TestProviderManager tests the provider management system
 func TestProviderManager(t *testing.T) {
 	manager := providers.NewProviderManager()
-	
+
 	assets, err := engine.ExtractAssets()
 	if err != nil {
 		t.Fatalf("Failed to extract assets: %v", err)
@@ -255,9 +257,9 @@ func TestMain(m *testing.M) {
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	fmt.Println("🧪 UNBOUND Test Suite")
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	
+
 	code := m.Run()
-	
+
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	if code == 0 {
 		fmt.Println("✅ All tests passed")
@@ -265,6 +267,6 @@ func TestMain(m *testing.M) {
 		fmt.Println("❌ Some tests failed")
 	}
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	
+
 	os.Exit(code)
 }

@@ -1,243 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
-import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
 
-function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
+import { cn } from './lib/cn';
+import { formatLog } from './lib/format';
+import { generateLuaCode, parseLuaCode } from './lib/lua';
+import { SketchySpinner, SketchyX, SketchyStar, SketchyGear, SketchyTerminal, SketchyCheck } from './components/icons';
+import { DoodleSelect } from './components/DoodleSelect';
+import { DoodleCheckbox } from './components/DoodleCheckbox';
+import { PingChart } from './components/PingChart';
 
-// @ts-ignore
-import { GetEngineNames, GetProfiles, StartEngine, StopEngine, GetLogs, AutoTune, CancelAutoTune, GetSettings, SaveSettings, GetLivePing, ShowNotification, EnableAutoStart, DisableAutoStart, IsAutoStartEnabled, CheckConflicts, KillConflicts, CheckPrivileges, RunDiagnostics, ClearDiscordCache, EnableTCPTimestamps, KillWinws2, GetAppVersion, HideWindowToTray, GetBypassLists, ReadBypassList, SaveBypassList, ExportLogs, SaveCustomScript, LoadCustomScript } from '../wailsjs/go/main/App';
-// @ts-ignore
-import { EventsOn, WindowMinimise, EventsEmit } from '../wailsjs/runtime/runtime';
-
-// === SKETCHY ICONS ===
-const SketchySpinner = ({ className }: { className?: string }) => (
-  <svg className={cn(className, "animate-spin")} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-  </svg>
-);
-
-const SketchyX = ({ className }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M18 6L6 18M6 6l12 12" />
-  </svg>
-);
-
-const SketchyStar = ({ className }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M13 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L11 2Z" transform="translate(0.5, 0.5) rotate(2)"/>
-    <path d="M13 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L11 2Z" transform="translate(-0.5, -0.5) rotate(-2)" opacity="0.4"/>
-  </svg>
-);
-
-const SketchyGear = ({ className }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="3.5" />
-    <path d="M19.5 15.5c.2.6.4 1.2.8 1.8l-1.5 2.5-3-1.5c-.6.2-1.2.4-1.8.6v3.5h-4v-3.5c-.6-.2-1.2-.4-1.8-.6l-3 1.5-1.5-2.5c.4-.6.6-1.2.8-1.8H2.5v-4h3.5c-.2-.6-.4-1.2-.6-1.8l-1.5-2.5 2.5-1.5c.6.4 1.2.6 1.8.8V2.5h4v3.5c.6-.2 1.2-.4 1.8-.6l2.5-1.5 1.5 2.5c-.2.6-.4 1.2-.6 1.8h3.5v4h-3.5z" />
-  </svg>
-);
-
-const SketchyTerminal = ({ className }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M4.5 17.5l6-6-6-6" />
-    <path d="M12.5 18.5h7" />
-  </svg>
-);
-
-const SketchyCheck = ({ className }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M20 6.5l-11 11-5-5" />
-  </svg>
-);
-
-// === DOODLE COMPONENTS ===
-const DoodleSelect = ({ value, options, onChange, disabled, up }: { value: string, options: string[], onChange: (v: string) => void, disabled?: boolean, up?: boolean }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  return (
-    <div className="relative w-full" ref={dropdownRef}>
-      <div 
-        className={cn(
-          "w-full sketch-input px-4 py-3 text-gray-900 font-bold text-base flex items-center justify-between transition-all duration-200 bg-white/80",
-          disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-white hover:shadow-[3px_3px_0_rgba(0,0,0,0.8)] hover:scale-[1.01]",
-          isOpen && "bg-white z-50 relative shadow-[3px_3px_0_rgba(0,0,0,0.8)]"
-        )}
-        onClick={() => !disabled && setIsOpen(!isOpen)}
-      >
-        <span className="truncate">{value || 'Выбрать стратегию'}</span>
-        <span className={cn("font-marker font-black text-xl transition-transform duration-200", isOpen && "rotate-180")}>{isOpen ? 'x' : 'v'}</span>
-      </div>
-      
-      {isOpen && (
-        <ul className={cn(
-          "absolute left-0 w-full z-[100] sketch-box max-h-48 overflow-y-auto py-2 shadow-[4px_4px_0_rgba(0,0,0,0.8)] animate-in slide-in-from-top-2 fade-in duration-200",
-          up ? "bottom-[calc(100%+8px)]" : "top-[calc(100%+8px)]"
-        )}>
-          {options.map((opt) => (
-            <li 
-              key={opt}
-              className={cn(
-                "px-4 py-2 hover:bg-yellow-100 hover:text-yellow-900 cursor-pointer truncate font-bold text-base transition-all duration-150 hover:translate-x-1",
-                value === opt ? "bg-yellow-200 text-yellow-900" : "text-gray-800"
-              )}
-              onClick={() => {
-                onChange(opt);
-                setIsOpen(false);
-              }}
-            >
-              {opt}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-};
-
-const DoodleCheckbox = ({ checked, onChange, id, label, desc }: { checked: boolean, onChange: () => void, id: string, label: string, desc: string }) => (
-  <div className="flex items-start gap-4 p-3 sketch-box cursor-pointer hover:bg-white hover:shadow-[2px_2px_0_rgba(0,0,0,0.6)] transition-all duration-150 hover:scale-[1.01]" onClick={onChange}>
-    <div className={cn(
-      "w-7 h-7 flex-shrink-0 sketch-input flex items-center justify-center transition-all duration-200 bg-white",
-      checked ? "text-green-600 scale-110" : "text-transparent scale-100"
-    )}>
-      {checked && <SketchyCheck className="w-5 h-5 animate-in zoom-in duration-200" />}
-    </div>
-    <div className="flex flex-col pt-0.5">
-      <span className="text-[17px] font-bold text-gray-900 leading-none">{label}</span>
-      <span className="text-sm text-gray-600 mt-1 leading-snug">{desc}</span>
-    </div>
-  </div>
-);
-
-const formatLog = (log: string) => {
-  let formatted = log;
-  if (formatted.includes('[STDOUT]')) formatted = formatted.replace('[STDOUT]', '').trim();
-  if (formatted.includes('[STDERR]')) formatted = formatted.replace('[STDERR]', '').trim();
-  return formatted;
-};
-
-const PingChart = ({ history }: { history: number[] }) => {
-  if (history.length === 0) return null;
-  const maxVal = Math.max(...history, 100);
-  const minVal = 0;
-  const range = maxVal - minVal;
-  const width = 300;
-  const height = 50;
-  const padding = 5;
-
-  const points = history.map((val, idx) => {
-    const x = padding + (idx / (history.length - 1 || 1)) * (width - padding * 2);
-    const y = height - padding - ((val - minVal) / range) * (height - padding * 2);
-    return `${x},${y}`;
-  });
-
-  const pathD = points.length > 0 ? `M ${points.join(' L ')}` : '';
-  const areaD = points.length > 0 ? `${pathD} L ${padding + (history.length - 1) * ((width - padding * 2) / (history.length - 1 || 1))},${height - padding} L ${padding},${height - padding} Z` : '';
-
-  return (
-    <div className="flex flex-col items-center mt-3 p-3 bg-white border-2 border-gray-800 rounded-xl relative z-10 shadow-[2px_2px_0_#222] animate-fade-in">
-      <div className="flex justify-between w-full text-xs font-bold text-gray-700 px-1 mb-2">
-        <span className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-          Задержка DPI обхода
-        </span>
-        <span>{history[history.length - 1]} мс</span>
-      </div>
-      <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} className="overflow-visible">
-        <defs>
-          <linearGradient id="pingGradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--ui-accent, #3b82f6)" stopOpacity="0.4" />
-            <stop offset="100%" stopColor="var(--ui-accent, #3b82f6)" stopOpacity="0.0" />
-          </linearGradient>
-        </defs>
-        <path d={areaD} fill="url(#pingGradient)" />
-        <path d={pathD} fill="none" stroke="var(--ui-accent, #3b82f6)" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
-        {history.map((val, idx) => {
-          const [x, y] = points[idx].split(',').map(Number);
-          return (
-            <circle
-              key={idx}
-              cx={x}
-              cy={y}
-              r={idx === history.length - 1 ? 5 : 2.5}
-              fill="var(--ui-accent, #3b82f6)"
-              stroke="white"
-              strokeWidth={idx === history.length - 1 ? 2.5 : 1}
-            />
-          );
-        })}
-      </svg>
-    </div>
-  );
-};
-
-const generateLuaCode = (config: {
-  fakeBlob: string;
-  pos: string;
-  fool: string;
-  ttl: number;
-}) => {
-  return `-- AUTO-GENERATED BY UNBOUND LUA STRATEGY BUILDER
--- Version: 2.5.0
--- Params: fakeBlob=${config.fakeBlob}, pos=${config.pos}, fool=${config.fool}, ttl=${config.ttl}
-
--- Этот скрипт автоматически переопределяет стандартные функции zapret-antidpi.lua
--- на основе выбранных вами визуальных настроек.
-
-local original_multisplit = multisplit
-if original_multisplit then
-  function multisplit(ctx, desync)
-    desync.arg.pos = "${config.pos}"
-    if "${config.fool}" ~= "none" then
-      desync.arg.fool = "${config.fool}"
-    end
-    if ${config.ttl} > 0 then
-      desync.arg.ip_ttl = ${config.ttl}
-      desync.arg.ip6_ttl = ${config.ttl}
-    end
-    return original_multisplit(ctx, desync)
-  end
-end
-
-local original_fake = fake
-if original_fake then
-  function fake(ctx, desync)
-    desync.arg.blob = "${config.fakeBlob}"
-    if ${config.ttl} > 0 then
-      desync.arg.ip_ttl = ${config.ttl}
-      desync.arg.ip6_ttl = ${config.ttl}
-    end
-    return original_fake(ctx, desync)
-  end
-end
-`;
-};
-
-const parseLuaCode = (code: string) => {
-  const match = code.match(/-- Params: fakeBlob=([^,]+), pos=([^,]+), fool=([^,]+), ttl=(\d+)/);
-  if (match) {
-    return {
-      isAuto: true,
-      fakeBlob: match[1],
-      pos: match[2],
-      fool: match[3],
-      ttl: parseInt(match[4], 10)
-    };
-  }
-  return { isAuto: false, fakeBlob: 'fake_default_tls', pos: '1', fool: 'none', ttl: 0 };
-};
+import { GetEngineNames, GetProfiles, StartEngine, StopEngine, GetLogs, AutoTune, CancelAutoTune, GetSettings, SaveSettings, GetLivePing, ShowNotification, EnableAutoStart, DisableAutoStart, IsAutoStartEnabled, CheckConflicts, KillConflicts, CheckPrivileges, RunDiagnostics, ClearDiscordCache, KillWinws2, GetAppVersion, HideWindowToTray, GetBypassLists, ReadBypassList, SaveBypassList, ExportLogs, SaveCustomScript, LoadCustomScript } from '../wailsjs/go/main/App';
+import { EventsOn, WindowMinimise } from '../wailsjs/runtime/runtime';
 
 export default function App() {
   const [engines, setEngines] = useState<string[]>([]);
@@ -294,6 +66,7 @@ export default function App() {
   const [luaFool, setLuaFool] = useState<string>('none');
   const [luaTtl, setLuaTtl] = useState<number>(0);
   const [luaCode, setLuaCode] = useState<string>('');
+  const [appVersion, setAppVersion] = useState<string>('');
 
   const openLuaEditor = async () => {
     try {
@@ -342,6 +115,12 @@ export default function App() {
 
   const logsEndRef = useRef<HTMLDivElement>(null);
   const logsContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // GetAppVersion was bound and imported but never called, so the UI showed
+    // no version anywhere. Fetch it once on mount.
+    GetAppVersion().then(setAppVersion).catch(() => setAppVersion(''));
+  }, []);
 
   useEffect(() => {
     // Sync theme to body
@@ -1203,6 +982,9 @@ export default function App() {
               <div className="flex items-center gap-2">
                 <SketchyGear className="w-6 h-6 text-gray-800" />
                 <h2 className="text-xl font-marker text-gray-800">Настройки</h2>
+                {appVersion && (
+                  <span className="text-xs font-bold text-gray-400 self-end pb-1">v{appVersion}</span>
+                )}
               </div>
               <button onClick={() => setIsSettingsOpen(false)} className="text-gray-500 hover:text-black font-marker text-xl transition-colors duration-150 hover:scale-110">
                 X

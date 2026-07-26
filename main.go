@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -26,10 +27,25 @@ var assets embed.FS
 
 func main() {
 	cliMode := flag.Bool("cli", false, "Run in headless CLI mode")
-	profileName := flag.String("profile", "Unbound Ultimate (God Mode)", "Profile to use in CLI mode")
+	// Empty means "the engine's first profile", which is the only default that
+	// is correct on every platform: the Windows and Linux engines ship
+	// completely different profile names.
+	profileName := flag.String("profile", "", "Profile to use in CLI mode (default: the engine's first profile)")
 	trayMode := flag.Bool("tray", false, "Start minimized to system tray")
 	debugMode := flag.Bool("debug", false, "Enable verbose debug logging")
+	showVersion := flag.Bool("version", false, "Print the version and exit")
+	listProfiles := flag.Bool("list-profiles", false, "List the profiles available on this platform and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("unbound %s (%s/%s)\n", engine.Version, runtime.GOOS, runtime.GOARCH)
+		return
+	}
+
+	if *listProfiles {
+		runListProfiles(*debugMode)
+		return
+	}
 
 	if *cliMode {
 		runHeadlessMode(*profileName, *debugMode)
@@ -57,7 +73,7 @@ func main() {
 		Bind: []interface{}{
 			app,
 		},
-		Menu:             getAppMenu(app),
+		Menu: getAppMenu(app),
 		Windows: &windows.Options{
 			WebviewIsTransparent: false,
 			WindowIsTranslucent:  false,
@@ -77,27 +93,11 @@ func main() {
 	}
 }
 
-func runHeadlessMode(profileName string, debugMode bool) {
-	attachConsole()
-
-	fmt.Println("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Println("🚀 UNBOUND - Headless CLI Mode")
-	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Printf("Profile: %s\n", profileName)
-	if debugMode {
-		fmt.Println("Debug: ENABLED")
-	}
-	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
+// newHeadlessManager performs the setup shared by --cli and --list-profiles.
+func newHeadlessManager(debugMode bool) (*providers.ProviderManager, *engine.AssetPaths) {
 	assets, err := engine.ExtractAssets()
 	if err != nil {
 		log.Fatalf("Failed to extract assets: %v", err)
-	}
-
-	// Ensure dynamic lists exist
-	fmt.Println("Checking for updated bypass lists...")
-	if err := engine.EnsureListsExist(); err != nil {
-		fmt.Printf("Warning: Failed to update lists: %v\n", err)
 	}
 
 	listsDir, err := engine.GetListsDir()
@@ -107,17 +107,75 @@ func runHeadlessMode(profileName string, debugMode bool) {
 
 	manager := providers.NewProviderManager()
 	registerHeadlessProvider(manager, assets, listsDir, debugMode)
+	return manager, assets
+}
+
+func runListProfiles(debugMode bool) {
+	attachConsole()
+
+	manager, _ := newHeadlessManager(debugMode)
+	for _, name := range manager.GetEngineNames() {
+		fmt.Printf("%s:\n", name)
+		for _, profile := range manager.GetProfiles(name) {
+			fmt.Printf("  %s\n", profile)
+		}
+	}
+}
+
+func runHeadlessMode(profileName string, debugMode bool) {
+	attachConsole()
+
+	fmt.Println("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Println("🚀 UNBOUND - Headless CLI Mode")
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	// Ensure dynamic lists exist
+	fmt.Println("Checking for updated bypass lists...")
+	if err := engine.EnsureListsExist(); err != nil {
+		fmt.Printf("Warning: Failed to update lists: %v\n", err)
+	}
+
+	manager, _ := newHeadlessManager(debugMode)
+
+	// The engine name was hardcoded to "Zapret 2 (winws)", so --cli could only
+	// ever work on Windows; on any other platform it aborted with
+	// "engine not found" naming an engine that does not exist there.
+	engineNames := manager.GetEngineNames()
+	if len(engineNames) == 0 {
+		log.Fatalf("No bypass engine is available on %s", runtime.GOOS)
+	}
+	engineName := engineNames[0]
+
+	// Likewise the default profile was a Windows profile name. Fall back to
+	// whatever the active engine actually offers.
+	if profileName == "" {
+		profiles := manager.GetProfiles(engineName)
+		if len(profiles) == 0 {
+			log.Fatalf("Engine %q exposes no profiles", engineName)
+		}
+		profileName = profiles[0]
+	}
+
+	fmt.Printf("Engine:  %s\n", engineName)
+	fmt.Printf("Profile: %s\n", profileName)
+	if debugMode {
+		fmt.Println("Debug: ENABLED")
+	}
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	hasPriv, err := manager.CheckPrivileges()
 	if err != nil {
 		log.Fatalf("Failed to check privileges: %v", err)
 	}
 	if !hasPriv {
-		log.Fatal("Administrator privileges required. Run as administrator.")
+		if runtime.GOOS == "windows" {
+			log.Fatal("Administrator privileges required. Run as administrator.")
+		}
+		log.Fatal("Root privileges required. Re-run with sudo.")
 	}
 
 	ctx := context.Background()
-	if err := manager.Start(ctx, "Zapret 2 (winws)", profileName); err != nil {
+	if err := manager.Start(ctx, engineName, profileName); err != nil {
 		log.Fatalf("Failed to start engine: %v", err)
 	}
 

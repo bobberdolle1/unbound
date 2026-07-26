@@ -29,7 +29,7 @@ func ExtractAssets() (*AssetPaths, error) {
 			return nil, fmt.Errorf("failed to create temp dir: %w", err)
 		}
 	}
-	
+
 	// Extract windivert.filter to config directory
 	configDir, err := GetConfigDir()
 	if err == nil {

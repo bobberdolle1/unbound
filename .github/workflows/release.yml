@@ -1,0 +1,396 @@
+# ============================================================================
+# UNBOUND — Release packaging
+# ============================================================================
+# Builds and packages every shipped target. Correctness checks live in ci.yml;
+# this workflow only runs on tags and manual dispatch so a routine push does
+# not spend half an hour building APKs.
+#
+# Fixed from the previous main.yml, which could not complete:
+#   - GO_VERSION was 1.23 while go.mod requires 1.25
+#   - `go build -o <file> ./...` is an error: -o takes a single package
+#   - the Windows job copied README_RELEASE.txt, a file that does not exist
+#   - setup-node was given `cache: 'frontend'`; the only valid values are
+#     npm, yarn and pnpm
+#   - the Android job used `${$apk##*-}`, which is not valid shell
+#   - the release body was hardcoded v2.0-era text regardless of the tag
+# ============================================================================
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'Publish a GitHub Release (as a draft unless building a tag)?'
+        required: false
+        default: 'false'
+        type: boolean
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  GO_VERSION: '1.25'
+  NODE_VERSION: '20'
+  JAVA_VERSION: '17'
+
+jobs:
+  # ───────────────────────────────────────────────────────────────────────────
+  resolve-version:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: version
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            VER="${GITHUB_REF_NAME#v}"
+          else
+            VER="$(jq -r '.info.productVersion // "0.0.0-dev"' wails.json)"
+          fi
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: $VER"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  build-windows:
+    name: Windows (Wails)
+    runs-on: windows-latest
+    needs: resolve-version
+    env:
+      VERSION: ${{ needs.resolve-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.13.0
+
+      - name: Build
+        run: wails build -clean -o unbound.exe -ldflags "-X unbound/engine.Version=${env:VERSION}"
+        shell: pwsh
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $dist = "release/unbound-v${env:VERSION}-windows-amd64"
+          New-Item -ItemType Directory -Force -Path $dist | Out-Null
+          Copy-Item "build/bin/unbound.exe" $dist
+          # README_RELEASE.txt does not exist in the repository; ship the real
+          # README and licence instead of failing the build on a missing file.
+          Copy-Item "README.md" "$dist/README.md"
+          Copy-Item "LICENSE"   "$dist/LICENSE"
+          Compress-Archive -Path "$dist/*" -DestinationPath "$dist.zip" -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unbound-windows
+          path: release/*.zip
+          retention-days: 30
+
+  # ───────────────────────────────────────────────────────────────────────────
+  build-linux:
+    name: Linux (CLI)
+    runs-on: ubuntu-latest
+    needs: resolve-version
+    env:
+      VERSION: ${{ needs.resolve-version.outputs.version }}
+    strategy:
+      matrix:
+        include:
+          - goarch: amd64
+          - goarch: arm64
+          - goarch: mipsle   # OpenWrt / consumer routers
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # main.go embeds frontend/dist, so this has to happen before go build
+      # even for the headless CLI binary.
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build binary
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+          GOMIPS: softfloat
+          CGO_ENABLED: 0
+        run: |
+          set -euo pipefail
+          mkdir -p build/bin
+          # `-o` names a single output file, so it takes exactly one package.
+          # The previous `go build -o build/bin/unbound-linux ./...` was a hard
+          # error and this job never produced a binary.
+          go build -trimpath \
+            -ldflags="-s -w -X unbound/engine.Version=${VERSION}" \
+            -o "build/bin/unbound-linux-${GOARCH}" .
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          tar -czf "release/unbound-v${VERSION}-linux-${{ matrix.goarch }}.tar.gz" \
+            -C build/bin "unbound-linux-${{ matrix.goarch }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unbound-linux-${{ matrix.goarch }}
+          path: release/*.tar.gz
+          retention-days: 30
+
+  # ───────────────────────────────────────────────────────────────────────────
+  build-macos:
+    name: macOS (Wails universal)
+    runs-on: macos-latest
+    needs: resolve-version
+    env:
+      VERSION: ${{ needs.resolve-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.13.0
+
+      - name: Build
+        run: |
+          wails build -platform darwin/universal -clean \
+            -ldflags "-X unbound/engine.Version=${VERSION}"
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          app="$(find build/bin -maxdepth 1 -name '*.app' | head -1)"
+          if [ -z "$app" ]; then
+            echo "::error::wails build produced no .app bundle"
+            exit 1
+          fi
+          ditto -c -k --sequesterRsrc --keepParent \
+            "$app" "release/unbound-v${VERSION}-macos-universal.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unbound-macos
+          path: release/*.zip
+          retention-days: 30
+
+  # ───────────────────────────────────────────────────────────────────────────
+  build-android:
+    name: Android (Gradle)
+    runs-on: ubuntu-latest
+    needs: resolve-version
+    env:
+      VERSION: ${{ needs.resolve-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: gradle
+
+      - uses: android-actions/setup-android@v3
+
+      # The project has no Gradle wrapper, so the version has to be pinned
+      # here. AGP 8.5.2 (android/build.gradle.kts) requires Gradle 8.7 or
+      # newer; relying on whatever the runner image happens to ship would break
+      # silently whenever that image is updated.
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build APK
+        working-directory: android
+        run: gradle assembleRelease --no-daemon -PunboundVersionName=${{ env.VERSION }}
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          found=0
+          while IFS= read -r apk; do
+            # The old rename used ${$apk##*-}, which is not valid shell syntax
+            # and aborted the step.
+            base="$(basename "$apk" .apk)"
+            cp "$apk" "release/unbound-v${VERSION}-android-${base}.apk"
+            found=1
+          done < <(find android -name '*.apk' -type f)
+          if [ "$found" -eq 0 ]; then
+            echo "::error::Gradle produced no APK"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unbound-android
+          path: release/*.apk
+          retention-days: 30
+
+  # ───────────────────────────────────────────────────────────────────────────
+  build-decky:
+    name: Decky plugin (Steam Deck)
+    runs-on: ubuntu-latest
+    needs: resolve-version
+    env:
+      VERSION: ${{ needs.resolve-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: decky-plugin/package-lock.json
+
+      - name: Build plugin
+        working-directory: decky-plugin
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          tar -czf "release/unbound-v${VERSION}-decky-plugin.tar.gz" \
+            --exclude=node_modules -C decky-plugin .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unbound-decky
+          path: release/*.tar.gz
+          retention-days: 30
+
+  # ───────────────────────────────────────────────────────────────────────────
+  build-magisk:
+    name: Magisk module
+    runs-on: ubuntu-latest
+    needs: resolve-version
+    env:
+      VERSION: ${{ needs.resolve-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Package module
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          cd magisk-module
+          zip -qr "../release/unbound-v${VERSION}-magisk.zip" . \
+            -x '*.git*' -x '*.DS_Store'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unbound-magisk
+          path: release/*.zip
+          retention-days: 30
+
+  # ───────────────────────────────────────────────────────────────────────────
+  release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs:
+      - resolve-version
+      - build-windows
+      - build-linux
+      - build-macos
+      - build-android
+      - build-decky
+      - build-magisk
+    if: >-
+      always() &&
+      (github.ref_type == 'tag' ||
+       (github.event_name == 'workflow_dispatch' && inputs.release))
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Extract release notes from CHANGELOG
+        id: notes
+        env:
+          VERSION: ${{ needs.resolve-version.outputs.version }}
+        run: |
+          set -euo pipefail
+          # The old workflow pasted a fixed v2.0-era announcement into every
+          # release regardless of what was actually being shipped.
+          if awk -v ver="$VERSION" '
+                $0 ~ "^## \\[" ver "\\]" { found = 1; next }
+                found && /^## \[/        { exit }
+                found                    { print }
+              ' CHANGELOG.md > notes.md && [ -s notes.md ]; then
+            echo "Using CHANGELOG entry for $VERSION"
+          else
+            echo "No CHANGELOG entry for $VERSION; falling back to generated notes" >&2
+            printf 'См. полный список изменений ниже.\n' > notes.md
+          fi
+          {
+            echo 'body<<RELEASE_NOTES_EOF'
+            cat notes.md
+            echo 'RELEASE_NOTES_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: List artifacts
+        run: find artifacts/ -type f | sort
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', needs.resolve-version.outputs.version) }}
+          name: "Unbound v${{ needs.resolve-version.outputs.version }}"
+          body: ${{ steps.notes.outputs.body }}
+          files: |
+            artifacts/**/*.zip
+            artifacts/**/*.tar.gz
+            artifacts/**/*.apk
+            artifacts/**/*.ipk
+          draft: ${{ github.ref_type != 'tag' }}
+          prerelease: ${{ contains(needs.resolve-version.outputs.version, 'dev') || contains(needs.resolve-version.outputs.version, 'beta') || contains(needs.resolve-version.outputs.version, 'rc') }}
+          generate_release_notes: true

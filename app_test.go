@@ -47,7 +47,7 @@ func TestSaveBypassList_InvalidPath(t *testing.T) {
 
 func TestReadSaveBypassList_Success(t *testing.T) {
 	app := NewApp()
-	
+
 	// Create mock config/lists dir for testing
 	listsDir, err := engine.GetListsDir()
 	if err != nil {
@@ -56,7 +56,7 @@ func TestReadSaveBypassList_Success(t *testing.T) {
 
 	testFileName := "other.txt"
 	originalPath := filepath.Join(listsDir, testFileName)
-	
+
 	// Backup original content if it exists
 	var backup []byte
 	backupExists := false

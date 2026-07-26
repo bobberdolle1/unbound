@@ -2,8 +2,16 @@
 
 package providers
 
+// NewAutoTuneProvider builds the provider the auto-tuner drives while it
+// benchmarks profiles.
+//
+// This used to `return nil`, so App.AutoTune() on Linux handed a nil
+// BypassProvider to the tuner and the auto-tune button panicked with a nil
+// pointer dereference.
 func NewAutoTuneProvider(binDir, luaDir, listDir string) BypassProvider {
-	// Linux typically uses nfqws or tpws from Zapret. 
-	// For now, return a dummy or a generic provider if available.
-	return nil 
+	binPath, err := ResolveEngineBinary(LinuxEngineBinary, binDir)
+	if err != nil {
+		return nil
+	}
+	return NewZapretLinuxProvider(binPath, listDir)
 }

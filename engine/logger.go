@@ -72,7 +72,7 @@ func NewLogger(maxEntries int, minLevel LogLevel) *Logger {
 	// Try to create log file
 	logDir := filepath.Join(os.TempDir(), "unbound_logs")
 	os.MkdirAll(logDir, 0755)
-	
+
 	logPath := filepath.Join(logDir, fmt.Sprintf("unbound_%s.log", time.Now().Format("2006-01-02")))
 	if file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644); err == nil {
 		logger.logFile = file
@@ -177,7 +177,7 @@ func (l *Logger) Errorf(component, format string, args ...interface{}) {
 func (l *Logger) GetEntries() []LogEntry {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
-	
+
 	entries := make([]LogEntry, len(l.entries))
 	copy(entries, l.entries)
 	return entries
@@ -187,7 +187,7 @@ func (l *Logger) GetEntries() []LogEntry {
 func (l *Logger) GetEntriesFormatted() []string {
 	entries := l.GetEntries()
 	formatted := make([]string, len(entries))
-	
+
 	for i, entry := range entries {
 		formatted[i] = fmt.Sprintf("[%s][%s][%s] %s",
 			entry.Timestamp.Format("15:04:05"),
@@ -195,7 +195,7 @@ func (l *Logger) GetEntriesFormatted() []string {
 			entry.Component,
 			entry.Message)
 	}
-	
+
 	return formatted
 }
 
@@ -203,7 +203,7 @@ func (l *Logger) GetEntriesFormatted() []string {
 func (l *Logger) Close() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	
+
 	if l.logFile != nil {
 		l.logFile.Close()
 		l.logFile = nil

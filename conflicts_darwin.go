@@ -7,53 +7,59 @@ import (
 	"strings"
 )
 
+// conflictingProcesses lists other bypass tools and tunnels that contend with
+// Unbound for the same packet filter hooks or routes.
+//
+// Kill=false entries are reported but never terminated: killing a user's
+// tunnel without asking would drop every connection they have.
+var conflictingProcesses = []struct {
+	Proc string
+	Desc string
+	Kill bool
+}{
+	{"spoofdpi", "SpoofDPI (другой экземпляр)", true},
+	{"goodbyedpi", "GoodbyeDPI", true},
+	{"nfqws", "nfqws", true},
+	{"v2ray", "V2Ray", false},
+	{"xray", "Xray", false},
+	{"sing-box", "sing-box", false},
+	{"clash", "Clash", false},
+	{"shadowsocks", "Shadowsocks", false},
+	{"hiddify", "Hiddify", false},
+}
+
 func checkConflictsImpl() []string {
 	conflicts := []string{}
-
-	type conflictProc struct {
-		Name string
-		Desc string
-	}
-	procs := []conflictProc{
-		{"spoofdpi",      "SpoofDPI (another instance)"},
-		{"goodbyedpi",    "GoodbyeDPI"},
-		{"v2ray",         "V2Ray"},
-		{"clash",         "Clash"},
-		{"shadowsocks",   "Shadowsocks"},
-		{"hiddify",       "Hiddify"},
-	}
-
-	for _, p := range procs {
-		cmd := exec.Command("pgrep", "-x", p.Name)
-		out, _ := cmd.Output()
-		if len(out) > 0 {
-			conflicts = append(conflicts, "⚠️ "+p.Desc+" is running")
+	for _, p := range conflictingProcesses {
+		out, err := exec.Command("pgrep", "-x", p.Proc).Output()
+		if err == nil && len(strings.TrimSpace(string(out))) > 0 {
+			conflicts = append(conflicts, "⚠️ "+p.Desc+" запущен")
 		}
 	}
 
-	// Check for active VPN connections
-	cmd := exec.Command("networksetup", "-listallglobalproxy")
-	out, err := cmd.Output()
-	if err == nil && strings.Contains(string(out), "Enabled") {
-		// Only warn if a non-SOCKS proxy is enabled (e.g., HTTP proxy from a VPN app)
-		conflicts = append(conflicts, "⚠️ System proxy may be in use by another app")
+	if out, err := exec.Command("networksetup", "-listallglobalproxy").Output(); err == nil {
+		if strings.Contains(string(out), "Enabled: Yes") {
+			conflicts = append(conflicts, "⚠️ Системный прокси включён другим приложением")
+		}
 	}
 
 	return conflicts
 }
 
 func killConflictsImpl() error {
-	// Terminate external DPI bypassers
-	procs := []string{"goodbyedpi", "v2ray", "clash", "shadowsocks"}
-
-	for _, p := range procs {
-		cmd := exec.Command("pkill", "-x", p)
-		cmd.Run()
+	for _, p := range conflictingProcesses {
+		if !p.Kill {
+			continue
+		}
+		// SIGTERM so the tool can tear down its own pf anchors; SIGKILL would
+		// strand them and leave the user's networking broken.
+		_ = exec.Command("pkill", "-TERM", "-x", p.Proc).Run()
 	}
 
-	// Disable any active system proxy that might interfere
-	exec.Command("networksetup", "-setwebproxystate", "Wi-Fi", "off").Run()
-	exec.Command("networksetup", "-setsecurewebproxystate", "Wi-Fi", "off").Run()
-
+	// This used to also run `networksetup -setwebproxystate Wi-Fi off`, which
+	// silently rewrote the user's proxy configuration - on the Wi-Fi service
+	// specifically, so it was simultaneously destructive and a no-op on wired
+	// Macs. Conflicting proxies are now reported by checkConflictsImpl and left
+	// for the user to decide about.
 	return nil
 }

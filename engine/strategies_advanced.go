@@ -6,7 +6,7 @@ import "path/filepath"
 func GetAdvancedProfiles(luaDir string) []Profile {
 	listsDir, _ := GetListsDir()
 	windivertDir, _ := GetWinDivertFilterDir()
-	
+
 	return []Profile{
 		{
 			Name: "Universal 2026 (All-in-One)",
@@ -16,7 +16,7 @@ func GetAdvancedProfiles(luaDir string) []Profile {
 				"--wf-raw-part=@" + filepath.ToSlash(filepath.Join(windivertDir, "windivert_part.discord_media.txt")),
 				"--wf-raw-part=@" + filepath.ToSlash(filepath.Join(windivertDir, "windivert_part.stun.txt")),
 				"--wf-raw-part=@" + filepath.ToSlash(filepath.Join(windivertDir, "windivert_part.wireguard.txt")),
-				
+
 				// 1. Block for Discord Voice (UDP)
 				"--filter-udp=443,50000-50100",
 				"--filter-l7=discord,stun",

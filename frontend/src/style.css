@@ -1,5 +1,8 @@
+/* @import rules must come first. The font import used to trail the Tailwind
+   import, so it was emitted after Tailwind's expanded rules and browsers
+   dropped it outright - no custom font ever loaded. */
+@import "./fonts.css";
 @import "tailwindcss";
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Comic+Neue:wght@400;700&family=Permanent+Marker&family=VT323&display=swap');
 
 :root {
   /* Default: Standard White */
@@ -480,7 +483,7 @@ body.theme-skeuomorphic .sketch-input {
 }
 
 
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    CORE APP STYLES
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 

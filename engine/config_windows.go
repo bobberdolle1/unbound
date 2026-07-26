@@ -3,8 +3,8 @@
 package engine
 
 import (
-	"os"
 	"golang.org/x/sys/windows/registry"
+	"os"
 )
 
 const (

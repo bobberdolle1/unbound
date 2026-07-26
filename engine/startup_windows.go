@@ -11,8 +11,6 @@ import (
 	"strings"
 )
 
-
-
 const (
 	taskName        = "UnboundDPIBypass"
 	taskDescription = "Unbound DPI Bypass Engine - Auto-start with elevated privileges"
@@ -21,7 +19,7 @@ const (
 func EnableAutoStart() error {
 	logger := GetLogger()
 	logger.Info("Startup", "Enabling auto-start")
-	
+
 	exePath, err := os.Executable()
 	if err != nil {
 		logger.Errorf("Startup", "Failed to get executable path: %v", err)
@@ -79,7 +77,7 @@ func EnableAutoStart() error {
 func DisableAutoStart() error {
 	logger := GetLogger()
 	logger.Info("Startup", "Disabling auto-start")
-	
+
 	cmd := exec.Command("schtasks.exe", "/Delete", "/TN", taskName, "/F")
 	cmd.SysProcAttr = GetHiddenSysProcAttr()
 	output, err := cmd.CombinedOutput()
@@ -100,7 +98,7 @@ func DisableAutoStart() error {
 func IsAutoStartEnabled() (bool, error) {
 	logger := GetLogger()
 	logger.Debug("Startup", "Checking auto-start status")
-	
+
 	cmd := exec.Command("schtasks.exe", "/Query", "/TN", taskName, "/FO", "LIST")
 	cmd.SysProcAttr = GetHiddenSysProcAttr()
 	output, err := cmd.CombinedOutput()

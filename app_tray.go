@@ -66,7 +66,7 @@ func (a *App) onTrayReady() {
 			case <-mShow.ClickedCh:
 				runtime.WindowUnminimise(a.ctx)
 				runtime.WindowShow(a.ctx)
-			
+
 			case <-mConnect.ClickedCh:
 				// Запуск дефолтного профиля или автотюна
 				settings, _ := a.GetSettings()
