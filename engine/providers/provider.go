@@ -2,6 +2,9 @@ package providers
 
 import "context"
 
+// maxLogLines caps the per-provider log ring buffer.
+const maxLogLines = 500
+
 type Status string
 
 const (

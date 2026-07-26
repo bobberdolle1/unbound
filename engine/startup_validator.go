@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+
+	"unbound/engine/providers"
 )
 
 type ValidationResult struct {
@@ -53,23 +55,39 @@ func (v *StartupValidator) ValidateStartup() *ValidationResult {
 	return result
 }
 
+// validateBinaries checks that the bypass engine is available.
+//
+// Only the Windows build embeds its engine, so requiring the binary to be
+// present inside the extracted asset directory was correct there and wrong
+// everywhere else: on Linux and macOS the file is never bundled, so validation
+// always failed, App.startup() bailed out before registering any provider, and
+// the user was told to "reinstall the application" for a build that had never
+// contained the file. The two validators also disagreed about the macOS binary
+// name (this one wanted "dvtws", providers/validator.go wanted "nfqws").
 func (v *StartupValidator) validateBinaries(result *ValidationResult) {
-	var requiredBinaries []string
-
-	switch runtime.GOOS {
-	case "windows":
-		requiredBinaries = []string{"winws2.exe", "WinDivert.dll", "WinDivert64.sys"}
-	case "linux":
-		requiredBinaries = []string{"nfqws"}
-	case "darwin":
-		requiredBinaries = []string{"dvtws"}
+	if runtime.GOOS == "windows" {
+		for _, binary := range []string{"winws2.exe", "WinDivert.dll", "WinDivert64.sys"} {
+			binPath := filepath.Join(v.assets.BinDir, binary)
+			if _, err := os.Stat(binPath); os.IsNotExist(err) {
+				result.Errors = append(result.Errors, fmt.Sprintf("Critical binary missing: %s", binary))
+			}
+		}
+		return
 	}
 
-	for _, binary := range requiredBinaries {
-		binPath := filepath.Join(v.assets.BinDir, binary)
-		if _, err := os.Stat(binPath); os.IsNotExist(err) {
-			result.Errors = append(result.Errors, fmt.Sprintf("Critical binary missing: %s", binary))
-		}
+	engineBinary := providers.LinuxEngineBinary
+	installHint := "установите пакет zapret или положите nfqws рядом с приложением"
+	if runtime.GOOS == "darwin" {
+		engineBinary = providers.MacOSEngineBinary
+		installHint = "установите zapret (например, через Homebrew)"
+	}
+
+	if _, err := providers.ResolveEngineBinary(engineBinary, v.assets.BinDir); err != nil {
+		// A warning, not an error: the rest of the app - lists editor,
+		// diagnostics, settings - is still usable, and the diagnostics panel
+		// explains exactly what is missing.
+		result.Warnings = append(result.Warnings,
+			fmt.Sprintf("Движок %s не найден: %s", engineBinary, installHint))
 	}
 }
 

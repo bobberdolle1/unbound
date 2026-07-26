@@ -3,79 +3,74 @@
 package main
 
 import (
-	"os/exec"
-	"strings"
+	"os"
+
 	"unbound/engine"
 	"unbound/engine/providers"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-// checkAdminPrivileges on macOS always returns true because we use
-// osascript with administrator privileges at runtime when needed.
+// checkAdminPrivileges reports whether the process can load pf rules and open
+// the divert socket the engine needs.
+//
+// This used to return (true, nil) unconditionally, with a comment claiming
+// macOS escalates via osascript at runtime - which nothing in the codebase
+// actually does. The result was that an unprivileged run passed the privilege
+// gate and then failed inside pfctl with a bare "permission denied", while the
+// README told users to launch with sudo all along.
+//
+// A checkAdminPrivilegesReal() helper next to it did check group membership,
+// but had no callers.
 func checkAdminPrivileges() (bool, error) {
-	// macOS uses osascript for privilege escalation at runtime.
-	// The app itself doesn't need to be launched as root.
-	return true, nil
-}
-
-// checkAdminPrivilegesReal checks if the current user can execute osascript
-// with administrator privileges (i.e., has admin rights).
-func checkAdminPrivilegesReal() (bool, error) {
-	cmd := exec.Command("id", "-Gn")
-	out, err := cmd.Output()
-	if err != nil {
-		return false, err
-	}
-	// Check if user is in the admin group
-	return strings.Contains(string(out), "admin"), nil
+	return os.Geteuid() == 0, nil
 }
 
 func registerOSProviders(a *App, assets *engine.AssetPaths) {
-	macosProvider := providers.NewZapretMacOSProvider(assets.BinDir)
+	logger := engine.GetLogger()
 
-	// Use the callback interface
-	if cbProvider, ok := macosProvider.(providers.BypassProviderWithCallbacks); ok {
-		cbProvider.SetStatusCallback(func(status providers.Status) {
-			runtime.EventsEmit(a.ctx, "status_changed", status)
-		})
-		cbProvider.SetLogCallback(func(log string) {
-			runtime.EventsEmit(a.ctx, "engine_log", log)
-		})
+	// Look beyond the extracted assets: the macOS build does not vendor an
+	// engine, so a Homebrew or manual install has to be discoverable.
+	binPath, err := providers.ResolveEngineBinary(providers.MacOSEngineBinary, assets.BinDir)
+	if err != nil {
+		logger.Errorf("App", "%v", err)
+		engine.GetNotificationManager().Error(
+			"Движок не найден",
+			"Не найден бинарник nfqws. Установите zapret (например, через Homebrew).",
+		)
+		return
+	}
+	logger.Infof("App", "Using engine binary at %s", binPath)
+
+	provider := providers.NewZapretMacOSProvider(binPath)
+
+	cb, ok := provider.(providers.BypassProviderWithCallbacks)
+	if !ok {
+		// The profile registration below used to re-assert this interface
+		// unchecked inside two loops, which would panic rather than degrade.
+		logger.Error("App", "macOS provider does not support callbacks; profiles unavailable")
+		a.manager.Register(provider)
+		return
 	}
 
-	// Register built-in profiles
+	cb.SetStatusCallback(func(status providers.Status) {
+		runtime.EventsEmit(a.ctx, "status_changed", status)
+	})
+	cb.SetLogCallback(func(line string) {
+		runtime.EventsEmit(a.ctx, "engine_log", line)
+	})
+
+	registered := make(map[string]bool)
 	for _, p := range engine.GetProfiles(assets.LuaDir) {
-		macosProvider.(providers.BypassProviderWithCallbacks).RegisterProfile(p.Name, p.Args)
+		cb.RegisterProfile(p.Name, p.Args)
+		registered[p.Name] = true
 	}
 	for _, p := range engine.GetAdvancedProfiles(assets.LuaDir) {
-		macosProvider.(providers.BypassProviderWithCallbacks).RegisterProfile(p.Name, p.Args)
+		if !registered[p.Name] {
+			cb.RegisterProfile(p.Name, p.Args)
+			registered[p.Name] = true
+		}
 	}
 
-	a.manager.Register(macosProvider)
-}
-
-// GetDefaultEngineName returns the default engine name for the tray menu on macOS.
-func GetDefaultEngineName() string {
-	return "SpoofDPI (macOS)"
-}
-
-// GetDiscordCacheDirsToClean returns the Discord cache directories to clean on macOS.
-func GetDiscordCacheDirsToClean() []string {
-	return engine.GetDiscordCacheDirs()
-}
-
-// createAutoTuneProvider creates a provider for AutoTune testing on macOS.
-func (a *App) createAutoTuneProvider() (providers.BypassProvider, []engine.Profile) {
-	assets, _ := engine.ExtractAssets()
-	provider := providers.NewZapretMacOSProvider(assets.BinDir)
-
-	// Register all profiles
-	allProfiles := append(engine.GetProfiles(assets.LuaDir), engine.GetAdvancedProfiles(assets.LuaDir)...)
-	cbProvider := provider.(providers.BypassProviderWithCallbacks)
-	for _, p := range allProfiles {
-		cbProvider.RegisterProfile(p.Name, p.Args)
-	}
-
-	return provider, allProfiles
+	a.manager.Register(provider)
 }

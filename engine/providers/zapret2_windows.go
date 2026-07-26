@@ -1,4 +1,4 @@
-﻿//go:build windows
+//go:build windows
 // +build windows
 
 package providers
@@ -216,7 +216,7 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 	e.status = StatusStarting
 	winwsPath := filepath.Join(e.binPath, "winws2.exe")
 	args := e.getProfileArgsLocked(profileName)
-	
+
 	// Log full command for debugging
 	cmdLine := winwsPath + " " + strings.Join(args, " ")
 	e.addLog(fmt.Sprintf("[CMD] %s", cmdLine))

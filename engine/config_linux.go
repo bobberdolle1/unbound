@@ -1,11 +1,15 @@
 //go:build linux
-// +build linux
 
 package engine
 
-// applyAutoStartSetting is a no-op on Linux.
-// Linux autostart can be implemented via .desktop files in ~/.config/autostart/
-// but is not implemented in this version.
+// applyAutoStartSetting persists the autostart preference.
+//
+// This used to be a no-op with a comment saying .desktop autostart "is not
+// implemented in this version", so SaveSettings silently discarded the user's
+// choice. See startup_linux.go for the implementation.
 func applyAutoStartSetting(enable bool) error {
-	return nil
+	if enable {
+		return EnableAutoStart()
+	}
+	return DisableAutoStart()
 }
