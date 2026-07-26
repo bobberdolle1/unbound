@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { type ExtensionState, type Theme, type ExtensionMode, type ConnectionStatus } from '../types';
+import { type ExtensionState, type Theme, type ExtensionMode } from '../types';
 import { getState, setState, applyTheme } from '../utils/storage';
 import { ConnectToggle } from '../components/ConnectToggle';
 import { ModeSelector } from '../components/ModeSelector';
@@ -25,7 +25,7 @@ export default function App() {
     });
 
     // Listen for state changes from background
-    const handleStorageChange = (changes: Record<string, any>, namespace: string) => {
+    const handleStorageChange = (_changes: Record<string, any>, namespace: string) => {
       if (namespace !== 'local') return;
       
       getState().then((updatedState) => {
