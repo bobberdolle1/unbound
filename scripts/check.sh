@@ -14,6 +14,7 @@
 #   ./scripts/check.sh website    # build the Astro site
 #   ./scripts/check.sh extension  # type-check + build the browser extension
 #   ./scripts/check.sh decky      # build the Steam Deck plugin
+#   ./scripts/check.sh shell      # parse every shell script with its shebang
 #   ./scripts/check.sh --quick    # skip cross-compilation (the slow part)
 #
 # Exit code is non-zero if any check fails, so it is usable as a pre-push hook:
@@ -59,8 +60,8 @@ QUICK=0
 for arg in "$@"; do
     case "$arg" in
         --quick) QUICK=1 ;;
-        go|frontend|website|extension|decky|all) TARGET="$arg" ;;
-        -h|--help) sed -n '2,22p' "$0" | sed 's/^# \?//'; exit 0 ;;
+        go|frontend|website|extension|decky|shell|all) TARGET="$arg" ;;
+        -h|--help) sed -n '2,23p' "$0" | sed 's/^# \?//'; exit 0 ;;
         *) echo "Unknown argument: $arg (try --help)" >&2; exit 2 ;;
     esac
 done
@@ -106,6 +107,38 @@ check_extension() {
             fail "$target build produced no manifest.json"
         fi
     done
+}
+
+# ── Shell scripts ────────────────────────────────────────────────────────────
+# The Magisk module ships scripts that run under Android's mksh but were
+# written with bash arrays (`read -ra`, "${arr[@]}"). mksh has no `read -a`, so
+# the per-app exclusion aborted the script and every bypass rule after it was
+# never installed. Parse each script with the interpreter its shebang names.
+check_shell() {
+    step "Shell scripts"
+
+    local checked=0
+    while IFS= read -r script; do
+        [ -f "$script" ] || continue
+
+        local interp
+        case "$(head -1 "$script")" in
+            *bash*) interp=bash ;;
+            *)      interp=sh ;;   # POSIX sh, the closest stand-in for mksh
+        esac
+        if ! have "$interp"; then
+            continue
+        fi
+
+        if ! run "$interp -n $script" "$interp" -n "$script"; then
+            continue
+        fi
+        checked=$((checked + 1))
+    done <<< "$(git ls-files '*.sh' 2>/dev/null)"
+
+    if [ "$checked" -gt 0 ]; then
+        ok "$checked scripts parsed"
+    fi
 }
 
 # ── Steam Deck plugin ────────────────────────────────────────────────────────
@@ -221,8 +254,9 @@ case "$TARGET" in
     website)   check_website ;;
     extension) check_extension ;;
     decky)     check_decky ;;
+    shell)     check_shell ;;
     go)        check_go ;;
-    all)       check_frontend; check_go; check_website; check_extension; check_decky ;;
+    all)       check_frontend; check_go; check_website; check_extension; check_decky; check_shell ;;
 esac
 
 printf '\n'

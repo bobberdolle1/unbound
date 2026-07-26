@@ -50,8 +50,25 @@ mkdir -p "$MODDIR/etc"
 mkdir -p "$MODDIR/log"
 
 # Extract nfqws binary (pre-compiled for target architecture)
+#
+# Abort if it is missing. binaries/ ships with nothing but a .gitkeep
+# explaining that the binaries "should be placed" there, so a module packaged
+# straight from this repository contains no engine at all. Without this check
+# the cp simply printed an error, installation reported success, and the
+# failure only surfaced later as service.sh trying to exec a file that was
+# never there.
 ui_print "→ Extracting nfqws binary..."
-cp "$MODDIR/binaries/$ARCH_DIR/nfqws" "$MODDIR/bin/nfqws"
+if [ ! -f "$MODDIR/binaries/$ARCH_DIR/nfqws" ]; then
+    ui_print "!"
+    ui_print "! No nfqws binary for $ARCH_DIR in this package."
+    ui_print "! Build it from https://github.com/bol-van/zapret with the"
+    ui_print "! Android NDK and place it at binaries/$ARCH_DIR/nfqws before"
+    ui_print "! packaging the module. See magisk-module/README.md."
+    ui_print "!"
+    abort "! Installation aborted: the module would not work."
+fi
+cp "$MODDIR/binaries/$ARCH_DIR/nfqws" "$MODDIR/bin/nfqws" || \
+    abort "! Failed to copy the nfqws binary."
 chmod 755 "$MODDIR/bin/nfqws"
 
 # Extract iptables/nftables scripts

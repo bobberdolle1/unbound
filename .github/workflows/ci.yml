@@ -191,6 +191,19 @@ jobs:
           done
 
   # ───────────────────────────────────────────────────────────────────────────
+  # Shell scripts — the Magisk module runs under Android's mksh, where bash
+  # arrays silently abort the script mid-way through installing bypass rules
+  # ───────────────────────────────────────────────────────────────────────────
+  shell:
+    name: Shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse each script with the interpreter its shebang names
+        run: ./scripts/check.sh shell
+
+  # ───────────────────────────────────────────────────────────────────────────
   # Steam Deck plugin
   # ───────────────────────────────────────────────────────────────────────────
   decky:
