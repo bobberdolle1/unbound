@@ -12,7 +12,12 @@ PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://github.com/bol-van/zapret.git
-PKG_SOURCE_VERSION:=master
+# Pinned to a tag rather than tracking master. This is a censorship-bypass
+# tool: building whatever upstream HEAD happened to be at package time makes
+# releases irreproducible and means an upstream compromise would land in a
+# shipped .ipk unreviewed. Bump deliberately.
+PKG_SOURCE_VERSION:=87e058624c72863db53bdaf7fb6f16576dddb6ab
+PKG_SOURCE_DATE:=v72.13
 PKG_MIRROR_HASH:=skip
 
 PKG_LICENSE:=GPL-3.0-only

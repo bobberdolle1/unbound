@@ -16,7 +16,43 @@ check_deps() {
 build_engine() {
     echo -e "${CYAN}Building tpws engine ($1)...${NC}"
     cd "$PROJECT_DIR/engine"
-    make -f Makefile.tpws "$1" 2>/dev/null || echo -e "${YELLOW}Engine build skipped (upstream tpws sources needed)${NC}"
+
+    # Makefile.tpws compiles 13 upstream sources (tpws.c, tamper.c, hostlist.c
+    # and friends) that this repository does not vendor - only ios_main.c and
+    # the epoll shim are present. Fetch them before building.
+    #
+    # This step used to swallow the failure with `2>/dev/null || echo
+    # "Engine build skipped"`, so build.sh reported success and went on to
+    # package a .deb containing the tweak but no engine for it to drive.
+    if [ ! -f "tpws/tpws.c" ]; then
+        echo -e "${RED}Upstream tpws sources are missing.${NC}"
+        echo "Fetch them first:"
+        echo "    ./scripts/fetch-tpws.sh"
+        echo "(GPL-3.0 from https://github.com/bol-van/zapret, so not vendored)"
+        exit 1
+    fi
+
+    # Even with the sources present this link cannot succeed yet. tpws.h
+    # declares tpws_init() and tpws_run_loop(), the entry points ios_main.c
+    # and the tvOS engine call, but nothing defines them: upstream exposes a
+    # plain main(), which ios_main.c also defines - so the two collide.
+    #
+    # Finishing the port means splitting upstream's main() into an
+    # init/run-loop pair behind that header. Until then, say so instead of
+    # emitting a package with no working engine in it.
+    if ! grep -rq "tpws_run_loop *(void) *{\|tpws_run_loop(void)$" tpws/*.c 2>/dev/null; then
+        echo -e "${RED}The tpws wrapper API is not implemented.${NC}"
+        echo "tpws.h declares tpws_init()/tpws_run_loop(), but no source defines"
+        echo "them; upstream provides main(), which ios_main.c also defines."
+        echo "Porting that into an init/run-loop pair is still outstanding -"
+        echo "see the iOS/tvOS notes in README.md."
+        exit 1
+    fi
+
+    make -f Makefile.tpws "$1" || {
+        echo -e "${RED}Engine build failed.${NC}"
+        exit 1
+    }
     cd "$PROJECT_DIR"
 }
 
