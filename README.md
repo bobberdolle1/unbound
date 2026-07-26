@@ -194,7 +194,31 @@ go build -trimpath -ldflags="-s -w -X unbound/engine.Version=2.5.0" -o unbound .
 wails build -clean
 ```
 
-Проверки, которые гоняет CI, воспроизводятся локально:
+### Проверки перед коммитом
+
+> ⚠️ **GitHub Actions на репозитории сейчас не работает** (ограничение биллинга на уровне
+> аккаунта), поэтому автоматических проверок на пуш нет. Пока это так, единственное, что
+> стоит между ошибкой и веткой `master`, — прогон на своей машине.
+
+`scripts/check.sh` повторяет `.github/workflows/ci.yml` шаг в шаг:
+
+```bash
+make check        # всё: gofmt, vet под три ОС, тесты с race, кросс-компиляция,
+                  # сборка фронтенда и сайта
+make quick        # то же самое без кросс-компиляции (быстрее в разы)
+
+./scripts/check.sh go        # только Go
+./scripts/check.sh frontend  # только интерфейс
+./scripts/check.sh website   # только сайт
+```
+
+Скрипт возвращает ненулевой код при любой неудаче, поэтому его можно повесить на пуш:
+
+```bash
+make install-hooks    # ln -s ../../scripts/check.sh .git/hooks/pre-push
+```
+
+Отдельные команды, если нужно руками:
 
 ```bash
 gofmt -l .            # должно быть пусто
@@ -205,6 +229,21 @@ go test -race ./...
 GOOS=windows go vet ./...
 GOOS=darwin  go vet ./...
 ```
+
+### Релизы и сайт без Actions
+
+Пока Actions недоступны, `release.yml` и `pages.yml` не запускаются. Делать вручную:
+
+```bash
+make build                    # CLI-бинарник под текущую платформу
+make gui                      # десктопное приложение через Wails
+./build_all.sh <target>       # сборка под конкретную платформу, см. --help
+
+make deploy-site              # опубликовать сайт в ветку gh-pages
+```
+
+Когда биллинг починится, всё это начнёт делаться автоматически — workflow'ы уже в
+репозитории и трогать их не потребуется.
 
 > **Важно:** Инструкции по сборке пакетов для *iOS (theos)*, *Android (gradle)* и *OpenWRT* лежат в соответствующих папках: `/theos`, `/android`, `/openwrt`.
 

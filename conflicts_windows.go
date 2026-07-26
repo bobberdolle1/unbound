@@ -61,3 +61,23 @@ func killConflictsImpl() error {
 
 	return nil
 }
+
+// killOwnEngineImpl force-terminates Unbound's own engine and releases the
+// packet-capture driver.
+//
+// winws2.exe is deliberately absent from conflictingProcesses (it is ours, and
+// KillConflicts must not touch it), so the recovery path needs its own kill.
+func killOwnEngineImpl() error {
+	cmd := exec.Command("taskkill", "/F", "/IM", "winws2.exe")
+	cmd.SysProcAttr = engine.GetHiddenSysProcAttr()
+	// A non-zero exit means it was not running, which is the desired end state.
+	_ = cmd.Run()
+
+	// A wedged engine usually still holds the WinDivert handle; without this
+	// the next start fails to open the driver.
+	reset := exec.Command("sc", "stop", "WinDivert")
+	reset.SysProcAttr = engine.GetHiddenSysProcAttr()
+	_ = reset.Run()
+
+	return nil
+}

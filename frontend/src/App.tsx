@@ -462,9 +462,13 @@ export default function App() {
   const handleKillWinws2 = async () => {
     try {
       await KillWinws2();
-      ShowNotification("Успех", "Все процессы winws2 завершены.");
+      setStatus('Stopped');
+      ShowNotification("Успех", "Движок обхода остановлен.");
     } catch (err) {
+      // Previously the error was only written to the console, so a failed
+      // force-stop looked exactly like a successful one.
       console.error(err);
+      ShowNotification("Ошибка", "Не удалось остановить движок. Подробности в логе.");
     }
   };
 

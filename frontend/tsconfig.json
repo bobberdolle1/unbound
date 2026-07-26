@@ -5,8 +5,9 @@
     "lib": ["DOM", "DOM.Iterable", "ES2022"],
     "allowJs": false,
     "skipLibCheck": true,
-    "esModuleInterop": false,
-    "allowSyntheticDefaultImports": true,
+    // Was false, which TypeScript 7 rejects outright as a deprecated option.
+    // With it on, allowSyntheticDefaultImports is implied and redundant.
+    "esModuleInterop": true,
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
