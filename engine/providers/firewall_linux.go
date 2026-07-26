@@ -168,6 +168,21 @@ func nftPortSet(ports string) string {
 	return "{ " + strings.Join(parts, ", ") + " }"
 }
 
+// nftRule renders one packetFilter as an nft "add rule" statement. Extracted so
+// the live-kernel test can submit exactly what Apply submits, rather than a
+// copy of the format string that could drift away from it.
+func nftRule(table, chain string, pf packetFilter) string {
+	rule := fmt.Sprintf("add rule inet %s %s %s dport %s",
+		table, chain, pf.Proto, nftPortSet(pf.Ports))
+	if pf.HandshakeOnly && pf.Proto == "tcp" {
+		// nft's equivalent of iptables' connbytes: only the first packets of
+		// the original direction, which is all DPI inspects.
+		rule += " ct original packets 1-6"
+	}
+	rule += fmt.Sprintf(" meta mark and 0x40000000 != 0x40000000 queue num %s bypass", nfqueueNum)
+	return rule
+}
+
 func (f *nftablesFirewall) Apply(filters []packetFilter) error {
 	var b strings.Builder
 	// inet covers IPv4 and IPv6 from one table, so IPv6 traffic cannot slip
@@ -176,13 +191,7 @@ func (f *nftablesFirewall) Apply(filters []packetFilter) error {
 	fmt.Fprintf(&b, "add chain inet %s postrouting { type filter hook postrouting priority mangle; policy accept; }\n", nftTable)
 
 	for _, pf := range filters {
-		rule := fmt.Sprintf("add rule inet %s postrouting %s dport %s",
-			nftTable, pf.Proto, nftPortSet(pf.Ports))
-		if pf.HandshakeOnly && pf.Proto == "tcp" {
-			rule += " ct original packets 1-6"
-		}
-		rule += fmt.Sprintf(" meta mark and 0x40000000 != 0x40000000 queue num %s bypass", nfqueueNum)
-		b.WriteString(rule + "\n")
+		b.WriteString(nftRule(nftTable, "postrouting", pf) + "\n")
 	}
 
 	cmd := exec.Command("nft", "-f", "-")

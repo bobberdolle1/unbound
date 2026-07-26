@@ -132,6 +132,17 @@ check_go() {
     run "go vet (host)"  go vet ./...
     run "go test -race"  go test -race ./...
 
+    # The firewall rules are otherwise only compared as strings, which cannot
+    # catch a spec the kernel rejects. These tests hand the generated rules to
+    # the real iptables/nft, in a chain nothing jumps to, so no packet is ever
+    # matched. They need root, so they are skipped for an ordinary run.
+    if [ "$(id -u)" -eq 0 ] && [ "$(uname -s)" = "Linux" ]; then
+        run "live firewall rules" env UNBOUND_FIREWALL_TEST=1 \
+            go test ./engine/providers/ -run Live -count=1
+    else
+        warn "live firewall rule test skipped (needs root on Linux)"
+    fi
+
     # Build tags are the easiest thing to get wrong in this codebase, and a
     # host-only vet will not catch it: the whole reason CI grew a cross-compile
     # matrix is that five files once referenced a Windows-only symbol with no

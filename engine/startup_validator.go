@@ -62,8 +62,11 @@ func (v *StartupValidator) ValidateStartup() *ValidationResult {
 // everywhere else: on Linux and macOS the file is never bundled, so validation
 // always failed, App.startup() bailed out before registering any provider, and
 // the user was told to "reinstall the application" for a build that had never
-// contained the file. The two validators also disagreed about the macOS binary
-// name (this one wanted "dvtws", providers/validator.go wanted "nfqws").
+// contained the file.
+//
+// A second, uncalled copy of this check lived in providers/validator.go and
+// disagreed with this one about the binary names — it wanted "nfqws.exe" on
+// Windows, where the engine is winws2.exe. It has been deleted.
 func (v *StartupValidator) validateBinaries(result *ValidationResult) {
 	if runtime.GOOS == "windows" {
 		for _, binary := range []string{"winws2.exe", "WinDivert.dll", "WinDivert64.sys"} {
@@ -144,17 +147,8 @@ func (v *StartupValidator) validatePermissions(result *ValidationResult) {
 	}
 }
 
-// ValidateAdminPrivileges checks if the application is running with admin rights
-func ValidateAdminPrivileges() (bool, error) {
-	if runtime.GOOS == "windows" {
-		return checkWindowsAdmin()
-	}
-	// For Linux/macOS, check if running as root
-	return os.Geteuid() == 0, nil
-}
-
-func checkWindowsAdmin() (bool, error) {
-	// This will be implemented in app_windows.go to avoid import cycles
-	// For now, return a placeholder
-	return false, fmt.Errorf("admin check not implemented")
-}
+// The privilege check that used to live here (ValidateAdminPrivileges) had no
+// callers and could not have worked: its Windows branch called a
+// checkWindowsAdmin() stub that unconditionally returned
+// "admin check not implemented". The real per-platform checks are
+// checkAdminPrivileges() in app_{windows,linux,darwin}.go.
