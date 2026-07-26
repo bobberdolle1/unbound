@@ -20,12 +20,16 @@ node_modules/
 
 # ─── Build output ───────────────────────────────────────────────────────────
 build/bin/
-dist/
+/dist/
 release/
-frontend/dist/
 website/dist/
 website/.astro/
 target/
+
+# Wails embeds frontend/dist, so `go build` fails on a clean clone unless the
+# directory exists. Keep the placeholder, ignore everything Vite writes there.
+frontend/dist/*
+!frontend/dist/.gitkeep
 *.ipk
 *.apk
 *.aab

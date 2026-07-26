@@ -5,22 +5,25 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
 
-func min(a, b int) int {
-	if a < b {
-		return a
+// testBinaryPath returns a temp path with the executable suffix the host OS
+// expects. Hardcoding ".exe" made these tests Windows-only for no reason.
+func testBinaryPath(name string) string {
+	if runtime.GOOS == "windows" {
+		name += ".exe"
 	}
-	return b
+	return filepath.Join(os.TempDir(), name)
 }
 
 func TestCLIHeadlessMode(t *testing.T) {
 	t.Log("Building temporary test binary...")
 	
-	tempBinary := filepath.Join(os.TempDir(), "temp_unbound_test.exe")
+	tempBinary := testBinaryPath("temp_unbound_test")
 	defer os.Remove(tempBinary)
 	
 	buildCmd := exec.Command("go", "build", "-o", tempBinary, "..")
@@ -149,7 +152,7 @@ func TestCLIHeadlessMode(t *testing.T) {
 func TestCLIWithInvalidProfile(t *testing.T) {
 	t.Log("Building temporary test binary...")
 	
-	tempBinary := filepath.Join(os.TempDir(), "temp_unbound_test2.exe")
+	tempBinary := testBinaryPath("temp_unbound_test2")
 	defer os.Remove(tempBinary)
 	
 	buildCmd := exec.Command("go", "build", "-o", tempBinary, "..")
@@ -179,7 +182,7 @@ func TestCLIWithInvalidProfile(t *testing.T) {
 func TestCLIDebugMode(t *testing.T) {
 	t.Log("Building temporary test binary...")
 	
-	tempBinary := filepath.Join(os.TempDir(), "temp_unbound_test3.exe")
+	tempBinary := testBinaryPath("temp_unbound_test3")
 	defer os.Remove(tempBinary)
 	
 	buildCmd := exec.Command("go", "build", "-o", tempBinary, "..")
