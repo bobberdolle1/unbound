@@ -1024,7 +1024,7 @@ export default function App() {
             </div>
 
             {/* Содержимое настроек */}
-            <div className="px-4 py-2 overflow-y-auto max-h-[55vh] space-y-4 flex-1 pr-2">
+            <div className="px-4 py-2 overflow-y-auto flex-1 max-h-[62vh] space-y-4 pr-1">
               <DoodleCheckbox 
                 id="autoStart" 
                 label="Автозапуск"
@@ -1075,24 +1075,33 @@ export default function App() {
                 onChange={() => setSettings({...settings, secureDns: !settings.secureDns})}
               />
 
-              <div className="flex flex-col gap-2 p-3 bg-white border-2 border-gray-800 rounded-xl relative z-50 shadow-[2px_2px_0_#222]">
+              <div className="flex flex-col gap-2 p-3 bg-white border-2 border-gray-800 rounded-xl relative z-40 shadow-[2px_2px_0_#222]">
                 <div>
                   <span className="text-lg font-bold text-gray-900 block leading-none">Тема интерфейса</span>
-                  <span className="text-xs text-gray-600 block mt-1">Минималистичное оформление (v2.5.0)</span>
+                  <span className="text-xs text-gray-600 block mt-1">Выберите стиль оформления</span>
                 </div>
                 <DoodleSelect
                   value={theme === 'light' ? 'Modern Light' : 
-                         theme === 'liquid-glass' ? 'macOS Glass' : 'Modern Dark'}
+                         theme === 'liquid-glass' ? 'Liquid Glass' :
+                         theme === 'macos26' ? 'macOS Spatial' :
+                         theme === 'doodle' ? 'Doodle Jump' :
+                         theme === 'ghost' ? 'Ghost in the Shell' : 'Modern Dark'}
                   options={[
                     'Modern Dark',
                     'Modern Light', 
-                    'macOS Glass'
+                    'Liquid Glass',
+                    'macOS Spatial',
+                    'Doodle Jump',
+                    'Ghost in the Shell'
                   ]}
                   onChange={(val) => {
                     const themeMap: Record<string, string> = {
                       'Modern Dark': 'dark',
                       'Modern Light': 'light',
-                      'macOS Glass': 'liquid-glass'
+                      'Liquid Glass': 'liquid-glass',
+                      'macOS Spatial': 'macos26',
+                      'Doodle Jump': 'doodle',
+                      'Ghost in the Shell': 'ghost'
                     };
                     setThemeState(themeMap[val] || 'dark');
                   }}
@@ -1100,7 +1109,7 @@ export default function App() {
                 />
               </div>
 
-              <div className="flex flex-col gap-2 p-3 bg-white border-2 border-gray-800 rounded-xl relative z-50 shadow-[2px_2px_0_#222]">
+              <div className="flex flex-col gap-2 p-3 bg-white border-2 border-gray-800 rounded-xl relative z-30 shadow-[2px_2px_0_#222]">
                 <div>
                   <span className="text-lg font-bold text-gray-900 block leading-none">Профиль при запуске</span>
                   <span className="text-xs text-gray-600 block mt-1">Какой профиль загружать при старте?</span>
@@ -1112,63 +1121,64 @@ export default function App() {
                   up={true}
                 />
               </div>
+
+              {/* Действия системы */}
+              <div className="space-y-2 pt-2 border-t-2 border-gray-200">
+                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-1">Системные действия</span>
+                <button 
+                  onClick={handleRunDiagnostics}
+                  className="w-full flex items-center justify-center gap-2 py-2 sketch-box bg-blue-50 hover:bg-blue-100 text-blue-800 font-bold text-sm transition-all duration-150 hover:scale-[1.02] active:scale-[0.98]"
+                >
+                  <SketchyTerminal className="w-4 h-4" />
+                  Диагностика системы
+                </button>
+                <button 
+                  onClick={handleOpenHostlistEditor}
+                  className="w-full flex items-center justify-center gap-2 py-2 sketch-box bg-green-50 hover:bg-green-100 text-green-800 font-bold text-sm transition-all duration-150 hover:scale-[1.02] active:scale-[0.98]"
+                >
+                  <SketchyTerminal className="w-4 h-4 text-green-700" />
+                  Редактор списков обхода
+                </button>
+                <button 
+                  onClick={handleClearCache}
+                  className="w-full flex items-center justify-center gap-2 py-2 sketch-box bg-gray-50 hover:bg-gray-100 text-gray-800 font-bold text-sm transition-all duration-150 hover:scale-[1.02] active:scale-[0.98]"
+                >
+                  <SketchyX className="w-4 h-4" />
+                  Очистить кэш Discord
+                </button>
+                <button 
+                  onClick={handleKillWinws2}
+                  className="w-full flex items-center justify-center gap-2 py-2 sketch-box bg-orange-50 hover:bg-orange-100 text-orange-800 font-bold text-sm transition-all duration-150 hover:scale-[1.02] active:scale-[0.98]"
+                >
+                  <SketchyX className="w-4 h-4" />
+                  {platform === 'darwin' ? 'Остановить движок (nfqws)' : 'Остановить winws2.exe'}
+                </button>
+                <button 
+                  onClick={async () => {
+                    try {
+                      await QuitApp();
+                    } catch (err) {
+                      console.error(err);
+                    }
+                  }}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm transition-all duration-150 hover:scale-[1.02] active:scale-[0.98] shadow-[2px_2px_0_#222] border-2 border-gray-900"
+                >
+                  <SketchyX className="w-4 h-4 text-white" />
+                  Выйти из Unbound (Закрыть приложение)
+                </button>
+              </div>
             </div>
 
-            {/* Подвал настроек */}
-            <div className="px-4 py-2 space-y-2 mb-2 relative z-[60]">
-              <button 
-                onClick={handleRunDiagnostics}
-                className="w-full flex items-center justify-center gap-2 py-2 sketch-box bg-blue-50 hover:bg-blue-100 text-blue-800 font-bold text-sm transition-all duration-150 hover:scale-[1.02] active:scale-[0.98]"
-              >
-                <SketchyTerminal className="w-4 h-4" />
-                Диагностика
-              </button>
-              <button 
-                onClick={handleOpenHostlistEditor}
-                className="w-full flex items-center justify-center gap-2 py-2 sketch-box bg-green-50 hover:bg-green-100 text-green-800 font-bold text-sm transition-all duration-150 hover:scale-[1.02] active:scale-[0.98]"
-              >
-                <SketchyTerminal className="w-4 h-4 text-green-700" />
-                Редактор списков обхода
-              </button>
-              <button 
-                onClick={handleClearCache}
-                className="w-full flex items-center justify-center gap-2 py-2 sketch-box bg-gray-50 hover:bg-gray-100 text-gray-800 font-bold text-sm transition-all duration-150 hover:scale-[1.02] active:scale-[0.98]"
-              >
-                <SketchyX className="w-4 h-4" />
-                Очистить кэш Discord
-              </button>
-              <button 
-                onClick={handleKillWinws2}
-                className="w-full flex items-center justify-center gap-2 py-2 sketch-box bg-orange-50 hover:bg-orange-100 text-orange-800 font-bold text-sm transition-all duration-150 hover:scale-[1.02] active:scale-[0.98]"
-              >
-                <SketchyX className="w-4 h-4" />
-                {platform === 'darwin' ? 'Остановить движок (nfqws)' : 'Остановить winws2.exe'}
-              </button>
-              <button 
-                onClick={async () => {
-                  try {
-                    await QuitApp();
-                  } catch (err) {
-                    console.error(err);
-                  }
-                }}
-                className="w-full flex items-center justify-center gap-2 py-2.5 sketch-box bg-red-600 hover:bg-red-700 text-white font-bold text-sm transition-all duration-150 hover:scale-[1.02] active:scale-[0.98] shadow-[2px_2px_0_#222]"
-              >
-                <SketchyX className="w-4 h-4 text-white" />
-                Выйти из Unbound (Закрыть совсем)
-              </button>
-            </div>
-
-            <div className="flex gap-4 px-4 py-4 mt-2 border-t-2 border-gray-200 relative z-[60]">
+            <div className="flex gap-4 px-4 py-3 mt-1 border-t-2 border-gray-200 relative z-[60] bg-[#fdfdfc]">
               <button
                 onClick={() => setIsSettingsOpen(false)}
-                className="flex-1 py-3 text-xl font-marker text-gray-600 hover:text-gray-900 hover:bg-gray-100 border-2 border-gray-800 rounded-xl shadow-[2px_2px_0_#222] transition-all duration-150 active:translate-y-1 active:shadow-none bg-white hover:scale-[1.02]"
+                className="flex-1 py-2.5 text-lg font-marker text-gray-600 hover:text-gray-900 hover:bg-gray-100 border-2 border-gray-800 rounded-xl shadow-[2px_2px_0_#222] transition-all duration-150 active:translate-y-1 active:shadow-none bg-white hover:scale-[1.02]"
               >
                 Отмена
               </button>
               <button
                 onClick={handleSaveSettings}
-                className="flex-1 py-3 text-xl font-marker doodle-btn transition-all duration-150 hover:scale-[1.02] active:scale-[0.98]"
+                className="flex-1 py-2.5 text-lg font-marker doodle-btn transition-all duration-150 hover:scale-[1.02] active:scale-[0.98]"
               >
                 Сохранить!
               </button>

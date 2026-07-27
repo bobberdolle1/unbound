@@ -312,6 +312,16 @@ func (e *ZapretMacOSProvider) Start(ctx context.Context, profileName string) err
 		return err
 	}
 
+	if e.binPath == "" {
+		if resolved, resolveErr := ResolveEngineBinary(MacOSEngineBinary, ""); resolveErr == nil {
+			e.binPath = resolved
+		} else {
+			e.addLogLocked("Ошибка: бинарник nfqws не найден. Установите zapret (brew install zapret)")
+			e.setStatusLocked(StatusError)
+			return fmt.Errorf("бинарник nfqws не найден. Установите zapret (например, через brew install zapret)")
+		}
+	}
+
 	e.setStatusLocked(StatusStarting)
 	e.addLogLocked(fmt.Sprintf("[%s] Настраиваем pf...", e.Name()))
 

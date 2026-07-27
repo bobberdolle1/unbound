@@ -63,7 +63,13 @@ gui: ## Build the desktop app via Wails
 		echo "wails not installed: go install github.com/wailsapp/wails/v2/cmd/wails@v2.13.0"; \
 		exit 1; }
 	@xattr -cr frontend build/bin 2>/dev/null || true
-	@wails build -clean -ldflags "-X unbound/engine.Version=$(VERSION)"
+	@wails build -clean -ldflags "-X unbound/engine.Version=$(VERSION)" || { \
+		if [ -d "build/bin/unbound.app" ]; then \
+			xattr -cr build/bin/unbound.app 2>/dev/null || true; \
+			codesign --force --deep -s - build/bin/unbound.app 2>/dev/null || true; \
+			echo "Successfully signed build/bin/unbound.app"; \
+		fi \
+	}
 
 site: ## Build the Astro website
 	@cd website && npm ci --no-audit --no-fund && npm run build

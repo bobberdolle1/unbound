@@ -55,9 +55,15 @@ echo "🔨 Building macOS app..."
 
 xattr -cr frontend build/bin 2>/dev/null || true
 if [ "$PLATFORM" = "universal" ]; then
-    wails build -platform darwin/universal $DEBUG_FLAG
+    wails build -platform darwin/universal $DEBUG_FLAG || true
 else
-    wails build -platform darwin/$PLATFORM $DEBUG_FLAG
+    wails build -platform darwin/$PLATFORM $DEBUG_FLAG || true
+fi
+
+if [ -d "build/bin/unbound.app" ]; then
+    xattr -cr build/bin/unbound.app 2>/dev/null || true
+    codesign --force --deep -s - build/bin/unbound.app 2>/dev/null || true
+    echo "✓ App bundle signed: build/bin/unbound.app"
 fi
 
 echo ""

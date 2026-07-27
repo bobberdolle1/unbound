@@ -1,0 +1,3 @@
+# ninja log v5
+0	55	1785160853214918094	CMakeFiles/unbound_tunnel.dir/unbound_tunnel.c.o	73c69d3dd59843e
+56	102	1785160853261583592	/Users/kirill/Documents/unbound/android/app/build/intermediates/cxx/RelWithDebInfo/5e355v59/obj/arm64-v8a/libunbound_tunnel.so	65139c0e13d9d7e9
