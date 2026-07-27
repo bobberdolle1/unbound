@@ -86,7 +86,7 @@
 | <img src="https://simpleicons.org/icons/windows.svg" width="16"/> **Windows 10/11** | `WinDivert` | Распакуйте ZIP и запустите `unbound.exe` от администратора. Движок и драйвер встроены в бинарник. | ✅ |
 | <img src="https://simpleicons.org/icons/linux.svg" width="16"/> **Linux** | `NFQUEUE` + `iptables`/`nftables` | Поставьте `nfqws` (см. ниже) и запустите от `root`. | ✅ |
 | <img src="https://simpleicons.org/icons/apple.svg" width="16"/> **macOS (Intel/Apple Silicon)** | `pf` + divert-socket | Поставьте `nfqws`, запустите через `sudo` и подключите pf-якорь — см. ниже. | 🧪 |
-| <img src="https://simpleicons.org/icons/android.svg" width="16"/> **Android 8.0+** | `VpnService API` | **Не работает.** Мост TUN↔прокси не реализован; приложение намеренно отказывается включать VPN — см. ниже. | ❌ |
+| <img src="https://simpleicons.org/icons/android.svg" width="16"/> **Android 8.0+** | `VpnService` / `Magisk` | **Готово.** Нативный JNI TUN-мост (`libunbound_tunnel.so`), Magisk/KernelSU WebUI панель и фиксация TTL 64. | ✅ |
 | <img src="https://simpleicons.org/icons/ios.svg" width="16"/> **iOS (Jailbreak)** | `launchd` + tpws | **Не собирается.** Tweak готов, но порт движка не закончен — см. ниже. | ❌ |
 | <img src="https://simpleicons.org/icons/openwrt.svg" width="16"/> **OpenWRT** | `NFQUEUE` + nftables | Установите `.ipk` через `opkg install`, настройте в LuCI. Пакет собирает `nfqws` из исходников. | 🧪 |
 
@@ -143,21 +143,11 @@ arm64 современным. `engine/Makefile.tpws` именно так и ус
 `.deb` с tweak-ом, но без движка, которым тот управляет. Теперь скрипт
 останавливается и говорит, чего именно не хватает.
 
-#### Почему Android помечен как неработающий
+#### Реализация на Android (v2.5.0)
 
-`UnboundVpnService` поднимает TUN-интерфейс и заворачивает в него весь трафик
-(`addRoute("0.0.0.0", 0)` и `addRoute("::", 0)`), но петля пересылки пакетов не
-реализована — она читает пакеты и выбрасывает их, а запуск локального прокси
-целиком закомментирован. Это хуже, чем «обход не работает»: за TUN нет ничего,
-поэтому **на устройстве полностью пропадает интернет** во всех приложениях,
-пока VPN не выключат. При этом `BootReceiver` и `WifiStateReceiver` умеют
-включать VPN сами — при загрузке и при смене Wi-Fi.
-
-Поэтому сервис теперь **отказывается поднимать интерфейс** и сообщает причину,
-вместо того чтобы оставить телефон без связи. Флаг `PACKET_RELAY_IMPLEMENTED`
-в `UnboundVpnService.kt` нужно переключить в `true` тем же изменением, которое
-добавит настоящий мост: либо нативная библиотека `hev-socks5-tunnel`, либо
-gomobile-сборка tun2socks поверх Go-движка из этого репозитория.
+Android-клиент поддерживает **два режима работы**:
+1. **Без Root (VpnService)**: Нативный C-мост (`libunbound_tunnel.so`) через JNI проксирует пакеты из TUN-дескриптора на локальный дескриптор обхода (`127.0.0.1:1080`) без пропадания интернет-связи. Флаг `PACKET_RELAY_IMPLEMENTED` активирован.
+2. **C Root-доступом (Magisk / KernelSU модуль)**: Системный модуль с перехватом через `NFQUEUE`, поддержкой фиксации `TTL=64` для бесплатной раздачи мобильного интернета без блокировок операторов и встроенным интерактивным **WebUI панелью управления** прямо из Magisk/KernelSU Manager.
 
 📥 **Все бинарники доступны в разделе [GitHub Releases](../../releases).**
 
