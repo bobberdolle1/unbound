@@ -75,6 +75,20 @@ install-hooks: ## Run the checks automatically before every push
 	@ln -sf ../../scripts/check.sh .git/hooks/pre-push
 	@echo "pre-push hook installed (runs ./scripts/check.sh)"
 
+magisk-module: ## Build and package the Magisk system module ZIP
+	@./scripts/build-magisk-binaries.sh
+	@./scripts/package-magisk-module.sh
+
+android-app: ## Assemble the Android APK
+	@cd android && gradle assembleDebug
+
+check-android: magisk-module ## Test Magisk scripts and Android configuration
+	@sh -n magisk-module/customize.sh
+	@sh -n magisk-module/service.sh
+	@sh -n magisk-module/scripts/iptables_setup.sh
+	@sh -n magisk-module/scripts/iptables_cleanup.sh
+	@echo "Android & Magisk checks passed OK!"
+
 clean: ## Remove build artifacts
-	@rm -rf build/bin frontend/dist/assets website/dist
+	@rm -rf build/bin frontend/dist/assets website/dist UnboundCore-*.zip
 	@echo "cleaned"

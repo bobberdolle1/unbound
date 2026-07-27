@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unbound Core — Magisk / KernelSU WebUI</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="logo-area">
+                <div class="logo-icon">🚀</div>
+                <div>
+                    <h1>UNBOUND CORE</h1>
+                    <p class="subtitle">Magisk / KernelSU System Engine v2.5.0</p>
+                </div>
+            </div>
+            <div class="status-badge" id="statusBadge">
+                <span class="status-dot pulse"></span>
+                <span id="statusText">CHECKING...</span>
+            </div>
+        </header>
+
+        <!-- Status Card -->
+        <section class="card status-card">
+            <div class="card-header">
+                <h2>⚡️ Статус Службы</h2>
+                <span class="version-tag">L3/L4 Netfilter</span>
+            </div>
+            <div class="status-info-grid">
+                <div class="info-item">
+                    <span class="label">Движок DPI</span>
+                    <span class="value" id="engineStatus">nfqws Daemon</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">Режим Иерархии</span>
+                    <span class="value" id="modeStatus">iptables (mangle)</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">Обход Раздачи (TTL 64)</span>
+                    <span class="value active-text" id="ttlStatus">Активен (TTL=64)</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">Фильтр Портов</span>
+                    <span class="value" id="portsStatus">80, 443</span>
+                </div>
+            </div>
+            <div class="action-buttons">
+                <button class="btn btn-primary" id="btnStart">▶️ Запустить</button>
+                <button class="btn btn-warning" id="btnRestart">🔄 Перезапустить</button>
+                <button class="btn btn-danger" id="btnStop">⏹ Остановить</button>
+            </div>
+        </section>
+
+        <!-- Configuration Settings Form -->
+        <section class="card settings-card">
+            <div class="card-header">
+                <h2>⚙️ Настройки Модуля</h2>
+                <span class="badge-blue">unbound.conf</span>
+            </div>
+
+            <form id="configForm">
+                <!-- Tethering & Hotspot Bypass -->
+                <div class="setting-section">
+                    <h3>📡 Бесплатная Раздача (Hotspot Bypass)</h3>
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <strong>Фиксация TTL (Обход раздачи операторов)</strong>
+                            <p>Подменяет TTL=64 для всех устройств, подключенных по Wi-Fi / USB</p>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="fixTtl" checked>
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <strong>Значение TTL</strong>
+                            <p>Рекомендуется 64 для большинства мобильных операторов</p>
+                        </div>
+                        <input type="number" id="ttlValue" class="input-field short" value="64" min="1" max="255">
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <strong>Прозрачный Обход DPI на Хотспоте</strong>
+                            <p>Применять правила десинхронизации трафика на подключенных устройствах</p>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="enableHotspot" checked>
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Engine & Protocol Settings -->
+                <div class="setting-section">
+                    <h3>🛡 Сетевой Движок</h3>
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <strong>Бэкенд Файрвола</strong>
+                            <p>Выберите подсистему ядра для создания правил</p>
+                        </div>
+                        <select id="iptablesMode" class="input-field">
+                            <option value="iptables" selected>iptables (рекомендуется)</option>
+                            <option value="nftables">nftables</option>
+                        </select>
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <strong>Порты для Обработки</strong>
+                            <p>Порты HTTP/HTTPS (через запятую)</p>
+                        </div>
+                        <input type="text" id="filterPorts" class="input-field" value="80,443">
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <strong>Номер очереди NFQUEUE</strong>
+                            <p>Идентификатор очереди в ядре Linux</p>
+                        </div>
+                        <input type="number" id="nfqueueNum" class="input-field short" value="200">
+                    </div>
+
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <strong>Поддержка IPv6</strong>
+                            <p>Перехватывать и модифицировать IPv6 трафик</p>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="enableIpv6" checked>
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- App Exclusion -->
+                <div class="setting-section">
+                    <h3>📱 Исключение Приложений (UID)</h3>
+                    <div class="setting-row vertical">
+                        <div class="setting-label">
+                            <strong>UID Исключённых Приложений</strong>
+                            <p>Приложения с этими UID будут идти напрямую мимо NFQUEUE (через запятую)</p>
+                        </div>
+                        <input type="text" id="excludedUids" class="input-field wide" placeholder="например: 10085, 10092">
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn btn-save" id="btnSaveConfig">💾 Сохранить и Применить</button>
+                </div>
+            </form>
+        </section>
+
+        <!-- Log Viewer -->
+        <section class="card logs-card">
+            <div class="card-header">
+                <h2>📋 Журнал Событий (nfqws.log)</h2>
+                <button class="btn btn-sm" id="btnRefreshLogs">🔄 Обновить</button>
+            </div>
+            <div class="log-container" id="logOutput">
+                [info] Loading nfqws daemon status...
+            </div>
+        </section>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

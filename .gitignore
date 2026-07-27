@@ -33,6 +33,11 @@ frontend/dist/*
 *.ipk
 *.apk
 *.aab
+UnboundCore-*.zip
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
 
 # ─── Test artifacts ─────────────────────────────────────────────────────────
 *.test

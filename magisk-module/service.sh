@@ -35,6 +35,8 @@ FWMARK="0x40000000"
 FWMARK_MASK="0x40000000"
 ENABLE_IPV6=true
 ENABLE_HOTSPOT=true
+FIX_TTL=true
+TTL_VALUE=64
 EXCLUDED_UIDS=""
 DEBUG_MODE=false
 
@@ -62,6 +64,8 @@ if [ -f "$CONFIGFILE" ]; then
             fwmark_mask) FWMARK_MASK="$value" ;;
             enable_ipv6) ENABLE_IPV6="$value" ;;
             enable_hotspot) ENABLE_HOTSPOT="$value" ;;
+            fix_ttl) FIX_TTL="$value" ;;
+            ttl_value) TTL_VALUE="$value" ;;
             excluded_uids) EXCLUDED_UIDS="$value" ;;
             debug_mode) DEBUG_MODE="$value" ;;
         esac
@@ -105,16 +109,36 @@ setup_iptables_rules() {
     # Flush existing Unbound rules
     $IPT -t mangle -F UNBOUND_OUTPUT 2>/dev/null
     $IPT -t mangle -F UNBOUND_FORWARD 2>/dev/null
+    $IPT -t mangle -F UNBOUND_PREROUTING 2>/dev/null
     $IPT -t mangle -X UNBOUND_OUTPUT 2>/dev/null
     $IPT -t mangle -X UNBOUND_FORWARD 2>/dev/null
+    $IPT -t mangle -X UNBOUND_PREROUTING 2>/dev/null
 
     # Create chains
-    $IPT -t mangle -N UNBOUND_OUTPUT
-    $IPT -t mangle -N UNBOUND_FORWARD
+    $IPT -t mangle -N UNBOUND_OUTPUT 2>/dev/null
+    $IPT -t mangle -N UNBOUND_FORWARD 2>/dev/null
+    $IPT -t mangle -N UNBOUND_PREROUTING 2>/dev/null
 
     # Jump to Unbound chains from main chains
-    $IPT -t mangle -A OUTPUT -j UNBOUND_OUTPUT
-    $IPT -t mangle -A FORWARD -j UNBOUND_FORWARD
+    $IPT -t mangle -A OUTPUT -j UNBOUND_OUTPUT 2>/dev/null
+    $IPT -t mangle -A FORWARD -j UNBOUND_FORWARD 2>/dev/null
+    $IPT -t mangle -A PREROUTING -j UNBOUND_PREROUTING 2>/dev/null
+
+    # =========================================================================
+    # TTL 64 Fix for Free Tethering (Carrier Restriction Bypass)
+    # =========================================================================
+    if [ "$FIX_TTL" = "true" ]; then
+        log "TTL Fix enabled: setting TTL=$TTL_VALUE on incoming tethered traffic"
+        $IPT -t mangle -A UNBOUND_PREROUTING -j TTL --ttl-set "$TTL_VALUE" 2>/dev/null || \
+        $IPT -t mangle -A UNBOUND_PREROUTING -j HL --hl-set "$TTL_VALUE" 2>/dev/null || true
+        
+        if [ "$ENABLE_IPV6" = "true" ]; then
+            $IPT6 -t mangle -N UNBOUND_PREROUTING6 2>/dev/null
+            $IPT6 -t mangle -F UNBOUND_PREROUTING6 2>/dev/null
+            $IPT6 -t mangle -A PREROUTING -j UNBOUND_PREROUTING6 2>/dev/null
+            $IPT6 -t mangle -A UNBOUND_PREROUTING6 -j HL --hl-set "$TTL_VALUE" 2>/dev/null || true
+        fi
+    fi
 
     # =========================================================================
     # Per-App Exclusion (UID-based)
@@ -199,6 +223,15 @@ setup_nftables_rules() {
 
     $NFT add chain inet unbound output { type filter hook output priority -150 \; }
     $NFT add chain inet unbound forward { type filter hook forward priority -150 \; }
+
+    if [ "$FIX_TTL" = "true" ]; then
+        log "Adding TTL fix rule to nftables (TTL=$TTL_VALUE)"
+        $NFT add chain inet unbound prerouting { type filter hook prerouting priority -150 \; }
+        $NFT add rule inet unbound prerouting ip ttl set "$TTL_VALUE" 2>/dev/null || true
+        if [ "$ENABLE_IPV6" = "true" ]; then
+            $NFT add rule inet unbound prerouting ip6 hoplimit set "$TTL_VALUE" 2>/dev/null || true
+        fi
+    fi
 
     # Per-app exclusion
     if [ -n "$EXCLUDED_UIDS" ]; then

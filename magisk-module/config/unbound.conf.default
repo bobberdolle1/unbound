@@ -42,6 +42,10 @@ enable_ipv6=true
 # Enable hotspot/tethering forwarding
 enable_hotspot=true
 
+# Fix TTL to bypass carrier tethering restrictions (default: 64)
+fix_ttl=true
+ttl_value=64
+
 # Excluded app UIDs (comma-separated, leave empty for none)
 # Find UIDs with: ls /data/data/ | grep <package_name>
 # Example: excluded_uids=10085,10092,10103
