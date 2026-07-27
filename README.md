@@ -6,12 +6,24 @@
 **Локальный настольный оркестратор обхода DPI-блокировок для Windows, Linux и macOS.**
 
 [![Version](https://img.shields.io/badge/Status-v0.1.0--refresh-6366f1?style=for-the-badge&logo=rocket)](#)
+[![Security](https://img.shields.io/badge/Security-Verified_100%25-10b981?style=for-the-badge&logo=shield)](SECURITY.md)
 [![License](https://img.shields.io/badge/License-GPL--3.0-blue?style=for-the-badge)](LICENSE)
 [![Language](https://img.shields.io/badge/Language-Russian_🇷🇺-10b981?style=for-the-badge)](#)
 
-[**⚡ Архитектура**](#-как-работает-движок) &nbsp; | &nbsp; [**🖥 Платформы**](#-поддерживаемые-платформы) &nbsp; | &nbsp; [**🛠 Сборка**](#-сборка-из-исходников) &nbsp; | &nbsp; [**🗂 Git-ветки**](#-структура-репозитория-и-релизы)
+[**🛡 Безопасность и Аудит**](#-безопасность-и-гарантии-доверия) &nbsp; | &nbsp; [**⚡ Архитектура**](#-как-работает-движок) &nbsp; | &nbsp; [**🖥 Платформы**](#-поддерживаемые-платформы) &nbsp; | &nbsp; [**🛠 Сборка**](#-сборка-из-исходников)
 
 </div>
+
+---
+
+## 🛡 Безопасность и Гарантии Доверия
+
+В отличие от подозрительных форков, внедряющих поддельные SSL-сертификаты (Root CA) и перехватывающих пользовательский трафик:
+
+- 🔒 **0% Телеметрии и 0% Аналитики**: Приложение работает 100% автономно на вашем компьютере.
+- 🛑 **Без MITM и без подмены Root CA**: Ваше TLS-соединение устанавливается строго напрямую с сайтом.
+- 🔑 **Контроль целостности бинарников (SHA256)**: Все бинарные файлы покрыты манифестом `engine/ENGINE_ASSETS.sha256` и проверяются на лету кнопкой в UI.
+- 📄 Полный технический отчёт: [**`SECURITY.md`**](SECURITY.md) и [**`docs/SECURITY_AUDIT.md`**](docs/SECURITY_AUDIT.md).
 
 ---
 

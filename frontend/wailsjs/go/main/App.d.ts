@@ -75,3 +75,4 @@ export function ShowWindowFromTray():Promise<void>;
 export function StartEngine(arg1:string,arg2:string):Promise<void>;
 
 export function StopEngine():Promise<void>;
+export function VerifyEngineAssets():Promise<engine.AssetVerificationResult>;

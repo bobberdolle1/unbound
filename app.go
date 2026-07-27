@@ -584,3 +584,6 @@ func (a *App) SetSecureDNS(enabled bool) error {
 func (a *App) IsSecureDNSEnabled() bool {
 	return isSecureDNSEnabledImpl()
 }
+func (a *App) VerifyEngineAssets() engine.AssetVerificationResult {
+	return engine.VerifyAssets()
+}

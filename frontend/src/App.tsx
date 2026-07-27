@@ -8,7 +8,7 @@ import { DoodleSelect } from './components/DoodleSelect';
 import { DoodleCheckbox } from './components/DoodleCheckbox';
 import { PingChart } from './components/PingChart';
 
-import { GetEngineNames, GetProfiles, StartEngine, StopEngine, GetLogs, AutoTune, CancelAutoTune, GetSettings, SaveSettings, GetLivePing, ShowNotification, EnableAutoStart, DisableAutoStart, IsAutoStartEnabled, CheckConflicts, KillConflicts, CheckPrivileges, RunDiagnostics, ClearDiscordCache, KillWinws2, QuitApp, GetAppVersion, GetOSPlatform, HideWindowToTray, GetBypassLists, ReadBypassList, SaveBypassList, ExportLogs, SaveCustomScript, LoadCustomScript } from '../wailsjs/go/main/App';
+import { GetEngineNames, GetProfiles, StartEngine, StopEngine, GetLogs, AutoTune, CancelAutoTune, GetSettings, SaveSettings, GetLivePing, ShowNotification, EnableAutoStart, DisableAutoStart, IsAutoStartEnabled, CheckConflicts, KillConflicts, CheckPrivileges, RunDiagnostics, ClearDiscordCache, KillWinws2, QuitApp, GetAppVersion, GetOSPlatform, HideWindowToTray, GetBypassLists, ReadBypassList, SaveBypassList, ExportLogs, SaveCustomScript, LoadCustomScript, VerifyEngineAssets } from '../wailsjs/go/main/App';
 import { EventsOn, WindowMinimise } from '../wailsjs/runtime/runtime';
 
 export default function App() {
@@ -68,7 +68,40 @@ export default function App() {
   const [luaCode, setLuaCode] = useState<string>('');
   const [appVersion, setAppVersion] = useState<string>('');
   const [platform, setPlatform] = useState<string>('');
+  const [isVerifyingAssets, setIsVerifyingAssets] = useState<boolean>(false);
 
+  const handleVerifyAssets = async () => {
+    setIsVerifyingAssets(true);
+    try {
+      const res = await VerifyEngineAssets();
+      const id = Date.now();
+      if (res.verified) {
+        setToasts(prev => [...prev, {
+          id,
+          type: 'success',
+          title: 'Безопасность подтверждена',
+          message: `Проверено ${res.totalFiles} файлов. Все SHA256 хеши совпадают!`
+        }]);
+      } else {
+        setToasts(prev => [...prev, {
+          id,
+          type: 'error',
+          title: 'Ошибка целостности',
+          message: res.error || 'Некоторые файлы повреждены.'
+        }]);
+      }
+    } catch (err: any) {
+      const id = Date.now();
+      setToasts(prev => [...prev, {
+        id,
+        type: 'error',
+        title: 'Ошибка проверки',
+        message: err?.message || 'Не удалось выполнить проверку.'
+      }]);
+    } finally {
+      setIsVerifyingAssets(false);
+    }
+  };
   const openLuaEditor = async () => {
     try {
       const code = await LoadCustomScript();
@@ -1169,6 +1202,14 @@ export default function App() {
                 >
                   <SketchyTerminal className="w-4 h-4 text-green-700" />
                   Редактор списков обхода
+                </button>
+                <button 
+                  onClick={handleVerifyAssets}
+                  disabled={isVerifyingAssets}
+                  className="w-full flex items-center justify-center gap-2 py-2 sketch-box bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-sm transition-all duration-150 hover:scale-[1.02] active:scale-[0.98]"
+                >
+                  <SketchyStar className="w-4 h-4 text-emerald-600" />
+                  {isVerifyingAssets ? 'Проверка хешей...' : 'Проверить целостность файлов (SHA256)'}
                 </button>
                 <button 
                   onClick={handleClearCache}

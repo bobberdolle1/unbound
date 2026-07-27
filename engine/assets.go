@@ -1,14 +1,17 @@
 package engine
 
 import (
+	"crypto/sha256"
 	"embed"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
-//go:embed core_bin/* lua_scripts/* lists/* windivert.filter/*
+//go:embed core_bin/* lua_scripts/* lists/* windivert.filter/* ENGINE_ASSETS.sha256
 var EmbeddedAssets embed.FS
 
 type AssetPaths struct {
@@ -126,4 +129,47 @@ func ExtractAssets() (*AssetPaths, error) {
 	}
 
 	return &AssetPaths{BinDir: binDir, LuaDir: luaDir, ListDir: listDir}, nil
+}
+
+type AssetVerificationResult struct {
+	TotalFiles int    `json:"totalFiles"`
+	Verified   bool   `json:"verified"`
+	Error      string `json:"error"`
+}
+
+func VerifyAssets() AssetVerificationResult {
+	manifestBytes, err := EmbeddedAssets.ReadFile("ENGINE_ASSETS.sha256")
+	if err != nil {
+		return AssetVerificationResult{Verified: false, Error: "Не удалось прочитать манифест ENGINE_ASSETS.sha256"}
+	}
+
+	lines := strings.Split(string(manifestBytes), "\n")
+	total := 0
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) < 2 {
+			continue
+		}
+		expectedHash := parts[0]
+		relPath := parts[1]
+
+		embedPath := strings.TrimPrefix(relPath, "engine/")
+		fileData, err := EmbeddedAssets.ReadFile(embedPath)
+		if err != nil {
+			return AssetVerificationResult{Verified: false, Error: fmt.Sprintf("Отсутствует файл %s", relPath)}
+		}
+
+		hash := sha256.Sum256(fileData)
+		actualHash := hex.EncodeToString(hash[:])
+		if actualHash != expectedHash {
+			return AssetVerificationResult{Verified: false, Error: fmt.Sprintf("Хеш %s не совпадает", relPath)}
+		}
+		total++
+	}
+
+	return AssetVerificationResult{TotalFiles: total, Verified: true}
 }

@@ -149,3 +149,6 @@ export function StartEngine(arg1, arg2) {
 export function StopEngine() {
   return window['go']['main']['App']['StopEngine']();
 }
+export function VerifyEngineAssets() {
+  return window['go']['main']['App']['VerifyEngineAssets']();
+}
