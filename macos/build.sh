@@ -31,10 +31,14 @@ if ! command -v wails &> /dev/null; then
     exit 1
 fi
 
-# Check nfqws (zapret) availability
-if ! command -v nfqws &> /dev/null && [ ! -f "/opt/homebrew/bin/nfqws" ] && [ ! -f "/usr/local/bin/nfqws" ]; then
-    echo "⚠️  nfqws binary not found in PATH or standard locations"
-    echo "   Install zapret: brew install zapret (or via manual installer)"
+# Check engine binary availability
+if [ -f "engine/core_bin/darwin/tpws" ]; then
+    echo "✓ Bundled macOS tpws binary detected in engine/core_bin/darwin/tpws"
+elif command -v tpws &> /dev/null || [ -f "/opt/homebrew/bin/tpws" ] || [ -f "/usr/local/bin/tpws" ]; then
+    echo "✓ System tpws binary detected"
+else
+    echo "⚠️  tpws binary not found in PATH or standard locations"
+    echo "   Install zapret: brew install zapret (or build manually)"
 fi
 
 # Build frontend
@@ -53,16 +57,16 @@ fi
 echo ""
 echo "🔨 Building macOS app..."
 
-xattr -cr frontend build/bin 2>/dev/null || true
+xattr -cr . 2>/dev/null || true
 if [ "$PLATFORM" = "universal" ]; then
-    wails build -platform darwin/universal $DEBUG_FLAG || true
+    wails build -platform darwin/universal $DEBUG_FLAG -ldflags "-X unbound/engine.Version=0.1.0-refresh" || true
 else
-    wails build -platform darwin/$PLATFORM $DEBUG_FLAG || true
+    wails build -platform darwin/$PLATFORM $DEBUG_FLAG -ldflags "-X unbound/engine.Version=0.1.0-refresh" || true
 fi
 
 if [ -d "build/bin/unbound.app" ]; then
-    xattr -cr build/bin/unbound.app 2>/dev/null || true
-    codesign --force --deep -s - build/bin/unbound.app 2>/dev/null || true
+    xattr -cr "build/bin/unbound.app" 2>/dev/null || true
+    codesign --force --deep -s - "build/bin/unbound.app" 2>/dev/null || true
     echo "✓ App bundle signed: build/bin/unbound.app"
 fi
 

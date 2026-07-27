@@ -62,9 +62,9 @@ func checkEngineStatusMac() DiagnosticResult {
 
 	binPath, err := providers.ResolveEngineBinary(providers.MacOSEngineBinary, assetsBinDir)
 	if err == nil && binPath != "" {
-		return DiagnosticResult{"Engine Binary", "OK", "nfqws found at: " + binPath, false}
+		return DiagnosticResult{"Engine Binary", "OK", providers.MacOSEngineBinary + " found at: " + binPath, false}
 	}
-	return DiagnosticResult{"Engine Binary", "Warning", "nfqws binary not found. Install zapret (e.g., via Homebrew).", true}
+	return DiagnosticResult{"Engine Binary", "Warning", providers.MacOSEngineBinary + " binary not found. Install zapret (e.g., via Homebrew: brew install zapret).", true}
 }
 
 func checkPfAnchorStatus() DiagnosticResult {

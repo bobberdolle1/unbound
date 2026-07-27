@@ -47,10 +47,19 @@ var searchPathsByOS = map[string][]string{
 		"/usr/lib/zapret",
 	},
 	"darwin": {
+		"/opt/homebrew/bin",
+		"/opt/homebrew/sbin",
+		"/opt/homebrew/opt/zapret/bin",
+		"/opt/homebrew/opt/zapret/sbin",
 		"/usr/local/bin",
-		"/opt/homebrew/bin", // Homebrew on Apple Silicon
+		"/usr/local/sbin",
 		"/usr/local/opt/zapret/bin",
+		"/usr/local/opt/zapret/sbin",
 		"/opt/zapret",
+		"/opt/zapret/bin",
+		"/opt/zapret/binaries/x86_64",
+		"/opt/zapret/binaries/aarch64",
+		"/opt/zapret/binaries/mac64",
 	},
 }
 

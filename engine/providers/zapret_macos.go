@@ -184,7 +184,19 @@ func NewZapretMacOSProvider(binPath string) BypassProvider {
 func (e *ZapretMacOSProvider) Name() string { return "Zapret (tpws)" }
 
 func (e *ZapretMacOSProvider) CheckPrivileges() (bool, error) {
-	return os.Geteuid() == 0, nil
+	if os.Geteuid() == 0 {
+		return true, nil
+	}
+	out, err := exec.Command("id", "-Gn").Output()
+	if err == nil {
+		groups := strings.Fields(string(out))
+		for _, g := range groups {
+			if g == "admin" || g == "wheel" {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 func (e *ZapretMacOSProvider) GetProfiles() []string {
@@ -258,8 +270,11 @@ func (e *ZapretMacOSProvider) resolveProfile(name string) (macProfile, error) {
 // runPfctlPrivileged runs pfctl, prompting for admin password via osascript if
 // needed. It uses a non-interactive timeout to avoid blocking shutdown.
 func runPfctlPrivileged(stdinInput string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	if os.Geteuid() == 0 {
-		cmd := exec.Command("pfctl", args...)
+		cmd := exec.CommandContext(ctx, "pfctl", args...)
 		if stdinInput != "" {
 			cmd.Stdin = strings.NewReader(stdinInput)
 		}
@@ -278,8 +293,6 @@ func runPfctlPrivileged(stdinInput string, args ...string) ([]byte, error) {
 	escapedScript = strings.ReplaceAll(escapedScript, `"`, `\"`)
 	script := fmt.Sprintf(`do shell script "%s" with administrator privileges`, escapedScript)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
 	return exec.CommandContext(ctx, "osascript", "-e", script).CombinedOutput()
 }
 
@@ -306,8 +319,8 @@ func ensurePfConfAnchors() (bool, error) {
 
 	lines := strings.Split(content, "\n")
 	var out []string
-	rdrInserted := false
-	anchorInserted := false
+	rdrInserted := !needsRdr
+	anchorInserted := !needsAnchor
 
 	for _, line := range lines {
 		// Insert rdr-anchor before the com.apple rdr-anchor line.
@@ -346,6 +359,12 @@ func ensurePfConfAnchors() (bool, error) {
 		return false, fmt.Errorf("запись в temp-файл: %w", err)
 	}
 	tmpFile.Close()
+	if os.Geteuid() == 0 {
+		if err := os.WriteFile(pfConf, []byte(newContent), 0644); err != nil {
+			return false, fmt.Errorf("не удалось записать %s: %w", pfConf, err)
+		}
+		return true, nil
+	}
 
 	// Copy via privileged shell.
 	cpCmd := fmt.Sprintf("cp %s %s", tmpPath, pfConf)
@@ -404,9 +423,7 @@ func (e *ZapretMacOSProvider) flushPfAnchor() {
 	}
 	e.anchorLoaded = false
 	e.addLogLocked("Убираем правила pf...")
-	go func() {
-		_, _ = runPfctlPrivileged("", "-a", pfAnchorName, "-F", "all")
-	}()
+	_, _ = runPfctlPrivileged("", "-a", pfAnchorName, "-F", "all")
 }
 
 func (e *ZapretMacOSProvider) anchorIsReferenced() bool {

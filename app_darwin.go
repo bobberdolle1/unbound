@@ -19,8 +19,13 @@ func checkAdminPrivileges() (bool, error) {
 		return true, nil
 	}
 	out, err := exec.Command("id", "-Gn").Output()
-	if err == nil && strings.Contains(string(out), "admin") {
-		return true, nil
+	if err == nil {
+		groups := strings.Fields(string(out))
+		for _, g := range groups {
+			if g == "admin" || g == "wheel" {
+				return true, nil
+			}
+		}
 	}
 	return false, nil
 }

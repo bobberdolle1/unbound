@@ -3,6 +3,7 @@
 package main
 
 import (
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -71,5 +72,16 @@ func killConflictsImpl() error {
 // user runs independently. Stop() already signals the process group we own, and
 // an orphan from an earlier crash is surfaced by CheckConflicts instead.
 func killOwnEngineImpl() error {
+	// Force-kill any orphaned tpws or nfqws processes
+	_ = exec.Command("pkill", "-KILL", "-x", "tpws").Run()
+	_ = exec.Command("pkill", "-KILL", "-x", "nfqws").Run()
+
+	// Flush our pf anchor
+	if os.Geteuid() == 0 {
+		_ = exec.Command("pfctl", "-a", "com.unbound.zapret", "-F", "all").Run()
+	} else {
+		script := `do shell script "pfctl -a com.unbound.zapret -F all" with administrator privileges`
+		_ = exec.Command("osascript", "-e", script).Run()
+	}
 	return nil
 }
