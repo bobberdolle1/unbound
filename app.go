@@ -430,6 +430,17 @@ func (a *App) IsAutoStartEnabled() bool {
 	return enabled
 }
 
+// QuitApp stops the engine and terminates the application process cleanly.
+func (a *App) QuitApp() {
+	logger := engine.GetLogger()
+	logger.Info("App", "QuitApp requested by user")
+	a.manager.Stop()
+	time.Sleep(200 * time.Millisecond)
+	wailsruntime.Quit(a.ctx)
+	time.Sleep(500 * time.Millisecond)
+	os.Exit(0)
+}
+
 func (a *App) CheckPrivileges() bool {
 	hasPriv, err := checkAdminPrivileges()
 	if err != nil {

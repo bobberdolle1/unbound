@@ -4,6 +4,8 @@ package main
 
 import (
 	"os"
+	"os/exec"
+	"strings"
 
 	"unbound/engine"
 	"unbound/engine/providers"
@@ -11,19 +13,16 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-// checkAdminPrivileges reports whether the process can load pf rules and open
-// the divert socket the engine needs.
-//
-// This used to return (true, nil) unconditionally, with a comment claiming
-// macOS escalates via osascript at runtime - which nothing in the codebase
-// actually does. The result was that an unprivileged run passed the privilege
-// gate and then failed inside pfctl with a bare "permission denied", while the
-// README told users to launch with sudo all along.
-//
-// A checkAdminPrivilegesReal() helper next to it did check group membership,
-// but had no callers.
+// checkAdminPrivileges reports whether the process is root or the user has admin rights.
 func checkAdminPrivileges() (bool, error) {
-	return os.Geteuid() == 0, nil
+	if os.Geteuid() == 0 {
+		return true, nil
+	}
+	out, err := exec.Command("id", "-Gn").Output()
+	if err == nil && strings.Contains(string(out), "admin") {
+		return true, nil
+	}
+	return false, nil
 }
 
 func registerOSProviders(a *App, assets *engine.AssetPaths) {

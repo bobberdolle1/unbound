@@ -8,7 +8,7 @@ import { DoodleSelect } from './components/DoodleSelect';
 import { DoodleCheckbox } from './components/DoodleCheckbox';
 import { PingChart } from './components/PingChart';
 
-import { GetEngineNames, GetProfiles, StartEngine, StopEngine, GetLogs, AutoTune, CancelAutoTune, GetSettings, SaveSettings, GetLivePing, ShowNotification, EnableAutoStart, DisableAutoStart, IsAutoStartEnabled, CheckConflicts, KillConflicts, CheckPrivileges, RunDiagnostics, ClearDiscordCache, KillWinws2, GetAppVersion, GetOSPlatform, HideWindowToTray, GetBypassLists, ReadBypassList, SaveBypassList, ExportLogs, SaveCustomScript, LoadCustomScript } from '../wailsjs/go/main/App';
+import { GetEngineNames, GetProfiles, StartEngine, StopEngine, GetLogs, AutoTune, CancelAutoTune, GetSettings, SaveSettings, GetLivePing, ShowNotification, EnableAutoStart, DisableAutoStart, IsAutoStartEnabled, CheckConflicts, KillConflicts, CheckPrivileges, RunDiagnostics, ClearDiscordCache, KillWinws2, QuitApp, GetAppVersion, GetOSPlatform, HideWindowToTray, GetBypassLists, ReadBypassList, SaveBypassList, ExportLogs, SaveCustomScript, LoadCustomScript } from '../wailsjs/go/main/App';
 import { EventsOn, WindowMinimise } from '../wailsjs/runtime/runtime';
 
 export default function App() {
@@ -28,7 +28,7 @@ export default function App() {
   const [diagResults, setDiagResults] = useState<any[]>([]);
   const [isDiagRunning, setIsDiagRunning] = useState<boolean>(false);
   
-  const [theme, setThemeState] = useState<string>(localStorage.getItem('unbound-theme') || 'light');
+  const [theme, setThemeState] = useState<string>(localStorage.getItem('unbound-theme') || 'dark');
   const [settings, setSettings] = useState<{
     autoStart: boolean, 
     startMinimized: boolean, 
@@ -227,9 +227,11 @@ export default function App() {
       GetProfiles(selectedEngine).then((p: string[]) => {
         console.log('[DEBUG] Loaded profiles:', p);
         setProfiles(p || []);
-        if (p && p.length > 0 && !selectedProfile) {
-          console.log('[DEBUG] Setting selectedProfile to:', p[0]);
-          setSelectedProfile(p[0]);
+        if (p && p.length > 0) {
+          if (!selectedProfile || !p.includes(selectedProfile)) {
+            console.log('[DEBUG] Setting selectedProfile to:', p[0]);
+            setSelectedProfile(p[0]);
+          }
         } else if (!p || p.length === 0) {
           console.error('No profiles loaded from backend. Check engine registration.');
         }
@@ -624,9 +626,17 @@ export default function App() {
       )}
       
       {/* 1. ШАПКА */}
-      <div className="flex-none h-[40px] flex items-center justify-between px-5 z-10 border-b-2 border-red-300/60 bg-[#fdfdfc]">
-        <div className="flex items-center gap-2 app-no-drag">
-          <span className="font-marker text-xl text-gray-800 tracking-wider">UNBOUND!</span>
+      <div className="flex-none h-[42px] flex items-center justify-between px-4 z-10 border-b border-[var(--ui-border)] bg-[var(--ui-panel)]">
+        <div className="flex items-center gap-2.5 app-no-drag">
+          <svg width="22" height="22" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="512" height="512" rx="128" fill="#090D16" />
+            <circle cx="256" cy="256" r="200" stroke="#1E293B" strokeWidth="6" />
+            <path d="M 160 336 C 120 296 120 200 176 152 C 232 104 320 112 352 176 C 368 208 352 256 312 288 L 272 320 C 248 336 216 336 192 320 Z" stroke="#F8FAFC" strokeWidth="28" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M 336 160 C 376 200 384 296 328 344 C 272 392 184 384 152 320 C 136 288 152 240 192 208" stroke="#6366F1" strokeWidth="24" strokeLinecap="round" strokeLinejoin="round" />
+            <circle cx="256" cy="256" r="20" fill="#F8FAFC" />
+          </svg>
+          <span className="font-bold text-sm text-[var(--ui-text)] tracking-wider">UNBOUND</span>
+          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">v2.5.0</span>
         </div>
 
         <div className="flex items-center gap-4 text-gray-500 app-no-drag">
@@ -1014,7 +1024,7 @@ export default function App() {
             </div>
 
             {/* Содержимое настроек */}
-            <div className="px-4 py-2 overflow-y-visible space-y-4 flex-1">
+            <div className="px-4 py-2 overflow-y-auto max-h-[55vh] space-y-4 flex-1 pr-2">
               <DoodleCheckbox 
                 id="autoStart" 
                 label="Автозапуск"
@@ -1068,51 +1078,23 @@ export default function App() {
               <div className="flex flex-col gap-2 p-3 bg-white border-2 border-gray-800 rounded-xl relative z-50 shadow-[2px_2px_0_#222]">
                 <div>
                   <span className="text-lg font-bold text-gray-900 block leading-none">Тема интерфейса</span>
-                  <span className="text-xs text-gray-600 block mt-1">Выберите стиль (v2.5.0)</span>
+                  <span className="text-xs text-gray-600 block mt-1">Минималистичное оформление (v2.5.0)</span>
                 </div>
                 <DoodleSelect
-                  value={theme === 'light' ? 'Standard White' : 
-                         theme === 'dark' ? 'Modern Dark' :
-                         theme === 'doodle' ? 'Doodle Jump' :
-                         theme === 'liquid-glass' ? 'Liquid Glass' :
-                         theme === 'win95' ? 'Windows 95' :
-                         theme === 'ghost' ? 'Ghost in the Shell' :
-                         theme === 'skeuomorphic' ? 'iOS 6 Classic' :
-                         theme === 'winxp' ? 'Windows XP' :
-                         theme === 'macos26' ? 'macOS Spatial' :
-                         theme === 'win8' ? 'Windows 8 Metro' :
-                         theme === 'ios26' ? 'iOS 26 Hologram' :
-                         theme === 'gravity' ? 'Interstellar Gravity' : theme}
+                  value={theme === 'light' ? 'Modern Light' : 
+                         theme === 'liquid-glass' ? 'macOS Glass' : 'Modern Dark'}
                   options={[
-                    'Standard White', 
-                    'Modern Dark', 
-                    'Doodle Jump', 
-                    'Liquid Glass', 
-                    'Windows 95', 
-                    'Ghost in the Shell',
-                    'iOS 6 Classic',
-                    'Windows XP',
-                    'macOS Spatial',
-                    'Windows 8 Metro',
-                    'iOS 26 Hologram',
-                    'Interstellar Gravity'
+                    'Modern Dark',
+                    'Modern Light', 
+                    'macOS Glass'
                   ]}
                   onChange={(val) => {
                     const themeMap: Record<string, string> = {
-                      'Standard White': 'light',
                       'Modern Dark': 'dark',
-                      'Doodle Jump': 'doodle',
-                      'Liquid Glass': 'liquid-glass',
-                      'Windows 95': 'win95',
-                      'Ghost in the Shell': 'ghost',
-                      'iOS 6 Classic': 'skeuomorphic',
-                      'Windows XP': 'winxp',
-                      'macOS Spatial': 'macos26',
-                      'Windows 8 Metro': 'win8',
-                      'iOS 26 Hologram': 'ios26',
-                      'Interstellar Gravity': 'gravity'
+                      'Modern Light': 'light',
+                      'macOS Glass': 'liquid-glass'
                     };
-                    setThemeState(themeMap[val]);
+                    setThemeState(themeMap[val] || 'dark');
                   }}
                   up={true}
                 />
@@ -1157,10 +1139,23 @@ export default function App() {
               </button>
               <button 
                 onClick={handleKillWinws2}
-                className="w-full flex items-center justify-center gap-2 py-2 sketch-box bg-red-50 hover:bg-red-100 text-red-800 font-bold text-sm transition-all duration-150 hover:scale-[1.02] active:scale-[0.98]"
+                className="w-full flex items-center justify-center gap-2 py-2 sketch-box bg-orange-50 hover:bg-orange-100 text-orange-800 font-bold text-sm transition-all duration-150 hover:scale-[1.02] active:scale-[0.98]"
               >
                 <SketchyX className="w-4 h-4" />
-                {platform === 'darwin' ? 'Завершить движок (nfqws)' : 'Завершить winws2.exe'}
+                {platform === 'darwin' ? 'Остановить движок (nfqws)' : 'Остановить winws2.exe'}
+              </button>
+              <button 
+                onClick={async () => {
+                  try {
+                    await QuitApp();
+                  } catch (err) {
+                    console.error(err);
+                  }
+                }}
+                className="w-full flex items-center justify-center gap-2 py-2.5 sketch-box bg-red-600 hover:bg-red-700 text-white font-bold text-sm transition-all duration-150 hover:scale-[1.02] active:scale-[0.98] shadow-[2px_2px_0_#222]"
+              >
+                <SketchyX className="w-4 h-4 text-white" />
+                Выйти из Unbound (Закрыть совсем)
               </button>
             </div>
 

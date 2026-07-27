@@ -50,16 +50,16 @@ export function GetEngineNames() {
   return window['go']['main']['App']['GetEngineNames']();
 }
 
-export function GetOSPlatform() {
-  return window['go']['main']['App']['GetOSPlatform']();
-}
-
 export function GetLivePing() {
   return window['go']['main']['App']['GetLivePing']();
 }
 
 export function GetLogs() {
   return window['go']['main']['App']['GetLogs']();
+}
+
+export function GetOSPlatform() {
+  return window['go']['main']['App']['GetOSPlatform']();
 }
 
 export function GetProfiles(arg1) {
@@ -100,6 +100,10 @@ export function KillWinws2() {
 
 export function LoadCustomScript() {
   return window['go']['main']['App']['LoadCustomScript']();
+}
+
+export function QuitApp() {
+  return window['go']['main']['App']['QuitApp']();
 }
 
 export function ReadBypassList(arg1) {

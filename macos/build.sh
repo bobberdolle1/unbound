@@ -53,6 +53,7 @@ fi
 echo ""
 echo "🔨 Building macOS app..."
 
+xattr -cr frontend build/bin 2>/dev/null || true
 if [ "$PLATFORM" = "universal" ]; then
     wails build -platform darwin/universal $DEBUG_FLAG
 else

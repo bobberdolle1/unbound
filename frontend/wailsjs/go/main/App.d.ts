@@ -26,11 +26,11 @@ export function GetBypassLists():Promise<Array<string>>;
 
 export function GetEngineNames():Promise<Array<string>>;
 
-export function GetOSPlatform():Promise<string>;
-
 export function GetLivePing():Promise<Record<string, any>>;
 
 export function GetLogs():Promise<Array<string>>;
+
+export function GetOSPlatform():Promise<string>;
 
 export function GetProfiles(arg1:string):Promise<Array<string>>;
 
@@ -51,6 +51,8 @@ export function KillConflicts():Promise<void>;
 export function KillWinws2():Promise<void>;
 
 export function LoadCustomScript():Promise<string>;
+
+export function QuitApp():Promise<void>;
 
 export function ReadBypassList(arg1:string):Promise<string>;
 

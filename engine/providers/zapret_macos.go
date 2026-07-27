@@ -227,18 +227,36 @@ func (e *ZapretMacOSProvider) resolveProfile(name string) (macProfile, error) {
 // line, so it tried to load itself. Writing root-loaded firewall rules to a
 // predictable world-writable path is also a straightforward local escalation
 // vector.
+func runPfctl(stdinInput string, args ...string) ([]byte, error) {
+	if os.Geteuid() == 0 {
+		cmd := exec.Command("pfctl", args...)
+		if stdinInput != "" {
+			cmd.Stdin = strings.NewReader(stdinInput)
+		}
+		return cmd.CombinedOutput()
+	}
+
+	pfCmd := "pfctl " + strings.Join(args, " ")
+	if stdinInput != "" {
+		escapedRules := strings.ReplaceAll(stdinInput, "'", "'\"'\"'")
+		pfCmd = fmt.Sprintf("echo '%s' | pfctl %s", escapedRules, strings.Join(args, " "))
+	}
+
+	escapedScript := strings.ReplaceAll(pfCmd, `\`, `\\`)
+	escapedScript = strings.ReplaceAll(escapedScript, `"`, `\"`)
+	script := fmt.Sprintf("do shell script \"%s\" with administrator privileges", escapedScript)
+	return exec.Command("osascript", "-e", script).CombinedOutput()
+}
+
 func (e *ZapretMacOSProvider) loadPfAnchor(rules []string) error {
-	if out, err := exec.Command("pfctl", "-e").CombinedOutput(); err != nil {
-		// "pf already enabled" is reported as an error; that is fine.
+	if out, err := runPfctl("", "-e"); err != nil {
 		if !strings.Contains(string(out), "already enabled") {
 			e.addLogLocked("Предупреждение pfctl -e: " + strings.TrimSpace(string(out)))
 		}
 	}
 
 	ruleset := strings.Join(rules, "\n") + "\n"
-	cmd := exec.Command("pfctl", "-a", pfAnchorName, "-f", "-")
-	cmd.Stdin = strings.NewReader(ruleset)
-	if out, err := cmd.CombinedOutput(); err != nil {
+	if out, err := runPfctl(ruleset, "-a", pfAnchorName, "-f", "-"); err != nil {
 		msg := strings.TrimSpace(string(out))
 		if msg == "" {
 			return fmt.Errorf("pfctl: %w", err)
@@ -246,8 +264,6 @@ func (e *ZapretMacOSProvider) loadPfAnchor(rules []string) error {
 		return fmt.Errorf("pfctl: %s", msg)
 	}
 
-	// Anchor rules are inert unless the main ruleset references the anchor.
-	// Say so explicitly rather than appearing to work while diverting nothing.
 	if !e.anchorIsReferenced() {
 		e.addLogLocked(fmt.Sprintf(
 			"ВНИМАНИЕ: якорь %q не подключён в /etc/pf.conf — правила загружены, но не применяются. "+
@@ -258,7 +274,7 @@ func (e *ZapretMacOSProvider) loadPfAnchor(rules []string) error {
 }
 
 func (e *ZapretMacOSProvider) anchorIsReferenced() bool {
-	out, err := exec.Command("pfctl", "-s", "Anchors").Output()
+	out, err := runPfctl("", "-s", "Anchors")
 	if err != nil {
 		return false
 	}
@@ -271,7 +287,7 @@ func (e *ZapretMacOSProvider) flushPfAnchor() {
 	}
 	e.anchorLoaded = false
 	e.addLogLocked("Убираем правила pf...")
-	_ = exec.Command("pfctl", "-a", pfAnchorName, "-F", "all").Run()
+	_, _ = runPfctl("", "-a", pfAnchorName, "-F", "all")
 }
 
 func (e *ZapretMacOSProvider) Start(ctx context.Context, profileName string) error {
