@@ -28,7 +28,7 @@ export default function App() {
   const [diagResults, setDiagResults] = useState<any[]>([]);
   const [isDiagRunning, setIsDiagRunning] = useState<boolean>(false);
   
-  const [theme, setThemeState] = useState<string>(localStorage.getItem('unbound-theme') || 'dark');
+  const [theme, setThemeState] = useState<string>(() => localStorage.getItem('unbound-theme') || 'doodle');
   const [settings, setSettings] = useState<{
     autoStart: boolean, 
     startMinimized: boolean, 
@@ -1094,29 +1094,24 @@ export default function App() {
                   <span className="text-xs block mt-1" style={{ color: 'var(--ui-text-muted)' }}>Выберите стиль оформления</span>
                 </div>
                 <DoodleSelect
-                  value={theme === 'light' ? 'Modern Light' : 
-                         theme === 'liquid-glass' ? 'Liquid Glass' :
-                         theme === 'macos26' ? 'macOS Spatial' :
-                         theme === 'doodle' ? 'Doodle Jump' :
-                         theme === 'ghost' ? 'Ghost in the Shell' : 'Modern Dark'}
+                  value={theme === 'dark' ? 'Modern Dark' : 
+                         theme === 'light' ? 'Modern Light' :
+                         theme === 'liquid-glass' || theme === 'macos26' ? 'macOS Glass' :
+                         'Doodle Jump'}
                   options={[
+                    'Doodle Jump',
                     'Modern Dark',
                     'Modern Light', 
-                    'Liquid Glass',
-                    'macOS Spatial',
-                    'Doodle Jump',
-                    'Ghost in the Shell'
+                    'macOS Glass'
                   ]}
                   onChange={(val) => {
                     const themeMap: Record<string, string> = {
+                      'Doodle Jump': 'doodle',
                       'Modern Dark': 'dark',
                       'Modern Light': 'light',
-                      'Liquid Glass': 'liquid-glass',
-                      'macOS Spatial': 'macos26',
-                      'Doodle Jump': 'doodle',
-                      'Ghost in the Shell': 'ghost'
+                      'macOS Glass': 'liquid-glass'
                     };
-                    setThemeState(themeMap[val] || 'dark');
+                    setThemeState(themeMap[val] || 'doodle');
                   }}
                   up={true}
                 />

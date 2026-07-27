@@ -1,28 +1,28 @@
 @import "./fonts.css";
 @import "tailwindcss";
 
-:root {
-  /* Default: Modern Dark */
-  --ui-bg: #090d16;
-  --ui-panel: #121826;
-  --ui-panel-transparent: rgba(18, 24, 38, 0.75);
-  --ui-accent: #6366f1;
-  --ui-accent-hover: #4f46e5;
-  --ui-accent-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-  --ui-text: #f8fafc;
-  --ui-text-muted: #94a3b8;
-  --ui-border: #1e293b;
-  --ui-radius: 16px;
-  --ui-blur: 16px;
-  --font-main: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-accent: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+:root, body.theme-doodle {
+  /* 1. DOODLE JUMP (Default Theme) */
+  --ui-bg: #f5f3ec;
+  --ui-panel: #ffffff;
+  --ui-panel-transparent: rgba(255, 255, 255, 0.95);
+  --ui-accent: #10b981;
+  --ui-accent-hover: #059669;
+  --ui-accent-gradient: linear-gradient(135deg, #10b981 0%, #047857 100%);
+  --ui-text: #18181b;
+  --ui-text-muted: #52525b;
+  --ui-border: #27272a;
+  --ui-radius: 14px;
+  --ui-blur: 0px;
+  --font-main: 'Comic Neue', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-accent: 'Permanent Marker', cursive, sans-serif;
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    MODERN MINIMAL THEMES
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
-/* 1. MODERN DARK (Default) */
+/* 2. MODERN DARK */
 body.theme-dark {
   --ui-bg: #090d16;
   --ui-panel: #121826;
@@ -35,9 +35,11 @@ body.theme-dark {
   --ui-border: #1e293b;
   --ui-radius: 16px;
   --ui-blur: 16px;
+  --font-main: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-accent: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
-/* 2. MODERN LIGHT */
+/* 3. MODERN LIGHT */
 body.theme-light {
   --ui-bg: #f8fafc;
   --ui-panel: #ffffff;
@@ -50,39 +52,43 @@ body.theme-light {
   --ui-border: #e2e8f0;
   --ui-radius: 16px;
   --ui-blur: 12px;
+  --font-main: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-accent: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
-/* 3. macOS GLASS (Liquid Glass) */
+/* 4. macOS GLASS (Liquid Glass) */
 body.theme-liquid-glass, body.theme-macos26 {
   --ui-bg: #030712;
-  --ui-panel: rgba(255, 255, 255, 0.07);
-  --ui-panel-transparent: rgba(255, 255, 255, 0.04);
+  --ui-panel: rgba(255, 255, 255, 0.08);
+  --ui-panel-transparent: rgba(255, 255, 255, 0.05);
   --ui-accent: #38bdf8;
   --ui-accent-hover: #0284c7;
   --ui-accent-gradient: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
   --ui-text: #ffffff;
-  --ui-text-muted: rgba(255, 255, 255, 0.6);
-  --ui-border: rgba(255, 255, 255, 0.12);
+  --ui-text-muted: rgba(255, 255, 255, 0.65);
+  --ui-border: rgba(255, 255, 255, 0.15);
   --ui-radius: 20px;
   --ui-blur: 24px;
-}
-
-body.theme-liquid-glass, body.theme-macos26 {
+  --font-main: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-accent: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: radial-gradient(circle at 50% 0%, #1e1b4b 0%, #030712 100%);
 }
 
-/* Fallbacks for legacy theme names to maintain compatibility */
-body.theme-doodle, body.theme-win95, body.theme-ghost, body.theme-skeuomorphic, body.theme-winxp, body.theme-win8, body.theme-ios26, body.theme-gravity {
-  --ui-bg: #090d16;
-  --ui-panel: #121826;
-  --ui-panel-transparent: rgba(18, 24, 38, 0.85);
-  --ui-accent: #6366f1;
-  --ui-accent-hover: #4f46e5;
-  --ui-accent-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-  --ui-text: #f8fafc;
-  --ui-text-muted: #94a3b8;
-  --ui-border: #1e293b;
-  --ui-radius: 16px;
+/* Legacy theme fallbacks to Default Doodle */
+body.theme-win95, body.theme-ghost, body.theme-skeuomorphic, body.theme-winxp, body.theme-win8, body.theme-ios26, body.theme-gravity {
+  --ui-bg: #f5f3ec;
+  --ui-panel: #ffffff;
+  --ui-panel-transparent: rgba(255, 255, 255, 0.95);
+  --ui-accent: #10b981;
+  --ui-accent-hover: #059669;
+  --ui-accent-gradient: linear-gradient(135deg, #10b981 0%, #047857 100%);
+  --ui-text: #18181b;
+  --ui-text-muted: #52525b;
+  --ui-border: #27272a;
+  --ui-radius: 14px;
+  --ui-blur: 0px;
+  --font-main: 'Comic Neue', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-accent: 'Permanent Marker', cursive, sans-serif;
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
