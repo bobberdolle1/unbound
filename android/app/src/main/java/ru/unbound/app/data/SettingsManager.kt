@@ -12,13 +12,14 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import ru.unbound.app.ui.theme.AppTheme
 
+private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
+
 /**
  * Centralized preferences manager using DataStore.
  * Persists theme, autostart rules, proxy settings, etc.
  */
 class SettingsManager(context: Context) {
 
-    private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
     private val dataStore = context.dataStore
 
     // =========================================================================

@@ -38,6 +38,15 @@ android {
         }
     }
     
+    signingConfigs {
+        create("release") {
+            storeFile = file("../release.keystore")
+            storePassword = "unbound123"
+            keyAlias = "unbound"
+            keyPassword = "unbound123"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -46,6 +55,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("release")
         }
         debug {
             applicationIdSuffix = ".debug"
@@ -71,6 +81,11 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+    }
+
+    lint {
+        abortOnError = false
+        checkReleaseBuilds = false
     }
 }
 

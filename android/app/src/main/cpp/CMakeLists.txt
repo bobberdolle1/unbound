@@ -8,10 +8,7 @@ add_library(
     unbound_tunnel.c
 )
 
-find_library(
-    log-lib
-    log
-)
+find_library(log-lib log)
 
 target_link_libraries(
     unbound_tunnel

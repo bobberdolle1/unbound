@@ -11,13 +11,14 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
+private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "app_data")
+
 /**
  * Manages lists of allowed/disallowed apps and trusted WiFi SSIDs.
  * Stored as comma-separated strings for simplicity.
  */
 class AppDataManager(context: Context) {
 
-    private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "app_data")
     private val dataStore = context.dataStore
 
     // =========================================================================
