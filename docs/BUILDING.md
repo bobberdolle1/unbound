@@ -44,16 +44,23 @@ go build -trimpath -ldflags="-s -w -X unbound/engine.Version=0.1.0-refresh" -o b
 ./scripts/check.sh --quick  # Быстрая проверка без кросс-компиляции
 ```
 
-### 2. `build_all.sh`
+### 2. `scripts/build_all.sh`
 Единая точка входа для сборки бинарников desktop-платформ:
 ```bash
-./build_all.sh linux       # Сборка Linux бинарника
-./build_all.sh windows     # Сборка Windows GUI
-./build_all.sh darwin      # Сборка macOS GUI
-./build_all.sh all         # Сборка всех доступных настольных целей
+./scripts/build_all.sh linux       # Сборка Linux бинарника
+./scripts/build_all.sh windows     # Сборка Windows GUI
+./scripts/build_all.sh darwin      # Сборка macOS GUI
+./scripts/build_all.sh all         # Сборка всех доступных настольных целей
 ```
 
-### 3. `Makefile`
+### 3. Платформенные скрипты сборки (`scripts/build/`)
+```bash
+./scripts/build/build_linux.sh             # Linux CLI бинарник
+./scripts/build/build_darwin.sh arm64      # macOS .app бандл
+# scripts/build/build_windows.ps1          # Windows Go бинарник (PowerShell)
+```
+
+### 4. `Makefile`
 Утилита повседневных задач:
 ```bash
 make check      # Запуск всего комплекса проверок

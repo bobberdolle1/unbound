@@ -1,8 +1,8 @@
 #!/bin/bash
 # macOS build script for UNBOUND
-# Usage: ./build.sh [amd64|arm64|universal] [debug]
-# Example: ./build.sh arm64
-#          ./build.sh universal debug
+# Usage: ./scripts/build/build_darwin.sh [amd64|arm64|universal] [debug]
+# Example: ./scripts/build/build_darwin.sh arm64
+#          ./scripts/build/build_darwin.sh universal debug
 
 set -e
 
