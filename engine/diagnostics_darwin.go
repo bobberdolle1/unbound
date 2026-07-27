@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"unbound/engine/providers"
 )
 
 // EnableTCPTimestamps is a no-op on macOS as TCP timestamps are enabled by default.
@@ -34,7 +35,8 @@ func ClearDiscordCache() error {
 func RunDiagnostics() []DiagnosticResult {
 	return []DiagnosticResult{
 		checkAdminPrivilegesMac(),
-		checkSpoofDPIStatus(),
+		checkEngineStatusMac(),
+		checkPfAnchorStatus(),
 		checkConflictingProcessesMac(),
 		checkNetworkService(),
 	}
@@ -52,20 +54,29 @@ func checkAdminPrivilegesMac() DiagnosticResult {
 	return DiagnosticResult{"Privileges", "Warning", "User may not have admin rights.", true}
 }
 
-func checkSpoofDPIStatus() DiagnosticResult {
-	// Check if spoofdpi is available in PATH or in the bin directory
-	if _, err := exec.LookPath("spoofdpi"); err == nil {
-		return DiagnosticResult{"SpoofDPI", "OK", "Found in PATH.", false}
+func checkEngineStatusMac() DiagnosticResult {
+	assetsBinDir := ""
+	if configDir, err := GetConfigDir(); err == nil {
+		assetsBinDir = configDir + "/core_bin"
 	}
-	// Check if it would be found in the bin path
-	configDir, err := GetConfigDir()
-	if err == nil {
-		binPath := configDir + "/core_bin"
-		if _, statErr := os.Stat(binPath + "/spoofdpi"); statErr == nil {
-			return DiagnosticResult{"SpoofDPI", "OK", "Found in app directory.", false}
-		}
+
+	binPath, err := providers.ResolveEngineBinary(providers.MacOSEngineBinary, assetsBinDir)
+	if err == nil && binPath != "" {
+		return DiagnosticResult{"Engine Binary", "OK", "nfqws found at: " + binPath, false}
 	}
-	return DiagnosticResult{"SpoofDPI", "Warning", "SpoofDPI not found. Install via 'brew install spoofdpi'.", true}
+	return DiagnosticResult{"Engine Binary", "Warning", "nfqws binary not found. Install zapret (e.g., via Homebrew).", true}
+}
+
+func checkPfAnchorStatus() DiagnosticResult {
+	cmd := exec.Command("pfctl", "-s", "info")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return DiagnosticResult{"Packet Filter (pf)", "Warning", "pfctl check failed (requires root or pf disabled).", false}
+	}
+	if strings.Contains(string(out), "Enabled") {
+		return DiagnosticResult{"Packet Filter (pf)", "OK", "pf packet filter is active.", false}
+	}
+	return DiagnosticResult{"Packet Filter (pf)", "Info", "pf is currently disabled (will be enabled on start).", false}
 }
 
 func checkConflictingProcessesMac() DiagnosticResult {

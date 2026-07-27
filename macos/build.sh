@@ -31,11 +31,10 @@ if ! command -v wails &> /dev/null; then
     exit 1
 fi
 
-# Check SpoofDPI availability
-if ! command -v spoofdpi &> /dev/null; then
-    echo "⚠️  SpoofDPI not found in PATH"
-    echo "   Install: brew install spoofdpi"
-    echo "   Or place binary in core_bin/darwin/"
+# Check nfqws (zapret) availability
+if ! command -v nfqws &> /dev/null && [ ! -f "/opt/homebrew/bin/nfqws" ] && [ ! -f "/usr/local/bin/nfqws" ]; then
+    echo "⚠️  nfqws binary not found in PATH or standard locations"
+    echo "   Install zapret: brew install zapret (or via manual installer)"
 fi
 
 # Build frontend

@@ -50,6 +50,10 @@ export function GetEngineNames() {
   return window['go']['main']['App']['GetEngineNames']();
 }
 
+export function GetOSPlatform() {
+  return window['go']['main']['App']['GetOSPlatform']();
+}
+
 export function GetLivePing() {
   return window['go']['main']['App']['GetLivePing']();
 }

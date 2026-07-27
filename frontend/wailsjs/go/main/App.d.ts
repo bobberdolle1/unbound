@@ -26,6 +26,8 @@ export function GetBypassLists():Promise<Array<string>>;
 
 export function GetEngineNames():Promise<Array<string>>;
 
+export function GetOSPlatform():Promise<string>;
+
 export function GetLivePing():Promise<Record<string, any>>;
 
 export function GetLogs():Promise<Array<string>>;

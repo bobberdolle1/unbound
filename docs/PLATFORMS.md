@@ -46,18 +46,19 @@ wails build -clean -o unbound.exe
 
 ## 🍎 macOS
 
-**Технология:** Wails (Go + WebView2) + SpoofDPI (SOCKS5 прокси)
+**Технология:** Wails (Go + WebKit) + nfqws (Zapret, pf divert-packet socket)
 
 ### Установка
 1. Скачайте `.app` (Universal) со страницы Releases
 2. Перетащите в Applications
-3. При первом запуске: Системные настройки → Безопасность → Открыть
+3. При первом запуске: Системные настройки → Конфиденциальность → Открыть
+4. Приложение использует нативный `nfqws` движок и `pfctl` якорные правила (`com.unbound.zapret`)
 
 ### Особенности
-- SOCKS5 прокси через SpoofDPI
-- Автонастройка прокси через `networksetup` (osascript / Touch ID)
-- Автозапуск через `launchd` (`~/Library/LaunchAgents/`)
-- Graceful Shutdown: автоотключение прокси при выходе
+- Прямой десинхрон пакетов через `pf` divert socket (без прокси)
+- Настройка DNS через `networksetup` (Cloudflare DoH / DHCP fallback)
+- Автозапуск через `launchd` (`~/Library/LaunchAgents/com.bobberdolle1.unbound.plist`)
+- Graceful Shutdown: автоматическая очистка якорных правил `pf`
 - Пути: `~/Library/Application Support/Unbound`
 
 ### Сборка

@@ -8,7 +8,7 @@ import { DoodleSelect } from './components/DoodleSelect';
 import { DoodleCheckbox } from './components/DoodleCheckbox';
 import { PingChart } from './components/PingChart';
 
-import { GetEngineNames, GetProfiles, StartEngine, StopEngine, GetLogs, AutoTune, CancelAutoTune, GetSettings, SaveSettings, GetLivePing, ShowNotification, EnableAutoStart, DisableAutoStart, IsAutoStartEnabled, CheckConflicts, KillConflicts, CheckPrivileges, RunDiagnostics, ClearDiscordCache, KillWinws2, GetAppVersion, HideWindowToTray, GetBypassLists, ReadBypassList, SaveBypassList, ExportLogs, SaveCustomScript, LoadCustomScript } from '../wailsjs/go/main/App';
+import { GetEngineNames, GetProfiles, StartEngine, StopEngine, GetLogs, AutoTune, CancelAutoTune, GetSettings, SaveSettings, GetLivePing, ShowNotification, EnableAutoStart, DisableAutoStart, IsAutoStartEnabled, CheckConflicts, KillConflicts, CheckPrivileges, RunDiagnostics, ClearDiscordCache, KillWinws2, GetAppVersion, GetOSPlatform, HideWindowToTray, GetBypassLists, ReadBypassList, SaveBypassList, ExportLogs, SaveCustomScript, LoadCustomScript } from '../wailsjs/go/main/App';
 import { EventsOn, WindowMinimise } from '../wailsjs/runtime/runtime';
 
 export default function App() {
@@ -67,6 +67,7 @@ export default function App() {
   const [luaTtl, setLuaTtl] = useState<number>(0);
   const [luaCode, setLuaCode] = useState<string>('');
   const [appVersion, setAppVersion] = useState<string>('');
+  const [platform, setPlatform] = useState<string>('');
 
   const openLuaEditor = async () => {
     try {
@@ -120,6 +121,12 @@ export default function App() {
     // GetAppVersion was bound and imported but never called, so the UI showed
     // no version anywhere. Fetch it once on mount.
     GetAppVersion().then(setAppVersion).catch(() => setAppVersion(''));
+    GetOSPlatform().then((plat: string) => {
+      setPlatform(plat || '');
+      if (plat === 'darwin' && !localStorage.getItem('unbound-theme')) {
+        setThemeState('liquid-glass');
+      }
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -170,10 +177,17 @@ export default function App() {
       try {
         const hasPriv = await CheckPrivileges();
         if (!hasPriv) {
-          setPrivilegeError('Требуются права администратора. Перезапустите приложение от имени администратора.');
+          const plat = platform || await GetOSPlatform().catch(() => '');
+          const msg = plat === 'darwin' 
+            ? 'Требуются права root (sudo). Запустите приложение с правами root для работы с pf.' 
+            : 'Требуются права администратора. Перезапустите приложение от имени администратора.';
+          setPrivilegeError(msg);
         }
       } catch (err) {
-        setPrivilegeError('Требуются права администратора. Перезапустите приложение от имени администратора.');
+        const msg = platform === 'darwin' 
+          ? 'Требуются права root (sudo). Запустите приложение с правами root для работы с pf.' 
+          : 'Требуются права администратора. Перезапустите приложение от имени администратора.';
+        setPrivilegeError(msg);
       }
     };
     checkAdmin();
@@ -586,12 +600,16 @@ export default function App() {
                 <span className="text-white font-marker text-3xl">!</span>
               </div>
               <div className="flex-1">
-                <h3 className="text-2xl font-marker text-red-900 mb-2">НУЖНЫ ПРАВА АДМИНИСТРАТОРА!</h3>
+                <h3 className="text-2xl font-marker text-red-900 mb-2">
+                  {platform === 'darwin' ? 'ТРЕБУЮТСЯ ПРАВА ROOT (SUDO)!' : 'НУЖНЫ ПРАВА АДМИНИСТРАТОРА!'}
+                </h3>
                 <p className="text-base font-bold text-red-800 leading-snug mb-3">
                   {privilegeError}
                 </p>
                 <p className="text-sm text-red-700 leading-snug">
-                  WinDivert не может перехватывать трафик без прав администратора. Нажмите правой кнопкой на unbound.exe и выберите «Запуск от имени администратора».
+                  {platform === 'darwin'
+                    ? 'Управление пакетами через pf (divert socket) требует прав root. Запустите приложение с правами sudo или разрешите права.'
+                    : 'WinDivert не может перехватывать трафик без прав администратора. Нажмите правой кнопкой на unbound.exe и выберите «Запуск от имени администратора».'}
                 </p>
               </div>
             </div>
@@ -1021,13 +1039,15 @@ export default function App() {
                 onChange={() => setSettings({...settings, showLogs: !settings.showLogs})} 
               />
 
-              <DoodleCheckbox
-                id="enableTCPTimestamps"
-                label="TCP Timestamps"
-                desc="Улучшить совместимость с некоторыми провайдерами"
-                checked={settings.enableTCPTimestamps}
-                onChange={() => setSettings({...settings, enableTCPTimestamps: !settings.enableTCPTimestamps})}
-              />
+              {platform !== 'darwin' && (
+                <DoodleCheckbox
+                  id="enableTCPTimestamps"
+                  label="TCP Timestamps"
+                  desc="Улучшить совместимость с некоторыми провайдерами"
+                  checked={settings.enableTCPTimestamps}
+                  onChange={() => setSettings({...settings, enableTCPTimestamps: !settings.enableTCPTimestamps})}
+                />
+              )}
 
               <DoodleCheckbox
                 id="discordCacheAutoClean"
@@ -1140,7 +1160,7 @@ export default function App() {
                 className="w-full flex items-center justify-center gap-2 py-2 sketch-box bg-red-50 hover:bg-red-100 text-red-800 font-bold text-sm transition-all duration-150 hover:scale-[1.02] active:scale-[0.98]"
               >
                 <SketchyX className="w-4 h-4" />
-                Завершить winws2.exe
+                {platform === 'darwin' ? 'Завершить движок (nfqws)' : 'Завершить winws2.exe'}
               </button>
             </div>
 
