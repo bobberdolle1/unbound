@@ -1,5 +1,21 @@
 export namespace engine {
 	
+	export class AssetVerificationResult {
+	    totalFiles: number;
+	    verified: boolean;
+	    error: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AssetVerificationResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.totalFiles = source["totalFiles"];
+	        this.verified = source["verified"];
+	        this.error = source["error"];
+	    }
+	}
 	export class DiagnosticResult {
 	    Component: string;
 	    Status: string;

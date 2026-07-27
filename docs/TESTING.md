@@ -1,142 +1,75 @@
-# 🧪 Отчёт по тестированию Unbound
+# 🧪 Руководство по тестированию и верификации UNBOUND Refresh `v0.1.0-refresh`
 
-## Результаты набора тестов
-
-### Модульные тесты (быстрые)
-```bash
-go test -v -short
-```
-
-**Status:** ✅ PASS  
-**Duration:** 2.7s  
-**Coverage:**
-- ✓ Asset extraction (nfqws.exe + Lua scripts)
-- ✓ Provider initialization (12 profiles detected)
-- ✓ Privilege check (admin detection)
-- ✓ Custom script persistence (save/load)
-- ✓ Provider manager (engine registration)
-- ✓ Health check (network connectivity)
-
-### Integration Tests (Requires Admin)
-```bash
-go test -v -run TestEngineStartStop
-```
-
-**Status:** ✅ PASS  
-**Duration:** 2.1s  
-**Coverage:**
-- ✓ Engine start with "Standard Split" profile
-- ✓ WinDivert driver binding
-- ✓ Status transitions (Stopped → Running → Stopped)
-- ✓ Graceful shutdown (taskkill cleanup)
-
-### Auto-Tune Scanner Test
-```bash
-go test -v -run TestAutoTuneScanner
-```
-
-**Status:** ⚠️ NETWORK DEPENDENT  
-**Notes:** Requires admin + active internet connection. Tests all 12 profiles sequentially against googlevideo.com and discord.com.
+Настоящее руководство подробно описывает процедуры локального тестирования, проверки кода и контроля качества (QA) для **UNBOUND Refresh**.
 
 ---
 
-## Manual Testing Checklist
+## 1. Автоматический тестовый комбайн (`scripts/check.sh`)
 
-### ✅ Core Functionality
-- [x] Application launches without errors
-- [x] System tray integration works
-- [x] Admin privilege detection
-- [x] Asset extraction to temp directory
-- [x] All 12 profiles load correctly
-
-### ✅ Engine Operations
-- [x] Start engine with any profile
-- [x] Stop engine gracefully
-- [x] Switch between profiles
-- [x] WinDivert driver cleanup on exit
-- [x] No zombie processes after shutdown
-
-### ✅ Auto-Tune Scanner
-- [x] Detailed logging with emojis
-- [x] Progress indicators (X/Y)
-- [x] HTTP test results per URL
-- [x] Profile selection on success
-- [x] Config persistence (config.json)
-
-### ✅ Custom Lua Editor
-- [x] Modal opens with Code icon
-- [x] Loads existing script or default template
-- [x] Saves to %APPDATA%/Unbound/custom_profile.lua
-- [x] Auto-switches to "Custom Profile" on save
-- [x] Engine executes with custom script
-
-### ✅ UI/UX
-- [x] Glassmorphic dark mode (zinc-950)
-- [x] Status badge updates (Stopped/Starting/Running)
-- [x] Telemetry logs expand/collapse
-- [x] Real-time log streaming
-- [x] Auto-Tune progress in telemetry
-- [x] Minimize to tray
-
----
-
-## Known Issues
-
-### None Critical
-All core functionality tested and working.
-
-### Network-Dependent
-- Auto-Tune success depends on ISP DPI implementation
-- Some profiles may fail in certain network conditions (expected behavior)
-
----
-
-## Performance Benchmarks
+Скрипт `scripts/check.sh` повторяет проверки GitHub Actions CI в полном объеме локально на вашей машине.
 
 ```bash
-go test -bench=. -benchmem
-```
+# Полный запуск всех проверок (Frontend, Go fmt/vet/test, cross-compile, shell, assets)
+./scripts/check.sh
 
-**Asset Extraction:**
-- Average: ~5ms per extraction
-- Memory: Minimal (embedded assets)
+# Быстрая локальная проверка (без кросс-компиляции)
+./scripts/check.sh --quick
 
-**Engine Start:**
-- Cold start: ~2s (WinDivert binding)
-- Warm start: ~1s (driver already loaded)
-
----
-
-## Test Coverage Summary
-
-| Component | Coverage | Status |
-|-----------|----------|--------|
-| Asset Management | 100% | ✅ |
-| Provider System | 100% | ✅ |
-| Engine Lifecycle | 100% | ✅ |
-| Custom Scripts | 100% | ✅ |
-| Auto-Tune | 95% | ✅ |
-| UI Integration | Manual | ✅ |
-
----
-
-## Continuous Testing
-
-Run full test suite before each release:
-```bash
-# Unit tests (fast)
-go test -v -short
-
-# Integration tests (requires admin)
-go test -v
-
-# With coverage report
-go test -v -coverprofile=coverage.out
-go tool cover -html=coverage.out
+# Отдельные этапы
+./scripts/check.sh frontend   # Проверка типов tsc и сборка Vite
+./scripts/check.sh go         # gofmt, go vet, go test -race и cross-vet
+./scripts/check.sh assets     # Проверка SHA256 хешей 130 встроенных бинарников
+./scripts/check.sh shell      # Синтаксический анализ shell-скриптов
 ```
 
 ---
 
-**Last Updated:** 2026-03-21  
-**Test Environment:** Windows 11, Go 1.21, Admin Privileges  
-**Result:** All critical paths validated ✅
+## 2. Модульное и интеграционное тестирование Go (`go test`)
+
+```bash
+# Быстрый запуск модульных тестов в режиме race detector
+go test -race ./...
+
+# Подробный запуск тестов для конкретного пакета
+go test -v ./engine/providers/...
+
+# Запуск тестов фаервола на живом ядре Linux (требуются права root)
+sudo UNBOUND_FIREWALL_TEST=1 go test -v ./engine/providers/ -run Live
+```
+
+---
+
+## 3. Пошаговый Чек-лист Ручного Тестирования (Manual QA)
+
+### 🪟 Windows (WinDivert + winws2.exe)
+- [x] Автоматический запрос UAC-прав при старте приложения.
+- [x] Запуск и остановка профиля `Recommended (hostfakesplit)` без ошибок.
+- [x] Кнопка **«Остановить winws2.exe»** корректно убивает процесс и отгружает драйвер WinDivert.
+- [x] Сворачивание в трей при клике на крестик (открытие через иконку в трее).
+- [x] Включение/выключение Secure DNS (Cloudflare, Google, Quad9, AdGuard).
+- [x] Использование виртуального конструктора LUA-стратегий и редактирование списков (`youtube.txt`).
+
+### 🐧 Linux (NFQUEUE + nftables / iptables)
+- [x] Проверка root-привилегий при старте.
+- [x] Создание изолированной таблицы `inet unbound` в `nftables` (или правил в `iptables`).
+- [x] Запуск и остановка `nfqws` с флагом `--queue-bypass` (сети не блокируются при аварии).
+- [x] Гарантированный `Flush` правил фаервола при завершении процесса (`SIGTERM`/`SIGINT`).
+- [x] Сборка и запуск CLI-версии (`./build/bin/unbound-linux --version`).
+
+### 🍎 macOS (pf divert socket + universal tpws)
+- [x] Проверка admin/wheel прав пользователя.
+- [x] Настройка изолированного `pf`-якоря `com.unbound.zapret` без затирания пользовательских правил.
+- [x] Автоматическая развертка нативного **Universal (arm64 + x86_64) `tpws`** из `engine/core_bin/darwin/tpws`.
+- [x] Кнопка **«Остановить tpws»** мгновенно завершает процессы `tpws` и очищает якорь `pfctl`.
+- [x] Выход из приложения (`QuitApp`) полностью отключает обход и очищает фаервол.
+
+---
+
+## 4. Контроль безопасности и провенанс ассетов
+
+Для проверки целостности всех бинарных ассетов выполните:
+```bash
+./scripts/engine-assets.sh verify
+```
+
+Или нажмите кнопку **«Проверить целостность файлов (SHA256)»** в настройках графического интерфейса.
