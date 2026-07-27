@@ -413,6 +413,16 @@ export default function App() {
   const [hostlistContent, setHostlistContent] = useState<string>('');
   const [isSavingHostlist, setIsSavingHostlist] = useState<boolean>(false);
 
+  const addHostlistPreset = (presetDomains: string[]) => {
+    const existingLines = new Set(hostlistContent.split('\n').map(l => l.trim().toLowerCase()));
+    const toAdd = presetDomains.filter(d => !existingLines.has(d.toLowerCase()));
+    if (toAdd.length > 0) {
+      const newContent = hostlistContent.trim()
+        ? hostlistContent.trim() + '\n' + toAdd.join('\n')
+        : toAdd.join('\n');
+      setHostlistContent(newContent);
+    }
+  };
   const handleOpenHostlistEditor = async () => {
     try {
       const lists = await GetBypassLists();
@@ -1309,7 +1319,39 @@ export default function App() {
               </div>
 
               <div className="flex-1 flex flex-col min-h-[250px] mt-2 relative z-10 overflow-hidden">
-                <span className="text-xs font-bold text-gray-600 uppercase mb-1">Домены (по одному на строке):</span>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-bold text-gray-600 uppercase">Домены (по одному на строке):</span>
+                </div>
+                <div className="flex flex-wrap gap-1 mb-2">
+                  <button
+                    type="button"
+                    onClick={() => addHostlistPreset(['youtube.com', 'googlevideo.com', 'ytimg.com', 'youtu.be', 'ggpht.com'])}
+                    className="px-2 py-0.5 text-[10px] font-bold bg-red-100 hover:bg-red-200 text-red-800 rounded border border-red-300 transition-colors"
+                  >
+                    + YouTube
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => addHostlistPreset(['discord.com', 'discord.gg', 'discord.media', 'discordapp.com', 'discordapp.net'])}
+                    className="px-2 py-0.5 text-[10px] font-bold bg-indigo-100 hover:bg-indigo-200 text-indigo-800 rounded border border-indigo-300 transition-colors"
+                  >
+                    + Discord
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => addHostlistPreset(['telegram.org', 't.me', 'telegram.me', 'telegra.ph'])}
+                    className="px-2 py-0.5 text-[10px] font-bold bg-sky-100 hover:bg-sky-200 text-sky-800 rounded border border-sky-300 transition-colors"
+                  >
+                    + Telegram
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => addHostlistPreset(['twitch.tv', 'ttvnw.net', 'jtvnw.net'])}
+                    className="px-2 py-0.5 text-[10px] font-bold bg-purple-100 hover:bg-purple-200 text-purple-800 rounded border border-purple-300 transition-colors"
+                  >
+                    + Twitch
+                  </button>
+                </div>
                 <textarea
                   value={hostlistContent}
                   onChange={(e) => setHostlistContent(e.target.value)}
