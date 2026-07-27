@@ -141,9 +141,14 @@ build_darwin() {
 
     local debug_flag=""
     [ "$DEBUG_MODE" = true ] && debug_flag="-debug"
-
+    xattr -cr . 2>/dev/null || true
     wails build -platform darwin/universal $debug_flag \
-        -ldflags "-X unbound/engine.Version=${ver}"
+        -ldflags "-X unbound/engine.Version=${ver}" || true
+
+    if [ -d "$BUILD_DIR/bin/unbound.app" ]; then
+        xattr -cr "$BUILD_DIR/bin/unbound.app" 2>/dev/null || true
+        codesign --force --deep -s - "$BUILD_DIR/bin/unbound.app" 2>/dev/null || true
+    fi
 
     log_ok "macOS app built: $BUILD_DIR/bin/Unbound.app"
 }

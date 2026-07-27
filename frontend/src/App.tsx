@@ -218,7 +218,18 @@ export default function App() {
         discordCacheAutoClean: s.discordCacheAutoClean || false,
         secureDns: s.secureDns || false
       });
-    }).catch(() => {});
+    });
+  }, []);
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsSettingsOpen(false);
+        setIsDiagOpen(false);
+        setIsLuaOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   useEffect(() => {
@@ -498,10 +509,11 @@ export default function App() {
   };
 
   useEffect(() => {
-    toasts.forEach(toast => {
-      const timer = setTimeout(() => removeToast(toast.id), 5000);
-      return () => clearTimeout(timer);
-    });
+    if (toasts.length === 0) return;
+    const timers = toasts.map(toast =>
+      setTimeout(() => removeToast(toast.id), 5000)
+    );
+    return () => timers.forEach(t => clearTimeout(t));
   }, [toasts]);
 
   const auraClass = 

@@ -209,7 +209,7 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 
 	// Sync hostlist files from remote sources with fallback
 	if err := SyncHostlists(); err != nil {
-		return fmt.Errorf("failed to sync hostlist files: %w", err)
+		e.addLog(fmt.Sprintf("Предупреждение синхронизации списков: %v", err))
 	}
 
 	e.engineReady = make(chan bool, 1)
