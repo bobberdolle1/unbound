@@ -12,8 +12,8 @@ import (
 // Engine binary names per platform.
 //
 // Only Windows embeds its engine (winws2.exe plus the WinDivert driver live in
-// engine/core_bin/windows). Linux uses nfqws against NFQUEUE; macOS uses the
-// same upstream binary against a pf divert-packet socket. Both come from the
+// engine/core_bin/windows). Linux uses nfqws against NFQUEUE; macOS uses tpws
+// as a transparent TCP proxy with pf route-to/rdr rules. Both come from the
 // user's package manager, so they are looked up at runtime.
 //
 // These are declared here, in an untagged file, so code that has to reason
@@ -21,7 +21,7 @@ import (
 const (
 	WindowsEngineBinary = "winws2.exe"
 	LinuxEngineBinary   = "nfqws"
-	MacOSEngineBinary   = "nfqws"
+	MacOSEngineBinary   = "tpws"
 )
 
 // EngineBinaryName returns the engine executable expected on the host OS.
@@ -57,11 +57,11 @@ var searchPathsByOS = map[string][]string{
 // ResolveEngineBinary locates the bypass engine executable.
 //
 // Only the Windows build embeds its engine (winws2.exe and the WinDivert
-// driver live in engine/core_bin/windows). On Linux and macOS the nfqws build
-// is architecture-specific and GPL-licensed, so it is installed by the user's
-// package manager instead of being vendored. Previously nothing looked outside
-// the extracted asset directory, so those platforms could never find an engine
-// no matter how it was installed.
+// driver live in engine/core_bin/windows). On Linux the nfqws build and on
+// macOS the tpws build are architecture-specific and GPL-licensed, so they are
+// installed by the user's package manager instead of being vendored. Previously
+// nothing looked outside the extracted asset directory, so those platforms
+// could never find an engine no matter how it was installed.
 //
 // Search order:
 //  1. the extracted asset directory, so a bundled build always wins

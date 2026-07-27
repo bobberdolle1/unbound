@@ -1002,24 +1002,36 @@ export default function App() {
       {/* НАСТРОЙКИ */}
       {isSettingsOpen && (
         <div 
-          className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/40 backdrop-blur-sm p-4 app-no-drag animate-in fade-in duration-200"
+          className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm p-4 app-no-drag animate-in fade-in duration-200"
+          style={{ background: 'rgba(0,0,0,0.55)' }}
           onClick={() => setIsSettingsOpen(false)}
         >
           <div 
-            className="w-full max-w-[340px] bg-[#fdfdfc] sketch-box flex flex-col max-h-[85vh] p-1 animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
+            className="w-full max-w-[340px] flex flex-col max-h-[85vh] rounded-2xl border-2 overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
+            style={{
+              background: 'var(--ui-panel)',
+              borderColor: 'var(--ui-border)',
+              boxShadow: '0 24px 64px rgba(0,0,0,0.4)',
+            }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Шапка модалки */}
-            <div className="flex items-center justify-between px-4 py-3 border-b-2 border-gray-200 mb-2">
+            {/* Шапка */}
+            <div className="flex items-center justify-between px-4 py-3 border-b-2" style={{ borderColor: 'var(--ui-border)' }}>
               <div className="flex items-center gap-2">
-                <SketchyGear className="w-6 h-6 text-gray-800" />
-                <h2 className="text-xl font-marker text-gray-800">Настройки</h2>
+                <SketchyGear className="w-5 h-5" style={{ color: 'var(--ui-accent)' }} />
+                <h2 className="text-lg font-bold" style={{ color: 'var(--ui-text)' }}>Настройки</h2>
                 {appVersion && (
-                  <span className="text-xs font-bold text-gray-400 self-end pb-1">v{appVersion}</span>
+                  <span className="text-xs font-semibold pb-0.5" style={{ color: 'var(--ui-text-muted)' }}>v{appVersion}</span>
                 )}
               </div>
-              <button onClick={() => setIsSettingsOpen(false)} className="text-gray-500 hover:text-black font-marker text-xl transition-colors duration-150 hover:scale-110">
-                X
+              <button
+                onClick={() => setIsSettingsOpen(false)}
+                className="w-7 h-7 flex items-center justify-center rounded-lg transition-colors duration-150"
+                style={{ color: 'var(--ui-text-muted)', background: 'transparent' }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--ui-text)'}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--ui-text-muted)'}
+              >
+                ✕
               </button>
             </div>
 
@@ -1075,10 +1087,11 @@ export default function App() {
                 onChange={() => setSettings({...settings, secureDns: !settings.secureDns})}
               />
 
-              <div className="flex flex-col gap-2 p-3 bg-white border-2 border-gray-800 rounded-xl relative z-40 shadow-[2px_2px_0_#222]">
+              {/* Theme selector */}
+              <div className="flex flex-col gap-2 p-3 rounded-xl border-2 relative z-40" style={{ background: 'var(--ui-panel)', borderColor: 'var(--ui-border)' }}>
                 <div>
-                  <span className="text-lg font-bold text-gray-900 block leading-none">Тема интерфейса</span>
-                  <span className="text-xs text-gray-600 block mt-1">Выберите стиль оформления</span>
+                  <span className="text-sm font-bold block leading-none" style={{ color: 'var(--ui-text)' }}>Тема интерфейса</span>
+                  <span className="text-xs block mt-1" style={{ color: 'var(--ui-text-muted)' }}>Выберите стиль оформления</span>
                 </div>
                 <DoodleSelect
                   value={theme === 'light' ? 'Modern Light' : 
@@ -1109,10 +1122,11 @@ export default function App() {
                 />
               </div>
 
-              <div className="flex flex-col gap-2 p-3 bg-white border-2 border-gray-800 rounded-xl relative z-30 shadow-[2px_2px_0_#222]">
+              {/* Startup profile selector */}
+              <div className="flex flex-col gap-2 p-3 rounded-xl border-2 relative z-30" style={{ background: 'var(--ui-panel)', borderColor: 'var(--ui-border)' }}>
                 <div>
-                  <span className="text-lg font-bold text-gray-900 block leading-none">Профиль при запуске</span>
-                  <span className="text-xs text-gray-600 block mt-1">Какой профиль загружать при старте?</span>
+                  <span className="text-sm font-bold block leading-none" style={{ color: 'var(--ui-text)' }}>Профиль при запуске</span>
+                  <span className="text-xs block mt-1" style={{ color: 'var(--ui-text-muted)' }}>Какой профиль загружать при старте?</span>
                 </div>
                 <DoodleSelect
                   value={settings.startupProfileMode}
@@ -1122,9 +1136,9 @@ export default function App() {
                 />
               </div>
 
-              {/* Действия системы */}
-              <div className="space-y-2 pt-2 border-t-2 border-gray-200">
-                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-1">Системные действия</span>
+              {/* System actions */}
+              <div className="space-y-2 pt-2 border-t-2" style={{ borderColor: 'var(--ui-border)' }}>
+                <span className="text-xs font-bold uppercase tracking-wider block mb-2" style={{ color: 'var(--ui-text-muted)' }}>Системные действия</span>
                 <button 
                   onClick={handleRunDiagnostics}
                   className="w-full flex items-center justify-center gap-2 py-2 sketch-box bg-blue-50 hover:bg-blue-100 text-blue-800 font-bold text-sm transition-all duration-150 hover:scale-[1.02] active:scale-[0.98]"
@@ -1151,7 +1165,7 @@ export default function App() {
                   className="w-full flex items-center justify-center gap-2 py-2 sketch-box bg-orange-50 hover:bg-orange-100 text-orange-800 font-bold text-sm transition-all duration-150 hover:scale-[1.02] active:scale-[0.98]"
                 >
                   <SketchyX className="w-4 h-4" />
-                  {platform === 'darwin' ? 'Остановить движок (nfqws)' : 'Остановить winws2.exe'}
+                  {platform === 'darwin' ? 'Остановить tpws' : 'Остановить winws2.exe'}
                 </button>
                 <button 
                   onClick={async () => {
@@ -1169,23 +1183,34 @@ export default function App() {
               </div>
             </div>
 
-            <div className="flex gap-4 px-4 py-3 mt-1 border-t-2 border-gray-200 relative z-[60] bg-[#fdfdfc]">
+            {/* Footer buttons */}
+            <div className="flex gap-3 px-4 py-3 mt-auto border-t-2" style={{ borderColor: 'var(--ui-border)', background: 'var(--ui-panel)' }}>
               <button
                 onClick={() => setIsSettingsOpen(false)}
-                className="flex-1 py-2.5 text-lg font-marker text-gray-600 hover:text-gray-900 hover:bg-gray-100 border-2 border-gray-800 rounded-xl shadow-[2px_2px_0_#222] transition-all duration-150 active:translate-y-1 active:shadow-none bg-white hover:scale-[1.02]"
+                className="flex-1 py-2.5 text-sm font-semibold rounded-xl border-2 transition-all duration-150 hover:scale-[1.02] active:scale-[0.98]"
+                style={{ color: 'var(--ui-text-muted)', borderColor: 'var(--ui-border)', background: 'transparent' }}
+                onMouseEnter={e => {
+                  (e.currentTarget as HTMLElement).style.color = 'var(--ui-text)';
+                  (e.currentTarget as HTMLElement).style.background = 'color-mix(in srgb, var(--ui-border) 60%, transparent)';
+                }}
+                onMouseLeave={e => {
+                  (e.currentTarget as HTMLElement).style.color = 'var(--ui-text-muted)';
+                  (e.currentTarget as HTMLElement).style.background = 'transparent';
+                }}
               >
                 Отмена
               </button>
               <button
                 onClick={handleSaveSettings}
-                className="flex-1 py-2.5 text-lg font-marker doodle-btn transition-all duration-150 hover:scale-[1.02] active:scale-[0.98]"
+                className="flex-1 py-2.5 text-sm font-bold rounded-xl transition-all duration-150 hover:scale-[1.02] active:scale-[0.98]"
+                style={{ background: 'var(--ui-accent-gradient)', color: '#ffffff' }}
               >
-                Сохранить!
+                Сохранить
               </button>
             </div>
             
-            <div className="px-4 py-2 flex justify-center opacity-40">
-              <span className="font-marker text-sm">v2.5.0 — Aura Design Edition</span>
+            <div className="px-4 py-2 flex justify-center">
+              <span className="text-xs" style={{ color: 'var(--ui-text-muted)' }}>v2.5.0 — Unbound</span>
             </div>
           </div>
         </div>

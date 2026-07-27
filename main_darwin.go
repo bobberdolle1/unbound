@@ -21,7 +21,7 @@ func registerHeadlessProvider(manager *providers.ProviderManager, assets *engine
 	binPath, err := providers.ResolveEngineBinary(providers.MacOSEngineBinary, assets.BinDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Ошибка: %v\n", err)
-		fmt.Fprintln(os.Stderr, "Установите zapret (например, через Homebrew) или положите nfqws рядом с исполняемым файлом.")
+		fmt.Fprintln(os.Stderr, "Установите zapret (например, brew install zapret) или положите tpws рядом с исполняемым файлом.")
 		os.Exit(1)
 	}
 

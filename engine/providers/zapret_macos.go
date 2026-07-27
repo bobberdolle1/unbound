@@ -19,81 +19,124 @@ import (
 // touching the rest of the user's firewall.
 const pfAnchorName = "com.unbound.zapret"
 
-// divertPort is the pf divert-packet port the engine reads from.
-const divertPort = "700"
+// tpwsPort is the port that tpws listens on for transparent proxying.
+const tpwsPort = "988"
 
+// macProfile holds the pf rules and tpws arguments for a bypass strategy.
+// On macOS, tpws is a transparent TCP proxy. Traffic is redirected to it
+// via pf "route-to" + "rdr pass" rules (divert-packet is Linux-only).
 type macProfile struct {
-	// PfRules are loaded into our anchor; they select which traffic is
-	// diverted to the engine.
+	// PfRules are loaded into our dedicated pf anchor.
+	//
+	// Two rules are always needed:
+	//   1. "pass out route-to (lo0 127.0.0.1) ..." — redirects outgoing
+	//      TCP packets back through loopback so the rdr rule can catch them.
+	//   2. "rdr pass on lo0 ..." — rewrites the destination port to tpwsPort
+	//      so tpws receives the connection.
 	PfRules []string
-	Args    []string
+	// Args are passed to tpws. Do NOT include --port or --bind-addr; those
+	// are added by Start().
+	Args []string
+}
+
+// tpwsPfRules builds the pf ruleset for a given set of TCP/UDP ports.
+// Returns rules that redirect all non-root outgoing TCP on those ports to
+// tpws via loopback.
+func tpwsPfRules(tcpPorts string) []string {
+	return []string{
+		// Redirect outgoing TCP (from any non-root process) to loopback so
+		// the rdr rule can catch it. root is excluded to avoid a loop
+		// (tpws itself runs as root or as a system daemon).
+		fmt.Sprintf("pass out route-to (lo0 127.0.0.1) proto tcp to port {%s} user { >0 }", tcpPorts),
+		// Rewrite dest port to tpws listening port on loopback.
+		fmt.Sprintf("rdr pass on lo0 inet proto tcp from !127.0.0.0/8 to any port {%s} -> 127.0.0.1 port %s", tcpPorts, tpwsPort),
+		// Block outgoing QUIC/HTTP3 so browsers fall back to TCP (QUIC
+		// bypasses the TCP proxy entirely and causes YouTube to skip DPI
+		// mitigation).
+		"block drop out quick proto udp to port 443",
+	}
 }
 
 var macBuiltinProfiles = map[string]macProfile{
 	"Ultimate Bypass (Multi-Strategy)": {
-		PfRules: []string{
-			"pass out quick proto tcp to any port {80, 443, 5222, 5223, 5228} divert-packet port " + divertPort,
-			"pass out quick proto udp to any port {443, 3478, 50000:65535} divert-packet port " + divertPort,
-		},
+		PfRules: tpwsPfRules("80,443"),
 		Args: []string{
-			"--filter-tcp=80", "--dpi-desync=fake,multisplit", "--dpi-desync-split-pos=method+2", "--dpi-desync-fooling=md5sig", "--new",
-			"--filter-tcp=443", "--dpi-desync=fake,multidisorder", "--dpi-desync-split-pos=1,midsld", "--dpi-desync-fooling=badseq,md5sig", "--new",
-			"--filter-tcp=5222,5223,5228", "--dpi-desync=disorder", "--dpi-desync-split-pos=2", "--new",
-			"--filter-udp=443", "--dpi-desync=fake", "--dpi-desync-repeats=10", "--dpi-desync-udplen-increment=2", "--new",
-			"--filter-udp=3478,50000-65535", "--dpi-desync=fake", "--dpi-desync-repeats=8",
+			"--bind-addr=127.0.0.1",
+			"--filter-tcp=80",
+			"--dpi-desync=fake,multisplit",
+			"--dpi-desync-split-pos=method+2",
+			"--dpi-desync-fooling=md5sig",
+			"--new",
+			"--filter-tcp=443",
+			"--dpi-desync=fake,multidisorder",
+			"--dpi-desync-split-pos=1,midsld",
+			"--dpi-desync-fooling=badseq,md5sig",
 		},
 	},
 	"Discord Voice Optimized": {
-		PfRules: []string{
-			"pass out quick proto tcp to any port 443 divert-packet port " + divertPort,
-			"pass out quick proto udp to any port {443, 3478, 50000:65535} divert-packet port " + divertPort,
-		},
+		PfRules: tpwsPfRules("443,5222,5223,5228"),
 		Args: []string{
-			"--filter-tcp=443", "--dpi-desync=fake,split", "--dpi-desync-split-pos=1", "--dpi-desync-fooling=md5sig", "--new",
-			"--filter-udp=443", "--dpi-desync=fake", "--dpi-desync-repeats=10", "--new",
-			"--filter-udp=3478", "--dpi-desync=fake", "--dpi-desync-repeats=8", "--new",
-			"--filter-udp=50000-65535", "--dpi-desync=fake", "--dpi-desync-repeats=8",
+			"--bind-addr=127.0.0.1",
+			"--filter-tcp=443",
+			"--dpi-desync=fake,split",
+			"--dpi-desync-split-pos=1",
+			"--dpi-desync-fooling=md5sig",
+			"--new",
+			"--filter-tcp=5222,5223,5228",
+			"--dpi-desync=disorder",
+			"--dpi-desync-split-pos=2",
 		},
 	},
 	"YouTube QUIC Aggressive": {
-		PfRules: []string{
-			"pass out quick proto tcp to any port {80, 443} divert-packet port " + divertPort,
-			"pass out quick proto udp to any port 443 divert-packet port " + divertPort,
-		},
+		PfRules: tpwsPfRules("80,443"),
 		Args: []string{
-			"--filter-tcp=80", "--dpi-desync=fake,multisplit", "--dpi-desync-split-pos=method+2", "--dpi-desync-fooling=md5sig", "--new",
-			"--filter-tcp=443", "--dpi-desync=fake,multisplit", "--dpi-desync-split-pos=1,midsld", "--dpi-desync-fooling=md5sig", "--new",
-			"--filter-udp=443", "--dpi-desync=fake", "--dpi-desync-repeats=12", "--dpi-desync-udplen-increment=2",
+			"--bind-addr=127.0.0.1",
+			"--filter-tcp=80",
+			"--dpi-desync=fake,multisplit",
+			"--dpi-desync-split-pos=method+2",
+			"--dpi-desync-fooling=md5sig",
+			"--new",
+			"--filter-tcp=443",
+			"--dpi-desync=fake,multisplit",
+			"--dpi-desync-split-pos=1,midsld",
+			"--dpi-desync-fooling=md5sig",
 		},
 	},
 	"Telegram API Bypass": {
-		PfRules: []string{
-			"pass out quick proto tcp to any port {443, 5222, 5223, 5228} divert-packet port " + divertPort,
-			"pass out quick proto udp to any port 443 divert-packet port " + divertPort,
-		},
+		PfRules: tpwsPfRules("443,5222,5223,5228"),
 		Args: []string{
-			"--filter-tcp=443", "--dpi-desync=fake,split", "--dpi-desync-split-pos=1", "--dpi-desync-fooling=md5sig", "--new",
-			"--filter-tcp=5222,5223,5228", "--dpi-desync=disorder", "--dpi-desync-split-pos=2", "--new",
-			"--filter-udp=443", "--dpi-desync=fake", "--dpi-desync-repeats=8",
+			"--bind-addr=127.0.0.1",
+			"--filter-tcp=443",
+			"--dpi-desync=fake,split",
+			"--dpi-desync-split-pos=1",
+			"--dpi-desync-fooling=md5sig",
+			"--new",
+			"--filter-tcp=5222,5223,5228",
+			"--dpi-desync=disorder",
+			"--dpi-desync-split-pos=2",
 		},
 	},
 	"Standard HTTPS/QUIC": {
-		PfRules: []string{
-			"pass out quick proto tcp to any port 443 divert-packet port " + divertPort,
-			"pass out quick proto udp to any port 443 divert-packet port " + divertPort,
-		},
+		PfRules: tpwsPfRules("80,443"),
 		Args: []string{
-			"--filter-tcp=443", "--dpi-desync=fake,split", "--dpi-desync-split-pos=1", "--dpi-desync-fooling=md5sig", "--new",
-			"--filter-udp=443", "--dpi-desync=fake", "--dpi-desync-repeats=6",
+			"--bind-addr=127.0.0.1",
+			"--filter-tcp=443",
+			"--dpi-desync=fake,split",
+			"--dpi-desync-split-pos=1",
+			"--dpi-desync-fooling=md5sig",
 		},
 	},
 	"HTTP + HTTPS Split": {
-		PfRules: []string{
-			"pass out quick proto tcp to any port {80, 443} divert-packet port " + divertPort,
-		},
+		PfRules: tpwsPfRules("80,443"),
 		Args: []string{
-			"--filter-tcp=80", "--dpi-desync=split", "--dpi-desync-split-pos=method+2", "--new",
-			"--filter-tcp=443", "--dpi-desync=disorder", "--dpi-desync-split-pos=2",
+			"--bind-addr=127.0.0.1",
+			"--filter-tcp=80",
+			"--dpi-desync=split",
+			"--dpi-desync-split-pos=method+2",
+			"--new",
+			"--filter-tcp=443",
+			"--dpi-desync=disorder",
+			"--dpi-desync-split-pos=2",
 		},
 	},
 }
@@ -127,20 +170,18 @@ type ZapretMacOSProvider struct {
 	logCallback    func(string)
 }
 
-// NewZapretMacOSProvider builds the macOS engine provider. binPath is the full
-// path to the engine executable; it used to be the containing directory, which
-// meant only a bundled binary could ever be found - a Homebrew install was
-// invisible.
+// NewZapretMacOSProvider builds the macOS engine provider.
+// binPath is the full path to the tpws executable; pass "" to auto-resolve.
 func NewZapretMacOSProvider(binPath string) BypassProvider {
 	return &ZapretMacOSProvider{
 		status:         StatusStopped,
 		binPath:        binPath,
 		customProfiles: make(map[string][]string),
-		logs:           []string{"Zapret Engine (macOS/pf divert) initialized."},
+		logs:           []string{"Zapret Engine (macOS/tpws) инициализирован."},
 	}
 }
 
-func (e *ZapretMacOSProvider) Name() string { return "Zapret (nfqws)" }
+func (e *ZapretMacOSProvider) Name() string { return "Zapret (tpws)" }
 
 func (e *ZapretMacOSProvider) CheckPrivileges() (bool, error) {
 	return os.Geteuid() == 0, nil
@@ -160,9 +201,7 @@ func (e *ZapretMacOSProvider) GetProfiles() []string {
 	return names
 }
 
-// RegisterProfile records a runtime-registered strategy. It used to only append
-// a log line saying registration was "not fully supported", so the Custom
-// Profile builder and the auto-tuner silently did nothing on macOS.
+// RegisterProfile records a runtime-registered strategy (Custom Profile builder).
 func (e *ZapretMacOSProvider) RegisterProfile(name string, args []string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -184,9 +223,6 @@ func (e *ZapretMacOSProvider) SetLogCallback(cb func(string)) {
 	e.logCallback = cb
 }
 
-// GetStatus and GetLogs are polled from the UI while the engine goroutine
-// mutates the same fields; both previously read without the mutex, which the
-// race detector flags immediately.
 func (e *ZapretMacOSProvider) GetStatus() Status {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -206,28 +242,22 @@ func (e *ZapretMacOSProvider) resolveProfile(name string) (macProfile, error) {
 		return p, nil
 	}
 	if args, ok := e.customProfiles[name]; ok {
+		// Custom profiles use the same broad redirect rules as Ultimate Bypass.
 		return macProfile{
-			PfRules: []string{
-				"pass out quick proto tcp to any port {80, 443} divert-packet port " + divertPort,
-				"pass out quick proto udp to any port 443 divert-packet port " + divertPort,
-			},
-			Args: args,
+			PfRules: tpwsPfRules("80,443"),
+			Args:    append([]string{"--bind-addr=127.0.0.1"}, args...),
 		}, nil
 	}
 	return macProfile{}, fmt.Errorf("профиль не найден: %s", name)
 }
 
-// loadPfAnchor installs our rules into a dedicated pf anchor.
-//
-// The previous implementation wrote a config to the fixed path
-// /tmp/unbound_pf_rules.conf and ran `pfctl -f` on it. That was wrong twice
-// over: `pfctl -f` *replaces the entire active ruleset*, silently wiping
-// whatever the user or their firewall app had loaded from /etc/pf.conf; and
-// the file itself contained a `load anchor ... from "/tmp/unbound_pf_rules.conf"`
-// line, so it tried to load itself. Writing root-loaded firewall rules to a
-// predictable world-writable path is also a straightforward local escalation
-// vector.
-func runPfctl(stdinInput string, args ...string) ([]byte, error) {
+// ──────────────────────────────────────────────────────────────────────────────
+// pf helpers
+// ──────────────────────────────────────────────────────────────────────────────
+
+// runPfctlPrivileged runs pfctl, prompting for admin password via osascript if
+// needed. It uses a non-interactive timeout to avoid blocking shutdown.
+func runPfctlPrivileged(stdinInput string, args ...string) ([]byte, error) {
 	if os.Geteuid() == 0 {
 		cmd := exec.Command("pfctl", args...)
 		if stdinInput != "" {
@@ -236,64 +266,163 @@ func runPfctl(stdinInput string, args ...string) ([]byte, error) {
 		return cmd.CombinedOutput()
 	}
 
+	// Build the shell command string.
 	pfCmd := "pfctl " + strings.Join(args, " ")
 	if stdinInput != "" {
-		escapedRules := strings.ReplaceAll(stdinInput, "'", "'\"'\"'")
-		pfCmd = fmt.Sprintf("echo '%s' | pfctl %s", escapedRules, strings.Join(args, " "))
+		escaped := strings.ReplaceAll(stdinInput, "'", "'\"'\"'")
+		pfCmd = fmt.Sprintf("printf '%%s' '%s' | pfctl %s", escaped, strings.Join(args, " "))
 	}
 
+	// Escape for embedding inside an AppleScript string literal.
 	escapedScript := strings.ReplaceAll(pfCmd, `\`, `\\`)
 	escapedScript = strings.ReplaceAll(escapedScript, `"`, `\"`)
-	script := fmt.Sprintf("do shell script \"%s\" with administrator privileges", escapedScript)
-	return exec.Command("osascript", "-e", script).CombinedOutput()
+	script := fmt.Sprintf(`do shell script "%s" with administrator privileges`, escapedScript)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return exec.CommandContext(ctx, "osascript", "-e", script).CombinedOutput()
 }
 
+// ensurePfConfAnchors patches /etc/pf.conf to add our rdr-anchor and anchor
+// lines if they are not already present. This is idempotent and only modifies
+// the two anchor-reference lines; it does not touch any other rules.
+//
+// Returns true if a reload of pf.conf is needed (i.e. we patched it).
+func ensurePfConfAnchors() (bool, error) {
+	const pfConf = "/etc/pf.conf"
+
+	data, err := os.ReadFile(pfConf)
+	if err != nil {
+		return false, fmt.Errorf("не удалось прочитать %s: %w", pfConf, err)
+	}
+	content := string(data)
+
+	needsRdr := !strings.Contains(content, `rdr-anchor "`+pfAnchorName+`"`)
+	needsAnchor := !strings.Contains(content, `anchor "`+pfAnchorName+`"`)
+
+	if !needsRdr && !needsAnchor {
+		return false, nil // already patched
+	}
+
+	lines := strings.Split(content, "\n")
+	var out []string
+	rdrInserted := false
+	anchorInserted := false
+
+	for _, line := range lines {
+		// Insert rdr-anchor before the com.apple rdr-anchor line.
+		if !rdrInserted && strings.Contains(line, `rdr-anchor "com.apple`) {
+			out = append(out, `rdr-anchor "`+pfAnchorName+`"`)
+			rdrInserted = true
+		}
+		// Insert anchor before the com.apple filter anchor line.
+		if !anchorInserted && strings.Contains(line, `anchor "com.apple`) && !strings.Contains(line, "load") {
+			out = append(out, `anchor "`+pfAnchorName+`"`)
+			anchorInserted = true
+		}
+		out = append(out, line)
+	}
+
+	// Fallback: append if we never found a good insertion point.
+	if !rdrInserted {
+		out = append(out, `rdr-anchor "`+pfAnchorName+`"`)
+	}
+	if !anchorInserted {
+		out = append(out, `anchor "`+pfAnchorName+`"`)
+	}
+
+	newContent := strings.Join(out, "\n")
+
+	// Write via a temp file + privileged move to avoid a partial write.
+	tmpFile, err := os.CreateTemp("", "pf.conf.*.tmp")
+	if err != nil {
+		return false, fmt.Errorf("mktemp: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
+
+	if _, err := tmpFile.WriteString(newContent); err != nil {
+		tmpFile.Close()
+		return false, fmt.Errorf("запись в temp-файл: %w", err)
+	}
+	tmpFile.Close()
+
+	// Copy via privileged shell.
+	cpCmd := fmt.Sprintf("cp %s %s", tmpPath, pfConf)
+	escapedCp := strings.ReplaceAll(cpCmd, `"`, `\"`)
+	script := fmt.Sprintf(`do shell script "%s" with administrator privileges`, escapedCp)
+	if out2, err2 := exec.Command("osascript", "-e", script).CombinedOutput(); err2 != nil {
+		return false, fmt.Errorf("не удалось записать %s: %s", pfConf, strings.TrimSpace(string(out2)))
+	}
+
+	return true, nil
+}
+
+// loadPfAnchor enables pf (idempotent), optionally patches pf.conf anchors,
+// reloads pf.conf, then loads our ruleset into the anchor.
 func (e *ZapretMacOSProvider) loadPfAnchor(rules []string) error {
-	if out, err := runPfctl("", "-e"); err != nil {
-		if !strings.Contains(string(out), "already enabled") {
-			e.addLogLocked("Предупреждение pfctl -e: " + strings.TrimSpace(string(out)))
+	// 1. Enable pf (macOS disables it by default).
+	if out, err := runPfctlPrivileged("", "-e"); err != nil {
+		msg := strings.TrimSpace(string(out))
+		if !strings.Contains(msg, "already enabled") {
+			e.addLogLocked("Предупреждение pfctl -e: " + msg)
 		}
 	}
 
+	// 2. Ensure our anchors are referenced in /etc/pf.conf.
+	patched, err := ensurePfConfAnchors()
+	if err != nil {
+		e.addLogLocked("ВНИМАНИЕ: " + err.Error() +
+			" — правила загружены без якоря; перезапустите с правами root.")
+	} else if patched {
+		e.addLogLocked("Добавлены якоря в /etc/pf.conf, перезагружаем конфиг...")
+		// Reload pf.conf so the new anchor references take effect.
+		if out, err := runPfctlPrivileged("", "-f", "/etc/pf.conf"); err != nil {
+			e.addLogLocked("Предупреждение pfctl -f pf.conf: " + strings.TrimSpace(string(out)))
+		}
+	}
+
+	// 3. Load our ruleset into the anchor.
 	ruleset := strings.Join(rules, "\n") + "\n"
-	if out, err := runPfctl(ruleset, "-a", pfAnchorName, "-f", "-"); err != nil {
+	if out, err := runPfctlPrivileged(ruleset, "-a", pfAnchorName, "-f", "-"); err != nil {
 		msg := strings.TrimSpace(string(out))
 		if msg == "" {
-			return fmt.Errorf("pfctl: %w", err)
+			return fmt.Errorf("pfctl загрузка якоря: %w", err)
 		}
-		return fmt.Errorf("pfctl: %s", msg)
-	}
-
-	if !e.anchorIsReferenced() {
-		e.addLogLocked(fmt.Sprintf(
-			"ВНИМАНИЕ: якорь %q не подключён в /etc/pf.conf — правила загружены, но не применяются. "+
-				"Добавьте строку: anchor \"%s\"", pfAnchorName, pfAnchorName))
+		return fmt.Errorf("pfctl загрузка якоря: %s", msg)
 	}
 
 	return nil
 }
 
-func (e *ZapretMacOSProvider) anchorIsReferenced() bool {
-	out, err := runPfctl("", "-s", "Anchors")
-	if err != nil {
-		return false
-	}
-	return strings.Contains(string(out), pfAnchorName)
-}
-
+// flushPfAnchor removes our anchor rules and disables our anchor references
+// from pf. It is non-blocking: it runs pfctl in the background so Stop()
+// returns immediately.
 func (e *ZapretMacOSProvider) flushPfAnchor() {
 	if !e.anchorLoaded {
 		return
 	}
 	e.anchorLoaded = false
 	e.addLogLocked("Убираем правила pf...")
-	_, _ = runPfctl("", "-a", pfAnchorName, "-F", "all")
+	go func() {
+		_, _ = runPfctlPrivileged("", "-a", pfAnchorName, "-F", "all")
+	}()
 }
 
+func (e *ZapretMacOSProvider) anchorIsReferenced() bool {
+	out, err := runPfctlPrivileged("", "-s", "Anchors")
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), pfAnchorName)
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Lifecycle
+// ──────────────────────────────────────────────────────────────────────────────
+
 func (e *ZapretMacOSProvider) Start(ctx context.Context, profileName string) error {
-	// Stop outside the lock: Stop takes the same mutex. The previous code
-	// unlocked mid-function while a deferred Unlock was pending, so any error
-	// path double-unlocked and panicked.
+	// Stop outside the lock: Stop acquires the same mutex.
 	if e.GetStatus() == StatusRunning {
 		if e.currentProfileName() == profileName {
 			return nil
@@ -316,14 +445,14 @@ func (e *ZapretMacOSProvider) Start(ctx context.Context, profileName string) err
 		if resolved, resolveErr := ResolveEngineBinary(MacOSEngineBinary, ""); resolveErr == nil {
 			e.binPath = resolved
 		} else {
-			e.addLogLocked("Ошибка: бинарник nfqws не найден. Установите zapret (brew install zapret)")
+			e.addLogLocked("Ошибка: tpws не найден. Установите zapret (brew install zapret или собери вручную)")
 			e.setStatusLocked(StatusError)
-			return fmt.Errorf("бинарник nfqws не найден. Установите zapret (например, через brew install zapret)")
+			return fmt.Errorf("tpws не найден. Установите zapret (brew install zapret или собрать вручную из https://github.com/bol-van/zapret)")
 		}
 	}
 
 	e.setStatusLocked(StatusStarting)
-	e.addLogLocked(fmt.Sprintf("[%s] Настраиваем pf...", e.Name()))
+	e.addLogLocked(fmt.Sprintf("[%s] Настраиваем pf (route-to + rdr)...", e.Name()))
 
 	if err := e.loadPfAnchor(profile.PfRules); err != nil {
 		e.addLogLocked("Ошибка настройки pf: " + err.Error())
@@ -332,13 +461,15 @@ func (e *ZapretMacOSProvider) Start(ctx context.Context, profileName string) err
 	}
 	e.anchorLoaded = true
 
-	args := append([]string{"--port=" + divertPort}, profile.Args...)
+	// tpws args: --port=PORT, bind addr, then DPI desync flags.
+	args := append([]string{"--port=" + tpwsPort}, profile.Args...)
 
-	e.addLogLocked(fmt.Sprintf("[%s] Запускаем движок, профиль: %s", e.Name(), profileName))
+	e.addLogLocked(fmt.Sprintf("[%s] Запускаем tpws, профиль: %s", e.Name(), profileName))
+	e.addLogLocked(fmt.Sprintf("  Команда: tpws %s", strings.Join(args, " ")))
 
-	// No --daemon: the engine would fork and exit, cmd.Wait() would return at
-	// once, and the provider would report Stopped while the real process kept
-	// running with its PID lost.
+	// No --daemon: the engine would fork and exit, cmd.Wait() would return
+	// immediately, and the provider would report Stopped while the real
+	// process kept running with its PID lost.
 	runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	cmd := exec.CommandContext(runCtx, e.binPath, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -361,7 +492,7 @@ func (e *ZapretMacOSProvider) Start(ctx context.Context, profileName string) err
 	if err := cmd.Start(); err != nil {
 		cancel()
 		e.flushPfAnchor()
-		e.addLogLocked("Ошибка запуска: " + err.Error())
+		e.addLogLocked("Ошибка запуска tpws: " + err.Error())
 		e.setStatusLocked(StatusError)
 		return fmt.Errorf("не удалось запустить %s: %w", e.binPath, err)
 	}
@@ -370,7 +501,7 @@ func (e *ZapretMacOSProvider) Start(ctx context.Context, profileName string) err
 	e.cancel = cancel
 	e.currentProfile = profileName
 	e.setStatusLocked(StatusRunning)
-	e.addLogLocked("Движок активен.")
+	e.addLogLocked("tpws активен. Трафик перенаправлен.")
 
 	go e.pipeToLogs(stdout, "")
 	go e.pipeToLogs(stderr, "[stderr] ")
@@ -403,12 +534,12 @@ func (e *ZapretMacOSProvider) reap(cmd *exec.Cmd, profileName string) {
 
 	switch {
 	case err == nil:
-		e.addLogLocked("Движок остановлен.")
+		e.addLogLocked("tpws остановлен.")
 		e.setStatusLocked(StatusStopped)
 	case e.status == StatusStopped:
-		e.addLogLocked("Движок остановлен.")
+		e.addLogLocked("tpws остановлен.")
 	default:
-		e.addLogLocked(fmt.Sprintf("Движок аварийно завершился (профиль %s): %v", profileName, err))
+		e.addLogLocked(fmt.Sprintf("tpws аварийно завершился (профиль %s): %v", profileName, err))
 		e.setStatusLocked(StatusError)
 	}
 }
@@ -426,17 +557,16 @@ func (e *ZapretMacOSProvider) Stop() error {
 	cmd := e.cmd
 	cancel := e.cancel
 	pid := cmd.Process.Pid
-	e.addLogLocked("Останавливаем движок...")
+	e.addLogLocked("Останавливаем tpws...")
 	e.setStatusLocked(StatusStopped)
 	e.mu.Unlock()
 
-	// Signal our own process group only. This used to run `pkill -9 nfqws`,
-	// which killed every nfqws on the machine and denied it any chance to
-	// release the divert socket.
+	// Signal the entire process group to ensure all child processes exit.
 	if err := syscall.Kill(-pid, syscall.SIGTERM); err != nil {
 		_ = cmd.Process.Signal(syscall.SIGTERM)
 	}
 
+	// Wait up to 5 seconds for graceful shutdown.
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		if e.processReplaced(cmd) {
@@ -445,8 +575,9 @@ func (e *ZapretMacOSProvider) Stop() error {
 		time.Sleep(100 * time.Millisecond)
 	}
 
+	// Force-kill if still running.
 	if !e.processReplaced(cmd) {
-		e.addLog("Движок не завершился за 5 секунд, отправляем SIGKILL")
+		e.addLog("tpws не завершился за 5 секунд, принудительное завершение...")
 		if err := syscall.Kill(-pid, syscall.SIGKILL); err != nil {
 			_ = cmd.Process.Kill()
 		}
@@ -457,6 +588,10 @@ func (e *ZapretMacOSProvider) Stop() error {
 	}
 	return nil
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Internal helpers
+// ──────────────────────────────────────────────────────────────────────────────
 
 func (e *ZapretMacOSProvider) processReplaced(cmd *exec.Cmd) bool {
 	e.mu.Lock()
