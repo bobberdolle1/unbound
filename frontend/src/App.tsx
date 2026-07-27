@@ -938,7 +938,51 @@ export default function App() {
             <div className="flex-1 overflow-y-auto mb-4 min-h-[280px]">
               {luaTab === 'builder' ? (
                 <div className="space-y-4 pr-1">
-                  
+                  {/* Готовые пресеты конструктора */}
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs font-bold text-gray-600 uppercase">Шаблоны быстрых стратегий:</span>
+                    <div className="flex flex-wrap gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLuaIsAuto(true);
+                          setLuaFakeBlob('fake_default_tls');
+                          setLuaPos('1');
+                          setLuaFool('none');
+                          setLuaTtl(0);
+                        }}
+                        className="px-2 py-1 text-xs font-bold bg-blue-100 hover:bg-blue-200 text-blue-900 rounded-lg border border-blue-300 transition-all"
+                      >
+                        🚀 MultiSplit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLuaIsAuto(true);
+                          setLuaFakeBlob('fake_default_quic');
+                          setLuaPos('2');
+                          setLuaFool('md5sig');
+                          setLuaTtl(4);
+                        }}
+                        className="px-2 py-1 text-xs font-bold bg-red-100 hover:bg-red-200 text-red-900 rounded-lg border border-red-300 transition-all"
+                      >
+                        🔥 Aggressive Fake
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLuaIsAuto(true);
+                          setLuaFakeBlob('fake_default_tls');
+                          setLuaPos('host');
+                          setLuaFool('md5sig');
+                          setLuaTtl(3);
+                        }}
+                        className="px-2 py-1 text-xs font-bold bg-purple-100 hover:bg-purple-200 text-purple-900 rounded-lg border border-purple-300 transition-all"
+                      >
+                        🛡 MD5 Fooling
+                      </button>
+                    </div>
+                  </div>
                   {/* Фейковый пакет */}
                   <div className="flex flex-col gap-1">
                     <span className="text-sm font-bold text-gray-700">Тип фейкового пакета (Payload):</span>

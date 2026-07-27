@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
+	"sync"
 	"time"
 )
 
@@ -35,7 +37,7 @@ func TestProfile(ctx context.Context, urls []string, timeout time.Duration) []Te
 		urls = TestURLs
 	}
 
-	results := make([]TestResult, 0, len(urls))
+	results := make([]TestResult, len(urls))
 	client := &http.Client{
 		Timeout: timeout,
 		Transport: &http.Transport{
@@ -50,33 +52,38 @@ func TestProfile(ctx context.Context, urls []string, timeout time.Duration) []Te
 		},
 	}
 
-	for _, url := range urls {
-		result := TestResult{URL: url}
-		start := time.Now()
+	var wg sync.WaitGroup
+	for i, url := range urls {
+		wg.Add(1)
+		go func(idx int, targetURL string) {
+			defer wg.Done()
+			res := TestResult{URL: targetURL}
+			start := time.Now()
 
-		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-		if err != nil {
-			result.Error = err.Error()
-			results = append(results, result)
-			continue
-		}
+			req, err := http.NewRequestWithContext(ctx, "GET", targetURL, nil)
+			if err != nil {
+				res.Error = err.Error()
+				results[idx] = res
+				return
+			}
+			req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
 
-		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+			resp, err := client.Do(req)
+			res.Latency = time.Since(start)
 
-		resp, err := client.Do(req)
-		result.Latency = time.Since(start)
+			if err != nil {
+				res.Error = err.Error()
+				results[idx] = res
+				return
+			}
+			defer resp.Body.Close()
 
-		if err != nil {
-			result.Error = err.Error()
-			results = append(results, result)
-			continue
-		}
-		defer resp.Body.Close()
-
-		result.StatusCode = resp.StatusCode
-		result.Success = resp.StatusCode >= 200 && resp.StatusCode < 400
-		results = append(results, result)
+			res.StatusCode = resp.StatusCode
+			res.Success = resp.StatusCode >= 200 && resp.StatusCode < 400
+			results[idx] = res
+		}(i, url)
 	}
+	wg.Wait()
 
 	return results
 }
@@ -85,11 +92,19 @@ func CalculateScore(results []TestResult) int {
 	score := 0
 	for _, r := range results {
 		if r.Success {
-			score += 100
-			if r.Latency < 1*time.Second {
-				score += 50
+			// YouTube and Discord carry extra weight for DPI bypass
+			weight := 100
+			if strings.Contains(r.URL, "youtube") || strings.Contains(r.URL, "discord") {
+				weight = 150
+			}
+			score += weight
+
+			if r.Latency < 500*time.Millisecond {
+				score += 60
+			} else if r.Latency < 1500*time.Millisecond {
+				score += 35
 			} else if r.Latency < 3*time.Second {
-				score += 25
+				score += 15
 			}
 		}
 	}
