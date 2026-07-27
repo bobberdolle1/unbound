@@ -1,6 +1,0 @@
-# Local Android SDK configuration
-# Copy this file to local.properties and set your SDK path
-# macOS default:
-# sdk.dir=/Users/<username>/Library/Android/sdk
-# Linux default:
-# sdk.dir=/home/<username>/Android/Sdk

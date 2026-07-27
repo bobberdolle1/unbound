@@ -2,26 +2,29 @@
 # PKGBUILD for Arch Linux -- Unbound DPI/censorship bypass
 
 pkgname=unbound-cli
-pkgver=0.1.0
+pkgver=0.1.0_refresh
 pkgrel=1
 pkgdesc="Linux DPI/censorship bypass daemon wrapping nfqws with nftables management"
 arch=('x86_64' 'aarch64')
 url="https://github.com/unbound/unbound"
-license=('MIT')
+license=('GPL-3.0-only')
 depends=('nftables' 'libnetfilter_queue')
-makedepends=('cargo' 'rustup')
+makedepends=('go')
 optdepends=('zapret: provides nfqws binary')
 source=("${pkgname}-${pkgver}.tar.gz::https://github.com/unbound/unbound/archive/v${pkgver}.tar.gz"
         "unbound.service")
 sha256sums=('SKIP' 'SKIP')
 
-prepare() {
-    cd "${srcdir}/unbound-${pkgver}/linux"
+build() {
+    cd "${srcdir}/unbound-${pkgver}"
+    go build -trimpath -ldflags="-s -w -X unbound/engine.Version=${pkgver}" -o unbound-cli .
 }
 
-build() {
-    cd "${srcdir}/unbound-${pkgver}/linux"
-    cargo build --release --target-dir target
+package() {
+    cd "${srcdir}/unbound-${pkgver}"
+
+    install -Dm755 "unbound-cli" \
+        "${pkgdir}/usr/bin/unbound-cli"
 }
 
 package() {

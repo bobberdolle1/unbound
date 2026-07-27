@@ -6,18 +6,10 @@
 #   ./build_all.sh <target> [options]
 #
 # Targets:
-#   windows          - Build Windows GUI binary via Wails (requires Wine + Go)
+#   windows          - Build Windows GUI binary via Wails
 #   darwin           - Build macOS binary via Wails
 #   linux            - Build Linux CLI/GUI binary
-#   linux-steamdeck  - Build for Steam Deck (Decky Loader plugin + binary)
-#   android          - Build Android APK via Gradle
-#   ios              - Build iOS/macOS universal binary
-#   tvos             - Build tvOS binary
-#   openwrt          - Build OpenWrt IPK package
-#   webos            - Build LG webOS app
-#   decky            - Build Decky Loader plugin only
-#   magisk           - Build Magisk module ZIP
-#   all              - Build all available targets
+#   all              - Build all desktop targets (Windows, Linux, macOS)
 #
 # Options:
 #   --debug          - Enable debug build mode
@@ -27,8 +19,8 @@
 #
 # Examples:
 #   ./build_all.sh windows
-#   ./build_all.sh android --debug
-#   ./build_all.sh all --clean --version 1.0.5
+#   ./build_all.sh linux --debug
+#   ./build_all.sh all --clean --version 0.1.0-refresh
 # ============================================================================
 
 set -euo pipefail
@@ -175,170 +167,23 @@ build_linux() {
     log_ok "Linux binary built: $BUILD_DIR/bin/unbound-linux"
 }
 
-# ── Steam Deck (SteamOS + Decky plugin) ──────────────────────────────────────
-build_linux_steamdeck() {
-    build_linux
-    build_decky
-}
-
-# ── Android (Gradle) ────────────────────────────────────────────────────────
-build_android() {
-    local ver
-    ver="$(resolve_version)"
-    log_step "Building Android APK"
-
-    if [ -d "$PROJECT_ROOT/android" ]; then
-        if command -v ./gradlew &>/dev/null; then
-            pushd "$PROJECT_ROOT/android" >/dev/null
-            local variant="assembleRelease"
-            [ "$DEBUG_MODE" = true ] && variant="assembleDebug"
-            ./gradlew $variant
-            popd >/dev/null
-        elif command -v gradle &>/dev/null; then
-            pushd "$PROJECT_ROOT/android" >/dev/null
-            gradle assembleRelease
-            popd >/dev/null
-        else
-            log_error "Gradle wrapper or gradle CLI not found"
-            return 1
-        fi
-
-        mkdir -p "$DIST_DIR"
-        find "$PROJECT_ROOT/android" -name "*.apk" -exec cp -v {} "$DIST_DIR/" \; 2>/dev/null || true
-        log_ok "Android APK(s) copied to: $DIST_DIR/"
-    else
-        log_warn "android/ directory not found, skipping"
-    fi
-}
-
-# ── iOS / tvOS (must run on Mac with Xcode) ─────────────────────────────────
-build_ios() {
-    log_step "Building iOS/tvOS binaries"
-    if [ -f "$PROJECT_ROOT/macos/build.sh" ]; then
-        bash "$PROJECT_ROOT/macos/build.sh"
-    fi
-    if [ -f "$PROJECT_ROOT/tvos/build-tvos.sh" ]; then
-        bash "$PROJECT_ROOT/tvos/build-tvos.sh"
-    fi
-    log_ok "Apple platform builds complete"
-}
-
-build_tvos() {
-    log_step "Building tvOS binary"
-    if [ -f "$PROJECT_ROOT/tvos/build-tvos.sh" ]; then
-        bash "$PROJECT_ROOT/tvos/build-tvos.sh"
-    else
-        log_warn "tvos/build-tvos.sh not found"
-    fi
-}
-
-# ── OpenWrt (Docker or native) ──────────────────────────────────────────────
-build_openwrt() {
-    local ver
-    ver="$(resolve_version)"
-    log_step "Building OpenWrt IPK package"
-
-    if [ -d "$PROJECT_ROOT/openwrt" ]; then
-        # Build the Go binary for mipsle (OpenWrt typical arch)
-        require_cmd go "https://go.dev/dl/"
-        GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -trimpath \
-            -o "$BUILD_DIR/bin/unbound-openwrt-mipsle" \
-            -ldflags="$(go_ldflags)" .
-
-        # Package as IPK
-        if command -v docker &>/dev/null; then
-            docker build -t unbound-openwrt \
-                --build-arg VERSION="$ver" \
-                "$PROJECT_ROOT/openwrt/unbound-wrt/" 2>/dev/null || \
-            log_warn "Docker IPK build failed (may require SDK setup)"
-        fi
-
-        mkdir -p "$DIST_DIR"
-        log_ok "OpenWrt binary built: $BUILD_DIR/bin/unbound-openwrt-mipsle"
-    else
-        log_warn "openwrt/ directory not found, skipping"
-    fi
-}
-
-# ── webOS (LG) ───────────────────────────────────────────────────────────────
-build_webos() {
-    log_step "Building webOS app"
-    if [ -d "$PROJECT_ROOT/webos" ]; then
-        pushd "$PROJECT_ROOT/webos" >/dev/null
-        if command -v ares-package &>/dev/null; then
-            ares-package -o "$BUILD_DIR/bin-webos" .
-        elif command -v npm &>/dev/null && [ -f package.json ]; then
-            npm install
-            npm run build 2>/dev/null || log_warn "webos npm build script not defined"
-        fi
-        popd >/dev/null
-        log_ok "webOS build complete"
-    else
-        log_warn "webos/ directory not found, skipping"
-    fi
-}
-
-# ── Decky Loader Plugin ─────────────────────────────────────────────────────
-build_decky() {
-    log_step "Building Decky Loader plugin"
-    if [ -d "$PROJECT_ROOT/decky-plugin" ]; then
-        pushd "$PROJECT_ROOT/decky-plugin" >/dev/null
-        require_cmd npm "https://nodejs.org/"
-        npm install
-        npm run build 2>/dev/null || log_warn "Decky plugin build script not found"
-        popd >/dev/null
-
-        mkdir -p "$DIST_DIR"
-        if [ -f "$PROJECT_ROOT/scripts/build-decky.sh" ]; then
-            bash "$PROJECT_ROOT/scripts/build-decky.sh"
-        fi
-        log_ok "Decky plugin built"
-    else
-        log_warn "decky-plugin/ directory not found, skipping"
-    fi
-}
-
-# ── Magisk Module ────────────────────────────────────────────────────────────
-build_magisk() {
-    log_step "Building Magisk module"
-
-    if [ -d "$PROJECT_ROOT/magisk-module" ]; then
-        mkdir -p "$DIST_DIR"
-        "$PROJECT_ROOT/scripts/build-magisk-binaries.sh"
-        "$PROJECT_ROOT/scripts/package-magisk-module.sh"
-        cp -f "$PROJECT_ROOT/UnboundCore-v2.5.0.zip" "$DIST_DIR/" 2>/dev/null || true
-        log_ok "Magisk module: $PROJECT_ROOT/UnboundCore-v2.5.0.zip"
-    else
-        log_warn "magisk-module/ directory not found, skipping"
-    fi
-}
-
 # ── All targets ──────────────────────────────────────────────────────────────
 build_all() {
-    log_step "Building ALL available targets"
-    echo -e "  ${YELLOW}•${NC} Linux"
-    echo -e "  ${YELLOW}•${NC} OpenWrt"
-    echo -e "  ${YELLOW}•${NC} Android"
-    echo -e "  ${CYAN}•${NC} Decky Plugin"
-    echo -e "  ${YELLOW}•${NC} Magisk Module"
-    echo -e "  ${YELLOW}•${NC} webOS"
-
+    log_step "Building ALL desktop targets"
+    echo -e "  ${CYAN}•${NC} Linux"
     build_linux
-    build_openwrt
-    build_android
-    build_decky
-    build_magisk
-    build_webos
 
-    # macOS/iOS only on Mac
-    if [[ "$(uname -s)" == "Darwin" ]]; then
-        echo -e "  ${YELLOW}•${NC} macOS"
-        echo -e "  ${YELLOW}•${NC} iOS/tvOS"
-        build_darwin
-        build_ios
+    if command -v wails &>/dev/null; then
+        echo -e "  ${CYAN}•${NC} Windows"
+        build_windows
     fi
 
-    log_ok "All builds complete"
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        echo -e "  ${CYAN}•${NC} macOS"
+        build_darwin
+    fi
+
+    log_ok "Desktop builds complete"
 }
 
 # ── Usage / Help ─────────────────────────────────────────────────────────────
@@ -372,14 +217,6 @@ main() {
         windows)          build_windows ;;
         darwin|macos)     build_darwin ;;
         linux)            build_linux ;;
-        linux-steamdeck|steamdeck) build_linux_steamdeck ;;
-        android)          build_android ;;
-        ios)              build_ios ;;
-        tvos)             build_tvos ;;
-        openwrt)          build_openwrt ;;
-        webos)            build_webos ;;
-        decky|decky-plugin) build_decky ;;
-        magisk)           build_magisk ;;
         all)              build_all ;;
         *)
             log_error "Unknown target: $target"

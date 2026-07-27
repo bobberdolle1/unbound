@@ -11,9 +11,6 @@
 #   ./scripts/check.sh            # everything
 #   ./scripts/check.sh go         # gofmt + vet + tests + cross-compile
 #   ./scripts/check.sh frontend   # type-check + build the desktop UI
-#   ./scripts/check.sh website    # build the Astro site
-#   ./scripts/check.sh extension  # type-check + build the browser extension
-#   ./scripts/check.sh decky      # build the Steam Deck plugin
 #   ./scripts/check.sh shell      # parse every shell script with its shebang
 #   ./scripts/check.sh assets     # verify checksums of the vendored engine
 #   ./scripts/check.sh --quick    # skip cross-compilation (the slow part)
@@ -61,7 +58,7 @@ QUICK=0
 for arg in "$@"; do
     case "$arg" in
         --quick) QUICK=1 ;;
-        go|frontend|website|extension|decky|shell|assets|all) TARGET="$arg" ;;
+        go|frontend|shell|assets|all) TARGET="$arg" ;;
         -h|--help) sed -n '2,24p' "$0" | sed 's/^# \?//'; exit 0 ;;
         *) echo "Unknown argument: $arg (try --help)" >&2; exit 2 ;;
     esac
@@ -82,32 +79,6 @@ check_frontend() {
     fi
     run "tsc --noEmit"  bash -c 'cd frontend && npm run typecheck'
     run "vite build"    bash -c 'cd frontend && npm run build'
-}
-
-# ── Browser extension ────────────────────────────────────────────────────────
-# Nothing covered this before, which is how four type errors and a dead module
-# reached the tree. `npm run build` now type-checks first, so one call is enough.
-check_extension() {
-    step "Browser extension (Chrome + Firefox)"
-    if ! have npm; then
-        warn "npm not installed - skipping"
-        return
-    fi
-
-    if [ ! -d extension-web/node_modules ]; then
-        run "npm ci" bash -c 'cd extension-web && npm ci --no-audit --no-fund'
-    fi
-    if ! run "type-check + build" bash -c 'cd extension-web && npm run build'; then
-        return
-    fi
-
-    for target in chrome firefox; do
-        if [ -f "extension-web/dist/$target/manifest.json" ]; then
-            ok "$target manifest produced"
-        else
-            fail "$target build produced no manifest.json"
-        fi
-    done
 }
 
 # ── Shell scripts ────────────────────────────────────────────────────────────
@@ -154,49 +125,6 @@ check_assets() {
         return
     fi
     run "engine asset checksums" ./scripts/engine-assets.sh verify
-}
-
-# ── Steam Deck plugin ────────────────────────────────────────────────────────
-check_decky() {
-    step "Decky plugin (Steam Deck)"
-    if ! have npm; then
-        warn "npm not installed - skipping"
-        return
-    fi
-    if [ ! -f decky-plugin/package.json ]; then
-        warn "decky-plugin/package.json not found - skipping"
-        return
-    fi
-
-    if [ ! -d decky-plugin/node_modules ]; then
-        run "npm ci" bash -c 'cd decky-plugin && npm ci --no-audit --no-fund'
-    fi
-    run "rollup build" bash -c 'cd decky-plugin && npm run build'
-}
-
-# ── Website ──────────────────────────────────────────────────────────────────
-check_website() {
-    step "Website (Astro)"
-    if ! have npm; then
-        warn "npm not installed - skipping"
-        return
-    fi
-
-    if [ ! -d website/node_modules ]; then
-        run "npm ci" bash -c 'cd website && npm ci --no-audit --no-fund'
-    fi
-    if ! run "astro build" bash -c 'cd website && npm run build'; then
-        return
-    fi
-
-    # Same guards pages.yml applies before publishing.
-    if [ ! -f website/dist/index.html ]; then
-        fail "website/dist/index.html missing after build"
-    elif ! grep -q '/unbound/' website/dist/index.html; then
-        fail "built HTML has no /unbound/ base path - check astro.config.mjs"
-    else
-        ok "base path /unbound/ present"
-    fi
 }
 
 # ── Go ───────────────────────────────────────────────────────────────────────
@@ -254,7 +182,7 @@ check_go() {
     step "Cross-compilation"
     # The GUI needs cgo (webkit2gtk / Cocoa / WebView2) which is unavailable
     # when cross-compiling, so check the packages that must build everywhere.
-    for pair in linux/amd64 linux/arm64 linux/mipsle windows/amd64 darwin/amd64 darwin/arm64; do
+    for pair in linux/amd64 linux/arm64 windows/amd64 darwin/amd64 darwin/arm64; do
         local goos="${pair%%/*}" goarch="${pair##*/}"
         run "$pair" env GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=0 GOMIPS=softfloat \
             go build -o /dev/null ./engine/...
@@ -266,13 +194,10 @@ printf '%sUnbound — local checks%s  (mirrors .github/workflows/ci.yml)\n' "$BO
 
 case "$TARGET" in
     frontend)  check_frontend ;;
-    website)   check_website ;;
-    extension) check_extension ;;
-    decky)     check_decky ;;
     shell)     check_shell ;;
     assets)    check_assets ;;
     go)        check_go ;;
-    all)       check_frontend; check_go; check_website; check_extension; check_decky; check_shell; check_assets ;;
+    all)       check_frontend; check_go; check_shell; check_assets ;;
 esac
 
 printf '\n'

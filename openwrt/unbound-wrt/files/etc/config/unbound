@@ -1,5 +1,0 @@
-config general 'general'
-	option enabled '0'
-	option strategy 'multidisorder'
-	option exclude_domains ''
-	option exclude_ips ''

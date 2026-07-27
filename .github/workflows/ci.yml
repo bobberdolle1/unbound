@@ -120,8 +120,6 @@ jobs:
             goarch: amd64
           - goos: linux
             goarch: arm64
-          - goos: linux
-            goarch: mipsle   # OpenWrt routers
           - goos: windows
             goarch: amd64
           - goos: darwin
@@ -158,41 +156,7 @@ jobs:
         run: go vet ./...
 
   # ───────────────────────────────────────────────────────────────────────────
-  # Browser extension — nothing covered this, which is how four type errors
-  # and an entirely dead module reached the tree
-  # ───────────────────────────────────────────────────────────────────────────
-  extension:
-    name: Browser extension
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: extension-web/package-lock.json
-
-      - name: Install dependencies
-        working-directory: extension-web
-        run: npm ci
-
-      # `npm run build` type-checks first, then builds both browser targets.
-      - name: Type-check and build
-        working-directory: extension-web
-        run: npm run build
-
-      - name: Verify both targets produced a manifest
-        working-directory: extension-web
-        run: |
-          for target in chrome firefox; do
-            test -f "dist/$target/manifest.json" \
-              || { echo "::error::$target build produced no manifest.json"; exit 1; }
-          done
-
-  # ───────────────────────────────────────────────────────────────────────────
-  # Vendored engine assets — committed binaries users run as administrator,
-  # including a kernel driver, with no record of which release they came from
+  # Vendored engine assets — committed binaries users run as administrator
   # ───────────────────────────────────────────────────────────────────────────
   engine-assets:
     name: Engine assets
@@ -202,60 +166,11 @@ jobs:
       - run: ./scripts/check.sh assets
 
   # ───────────────────────────────────────────────────────────────────────────
-  # Shell scripts — the Magisk module runs under Android's mksh, where bash
-  # arrays silently abort the script mid-way through installing bypass rules
+  # Shell scripts — syntax validation
   # ───────────────────────────────────────────────────────────────────────────
   shell:
     name: Shell scripts
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Parse each script with the interpreter its shebang names
-        run: ./scripts/check.sh shell
-
-  # ───────────────────────────────────────────────────────────────────────────
-  # Steam Deck plugin
-  # ───────────────────────────────────────────────────────────────────────────
-  decky:
-    name: Decky plugin
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: decky-plugin/package-lock.json
-
-      - name: Install dependencies
-        working-directory: decky-plugin
-        run: npm ci
-
-      - name: Build
-        working-directory: decky-plugin
-        run: npm run build
-
-  # ───────────────────────────────────────────────────────────────────────────
-  # Website — the Astro site must keep building; pages.yml publishes it
-  # ───────────────────────────────────────────────────────────────────────────
-  website:
-    name: Website
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: website/package-lock.json
-
-      - name: Install dependencies
-        working-directory: website
-        run: npm ci
-
-      - name: Build
-        working-directory: website
-        run: npm run build
+      - run: ./scripts/check.sh shell

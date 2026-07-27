@@ -9,8 +9,7 @@ License:        MIT
 URL:            https://github.com/unbound/unbound
 Source0:        %{name}-%{version}.tar.gz
 
-BuildRequires:  cargo
-BuildRequires:  rust
+BuildRequires:  golang
 Requires:       nftables
 Requires:       libnetfilter_queue
 
@@ -23,13 +22,11 @@ traffic through NFQUEUE for transparent DPI bypass.
 %setup -q
 
 %build
-cd linux
-cargo build --release --target-dir ../target
+go build -trimpath -ldflags="-s -w -X unbound/engine.Version=%{version}" -o unbound-cli .
 
 %install
-cd linux
-install -Dm755 ../target/release/unbound-cli %{buildroot}/usr/bin/unbound-cli
-install -Dm644 ../packaging/unbound.service %{buildroot}/usr/lib/systemd/system/unbound.service
+install -Dm755 unbound-cli %{buildroot}/usr/bin/unbound-cli
+install -Dm644 packaging/unbound.service %{buildroot}/usr/lib/systemd/system/unbound.service
 
 %post
 systemctl daemon-reload
@@ -45,7 +42,7 @@ fi
 /usr/bin/unbound-cli
 /usr/lib/systemd/system/unbound.service
 %license LICENSE
-%doc linux/README.md
+%doc README.md
 
 %changelog
 * Tue Apr 07 2026 Unbound Contributors - 0.1.0-1

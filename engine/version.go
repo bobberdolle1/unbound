@@ -10,11 +10,11 @@ package engine
 //
 // Release builds override this at link time:
 //
-//	go build -ldflags="-X unbound/engine.Version=2.5.0"
+//	go build -ldflags="-X unbound/engine.Version=0.1.0-refresh"
 //
 // Keep the default in step with the newest CHANGELOG entry so plain
 // `go build` and `wails build` still report something truthful.
-var Version = "2.5.0"
+var Version = "0.1.0-refresh"
 
 // UserAgent is the HTTP User-Agent used for list updates and connectivity
 // probes.

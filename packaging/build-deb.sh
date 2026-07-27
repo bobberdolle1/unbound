@@ -3,7 +3,7 @@
 # Run from project root: bash packaging/build-deb.sh
 set -euo pipefail
 
-VERSION="${1:-0.1.0}"
+VERSION="${1:-0.1.0-refresh}"
 PKG_NAME="unbound-cli"
 PKG_FULL="${PKG_NAME}_${VERSION}_amd64"
 DEB_DIR="packaging/deb-staging/${PKG_FULL}"
@@ -13,17 +13,15 @@ echo "Building .deb package: ${PKG_FULL}"
 rm -rf "packaging/deb-staging"
 mkdir -p "${DEB_DIR}"
 
-# Build Rust binary
-echo "[1/4] Building Rust binary..."
-cd linux
-cargo build --release --target-dir ../target
-cd ..
+# Build Go binary
+echo "[1/4] Building Go CLI binary..."
+go build -trimpath -ldflags="-s -w -X unbound/engine.Version=${VERSION}" -o packaging/deb-staging/unbound-cli .
 
 # Stage files
 echo "[2/4] Staging files..."
 mkdir -p "${DEB_DIR}"/{usr/bin,usr/lib/systemd/system,usr/share/doc/${PKG_NAME},DEBIAN}
 
-cp "target/release/unbound-cli" "${DEB_DIR}/usr/bin/"
+mv "packaging/deb-staging/unbound-cli" "${DEB_DIR}/usr/bin/"
 chmod 755 "${DEB_DIR}/usr/bin/unbound-cli"
 cp "packaging/unbound.service" "${DEB_DIR}/usr/lib/systemd/system/"
 cp "README.md" "${DEB_DIR}/usr/share/doc/${PKG_NAME}/" 2>/dev/null || true

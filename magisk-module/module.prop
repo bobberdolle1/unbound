@@ -1,9 +1,0 @@
-id=unbound-core
-name=Unbound Core
-version=v2.5.0
-versionCode=250
-author=Unbound Team
-description=Системный прозрачный обход DPI/цензуры через nfqws, iptables/nftables и фиксацию TTL 64 для бесплатной раздачи интернета. Встроенный WebUI интерфейс управления.
-webui=true
-minMagisk=24000
-updateJson=https://raw.githubusercontent.com/bobberdolle1/unbound/master/magisk-module/update.json

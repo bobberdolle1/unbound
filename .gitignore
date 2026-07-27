@@ -12,8 +12,6 @@
 !engine/core_bin/**
 !engine/lists/**
 !engine/lua_scripts/**
-!engine/windivert.filter/**
-!magisk-module/binaries/**
 
 # ─── Dependencies ───────────────────────────────────────────────────────────
 node_modules/
@@ -22,22 +20,11 @@ node_modules/
 build/bin/
 /dist/
 release/
-website/dist/
-website/.astro/
-target/
 
 # Wails embeds frontend/dist, so `go build` fails on a clean clone unless the
 # directory exists. Keep the placeholder, ignore everything Vite writes there.
 frontend/dist/*
 !frontend/dist/.gitkeep
-*.ipk
-*.apk
-*.aab
-UnboundCore-*.zip
-android/.gradle/
-android/build/
-android/app/build/
-android/local.properties
 
 # ─── Test artifacts ─────────────────────────────────────────────────────────
 *.test
@@ -76,10 +63,3 @@ go.work.sum
 .DS_Store
 Thumbs.db
 
-# Upstream tpws sources fetched by scripts/fetch-tpws.sh (GPL-3.0,
-# third-party, not vendored). ios_main.c and the shims below stay tracked.
-theos/unbound-legacy/engine/tpws/*.c
-theos/unbound-legacy/engine/tpws/*.h
-!theos/unbound-legacy/engine/tpws/ios_main.c
-!theos/unbound-legacy/engine/tpws/tpws.h
-!theos/unbound-legacy/engine/tpws/darwin_compat.h

@@ -119,7 +119,6 @@ jobs:
         include:
           - goarch: amd64
           - goarch: arm64
-          - goarch: mipsle   # OpenWrt / consumer routers
     steps:
       - uses: actions/checkout@v4
 
@@ -218,120 +217,6 @@ jobs:
           path: release/*.zip
           retention-days: 30
 
-  # ───────────────────────────────────────────────────────────────────────────
-  build-android:
-    name: Android (Gradle)
-    runs-on: ubuntu-latest
-    needs: resolve-version
-    env:
-      VERSION: ${{ needs.resolve-version.outputs.version }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: ${{ env.JAVA_VERSION }}
-          cache: gradle
-
-      - uses: android-actions/setup-android@v3
-
-      # The project has no Gradle wrapper, so the version has to be pinned
-      # here. AGP 8.5.2 (android/build.gradle.kts) requires Gradle 8.7 or
-      # newer; relying on whatever the runner image happens to ship would break
-      # silently whenever that image is updated.
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
-
-      - name: Build APK
-        working-directory: android
-        run: gradle assembleRelease --no-daemon -PunboundVersionName=${{ env.VERSION }}
-
-      - name: Package
-        run: |
-          set -euo pipefail
-          mkdir -p release
-          found=0
-          while IFS= read -r apk; do
-            # The old rename used ${$apk##*-}, which is not valid shell syntax
-            # and aborted the step.
-            base="$(basename "$apk" .apk)"
-            cp "$apk" "release/unbound-v${VERSION}-android-${base}.apk"
-            found=1
-          done < <(find android -name '*.apk' -type f)
-          if [ "$found" -eq 0 ]; then
-            echo "::error::Gradle produced no APK"
-            exit 1
-          fi
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: unbound-android
-          path: release/*.apk
-          retention-days: 30
-
-  # ───────────────────────────────────────────────────────────────────────────
-  build-decky:
-    name: Decky plugin (Steam Deck)
-    runs-on: ubuntu-latest
-    needs: resolve-version
-    env:
-      VERSION: ${{ needs.resolve-version.outputs.version }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: decky-plugin/package-lock.json
-
-      - name: Build plugin
-        working-directory: decky-plugin
-        run: |
-          set -euo pipefail
-          npm ci
-          npm run build
-
-      - name: Package
-        run: |
-          set -euo pipefail
-          mkdir -p release
-          tar -czf "release/unbound-v${VERSION}-decky-plugin.tar.gz" \
-            --exclude=node_modules -C decky-plugin .
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: unbound-decky
-          path: release/*.tar.gz
-          retention-days: 30
-
-  # ───────────────────────────────────────────────────────────────────────────
-  build-magisk:
-    name: Magisk module
-    runs-on: ubuntu-latest
-    needs: resolve-version
-    env:
-      VERSION: ${{ needs.resolve-version.outputs.version }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Package module
-        run: |
-          set -euo pipefail
-          mkdir -p release
-          cd magisk-module
-          zip -qr "../release/unbound-v${VERSION}-magisk.zip" . \
-            -x '*.git*' -x '*.DS_Store'
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: unbound-magisk
-          path: release/*.zip
-          retention-days: 30
-
-  # ───────────────────────────────────────────────────────────────────────────
   release:
     name: Publish GitHub Release
     runs-on: ubuntu-latest
@@ -340,9 +225,6 @@ jobs:
       - build-windows
       - build-linux
       - build-macos
-      - build-android
-      - build-decky
-      - build-magisk
     if: >-
       always() &&
       (github.ref_type == 'tag' ||
@@ -389,8 +271,6 @@ jobs:
           files: |
             artifacts/**/*.zip
             artifacts/**/*.tar.gz
-            artifacts/**/*.apk
-            artifacts/**/*.ipk
           draft: ${{ github.ref_type != 'tag' }}
           prerelease: ${{ contains(needs.resolve-version.outputs.version, 'dev') || contains(needs.resolve-version.outputs.version, 'beta') || contains(needs.resolve-version.outputs.version, 'rc') }}
           generate_release_notes: true

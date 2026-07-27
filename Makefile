@@ -9,22 +9,20 @@
 #   make quick      the same, minus cross-compilation
 #   make build      CLI binary for the host platform
 #   make gui        desktop app via Wails
-#   make site       build the website
-#   make deploy-site  publish the website to gh-pages
 # ============================================================================
 
 SHELL := /usr/bin/env bash
 
 # Keep in step with the newest CHANGELOG entry; release builds pass this to
 # -ldflags so the binary stops reporting a stale version.
-VERSION ?= 2.5.0
+VERSION ?= 0.1.0-refresh
 LDFLAGS := -s -w -X unbound/engine.Version=$(VERSION)
 
 GOOS_HOST := $(shell go env GOOS 2>/dev/null)
 BIN_NAME  := unbound$(if $(filter windows,$(GOOS_HOST)),.exe,)
 
 .DEFAULT_GOAL := help
-.PHONY: help check quick fmt vet test frontend site build gui deploy-site clean install-hooks
+.PHONY: help check quick fmt vet test frontend build gui clean install-hooks
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -71,31 +69,6 @@ gui: ## Build the desktop app via Wails
 		fi \
 	}
 
-site: ## Build the Astro website
-	@cd website && npm ci --no-audit --no-fund && npm run build
-
-deploy-site: site ## Publish the website to the gh-pages branch
-	@cd website && npx gh-pages -d dist -m "Deploy website $(VERSION)"
-	@echo "published to https://bobberdolle1.github.io/unbound/"
-
-install-hooks: ## Run the checks automatically before every push
-	@ln -sf ../../scripts/check.sh .git/hooks/pre-push
-	@echo "pre-push hook installed (runs ./scripts/check.sh)"
-
-magisk-module: ## Build and package the Magisk system module ZIP
-	@./scripts/build-magisk-binaries.sh
-	@./scripts/package-magisk-module.sh
-
-android-app: ## Assemble the Android APK
-	@cd android && gradle assembleDebug
-
-check-android: magisk-module ## Test Magisk scripts and Android configuration
-	@sh -n magisk-module/customize.sh
-	@sh -n magisk-module/service.sh
-	@sh -n magisk-module/scripts/iptables_setup.sh
-	@sh -n magisk-module/scripts/iptables_cleanup.sh
-	@echo "Android & Magisk checks passed OK!"
-
 clean: ## Remove build artifacts
-	@rm -rf build/bin frontend/dist/assets website/dist UnboundCore-*.zip
+	@rm -rf build/bin frontend/dist
 	@echo "cleaned"

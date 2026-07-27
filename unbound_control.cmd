@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-title UNBOUND Control Center v2.5.0
+title UNBOUND Control Center v0.1.0-refresh
 
 :: Check Admin Privileges
 net session >nul 2>&1
@@ -17,7 +17,7 @@ if %errorLevel% neq 0 (
 :menu
 cls
 echo ===================================================
-echo   🚀 UNBOUND CONTROL CENTER v2.5.0
+echo   🚀 UNBOUND CONTROL CENTER v0.1.0-refresh
 echo ===================================================
 echo.
 echo [1] Запустить в графическом режиме (GUI)

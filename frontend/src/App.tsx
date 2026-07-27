@@ -636,7 +636,7 @@ export default function App() {
             <circle cx="256" cy="256" r="20" fill="#F8FAFC" />
           </svg>
           <span className="font-bold text-sm text-[var(--ui-text)] tracking-wider">UNBOUND</span>
-          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">v2.5.0</span>
+          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">{appVersion ? `v${appVersion}` : 'v0.1.0-refresh'}</span>
         </div>
 
         <div className="flex items-center gap-4 text-gray-500 app-no-drag">
@@ -1210,7 +1210,7 @@ export default function App() {
             </div>
             
             <div className="px-4 py-2 flex justify-center">
-              <span className="text-xs" style={{ color: 'var(--ui-text-muted)' }}>v2.5.0 — Unbound</span>
+              <span className="text-xs" style={{ color: 'var(--ui-text-muted)' }}>{appVersion ? `v${appVersion}` : 'v0.1.0-refresh'} — Unbound Refresh</span>
             </div>
           </div>
         </div>

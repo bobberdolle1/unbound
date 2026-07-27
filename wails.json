@@ -17,9 +17,9 @@
   "info": {
     "companyName": "UNBOUND",
     "productName": "UNBOUND ClearFlow Engine",
-    "productVersion": "2.5.0",
+    "productVersion": "0.1.0-refresh",
     "copyright": "Copyright \u00a9 2024-2026 UNBOUND Team",
-    "comments": "Ultimate DPI bypass engine combining Zapret 2, AmneziaWG, Xray, and cross-platform support"
+    "comments": "UNBOUND Refresh - DPI bypass engine for Windows, Linux & macOS"
   },
   "wails": {
     "windows": {
