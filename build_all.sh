@@ -300,23 +300,14 @@ build_decky() {
 
 # ── Magisk Module ────────────────────────────────────────────────────────────
 build_magisk() {
-    local ver
-    ver="$(resolve_version)"
     log_step "Building Magisk module"
 
     if [ -d "$PROJECT_ROOT/magisk-module" ]; then
         mkdir -p "$DIST_DIR"
-        local zip="$DIST_DIR/unbound-magisk-v${ver}.zip"
-
-        pushd "$PROJECT_ROOT/magisk-module" >/dev/null
-        if command -v zip &>/dev/null; then
-            zip -r "$zip" . -x "*.git*"
-        else
-            tar -czf "$DIST_DIR/unbound-magisk-v${ver}.tar.gz" .
-        fi
-        popd >/dev/null
-
-        log_ok "Magisk module: $zip"
+        "$PROJECT_ROOT/scripts/build-magisk-binaries.sh"
+        "$PROJECT_ROOT/scripts/package-magisk-module.sh"
+        cp -f "$PROJECT_ROOT/UnboundCore-v2.5.0.zip" "$DIST_DIR/" 2>/dev/null || true
+        log_ok "Magisk module: $PROJECT_ROOT/UnboundCore-v2.5.0.zip"
     else
         log_warn "magisk-module/ directory not found, skipping"
     fi

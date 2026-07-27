@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -166,8 +167,13 @@ func (a *App) StartEngine(engineName string, profileName string) error {
 	if !hasPriv {
 		logger.Error("App", "Administrator privileges required but not granted")
 		wailsruntime.LogError(a.ctx, "Administrator privileges required")
-		notifMgr.Error("Ошибка прав", "Запустите приложение от имени администратора")
-		wailsruntime.EventsEmit(a.ctx, "privilege_error", "Требуются права администратора. Перезапустите приложение от имени администратора.")
+		if runtime.GOOS == "darwin" {
+			notifMgr.Error("Ошибка прав", "Запустите приложение с правами sudo/root")
+			wailsruntime.EventsEmit(a.ctx, "privilege_error", "Требуются права root (sudo). Перезапустите приложение с правами root для управления pf.")
+		} else {
+			notifMgr.Error("Ошибка прав", "Запустите приложение от имени администратора")
+			wailsruntime.EventsEmit(a.ctx, "privilege_error", "Требуются права администратора. Перезапустите приложение от имени администратора.")
+		}
 		return fmt.Errorf("administrator privileges required")
 	}
 
@@ -405,6 +411,10 @@ func (a *App) GetLivePing() map[string]interface{} {
 
 func (a *App) GetAppVersion() string {
 	return engine.Version
+}
+
+func (a *App) GetOSPlatform() string {
+	return runtime.GOOS
 }
 
 func (a *App) EnableAutoStart() error {
