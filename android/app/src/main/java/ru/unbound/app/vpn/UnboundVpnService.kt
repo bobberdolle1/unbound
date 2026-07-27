@@ -16,6 +16,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import ru.unbound.app.MainActivity
 import ru.unbound.app.R
 import ru.unbound.app.data.AppDataManager
@@ -123,7 +124,7 @@ class UnboundVpnService : VpnService() {
             val message = "Обход трафика на Android еще не реализован."
             Log.e(TAG, message)
             _vpnState.value = VpnState.Error(message)
-            settingsManager.setVpnConnected(false)
+            serviceScope.launch { settingsManager.setVpnConnected(false) }
             stopSelf()
             return
         }
@@ -144,7 +145,7 @@ class UnboundVpnService : VpnService() {
 
             // 4. Update state and notification
             _vpnState.value = VpnState.Connected
-            settingsManager.setVpnConnected(true)
+            serviceScope.launch { settingsManager.setVpnConnected(true) }
             startForeground(NOTIFICATION_ID, buildNotification())
 
             Log.d(TAG, "VPN started successfully")
@@ -179,7 +180,7 @@ class UnboundVpnService : VpnService() {
 
             // Update state
             _vpnState.value = VpnState.Disconnected
-            settingsManager.setVpnConnected(false)
+            serviceScope.launch { settingsManager.setVpnConnected(false) }
 
             stopForeground(STOP_FOREGROUND_REMOVE)
             Log.d(TAG, "VPN stopped successfully")
@@ -201,8 +202,10 @@ class UnboundVpnService : VpnService() {
             .addRoute("::", 0)             // Route all IPv6 traffic
             .setBlocking(false)
 
+        val settings = runBlocking { settingsManager.settingsFlow.first() }
+
         // DNS Server configuration
-        val customDns = settingsManager.settingsFlow.value.dnsServer
+        val customDns = settings.dnsServer
         if (customDns.isNotBlank()) {
             try {
                 builder.addDnsServer(customDns)
@@ -215,9 +218,9 @@ class UnboundVpnService : VpnService() {
         }
 
         // Split tunneling configuration
-        val mode = settingsManager.settingsFlow.value.splitTunnelMode
+        val mode = settings.splitTunnelMode
         if (mode == 1) { // Exclude selected apps
-            val disallowed = appDataManager.disallowedAppsFlow.value
+            val disallowed = runBlocking { appDataManager.disallowedAppsFlow.first() }
             disallowed.forEach { packageName ->
                 try {
                     builder.addDisallowedApplication(packageName)
@@ -226,7 +229,7 @@ class UnboundVpnService : VpnService() {
                 }
             }
         } else if (mode == 2) { // Include only selected apps
-            val allowed = appDataManager.allowedAppsFlow.value
+            val allowed = runBlocking { appDataManager.allowedAppsFlow.first() }
             if (allowed.isNotEmpty()) {
                 allowed.forEach { packageName ->
                     try {
@@ -249,9 +252,8 @@ class UnboundVpnService : VpnService() {
     private fun startLocalProxy() {
         serviceScope.launch {
             try {
-                val host = settingsManager.settingsFlow.value.proxyHost
-                val port = settingsManager.settingsFlow.value.proxyPort
-                NativeEngineBridge.startLocalProxyDaemon(this@UnboundVpnService, host, port)
+                val settings = settingsManager.settingsFlow.first()
+                NativeEngineBridge.startLocalProxyDaemon(this@UnboundVpnService, settings.proxyHost, settings.proxyPort)
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to start local DPI proxy: ${e.message}", e)
             }
@@ -271,8 +273,9 @@ class UnboundVpnService : VpnService() {
         packetForwardJob = serviceScope.launch {
             try {
                 val fd = tunFd.fd
-                val host = settingsManager.settingsFlow.value.proxyHost
-                val port = settingsManager.settingsFlow.value.proxyPort
+                val settings = settingsManager.settingsFlow.first()
+                val host = settings.proxyHost
+                val port = settings.proxyPort
 
                 Log.d(TAG, "Initializing packet relay loop on TUN fd $fd to SOCKS5 at $host:$port")
 

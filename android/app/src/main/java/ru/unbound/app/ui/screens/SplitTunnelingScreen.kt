@@ -19,6 +19,7 @@ import ru.unbound.app.R
 import ru.unbound.app.data.AppDataManager
 import ru.unbound.app.data.SettingsManager
 import ru.unbound.app.ui.theme.UnboundTheme
+import kotlinx.coroutines.launch
 
 /**
  * Data class representing an installed app for split tunneling.
@@ -39,6 +40,7 @@ fun SplitTunnelingScreen() {
     val context = androidx.compose.ui.platform.LocalContext.current
     val settingsManager = remember { SettingsManager(context) }
     val appDataManager = remember { AppDataManager(context) }
+    val scope = rememberCoroutineScope()
 
     var splitMode by remember { mutableIntStateOf(0) }
     var searchQuery by remember { mutableStateOf("") }
@@ -115,13 +117,13 @@ fun SplitTunnelingScreen() {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { settingsManager.setSplitTunnelMode(mode) }
+                                .clickable { scope.launch { settingsManager.setSplitTunnelMode(mode) } }
                                 .padding(vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             RadioButton(
                                 selected = splitMode == mode,
-                                onClick = { settingsManager.setSplitTunnelMode(mode) }
+                                onClick = { scope.launch { settingsManager.setSplitTunnelMode(mode) } }
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(label)
@@ -180,9 +182,9 @@ fun SplitTunnelingScreen() {
                         isDisallowed = app.packageName in disallowedApps,
                         onToggle = { checked ->
                             if (checked) {
-                                appDataManager.addDisallowedApp(app.packageName)
+                                scope.launch { appDataManager.addDisallowedApp(app.packageName) }
                             } else {
-                                appDataManager.removeDisallowedApp(app.packageName)
+                                scope.launch { appDataManager.removeDisallowedApp(app.packageName) }
                             }
                         }
                     )

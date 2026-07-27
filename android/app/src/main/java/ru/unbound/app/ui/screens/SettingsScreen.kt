@@ -18,6 +18,7 @@ import ru.unbound.app.R
 import ru.unbound.app.data.SettingsManager
 import ru.unbound.app.ui.theme.AppTheme
 import ru.unbound.app.ui.theme.UnboundTheme
+import kotlinx.coroutines.launch
 
 /**
  * Settings screen with theme selector, proxy config, and DNS settings.
@@ -27,6 +28,7 @@ import ru.unbound.app.ui.theme.UnboundTheme
 fun SettingsScreen() {
     val context = androidx.compose.ui.platform.LocalContext.current
     val settingsManager = remember { SettingsManager(context) }
+    val scope = rememberCoroutineScope()
     var settings by remember { mutableStateOf<SettingsManager.AppSettings?>(null) }
     var showThemeDialog by remember { mutableStateOf(false) }
     var proxyHost by remember { mutableStateOf("127.0.0.1") }
@@ -99,7 +101,7 @@ fun SettingsScreen() {
             Button(
                 onClick = {
                     val port = proxyPort.toIntOrNull() ?: 1080
-                    settingsManager.setProxySettings(proxyHost, port)
+                    scope.launch { settingsManager.setProxySettings(proxyHost, port) }
                 },
                 modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.small
@@ -122,7 +124,7 @@ fun SettingsScreen() {
 
             Button(
                 onClick = {
-                    settingsManager.setDnsServer(dnsServer)
+                    scope.launch { settingsManager.setDnsServer(dnsServer) }
                 },
                 modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.small
@@ -142,7 +144,7 @@ fun SettingsScreen() {
                     stringResource(R.string.module_not_installed),
                 checked = settings?.rootModuleEnabled ?: false,
                 onCheckedChange = { enabled ->
-                    settingsManager.setRootModuleEnabled(enabled)
+                    scope.launch { settingsManager.setRootModuleEnabled(enabled) }
                 }
             )
         }
@@ -160,7 +162,7 @@ fun SettingsScreen() {
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    settingsManager.setTheme(theme)
+                                    scope.launch { settingsManager.setTheme(theme) }
                                     showThemeDialog = false
                                 }
                                 .padding(vertical = 12.dp),
@@ -169,7 +171,7 @@ fun SettingsScreen() {
                             RadioButton(
                                 selected = settings?.theme == theme,
                                 onClick = {
-                                    settingsManager.setTheme(theme)
+                                    scope.launch { settingsManager.setTheme(theme) }
                                     showThemeDialog = false
                                 }
                             )

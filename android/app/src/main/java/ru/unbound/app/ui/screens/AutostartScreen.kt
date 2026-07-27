@@ -18,6 +18,7 @@ import ru.unbound.app.R
 import ru.unbound.app.data.AppDataManager
 import ru.unbound.app.data.SettingsManager
 import ru.unbound.app.ui.theme.UnboundTheme
+import kotlinx.coroutines.launch
 
 /**
  * Autostart screen — configure rules for automatic VPN activation.
@@ -31,6 +32,7 @@ fun AutostartScreen() {
     val context = androidx.compose.ui.platform.LocalContext.current
     val settingsManager = remember { SettingsManager(context) }
     val appDataManager = remember { AppDataManager(context) }
+    val scope = rememberCoroutineScope()
 
     var settings by remember { mutableStateOf<SettingsManager.AppSettings?>(null) }
     var trustedSsids by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -76,7 +78,7 @@ fun AutostartScreen() {
                     subtitle = stringResource(R.string.autostart_boot_desc),
                     enabled = settings?.autostartBoot ?: false,
                     onToggle = { enabled ->
-                        settingsManager.setAutostartBoot(enabled)
+                        scope.launch { settingsManager.setAutostartBoot(enabled) }
                     }
                 )
             }
@@ -112,7 +114,7 @@ fun AutostartScreen() {
                             Switch(
                                 checked = settings?.autostartWifi ?: false,
                                 onCheckedChange = { enabled ->
-                                    settingsManager.setAutostartWifi(enabled)
+                                    scope.launch { settingsManager.setAutostartWifi(enabled) }
                                 }
                             )
                         }
@@ -135,7 +137,7 @@ fun AutostartScreen() {
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(ssid, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                                     IconButton(onClick = {
-                                        appDataManager.removeTrustedWifiSsid(ssid)
+                                        scope.launch { appDataManager.removeTrustedWifiSsid(ssid) }
                                     }) {
                                         Icon(Icons.Default.Delete, contentDescription = "Удалить", tint = UnboundTheme.colors.error)
                                     }
@@ -166,7 +168,7 @@ fun AutostartScreen() {
                     subtitle = stringResource(R.string.autostart_apps_desc),
                     enabled = settings?.autostartApps ?: false,
                     onToggle = { enabled ->
-                        settingsManager.setAutostartApps(enabled)
+                        scope.launch { settingsManager.setAutostartApps(enabled) }
                     }
                 )
             }
@@ -191,7 +193,7 @@ fun AutostartScreen() {
                 Button(
                     onClick = {
                         if (newSsid.isNotBlank()) {
-                            appDataManager.addTrustedWifiSsid(newSsid)
+                            scope.launch { appDataManager.addTrustedWifiSsid(newSsid) }
                             newSsid = ""
                             showAddSsidDialog = false
                         }

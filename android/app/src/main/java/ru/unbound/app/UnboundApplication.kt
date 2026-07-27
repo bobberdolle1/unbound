@@ -1,7 +1,6 @@
 package ru.unbound.app
 
 import android.app.Application
-import dagger.hilt.android.HiltAndroidApp
 
 /**
  * Main application class. Initializes global state and configuration.

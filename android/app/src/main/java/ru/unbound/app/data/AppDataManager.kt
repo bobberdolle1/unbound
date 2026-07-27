@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 /**
@@ -55,22 +56,22 @@ class AppDataManager(context: Context) {
     }
 
     suspend fun addAllowedApp(packageName: String) {
-        val current = allowedAppsFlow.value
+        val current = allowedAppsFlow.first()
         setAllowedApps(current + packageName)
     }
 
     suspend fun removeAllowedApp(packageName: String) {
-        val current = allowedAppsFlow.value
+        val current = allowedAppsFlow.first()
         setAllowedApps(current - packageName)
     }
 
     suspend fun addDisallowedApp(packageName: String) {
-        val current = disallowedAppsFlow.value
+        val current = disallowedAppsFlow.first()
         setDisallowedApps(current + packageName)
     }
 
     suspend fun removeDisallowedApp(packageName: String) {
-        val current = disallowedAppsFlow.value
+        val current = disallowedAppsFlow.first()
         setDisallowedApps(current - packageName)
     }
 
@@ -90,12 +91,12 @@ class AppDataManager(context: Context) {
     }
 
     suspend fun addTrustedWifiSsid(ssid: String) {
-        val current = trustedWifiSsidsFlow.value
+        val current = trustedWifiSsidsFlow.first()
         setTrustedWifiSsids(current + ssid)
     }
 
     suspend fun removeTrustedWifiSsid(ssid: String) {
-        val current = trustedWifiSsidsFlow.value
+        val current = trustedWifiSsidsFlow.first()
         setTrustedWifiSsids(current - ssid)
     }
 

@@ -1,12 +1,13 @@
 package ru.unbound.app.autostart
 
-import android.app.UsageStats
-import android.app.UsageStatsManager
+import android.app.usage.UsageStats
+import android.app.usage.UsageStatsManager
 import android.app.usage.UsageEvents
 import android.content.Context
 import android.content.Intent
 import android.util.Log
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.first
 import ru.unbound.app.data.AppDataManager
 import ru.unbound.app.data.SettingsManager
 import ru.unbound.app.vpn.UnboundVpnService
@@ -67,7 +68,7 @@ class ForegroundAppMonitor(private val context: Context) {
         val appDataManager = AppDataManager(context)
 
         // Check if autostart on apps is enabled
-        val autostartApps = settingsManager.autostartAppsFlow.value
+        val autostartApps = settingsManager.autostartAppsFlow.first()
         if (!autostartApps) return
 
         // Get the current foreground app
@@ -79,18 +80,15 @@ class ForegroundAppMonitor(private val context: Context) {
         lastForegroundApp = foregroundApp
 
         // Get monitored apps list
-        val allowedApps = appDataManager.allowedAppsFlow.value
-        val disallowedApps = appDataManager.disallowedAppsFlow.value
+        val allowedApps = appDataManager.allowedAppsFlow.first()
+        val disallowedApps = appDataManager.disallowedAppsFlow.first()
 
         // In "include only" mode, start VPN if app is in allowed list
-        val splitMode = settingsManager.splitTunnelModeFlow.value
+        val splitMode = settingsManager.splitTunnelModeFlow.first()
         if (splitMode == 2 && foregroundApp in allowedApps) {
             Log.d(TAG, "Foreground app $foregroundApp is in allowed list, starting VPN")
             startVpn()
         }
-
-        // In "exclude" mode, we'd stop VPN if app is in disallowed list
-        // (This depends on your business logic)
     }
 
     /**

@@ -13,6 +13,11 @@ import ru.unbound.app.data.AppDataManager
 import ru.unbound.app.data.SettingsManager
 import ru.unbound.app.vpn.UnboundVpnService
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+
 /**
  * BroadcastReceiver that monitors Wi-Fi state changes.
  * If the device connects to a trusted SSID and autostart on Wi-Fi is enabled,
@@ -32,14 +37,14 @@ class WifiStateReceiver : BroadcastReceiver() {
                 val settingsManager = SettingsManager(context)
                 val appDataManager = AppDataManager(context)
 
-                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                    val autostartWifi = settingsManager.autostartWifiFlow.value
+                CoroutineScope(Dispatchers.IO).launch {
+                    val autostartWifi = settingsManager.autostartWifiFlow.first()
                     if (!autostartWifi) {
                         Log.d(TAG, "Autostart on Wi-Fi is disabled")
                         return@launch
                     }
 
-                    val trustedSsids = appDataManager.trustedWifiSsidsFlow.value
+                    val trustedSsids = appDataManager.trustedWifiSsidsFlow.first()
                     if (trustedSsids.isEmpty()) {
                         Log.d(TAG, "No trusted SSIDs configured")
                         return@launch
@@ -135,14 +140,14 @@ class WifiNetworkMonitor(private val context: Context) {
     }
 
     private fun checkWifiAndStartVpn() {
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+        CoroutineScope(Dispatchers.IO).launch {
             val settingsManager = SettingsManager(context)
             val appDataManager = AppDataManager(context)
 
-            val autostartWifi = settingsManager.autostartWifiFlow.value
+            val autostartWifi = settingsManager.autostartWifiFlow.first()
             if (!autostartWifi) return@launch
 
-            val trustedSsids = appDataManager.trustedWifiSsidsFlow.value
+            val trustedSsids = appDataManager.trustedWifiSsidsFlow.first()
             if (trustedSsids.isEmpty()) return@launch
 
             val currentSsid = getCurrentWifiSsid()

@@ -16,6 +16,20 @@ import ru.unbound.app.data.SettingsManager
  * - ru.unbound.MODULE_STATUS: Module reports its status
  * - ru.unbound.MODULE_CONTROL: App sends control commands to the module
  */
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+
+/**
+ * BroadcastReceiver for communication with the Magisk/KernelSU root module.
+ *
+ * The root module can send broadcasts to control the app, and the app can
+ * send broadcasts to control the root module.
+ *
+ * Actions:
+ * - ru.unbound.MODULE_STATUS: Module reports its status
+ * - ru.unbound.MODULE_CONTROL: App sends control commands to the module
+ */
 class MagiskModuleReceiver : BroadcastReceiver() {
 
     companion object {
@@ -41,7 +55,7 @@ class MagiskModuleReceiver : BroadcastReceiver() {
 
                 // Update app settings based on module status
                 val settingsManager = SettingsManager(context)
-                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                CoroutineScope(Dispatchers.IO).launch {
                     settingsManager.setRootModuleEnabled(status == "active")
                 }
             }

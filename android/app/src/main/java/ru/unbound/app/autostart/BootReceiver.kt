@@ -7,6 +7,11 @@ import android.util.Log
 import ru.unbound.app.data.SettingsManager
 import ru.unbound.app.vpn.UnboundVpnService
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+
 /**
  * BroadcastReceiver that triggers VPN connection on device boot.
  * Listens for BOOT_COMPLETED and LOCKED_BOOT_COMPLETED (direct boot).
@@ -26,13 +31,10 @@ class BootReceiver : BroadcastReceiver() {
                 Log.d(TAG, "Received boot/replacement event: ${intent.action}")
 
                 val settingsManager = SettingsManager(context)
-                // We need to check the setting asynchronously.
-                // For simplicity, we use a coroutine in a real implementation.
-                // Here we just launch the service if autostart is enabled.
 
                 // Launch VPN if autostart on boot is enabled
-                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                    val autostartBoot = settingsManager.autostartBootFlow.value
+                CoroutineScope(Dispatchers.IO).launch {
+                    val autostartBoot = settingsManager.autostartBootFlow.first()
                     if (autostartBoot) {
                         Log.d(TAG, "Autostart on boot is enabled, starting VPN")
                         val vpnIntent = Intent(context, UnboundVpnService::class.java).apply {
