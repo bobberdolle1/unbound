@@ -38,6 +38,7 @@ func main() {
 	debugMode := flag.Bool("debug", false, "Enable verbose debug logging")
 	showVersion := flag.Bool("version", false, "Print the version and exit")
 	listProfiles := flag.Bool("list-profiles", false, "List the profiles available on this platform and exit")
+	controlMode := flag.Bool("control", false, "Run interactive Control Center menu in CLI")
 
 	flag.Usage = func() {
 		fmt.Printf("UNBOUND ClearFlow Engine v%s (%s/%s)\n", engine.Version, runtime.GOOS, runtime.GOARCH)
@@ -102,6 +103,10 @@ func main() {
 		} else {
 			runListProfiles(*debugMode)
 		}
+		return
+	}
+	if *controlMode {
+		runControlCenterMenu(*debugMode)
 		return
 	}
 
@@ -259,6 +264,12 @@ func runHeadlessMode(profileName string, runAutoTune bool, debugMode bool) {
 		}
 		fmt.Printf("✅ AutoTune completed! Best profile: %s (score: %d)\n", result.ProfileName, result.Score)
 		profileName = result.ProfileName
+	} else if profileName != "" {
+		profiles := manager.GetProfiles(engineName)
+		resolved := resolveProfileAlias(profiles, profileName)
+		if resolved != "" {
+			profileName = resolved
+		}
 	} else if profileName == "" {
 		profiles := manager.GetProfiles(engineName)
 		if len(profiles) == 0 {
@@ -400,4 +411,109 @@ func runHeadlessMode(profileName string, runAutoTune bool, debugMode bool) {
 	}
 	fmt.Println("✓ Engine stopped")
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+}
+func resolveProfileAlias(available []string, input string) string {
+	inputLower := strings.ToLower(strings.TrimSpace(input))
+	if inputLower == "" {
+		return ""
+	}
+	for _, p := range available {
+		if strings.ToLower(p) == inputLower {
+			return p
+		}
+	}
+	for _, p := range available {
+		if strings.Contains(strings.ToLower(p), inputLower) {
+			return p
+		}
+	}
+	keywords := map[string]string{
+		"rec": "recommended", "univ": "universal", "alt1": "alternative 1",
+		"alt2": "alternative 2", "alt3": "alternative 3", "adv1": "advanced 1",
+		"adv2": "advanced 2", "adv3": "advanced 3", "adv4": "advanced 4", "adv5": "advanced 5",
+		"ult": "ultimate", "disc": "discord", "yt": "youtube", "tg": "telegram",
+	}
+	if kw, ok := keywords[inputLower]; ok {
+		for _, p := range available {
+			if strings.Contains(strings.ToLower(p), kw) {
+				return p
+			}
+		}
+	}
+	return input
+}
+
+func runControlCenterMenu(debugMode bool) {
+	attachConsole()
+	for {
+		fmt.Println("\n===================================================")
+		fmt.Printf("  🚀 UNBOUND CONTROL CENTER v%s (%s/%s)\n", engine.Version, runtime.GOOS, runtime.GOARCH)
+		fmt.Println("===================================================")
+		fmt.Println(" [1] AutoTune — Автоматический поиск и запуск")
+		fmt.Println(" [2] Запустить профиль по выбору")
+		fmt.Println(" [3] Диагностика подключения (--test)")
+		fmt.Println(" [4] Установить в автозапуск / службу")
+		fmt.Println(" [5] Удалить из автозапуска / службы")
+		fmt.Println(" [6] Проверить конфликты и статус")
+		fmt.Println(" [7] Очистить кэш Discord")
+		fmt.Println(" [8] Остановить все процессы обхода и сбросить драйверы")
+		fmt.Println(" [9] Выход")
+		fmt.Println("===================================================")
+		fmt.Print("Выберите пункт меню (1-9): ")
+
+		var choice string
+		fmt.Scanln(&choice)
+		choice = strings.TrimSpace(choice)
+
+		switch choice {
+		case "1":
+			runHeadlessMode("", true, debugMode)
+			return
+		case "2":
+			runHeadlessMode("", false, debugMode)
+			return
+		case "3":
+			runTestProbe()
+		case "4":
+			if err := engine.EnableAutoStart(); err != nil {
+				fmt.Printf("❌ Ошибка установки автозапуска: %v\n", err)
+			} else {
+				fmt.Println("✓ Автозапуск успешно установлен!")
+			}
+		case "5":
+			if err := engine.DisableAutoStart(); err != nil {
+				fmt.Printf("❌ Ошибка удаления автозапуска: %v\n", err)
+			} else {
+				fmt.Println("✓ Автозапуск успешно удалён!")
+			}
+		case "6":
+			conflicts := checkConflictsImpl()
+			if len(conflicts) == 0 {
+				fmt.Println("✓ Конфликтующие процессы не обнаружены.")
+			} else {
+				fmt.Println("⚠️ Обнаружены конфликты:")
+				for _, c := range conflicts {
+					fmt.Println("  ", c)
+				}
+			}
+		case "7":
+			app := NewApp()
+			if err := app.ClearDiscordCache(); err != nil {
+				fmt.Printf("❌ Ошибка очистки кэша Discord: %v\n", err)
+			} else {
+				fmt.Println("✓ Кэш Discord очищен!")
+			}
+		case "8":
+			app := NewApp()
+			if err := app.KillWinws2(); err != nil {
+				fmt.Printf("❌ Ошибка остановки процессов: %v\n", err)
+			} else {
+				fmt.Println("✓ Все процессы остановлены и правила сброшены!")
+			}
+		case "9":
+			return
+		default:
+			fmt.Println("Неверный выбор, попробуйте снова.")
+		}
+	}
 }

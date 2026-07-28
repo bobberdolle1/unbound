@@ -125,6 +125,7 @@ build_windows() {
     mkdir -p "$DIST_DIR/unbound-v${ver}-win64"
     cp -f "$out/unbound.exe" "$DIST_DIR/unbound-v${ver}-win64/" 2>/dev/null || \
     cp -f "$BUILD_DIR/bin/unbound.exe" "$DIST_DIR/unbound-v${ver}-win64/" 2>/dev/null || true
+    cp -rf "$PROJECT_ROOT/scripts/control_windows/"*.cmd "$DIST_DIR/unbound-v${ver}-win64/" 2>/dev/null || true
 
     log_ok "Windows binary built: $DIST_DIR/unbound-v${ver}-win64/"
 }
@@ -145,10 +146,10 @@ build_darwin() {
     xattr -cr . 2>/dev/null || true
     wails build -platform darwin/universal $debug_flag \
         -ldflags "-X unbound/engine.Version=${ver}" || true
-
     if [ -d "$BUILD_DIR/bin/unbound.app" ]; then
         xattr -cr "$BUILD_DIR/bin/unbound.app" 2>/dev/null || true
         codesign --force --deep -s - "$BUILD_DIR/bin/unbound.app" 2>/dev/null || true
+        cp -rf "$PROJECT_ROOT/scripts/control_macOS/"*.command "$BUILD_DIR/bin/" 2>/dev/null || true
     fi
 
     log_ok "macOS app built: $BUILD_DIR/bin/Unbound.app"
@@ -170,6 +171,9 @@ build_linux() {
     CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
         -ldflags="$(go_ldflags)" -o "$BUILD_DIR/bin/unbound-linux" $debug_flag .
 
+    mkdir -p "$DIST_DIR/unbound-v${ver}-linux-amd64"
+    cp -f "$BUILD_DIR/bin/unbound-linux" "$DIST_DIR/unbound-v${ver}-linux-amd64/" 2>/dev/null || true
+    cp -rf "$PROJECT_ROOT/scripts/control_linux/"*.sh "$DIST_DIR/unbound-v${ver}-linux-amd64/" 2>/dev/null || true
     log_ok "Linux binary built: $BUILD_DIR/bin/unbound-linux"
 }
 
