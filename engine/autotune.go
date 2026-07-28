@@ -46,13 +46,18 @@ var testTargets = []Target{
 	{Name: "Proton", URL: "https://proton.me/favicon.ico", Priority: 10},
 }
 
+type AutoTuneProgressFn func(step, total int, profile string, okCount, totalTargets int, msg string)
+
 func RunAutoTuneV2WithContext(ctx context.Context, provider providers.BypassProvider, profiles []Profile) (*AutoTuneResult, error) {
+	return RunAutoTuneV2WithProgress(ctx, provider, profiles, nil)
+}
+
+func RunAutoTuneV2WithProgress(ctx context.Context, provider providers.BypassProvider, profiles []Profile, progressFn AutoTuneProgressFn) (*AutoTuneResult, error) {
 	logger := GetLogger()
 	notifMgr := GetNotificationManager()
 
 	logger.Info("AutoTune", "Запуск AutoTune V2")
 	logger.Infof("AutoTune", "Тестируем %d профилей на %d целях", len(profiles), len(testTargets))
-
 	var bestResult *AutoTuneResult
 	testedCount := 0
 
@@ -65,9 +70,15 @@ func RunAutoTuneV2WithContext(ctx context.Context, provider providers.BypassProv
 		default:
 			testedCount++
 			logger.Infof("AutoTune", "[%d/%d] Тестируем профиль: %s", testedCount, len(profiles), profile.Name)
+			if progressFn != nil {
+				progressFn(testedCount, len(profiles), profile.Name, 0, len(testTargets), fmt.Sprintf("Тестируем [%d/%d]: %s...", testedCount, len(profiles), profile.Name))
+			}
 
 			if err := provider.Start(ctx, profile.Name); err != nil {
 				logger.Warnf("AutoTune", "Не удалось запустить профиль %s: %v", profile.Name, err)
+				if progressFn != nil {
+					progressFn(testedCount, len(profiles), profile.Name, 0, len(testTargets), fmt.Sprintf("Ошибка запуска %s: %v", profile.Name, err))
+				}
 				continue
 			}
 
@@ -82,7 +93,9 @@ func RunAutoTuneV2WithContext(ctx context.Context, provider providers.BypassProv
 			okCount := countOK(result)
 			logger.Infof("AutoTune", "Профиль %s: %d/%d целей OK, счёт=%d",
 				profile.Name, okCount, len(testTargets), result.Score)
-
+			if progressFn != nil {
+				progressFn(testedCount, len(profiles), profile.Name, okCount, len(testTargets), fmt.Sprintf("Профиль %s: %d/%d целей OK (счёт %d)", profile.Name, okCount, len(testTargets), result.Score))
+			}
 			for targetName, status := range result.Results {
 				if status.OK {
 					logger.Debugf("AutoTune", "  ✓ %s: %dмс (TLS1.3=%v)",

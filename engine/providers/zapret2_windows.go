@@ -310,9 +310,14 @@ func (e *Zapret2WindowsProvider) Stop() error {
 	defer e.mu.Unlock()
 
 	if e.cmd != nil && e.cmd.Process != nil {
-		exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", e.cmd.Process.Pid)).Run()
-		time.Sleep(500 * time.Millisecond)
-		exec.Command("taskkill", "/F", "/T", "/IM", "winws2.exe").Run()
+		runHidden := func(name string, args ...string) {
+			cmd := exec.Command(name, args...)
+			cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
+			cmd.Run()
+		}
+		runHidden("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", e.cmd.Process.Pid))
+		time.Sleep(200 * time.Millisecond)
+		runHidden("taskkill", "/F", "/T", "/IM", "winws2.exe")
 		e.cmd = nil
 	}
 

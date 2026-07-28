@@ -26,10 +26,10 @@
 body.theme-dark {
   --ui-bg: #090d16;
   --ui-panel: #121826;
-  --ui-panel-transparent: rgba(18, 24, 38, 0.85);
+  --ui-panel-transparent: rgba(18, 24, 38, 0.90);
   --ui-accent: #6366f1;
   --ui-accent-hover: #4f46e5;
-  --ui-accent-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  --ui-accent-gradient: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
   --ui-text: #f8fafc;
   --ui-text-muted: #94a3b8;
   --ui-border: #1e293b;
@@ -43,10 +43,10 @@ body.theme-dark {
 body.theme-light {
   --ui-bg: #f8fafc;
   --ui-panel: #ffffff;
-  --ui-panel-transparent: rgba(255, 255, 255, 0.85);
+  --ui-panel-transparent: rgba(255, 255, 255, 0.92);
   --ui-accent: #4f46e5;
   --ui-accent-hover: #4338ca;
-  --ui-accent-gradient: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+  --ui-accent-gradient: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
   --ui-text: #0f172a;
   --ui-text-muted: #64748b;
   --ui-border: #e2e8f0;
@@ -56,22 +56,22 @@ body.theme-light {
   --font-accent: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
-/* 4. macOS GLASS (Liquid Glass) */
+/* 4. macOS GLASS (Liquid Glass - High Contrast & Backdrop Blur) */
 body.theme-liquid-glass, body.theme-macos26 {
-  --ui-bg: #030712;
-  --ui-panel: rgba(255, 255, 255, 0.08);
-  --ui-panel-transparent: rgba(255, 255, 255, 0.05);
+  --ui-bg: #070a12;
+  --ui-panel: rgba(15, 23, 42, 0.85);
+  --ui-panel-transparent: rgba(15, 23, 42, 0.90);
   --ui-accent: #38bdf8;
   --ui-accent-hover: #0284c7;
-  --ui-accent-gradient: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
-  --ui-text: #ffffff;
-  --ui-text-muted: rgba(255, 255, 255, 0.65);
-  --ui-border: rgba(255, 255, 255, 0.15);
+  --ui-accent-gradient: linear-gradient(135deg, #0284c7 0%, #38bdf8 100%);
+  --ui-text: #f8fafc;
+  --ui-text-muted: #94a3b8;
+  --ui-border: rgba(255, 255, 255, 0.20);
   --ui-radius: 20px;
   --ui-blur: 24px;
   --font-main: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-accent: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: radial-gradient(circle at 50% 0%, #1e1b4b 0%, #030712 100%);
+  background: radial-gradient(circle at 50% 0%, #1e1b4b 0%, #070a12 100%);
 }
 
 /* Legacy theme fallbacks to Default Doodle */

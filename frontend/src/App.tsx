@@ -69,7 +69,15 @@ export default function App() {
   const [appVersion, setAppVersion] = useState<string>('');
   const [platform, setPlatform] = useState<string>('');
   const [isVerifyingAssets, setIsVerifyingAssets] = useState<boolean>(false);
-
+  const [autotuneProgress, setAutotuneProgress] = useState<{
+    step: number;
+    total: number;
+    percent: number;
+    profile: string;
+    okCount: number;
+    totalTargets: number;
+    msg: string;
+  } | null>(null);
   const handleVerifyAssets = async () => {
     setIsVerifyingAssets(true);
     try {
@@ -303,6 +311,14 @@ export default function App() {
     });
     EventsOn('autotune_start', (running: boolean) => {
       setIsScanning(running);
+      if (!running) setAutotuneProgress(null);
+    });
+    EventsOn('autotune_progress', (data: any) => {
+      setAutotuneProgress(data);
+      if (data?.msg) {
+        setScanProgress(data.msg);
+        setScanLogs(prev => [...prev, data.msg]);
+      }
     });
     EventsOn('engine_log', (msg: string) => {
       setLogs(prev => [...prev, msg]);
@@ -706,8 +722,12 @@ export default function App() {
           )}>
             {isScanning ? 'ТЕСТИРУЮ...' : status === 'Running' ? 'ПОДКЛЮЧЕНО!' : status === 'Stopped' ? 'ОТКЛЮЧЕНО' : status.toUpperCase()}
           </h2>
-          <p className="text-lg font-bold text-gray-500 mt-3 underline decoration-gray-300 decoration-wavy">
-            {isScanning && scanProgress ? scanProgress : isConnected ? 'Трафик обходит DPI!' : 'Готово к запуску'}
+          <p className="text-sm font-semibold opacity-75 mt-3 flex items-center justify-center gap-2" style={{ color: 'var(--ui-text-muted)' }}>
+            <span className={cn(
+              "w-2.5 h-2.5 rounded-full inline-block",
+              isScanning ? "bg-amber-500 animate-ping" : isConnected ? "bg-emerald-500 animate-pulse" : "bg-slate-400"
+            )} />
+            {isScanning && scanProgress ? scanProgress : isConnected ? 'Трафик обходит DPI' : 'Готово к запуску'}
           </p>
         </div>
 
@@ -763,10 +783,6 @@ export default function App() {
               disabled={isConnected && !isScanning}
               className={cn(
                 "flex items-center justify-center gap-2 py-3 doodle-btn font-bold text-lg relative overflow-hidden transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]",
-                isScanning ? "!bg-red-300 !border-2 !shadow-[2px_2px_0_#222]" : 
-                scanSuccess === true ? "!bg-green-300 !border-2 !shadow-[2px_2px_0_#222]" :
-                scanSuccess === false ? "!bg-red-300 !border-2 !shadow-[2px_2px_0_#222]" :
-                "!bg-yellow-300 !border-2 !shadow-[2px_2px_0_#222]",
                 isConnected && !isScanning ? "opacity-50 cursor-not-allowed" : ""
               )}
             >
@@ -792,7 +808,6 @@ export default function App() {
                 </>
               )}
             </button>
-
             <button 
               onClick={handleOpenSettings} 
               className="flex items-center justify-center gap-2 py-3 sketch-box hover:bg-gray-100 hover:shadow-[2px_2px_0_rgba(0,0,0,0.6)] font-bold text-lg transition-all duration-150 hover:scale-[1.02] active:scale-[0.98]"
@@ -804,7 +819,56 @@ export default function App() {
         </div>
       </div>
 
-      {/* 3. ЖУРНАЛ ЛОГОВ */}
+      {/* 2.5. МОДАЛЬНОЕ ОКНО АВТОПОДБОРА (LIVE PROGRESS) */}
+      {isScanning && (
+        <div className="absolute inset-0 z-50 bg-black/65 backdrop-blur-md flex items-center justify-center p-6 animate-in fade-in duration-200">
+          <div 
+            className="w-full max-w-sm rounded-2xl p-6 space-y-4 shadow-2xl relative border app-no-drag"
+            style={{ background: 'var(--ui-panel)', borderColor: 'var(--ui-border)', color: 'var(--ui-text)' }}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <SketchySpinner className="w-6 h-6 text-indigo-400 animate-spin" />
+                <h3 className="font-bold text-lg">Автоподбор профиля</h3>
+              </div>
+              <button onClick={CancelAutoTune} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors">
+                <SketchyX className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs font-semibold" style={{ color: 'var(--ui-text-muted)' }}>
+                <span>Прогресс оптимизации</span>
+                <span>{autotuneProgress?.percent || 0}%</span>
+              </div>
+              <div className="w-full h-3 rounded-full bg-black/20 overflow-hidden p-0.5 border border-white/10">
+                <div 
+                  className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-sky-400 transition-all duration-300"
+                  style={{ width: `${autotuneProgress?.percent || 0}%` }}
+                />
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-black/10 border border-white/5 space-y-1">
+              <p className="text-sm font-semibold truncate">
+                {autotuneProgress?.msg || 'Анализируем стратегии обхода...'}
+              </p>
+              {autotuneProgress?.profile && (
+                <p className="text-xs" style={{ color: 'var(--ui-text-muted)' }}>
+                  Текущий профиль: <span className="font-mono text-indigo-400">{autotuneProgress.profile}</span>
+                </p>
+              )}
+            </div>
+
+            <button
+              onClick={CancelAutoTune}
+              className="w-full py-2.5 rounded-xl border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-400 font-semibold text-sm transition-all"
+            >
+              Отменить автоподбор
+            </button>
+          </div>
+        </div>
+      )}
       {settings.showLogs && (
         <div 
           className={cn(

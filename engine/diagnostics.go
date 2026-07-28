@@ -56,7 +56,11 @@ func checkTCPTimestamps() DiagnosticResult {
 }
 
 func checkConflictingProcesses() DiagnosticResult {
-	conflicts := []string{"goodbyedpi.exe", "winws.exe", "nfqws.exe"}
+	conflicts := []string{
+		"goodbyedpi.exe", "winws.exe", "nfqws.exe",
+		"xray.exe", "happ.exe", "sing-box.exe", "v2ray.exe", "v2rayn.exe",
+		"clash.exe", "clash-verge.exe", "hiddify.exe", "nekoray.exe", "shadowsocks.exe",
+	}
 	found := []string{}
 	cmd := exec.Command("tasklist")
 	cmd.SysProcAttr = GetHiddenSysProcAttr()

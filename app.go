@@ -354,7 +354,21 @@ func (a *App) AutoTune() string {
 	allProfiles := append(engine.GetProfiles(assets.LuaDir), engine.GetAdvancedProfiles(assets.LuaDir)...)
 	logger.Infof("App", "Loaded %d profiles for testing", len(allProfiles))
 
-	result, err := engine.RunAutoTuneV2WithContext(tuneCtx, provider, allProfiles)
+	progressCb := func(step, total int, profile string, okCount, totalTargets int, msg string) {
+		pct := int((float64(step) / float64(total)) * 100)
+		wailsruntime.EventsEmit(a.ctx, "autotune_progress", map[string]interface{}{
+			"step":         step,
+			"total":        total,
+			"percent":      pct,
+			"profile":      profile,
+			"okCount":      okCount,
+			"totalTargets": totalTargets,
+			"msg":          msg,
+		})
+		wailsruntime.EventsEmit(a.ctx, "autotune_log", fmt.Sprintf("[%d/%d] %s", step, total, msg))
+	}
+
+	result, err := engine.RunAutoTuneV2WithProgress(tuneCtx, provider, allProfiles, progressCb)
 	if err != nil {
 		logger.Errorf("App", "AutoTune failed: %v", err)
 		notifMgr.Error("Ошибка автоподбора", "Не удалось найти оптимальный профиль")

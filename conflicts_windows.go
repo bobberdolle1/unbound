@@ -27,6 +27,16 @@ var conflictingProcesses = []struct {
 	{"warp-svc.exe", "Cloudflare WARP", false},
 	{"expressvpn.exe", "ExpressVPN", false},
 	{"nordvpn-service.exe", "NordVPN", false},
+	{"xray.exe", "Xray Core / Happ", false},
+	{"happ.exe", "Happ Proxy Client", false},
+	{"sing-box.exe", "Sing-Box Proxy", false},
+	{"v2ray.exe", "V2Ray Core", false},
+	{"v2rayN.exe", "v2rayN Client", false},
+	{"clash.exe", "Clash Proxy", false},
+	{"clash-verge.exe", "Clash Verge", false},
+	{"hiddify.exe", "Hiddify Next", false},
+	{"nekoray.exe", "NekoRay Proxy", false},
+	{"shadowsocks.exe", "Shadowsocks", false},
 }
 
 func checkConflictsImpl() []string {
