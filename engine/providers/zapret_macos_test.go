@@ -45,18 +45,24 @@ func TestMacOSProfilesHaveTpwsArgs(t *testing.T) {
 }
 
 // TestMacOSProfilesHaveDPIArgs verifies that every profile passes at least one
-// --dpi-desync argument (i.e. does actual bypass work, not a no-op).
+// desync argument for tpws (--split-pos, --disorder, --oob, --tlsrec, --hostcase).
 func TestMacOSProfilesHaveDPIArgs(t *testing.T) {
 	for name, profile := range macBuiltinProfiles {
 		hasDPI := false
 		for _, arg := range profile.Args {
-			if strings.HasPrefix(arg, "--dpi-desync") {
+			if strings.HasPrefix(arg, "--split-pos") ||
+				strings.HasPrefix(arg, "--disorder") ||
+				strings.HasPrefix(arg, "--oob") ||
+				strings.HasPrefix(arg, "--tlsrec") ||
+				strings.HasPrefix(arg, "--hostcase") ||
+				strings.HasPrefix(arg, "--domcase") ||
+				strings.HasPrefix(arg, "--dpi-desync") {
 				hasDPI = true
 				break
 			}
 		}
 		if !hasDPI {
-			t.Errorf("profile %q has no --dpi-desync args — would run tpws as a plain proxy with no DPI bypass", name)
+			t.Errorf("profile %q has no desync args — would run tpws as a plain proxy with no DPI bypass", name)
 		}
 	}
 }
