@@ -52,7 +52,7 @@ export default function App() {
     discordCacheAutoClean: false,
     secureDns: false
   });
-  const [livePingData, setLivePingData] = useState<{active: boolean, latency: number, status: string}>({active: false, latency: 0, status: 'stopped'});
+  const [livePingData, setLivePingData] = useState<{active: boolean, latency: number, status: string, services?: Record<string, number>}>({active: false, latency: 0, status: 'stopped'});
   const [pingHistory, setPingHistory] = useState<number[]>([]);
   const [privilegeError, setPrivilegeError] = useState<string>('');
   const [conflictWarning, setConflictWarning] = useState<string[]>([]);
@@ -171,16 +171,19 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    // Sync theme to body
+    let activeTheme = theme;
+    if (theme === 'system') {
+      const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      activeTheme = isDark ? 'dark' : 'light';
+    }
     const classes = Array.from(document.body.classList).filter(c => c.startsWith('theme-'));
     classes.forEach(c => document.body.classList.remove(c));
-    document.body.classList.add(`theme-${theme}`);
+    document.body.classList.add(`theme-${activeTheme}`);
     localStorage.setItem('unbound-theme', theme);
   }, [theme]);
-
   useEffect(() => {
     EventsOn('status_changed', (newStatus: string) => setStatus(newStatus));
-    
+
     const interval = setInterval(() => {
       if (!isScanning && status === 'Running') {
         GetLogs().then((l: string[]) => setLogs(l || []));
@@ -192,7 +195,8 @@ export default function App() {
         GetLivePing().then((data: any) => {
           const lat = data?.latency || 0;
           const stat = data?.status || 'stopped';
-          setLivePingData({ active: data?.active || false, latency: lat, status: stat });
+          const serv = data?.services || {};
+          setLivePingData({ active: data?.active || false, latency: lat, status: stat, services: serv });
           if (stat === 'ok') {
             setPingHistory(prev => [...prev.slice(-14), lat]);
           }
@@ -202,7 +206,6 @@ export default function App() {
         setPingHistory([]);
       }
     }, 5000);
-    
     return () => {
       clearInterval(interval);
       clearInterval(pingInterval);
@@ -733,15 +736,16 @@ export default function App() {
 
         {/* Выбор профиля */}
         <div className="flex flex-col gap-2 mb-10 relative z-40">
-          <div className="flex justify-between items-end px-2">
-            <span className="text-lg font-bold text-gray-700">Профиль:</span>
+          <div className="flex justify-between items-center px-2">
+            <span className="text-lg font-bold" style={{ color: 'var(--ui-text)' }}>Профиль:</span>
             {isConnected && (
-              <span className={cn(
-                "font-marker text-lg px-2 transform rotate-2",
-                livePingData.status === 'ok' ? "text-green-600" : livePingData.status === 'blocked' ? "text-red-600" : "text-blue-500"
-              )}>
-                {livePingData.status === 'ok' ? `Пинг: ${livePingData.latency}мс` : livePingData.status === 'blocked' ? 'Заблокировано!' : '?'}
-              </span>
+              <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                {livePingData.services && Object.entries(livePingData.services).map(([name, ms]) => (
+                  <span key={name} className="text-[11px] px-2 py-0.5 rounded-md font-mono bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">
+                    {name} {ms}мс
+                  </span>
+                ))}
+              </div>
             )}
           </div>
           
@@ -1253,11 +1257,13 @@ export default function App() {
                   <span className="text-xs block mt-1" style={{ color: 'var(--ui-text-muted)' }}>Выберите стиль оформления</span>
                 </div>
                 <DoodleSelect
-                  value={theme === 'dark' ? 'Modern Dark' : 
+                  value={theme === 'system' ? 'Авто (как в системе)' :
+                         theme === 'dark' ? 'Modern Dark' : 
                          theme === 'light' ? 'Modern Light' :
                          theme === 'liquid-glass' || theme === 'macos26' ? 'macOS Glass' :
                          'Doodle Jump'}
                   options={[
+                    'Авто (как в системе)',
                     'Doodle Jump',
                     'Modern Dark',
                     'Modern Light', 
@@ -1265,12 +1271,13 @@ export default function App() {
                   ]}
                   onChange={(val) => {
                     const themeMap: Record<string, string> = {
+                      'Авто (как в системе)': 'system',
                       'Doodle Jump': 'doodle',
                       'Modern Dark': 'dark',
                       'Modern Light': 'light',
                       'macOS Glass': 'liquid-glass'
                     };
-                    setThemeState(themeMap[val] || 'doodle');
+                    setThemeState(themeMap[val] || 'system');
                   }}
                   up={true}
                 />

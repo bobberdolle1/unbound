@@ -403,6 +403,14 @@ func (e *ZapretMacOSProvider) loadPfAnchor(rules []string) error {
 	return nil
 }
 
+// sendMacOSNotification displays a native macOS desktop notification toast.
+func sendMacOSNotification(title, message string) {
+	escapedTitle := strings.ReplaceAll(title, `"`, `\"`)
+	escapedMsg := strings.ReplaceAll(message, `"`, `\"`)
+	script := fmt.Sprintf(`display notification "%s" with title "%s"`, escapedMsg, escapedTitle)
+	_ = exec.Command("osascript", "-e", script).Run()
+}
+
 // flushPfAnchor removes our anchor rules and disables our anchor references
 // from pf. It is non-blocking: it runs pfctl in the background so Stop()
 // returns immediately.
@@ -413,6 +421,7 @@ func (e *ZapretMacOSProvider) flushPfAnchor() {
 	e.anchorLoaded = false
 	e.addLogLocked("Убираем правила pf...")
 	_, _ = runPfctlPrivileged("", "-a", pfAnchorName, "-F", "all")
+	sendMacOSNotification("UNBOUND", "Правила обхода pf успешно очищены")
 }
 
 func (e *ZapretMacOSProvider) anchorIsReferenced() bool {

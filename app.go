@@ -399,40 +399,61 @@ func (a *App) GetLivePing() map[string]interface{} {
 	if a.manager.GetStatus() != providers.StatusRunning {
 		return map[string]interface{}{"active": false}
 	}
-	targets := []string{
-		"https://www.youtube.com",
-		"https://discord.com",
-		"https://x.com",
-		"https://www.instagram.com",
+	targets := []struct{ Name, URL string }{
+		{"YouTube", "https://www.youtube.com"},
+		{"Discord", "https://discord.com"},
+		{"Instagram", "https://www.instagram.com"},
 	}
 
 	var minLatency time.Duration = -1
+	services := make(map[string]int64)
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 
 	for _, t := range targets {
 		wg.Add(1)
-		go func(url string) {
+		go func(name, url string) {
 			defer wg.Done()
 			ctx, cancel := context.WithTimeout(a.ctx, 2*time.Second)
 			defer cancel()
 			lat, err := engine.SimplePing(ctx, url)
 			if err == nil {
 				mu.Lock()
+				services[name] = lat.Milliseconds()
 				if minLatency == -1 || lat < minLatency {
 					minLatency = lat
 				}
 				mu.Unlock()
 			}
-		}(t)
-	}
-	wg.Wait()
-
-	if minLatency == -1 {
-		return map[string]interface{}{"active": true, "latency": 0, "status": "blocked"}
+		}(t.Name, t.URL)
 	}
 
-	return map[string]interface{}{"active": true, "latency": minLatency.Milliseconds(), "status": "ok"}
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	copyServices := func() map[string]int64 {
+		mu.Lock()
+		defer mu.Unlock()
+		cp := make(map[string]int64, len(services))
+		for k, v := range services {
+			cp[k] = v
+		}
+		return cp
+	}
+
+	select {
+	case <-done:
+		resServices := copyServices()
+		if minLatency == -1 {
+			return map[string]interface{}{"active": true, "latency": 0, "status": "blocked", "services": resServices}
+		}
+		return map[string]interface{}{"active": true, "latency": minLatency.Milliseconds(), "status": "ok", "services": resServices}
+	case <-time.After(2500 * time.Millisecond):
+		return map[string]interface{}{"active": true, "latency": 0, "status": "blocked", "services": copyServices()}
+	}
 }
 
 func (a *App) GetAppVersion() string {
