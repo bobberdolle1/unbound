@@ -64,10 +64,17 @@ else
     wails build -platform darwin/$PLATFORM $DEBUG_FLAG -ldflags "-X unbound/engine.Version=0.1.0-refresh" || true
 fi
 
-if [ -d "build/bin/unbound.app" ]; then
-    xattr -cr "build/bin/unbound.app" 2>/dev/null || true
-    codesign --force --deep -s - "build/bin/unbound.app" 2>/dev/null || true
-    echo "✓ App bundle signed: build/bin/unbound.app"
+APP_PATH=""
+if [ -d "build/bin/Unbound.app" ]; then
+    APP_PATH="build/bin/Unbound.app"
+elif [ -d "build/bin/unbound.app" ]; then
+    APP_PATH="build/bin/unbound.app"
+fi
+
+if [ -n "$APP_PATH" ]; then
+    xattr -cr "$APP_PATH" 2>/dev/null || true
+    codesign --force --deep -s - "$APP_PATH" 2>/dev/null || true
+    echo "✓ App bundle signed: $APP_PATH"
 fi
 
 echo ""

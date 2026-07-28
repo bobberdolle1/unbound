@@ -38,6 +38,8 @@ export function GetSettings():Promise<engine.Settings>;
 
 export function GetStatus():Promise<string>;
 
+export function GetStatusInfo():Promise<Record<string, any>>;
+
 export function GetStructuredLogs():Promise<Array<string>>;
 
 export function HideWindowToTray():Promise<void>;

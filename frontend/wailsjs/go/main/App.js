@@ -74,6 +74,10 @@ export function GetStatus() {
   return window['go']['main']['App']['GetStatus']();
 }
 
+export function GetStatusInfo() {
+  return window['go']['main']['App']['GetStatusInfo']();
+}
+
 export function GetStructuredLogs() {
   return window['go']['main']['App']['GetStructuredLogs']();
 }
