@@ -3,15 +3,16 @@ package main
 import (
 	"context"
 	"embed"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
-
 	"unbound/engine"
 	"unbound/engine/providers"
 
@@ -27,31 +28,51 @@ var assets embed.FS
 
 func main() {
 	cliMode := flag.Bool("cli", false, "Run in headless CLI mode")
-	// Empty means "the engine's first profile", which is the only default that
-	// is correct on every platform: the Windows and Linux engines ship
-	// completely different profile names.
 	profileName := flag.String("profile", "", "Profile to use in CLI mode (default: the engine's first profile)")
+	autoTuneMode := flag.Bool("autotune", false, "Run AutoTune benchmark in CLI mode and start the best profile")
+	jsonOutput := flag.Bool("json", false, "Output profile list or status in JSON format")
 	trayMode := flag.Bool("tray", false, "Start minimized to system tray")
 	debugMode := flag.Bool("debug", false, "Enable verbose debug logging")
 	showVersion := flag.Bool("version", false, "Print the version and exit")
 	listProfiles := flag.Bool("list-profiles", false, "List the profiles available on this platform and exit")
+
+	flag.Usage = func() {
+		fmt.Printf("UNBOUND ClearFlow Engine v%s (%s/%s)\n", engine.Version, runtime.GOOS, runtime.GOARCH)
+		fmt.Println("Usage: unbound [options]")
+		fmt.Println("Options:")
+		flag.PrintDefaults()
+		fmt.Println("\nExamples:")
+		fmt.Println("  unbound --cli                                Run headless CLI mode with default profile")
+		fmt.Println("  unbound --cli --autotune                     Run AutoTune in CLI and start the best profile")
+		fmt.Println("  unbound --cli --profile=\"Alternative 2\"       Start CLI mode with specific profile")
+		fmt.Println("  unbound --list-profiles                      List all profiles for this OS")
+		fmt.Println("  unbound --list-profiles --json               List profiles in JSON format")
+	}
+
 	flag.Parse()
 
 	if *showVersion {
-		fmt.Printf("unbound %s (%s/%s)\n", engine.Version, runtime.GOOS, runtime.GOARCH)
+		if *jsonOutput {
+			fmt.Printf("{\"version\":\"%s\",\"os\":\"%s\",\"arch\":\"%s\"}\n", engine.Version, runtime.GOOS, runtime.GOARCH)
+		} else {
+			fmt.Printf("unbound %s (%s/%s)\n", engine.Version, runtime.GOOS, runtime.GOARCH)
+		}
 		return
 	}
 
 	if *listProfiles {
-		runListProfiles(*debugMode)
+		if *jsonOutput {
+			runListProfilesJSON(*debugMode)
+		} else {
+			runListProfiles(*debugMode)
+		}
 		return
 	}
 
-	if *cliMode {
-		runHeadlessMode(*profileName, *debugMode)
+	if *cliMode || *autoTuneMode {
+		runHeadlessMode(*profileName, *autoTuneMode, *debugMode)
 		return
 	}
-
 	app := NewApp()
 	app.startMinimized = *trayMode
 	app.debugMode = *debugMode
@@ -110,6 +131,17 @@ func newHeadlessManager(debugMode bool) (*providers.ProviderManager, *engine.Ass
 	return manager, assets
 }
 
+func runListProfilesJSON(debugMode bool) {
+	manager, _ := newHeadlessManager(debugMode)
+	res := make(map[string][]string)
+	for _, name := range manager.GetEngineNames() {
+		res[name] = manager.GetProfiles(name)
+	}
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(res)
+}
+
 func runListProfiles(debugMode bool) {
 	attachConsole()
 
@@ -124,8 +156,7 @@ func runListProfiles(debugMode bool) {
 	}
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 }
-
-func runHeadlessMode(profileName string, debugMode bool) {
+func runHeadlessMode(profileName string, runAutoTune bool, debugMode bool) {
 	attachConsole()
 
 	fmt.Println("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -138,20 +169,36 @@ func runHeadlessMode(profileName string, debugMode bool) {
 		fmt.Printf("Warning: Failed to update lists: %v\n", err)
 	}
 
-	manager, _ := newHeadlessManager(debugMode)
+	manager, assets := newHeadlessManager(debugMode)
 
-	// The engine name was hardcoded to "Zapret 2 (winws)", so --cli could only
-	// ever work on Windows; on any other platform it aborted with
-	// "engine not found" naming an engine that does not exist there.
 	engineNames := manager.GetEngineNames()
 	if len(engineNames) == 0 {
 		log.Fatalf("No bypass engine is available on %s", runtime.GOOS)
 	}
 	engineName := engineNames[0]
 
-	// Likewise the default profile was a Windows profile name. Fall back to
-	// whatever the active engine actually offers.
-	if profileName == "" {
+	if runAutoTune {
+		fmt.Println("⚡ Running AutoTune benchmark in CLI mode...")
+		provider := providers.NewAutoTuneProvider(assets.BinDir, assets.LuaDir, assets.ListDir)
+		if provider == nil {
+			log.Fatalf("No engine provider available for AutoTune on %s", runtime.GOOS)
+		}
+		allProfiles := append(engine.GetProfiles(assets.LuaDir), engine.GetAdvancedProfiles(assets.LuaDir)...)
+		progressFn := func(step, total int, profile string, okCount, totalTargets int, msg string) {
+			pct := (step * 100) / total
+			barLen := 20
+			filled := (pct * barLen) / 100
+			bar := strings.Repeat("█", filled) + strings.Repeat("░", barLen-filled)
+			fmt.Printf("\r[%s] %3d%% | [%d/%d] %s", bar, pct, step, total, msg)
+		}
+		result, err := engine.RunAutoTuneV2WithProgress(context.Background(), provider, allProfiles, progressFn)
+		fmt.Println()
+		if err != nil {
+			log.Fatalf("AutoTune failed: %v", err)
+		}
+		fmt.Printf("✅ AutoTune completed! Best profile: %s (score: %d)\n", result.ProfileName, result.Score)
+		profileName = result.ProfileName
+	} else if profileName == "" {
 		profiles := manager.GetProfiles(engineName)
 		if len(profiles) == 0 {
 			log.Fatalf("Engine %q exposes no profiles", engineName)
@@ -205,7 +252,6 @@ func runHeadlessMode(profileName string, debugMode bool) {
 			}
 		}
 	}()
-
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	<-sigChan
