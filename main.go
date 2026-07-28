@@ -28,14 +28,30 @@ var assets embed.FS
 
 func main() {
 	cliMode := flag.Bool("cli", false, "Run in headless CLI mode")
-	profileName := flag.String("profile", "", "Profile to use in CLI mode (default: the engine's first profile)")
+	profileName := flag.String("profile", "", "Profile to use in CLI mode (default: interactive selection)")
 	autoTuneMode := flag.Bool("autotune", false, "Run AutoTune benchmark in CLI mode and start the best profile")
+	testMode := flag.Bool("test", false, "Run quick connectivity diagnostic probe for targets and exit")
+	installService := flag.Bool("install-service", false, "Register autostart service for Unbound")
+	uninstallService := flag.Bool("uninstall-service", false, "Remove autostart service for Unbound")
 	jsonOutput := flag.Bool("json", false, "Output profile list or status in JSON format")
 	trayMode := flag.Bool("tray", false, "Start minimized to system tray")
 	debugMode := flag.Bool("debug", false, "Enable verbose debug logging")
 	showVersion := flag.Bool("version", false, "Print the version and exit")
 	listProfiles := flag.Bool("list-profiles", false, "List the profiles available on this platform and exit")
 
+	flag.Usage = func() {
+		fmt.Printf("UNBOUND ClearFlow Engine v%s (%s/%s)\n", engine.Version, runtime.GOOS, runtime.GOARCH)
+		fmt.Println("Usage: unbound [options]")
+		fmt.Println("Options:")
+		flag.PrintDefaults()
+		fmt.Println("\nExamples:")
+		fmt.Println("  unbound --cli                                Run interactive CLI mode")
+		fmt.Println("  unbound --cli --autotune                     Run AutoTune in CLI and start best profile")
+		fmt.Println("  unbound --cli --profile=\"Alternative 2\"       Start CLI with specific profile")
+		fmt.Println("  unbound --test                               Run quick connectivity diagnostic probe")
+		fmt.Println("  unbound --list-profiles --json               List profiles in JSON format")
+		fmt.Println("  unbound --install-service                    Enable OS autostart service")
+	}
 	flag.Usage = func() {
 		fmt.Printf("UNBOUND ClearFlow Engine v%s (%s/%s)\n", engine.Version, runtime.GOOS, runtime.GOARCH)
 		fmt.Println("Usage: unbound [options]")
@@ -50,13 +66,33 @@ func main() {
 	}
 
 	flag.Parse()
-
 	if *showVersion {
 		if *jsonOutput {
 			fmt.Printf("{\"version\":\"%s\",\"os\":\"%s\",\"arch\":\"%s\"}\n", engine.Version, runtime.GOOS, runtime.GOARCH)
 		} else {
 			fmt.Printf("unbound %s (%s/%s)\n", engine.Version, runtime.GOOS, runtime.GOARCH)
 		}
+		return
+	}
+
+	if *testMode {
+		runTestProbe()
+		return
+	}
+
+	if *installService {
+		if err := engine.EnableAutoStart(); err != nil {
+			log.Fatalf("Failed to enable auto-start: %v", err)
+		}
+		fmt.Println("✓ Auto-start enabled successfully")
+		return
+	}
+
+	if *uninstallService {
+		if err := engine.DisableAutoStart(); err != nil {
+			log.Fatalf("Failed to disable auto-start: %v", err)
+		}
+		fmt.Println("✓ Auto-start disabled successfully")
 		return
 	}
 
@@ -156,6 +192,31 @@ func runListProfiles(debugMode bool) {
 	}
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 }
+
+func runTestProbe() {
+	fmt.Println("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Println("🔍 UNBOUND - Connectivity Diagnostic Probe")
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	targets := []struct{ Name, URL string }{
+		{"YouTube", "https://www.youtube.com"},
+		{"Discord", "https://discord.com"},
+		{"Instagram", "https://www.instagram.com"},
+		{"Cloudflare", "https://1.1.1.1"},
+		{"Ozon", "https://www.ozon.ru"},
+	}
+	for _, t := range targets {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		lat, err := engine.SimplePing(ctx, t.URL)
+		cancel()
+		if err == nil {
+			fmt.Printf("  ✓ %-12s OK   (%d ms)\n", t.Name, lat.Milliseconds())
+		} else {
+			fmt.Printf("  ✗ %-12s FAIL (%v)\n", t.Name, err)
+		}
+	}
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+}
+
 func runHeadlessMode(profileName string, runAutoTune bool, debugMode bool) {
 	attachConsole()
 
@@ -203,9 +264,44 @@ func runHeadlessMode(profileName string, runAutoTune bool, debugMode bool) {
 		if len(profiles) == 0 {
 			log.Fatalf("Engine %q exposes no profiles", engineName)
 		}
-		profileName = profiles[0]
-	}
 
+		fmt.Println("\nSelect a bypass profile to activate:")
+		fmt.Println("  [A] AutoTune (Benchmark all profiles automatically)")
+		for i, p := range profiles {
+			fmt.Printf("  [%d] %s\n", i+1, p)
+		}
+		fmt.Printf("\nEnter choice [1-%d, A] (default: 1): ", len(profiles))
+
+		var choice string
+		fmt.Scanln(&choice)
+		choice = strings.TrimSpace(strings.ToUpper(choice))
+
+		if choice == "A" {
+			fmt.Println("⚡ Starting AutoTune...")
+			provider := providers.NewAutoTuneProvider(assets.BinDir, assets.LuaDir, assets.ListDir)
+			if provider != nil {
+				allProfiles := append(engine.GetProfiles(assets.LuaDir), engine.GetAdvancedProfiles(assets.LuaDir)...)
+				result, err := engine.RunAutoTuneV2WithContext(context.Background(), provider, allProfiles)
+				if err == nil {
+					profileName = result.ProfileName
+				}
+			}
+			if profileName == "" {
+				profileName = profiles[0]
+			}
+		} else {
+			idx := 0
+			if choice != "" {
+				fmt.Sscanf(choice, "%d", &idx)
+				idx--
+			}
+			if idx >= 0 && idx < len(profiles) {
+				profileName = profiles[idx]
+			} else {
+				profileName = profiles[0]
+			}
+		}
+	}
 	fmt.Printf("Engine:  %s\n", engineName)
 	fmt.Printf("Profile: %s\n", profileName)
 	if debugMode {
@@ -249,6 +345,34 @@ func runHeadlessMode(profileName string, runAutoTune bool, debugMode bool) {
 					}
 					lastPrintedCount = len(logs)
 				}
+			}
+		}
+	}()
+
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				targets := []struct{ Name, URL string }{
+					{"YouTube", "https://www.youtube.com"},
+					{"Discord", "https://discord.com"},
+				}
+				var parts []string
+				for _, t := range targets {
+					ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+					lat, err := engine.SimplePing(ctx, t.URL)
+					cancel()
+					if err == nil {
+						parts = append(parts, fmt.Sprintf("%s: %dms", t.Name, lat.Milliseconds()))
+					} else {
+						parts = append(parts, fmt.Sprintf("%s: BLOCKED", t.Name))
+					}
+				}
+				fmt.Printf("[PING] %s\n", strings.Join(parts, " | "))
 			}
 		}
 	}()

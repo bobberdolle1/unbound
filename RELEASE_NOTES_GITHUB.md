@@ -10,9 +10,11 @@
 | :--- | :--- | :--- |
 | **`unbound-v0.1.0-refresh-win64.zip`** | Архив с GUI-приложением и инструкцией | Windows 10 / 11 64-bit |
 | **`unbound-windows-amd64.exe`** | Исполняемый GUI-файл Windows | Windows 10 / 11 64-bit |
-| **`Unbound-macOS-universal.zip`** | Приложение `.app` (Universal Binary) | macOS (Intel / M1 / M2 / M3) |
-| **`unbound-linux-amd64`** | Исполняемый файл Linux x86_64 | Linux (Ubuntu, Debian, Fedora, Arch) |
-| **`unbound-linux-arm64`** | Исполняемый файл Linux ARM64 | Linux ARM64 / Raspberry Pi |
+| **`Unbound-macOS-universal.zip`** | Приложение `.app` GUI (Universal Binary) | macOS (Intel / M1 / M2 / M3) |
+| **`unbound-darwin-arm64`** | Исполняемый CLI-файл macOS (Apple Silicon) | macOS M1 / M2 / M3 / M4 |
+| **`unbound-darwin-amd64`** | Исполняемый CLI-файл macOS (Intel) | macOS Intel |
+| **`unbound-linux-amd64`** | Исполняемый CLI-файл Linux x86_64 | Linux (Ubuntu, Debian, Fedora, Arch) |
+| **`unbound-linux-arm64`** | Исполняемый CLI-файл Linux ARM64 | Linux ARM64 / Raspberry Pi |
 
 ---
 
@@ -33,13 +35,12 @@
 ---
 
 ### 🍎 macOS (macOS 12+ Intel / Apple Silicon M1/M2/M3)
-1. Скачайте архив **`Unbound-macOS-universal.zip`**.
-2. Распакуйте архив и переместите `Unbound.app` в папку `Программы` (`/Applications`).
-3. Если macOS блокирует запуск (Gatekeeper), выполните в терминале:
-   ```bash
-   xattr -cr /Applications/Unbound.app
-   ```
-4. Нажмите **ПОДКЛЮЧИТЬ!** (приложению понадобятся права sudo для настройки `pf`).
+- **GUI приложение**: Скачайте архив **`Unbound-macOS-universal.zip`**, распакуйте и переместите `Unbound.app` в `/Applications`.
+- **CLI режим**: Скачайте **`unbound-darwin-arm64`** (M1/M2/M3) или **`unbound-darwin-amd64`** (Intel), сделайте исполняемым:
+  ```bash
+  chmod +x unbound-darwin-arm64
+  sudo ./unbound-darwin-arm64 --cli --autotune
+  ```
 
 ---
 
@@ -48,13 +49,12 @@
 2. Сделайте файл исполняемым и запустите с правами root:
    ```bash
    chmod +x unbound-linux-amd64
-   sudo ./unbound-linux-amd64
+   sudo ./unbound-linux-amd64 --cli --autotune
    ```
 
 ---
 
-## ✨ Ключевые возможности версии Refresh:
-- **Современный движок Zapret 2**: Работа на базе `winws2` / `nfqws2` / `tpws` с полной поддержкой Lua-скриптов (`zapret-antidpi.lua`).
-- **Автоподбор стратегий (AutoTune)**: Проверка доступности YouTube, Discord, Cloudflare и Ozon в реальном времени с точным подбором профиля под вашего провайдера.
-- **Безопасность**: Без MITM и подмены Root CA. Контроль целостности бинарников по SHA256 (`ENGINE_ASSETS.sha256`).
-- **SecureDNS**: Встроенная поддержка Cloudflare DoH (1.1.1.1).
+## ⚡ Новые возможности CLI режима (`--cli`):
+- **`--cli --autotune`**: Автоматический запуск автоподбора лучших профилей прямо из терминала с красивым текстовым прогресс-баром `[████████░░░░] 60%`.
+- **`--list-profiles --json`**: Вывод доступных профилей обхода в JSON-формате для скриптов и систем мониторинга.
+- **Живой мониторинг пинга**: Вывод задержки к YouTube, Discord и Instagram каждые 5 секунд во время работы.
