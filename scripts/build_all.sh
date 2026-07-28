@@ -141,6 +141,7 @@ build_darwin() {
 
     local debug_flag=""
     [ "$DEBUG_MODE" = true ] && debug_flag="-debug"
+    export CGO_LDFLAGS="-framework UniformTypeIdentifiers ${CGO_LDFLAGS:-}"
     xattr -cr . 2>/dev/null || true
     wails build -platform darwin/universal $debug_flag \
         -ldflags "-X unbound/engine.Version=${ver}" || true

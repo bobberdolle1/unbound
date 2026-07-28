@@ -57,6 +57,7 @@ fi
 echo ""
 echo "🔨 Building macOS app..."
 
+export CGO_LDFLAGS="-framework UniformTypeIdentifiers ${CGO_LDFLAGS:-}"
 xattr -cr . 2>/dev/null || true
 if [ "$PLATFORM" = "universal" ]; then
     wails build -platform darwin/universal $DEBUG_FLAG -ldflags "-X unbound/engine.Version=0.1.0-refresh" || true

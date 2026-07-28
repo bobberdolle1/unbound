@@ -17,7 +17,7 @@
   "info": {
     "companyName": "UNBOUND",
     "productName": "UNBOUND ClearFlow Engine",
-    "productVersion": "0.1.0-refresh",
+    "productVersion": "0.1.5",
     "copyright": "Copyright \u00a9 2024-2026 UNBOUND Team",
     "comments": "UNBOUND Refresh - DPI bypass engine for Windows, Linux & macOS"
   },

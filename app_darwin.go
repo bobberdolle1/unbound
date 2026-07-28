@@ -50,18 +50,6 @@ func registerOSProviders(a *App, assets *engine.AssetPaths) {
 		cb.SetLogCallback(func(line string) {
 			runtime.EventsEmit(a.ctx, "engine_log", line)
 		})
-
-		registered := make(map[string]bool)
-		for _, p := range engine.GetProfiles(assets.LuaDir) {
-			cb.RegisterProfile(p.Name, p.Args)
-			registered[p.Name] = true
-		}
-		for _, p := range engine.GetAdvancedProfiles(assets.LuaDir) {
-			if !registered[p.Name] {
-				cb.RegisterProfile(p.Name, p.Args)
-				registered[p.Name] = true
-			}
-		}
 	}
 
 	a.manager.Register(provider)
