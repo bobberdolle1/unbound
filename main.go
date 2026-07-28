@@ -114,12 +114,15 @@ func runListProfiles(debugMode bool) {
 	attachConsole()
 
 	manager, _ := newHeadlessManager(debugMode)
+	fmt.Printf("UNBOUND v%s (%s/%s) — Available Profiles:\n", engine.Version, runtime.GOOS, runtime.GOARCH)
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	for _, name := range manager.GetEngineNames() {
-		fmt.Printf("%s:\n", name)
-		for _, profile := range manager.GetProfiles(name) {
-			fmt.Printf("  %s\n", profile)
+		fmt.Printf("Engine: %s\n", name)
+		for i, profile := range manager.GetProfiles(name) {
+			fmt.Printf("  [%d] %s\n", i+1, profile)
 		}
 	}
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 }
 
 func runHeadlessMode(profileName string, debugMode bool) {
