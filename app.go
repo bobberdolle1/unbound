@@ -330,29 +330,36 @@ func (a *App) AutoTune() string {
 		a.mu.Lock()
 		a.autoTuneCancel = nil
 		a.mu.Unlock()
-		wailsruntime.EventsEmit(a.ctx, "autotune_start", false)
 	}()
+
+	// Helper to emit failure and stop scanning in one place
+	failAutoTune := func(errMsg string, logMsg string) string {
+		wailsruntime.EventsEmit(a.ctx, "autotune_log", logMsg)
+		wailsruntime.EventsEmit(a.ctx, "autotune_complete", map[string]interface{}{
+			"success": false,
+			"error":   errMsg,
+		})
+		return "Failed"
+	}
 
 	assets, err := engine.ExtractAssets()
 	if err != nil {
 		logger.Errorf("App", "AutoTune could not extract assets: %v", err)
 		notifMgr.Error("Ошибка автоподбора", "Не удалось извлечь файлы движка")
-		return "Failed"
+		return failAutoTune("Не удалось извлечь файлы движка", fmt.Sprintf("❌ Ошибка: %v", err))
 	}
 
 	provider := providers.NewAutoTuneProvider(assets.BinDir, assets.LuaDir, assets.ListDir)
 	if provider == nil {
-		// The factory returns nil when no engine binary can be found. Handing
-		// that straight to the tuner used to panic with a nil dereference.
 		logger.Error("App", "AutoTune has no usable engine provider on this platform")
 		notifMgr.Error("Ошибка автоподбора", "Движок обхода не найден на этой системе")
-		wailsruntime.EventsEmit(a.ctx, "autotune_log", "❌ Движок обхода не найден")
-		return "Failed"
+		return failAutoTune("Движок обхода не найден. Установите nfqws/tpws/winws2.", "❌ Движок обхода не найден на этой системе")
 	}
 
 	// LOAD ALL PROFILES
 	allProfiles := append(engine.GetProfiles(assets.LuaDir), engine.GetAdvancedProfiles(assets.LuaDir)...)
 	logger.Infof("App", "Loaded %d profiles for testing", len(allProfiles))
+	wailsruntime.EventsEmit(a.ctx, "autotune_log", fmt.Sprintf("Загружено %d профилей для тестирования", len(allProfiles)))
 
 	progressCb := func(step, total int, profile string, okCount, totalTargets int, msg string) {
 		pct := int((float64(step) / float64(total)) * 100)
@@ -372,11 +379,11 @@ func (a *App) AutoTune() string {
 	if err != nil {
 		logger.Errorf("App", "AutoTune failed: %v", err)
 		notifMgr.Error("Ошибка автоподбора", "Не удалось найти оптимальный профиль")
-		wailsruntime.EventsEmit(a.ctx, "autotune_log", "❌ Auto-Tune failed or cancelled")
-		return "Failed"
+		return failAutoTune(fmt.Sprintf("Автоподбор не удался: %v", err), fmt.Sprintf("❌ Ошибка: %v", err))
 	}
 
 	logger.Infof("App", "AutoTune completed successfully: %s", result.ProfileName)
+	wailsruntime.EventsEmit(a.ctx, "autotune_log", fmt.Sprintf("✅ Найден лучший профиль: %s (счёт: %d)", result.ProfileName, result.Score))
 	wailsruntime.EventsEmit(a.ctx, "autotune_complete", map[string]interface{}{
 		"success": true,
 		"profile": result.ProfileName,
@@ -397,7 +404,7 @@ func (a *App) CancelAutoTune() {
 
 func (a *App) GetLivePing() map[string]interface{} {
 	if a.manager.GetStatus() != providers.StatusRunning {
-		return map[string]interface{}{"active": false}
+		return map[string]interface{}{"active": true, "latency": 0, "status": "disconnected", "services": map[string]int64{}}
 	}
 	targets := []struct{ Name, URL string }{
 		{"YouTube", "https://www.youtube.com"},

@@ -30,7 +30,7 @@
       "webviewUserDataPath": "",
       "webviewBrowserPath": "",
       "theme": "dark",
-      "manifest": "build/windows/app.manifest"
+      "manifest": "build/windows/wails.exe.manifest"
     }
   },
   "nsis": {

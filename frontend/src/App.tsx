@@ -314,7 +314,6 @@ export default function App() {
     });
     EventsOn('autotune_start', (running: boolean) => {
       setIsScanning(running);
-      if (!running) setAutotuneProgress(null);
     });
     EventsOn('autotune_progress', (data: any) => {
       setAutotuneProgress(data);
@@ -323,21 +322,26 @@ export default function App() {
         setScanLogs(prev => [...prev, data.msg]);
       }
     });
+    EventsOn('autotune_log', (msg: string) => {
+      setScanLogs(prev => [...prev, msg]);
+    });
     EventsOn('engine_log', (msg: string) => {
       setLogs(prev => [...prev, msg]);
     });
-    EventsOn('autotune_complete', (data: {success: boolean, profile: string}) => {
+    EventsOn('autotune_complete', (data: {success: boolean, profile?: string, error?: string}) => {
       setScanSuccess(data.success);
+      setIsScanning(false);
       if (data.success && data.profile) {
         setSelectedProfile(data.profile);
         setScanProgress(`✅ Готово! Профиль: ${data.profile}`);
       } else {
-        setScanProgress('❌ Рабочий профиль не найден. Проверьте права администратора и соединение.');
+        setScanProgress(`❌ ${data.error || 'Рабочий профиль не найден'}`);
       }
       setTimeout(() => {
         setScanSuccess(null);
         setScanProgress('');
-      }, 8000);
+        setAutotuneProgress(null);
+      }, 10000);
     });
   }, []);
 
@@ -384,33 +388,10 @@ export default function App() {
     }
   };
 
-  const handleAutoTune = async () => {
-    setIsScanning(true);
+  const handleAutoTune = () => {
     setScanLogs([]);
-    setScanSuccess(null);
-    setScanProgress('🔍 Сканирую профили...');
     if (settings.showLogs) setIsLogExpanded(true);
-    try {
-      const bestProfile = await AutoTune();
-      if (bestProfile && bestProfile !== "Failed") {
-        setSelectedProfile(bestProfile);
-        setScanProgress(`✅ Найдено: ${bestProfile}`);
-        setScanSuccess(true);
-      } else {
-        setScanProgress('❌ Рабочий профиль не найден. Проверьте права администратора и интернет-соединение.');
-        setScanSuccess(false);
-      }
-    } catch (err) {
-      console.error('[ERROR] AutoTune failed:', err);
-      setScanProgress('❌ Ошибка сканирования. Проверьте права администратора.');
-      setScanSuccess(false);
-    } finally {
-      setIsScanning(false);
-      setTimeout(() => {
-        setScanSuccess(null);
-        setScanProgress('');
-      }, 8000);
-    }
+    AutoTune(); // fire-and-forget; events handle all state
   };
 
   const handleOpenSettings = async () => {
@@ -738,15 +719,23 @@ export default function App() {
         <div className="flex flex-col gap-2 mb-10 relative z-40">
           <div className="flex justify-between items-center px-2">
             <span className="text-lg font-bold" style={{ color: 'var(--ui-text)' }}>Профиль:</span>
-            {isConnected && (
+            {isConnected && livePingData.services && Object.keys(livePingData.services).length > 0 ? (
               <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                {livePingData.services && Object.entries(livePingData.services).map(([name, ms]) => (
+                {Object.entries(livePingData.services).map(([name, ms]) => (
                   <span key={name} className="text-[11px] px-2 py-0.5 rounded-md font-mono bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">
                     {name} {ms}мс
                   </span>
                 ))}
               </div>
-            )}
+            ) : livePingData.status === 'disconnected' ? (
+              <span className="text-[11px] px-2 py-0.5 rounded-md font-mono bg-slate-500/15 text-slate-400 border border-slate-500/25">
+                Offline
+              </span>
+            ) : livePingData.status === 'blocked' ? (
+              <span className="text-[11px] px-2 py-0.5 rounded-md font-mono bg-red-500/15 text-red-400 border border-red-500/25">
+                Blocked
+              </span>
+            ) : null}
           </div>
           
           <DoodleSelect 
