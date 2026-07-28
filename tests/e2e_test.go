@@ -548,3 +548,62 @@ func TestEngine_Orchestrator(t *testing.T) {
 		t.Errorf("metrics.PacketsSent = %d on idle orchestrator", m.PacketsSent)
 	}
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Frontend & Script Verification Tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+func TestFrontend_VitestSuite(t *testing.T) {
+	if _, err := exec.LookPath("npm"); err != nil {
+		t.Skip("npm not installed — skipping vitest suite")
+	}
+
+	repoRoot, err := filepath.Abs("..")
+	if err != nil {
+		t.Fatalf("failed to resolve repo root: %v", err)
+	}
+
+	cmd := exec.Command("npm", "test")
+	cmd.Dir = filepath.Join(repoRoot, "frontend")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("frontend vitest suite failed: %v\n%s", err, out)
+	}
+}
+
+func TestScripts_ParseAndValidate(t *testing.T) {
+	repoRoot, err := filepath.Abs("..")
+	if err != nil {
+		t.Fatalf("failed to resolve repo root: %v", err)
+	}
+
+	scripts := []string{
+		"scripts/build_all.sh",
+		"scripts/check.sh",
+		"scripts/engine-assets.sh",
+		"scripts/fetch-fonts.sh",
+		"scripts/build/build_linux.sh",
+		"scripts/build/build_darwin.sh",
+		"packaging/build-deb.sh",
+		"packaging/build-rpm.sh",
+	}
+
+	bashPath, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("bash not installed — skipping script parsing test")
+	}
+
+	for _, s := range scripts {
+		fullPath := filepath.Join(repoRoot, s)
+		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+			t.Errorf("script does not exist: %s", s)
+			continue
+		}
+
+		cmd := exec.Command(bashPath, "-n", fullPath)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Errorf("script syntax check failed for %s: %v\n%s", s, err, out)
+		}
+	}
+}

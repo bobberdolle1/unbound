@@ -77,8 +77,9 @@ check_frontend() {
     if [ ! -d frontend/node_modules ]; then
         run "npm ci" bash -c 'cd frontend && npm ci --no-audit --no-fund'
     fi
-    run "tsc --noEmit"  bash -c 'cd frontend && npm run typecheck'
-    run "vite build"    bash -c 'cd frontend && npm run build'
+    run "tsc --noEmit"   bash -c 'cd frontend && npm run typecheck'
+    run "vitest tests"   bash -c 'cd frontend && npm test'
+    run "vite build"     bash -c 'cd frontend && npm run build'
 }
 
 # ── Shell scripts ────────────────────────────────────────────────────────────

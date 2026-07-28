@@ -1,3 +1,4 @@
+/// <reference types="vitest" />
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { defineConfig, type Plugin } from 'vite'
@@ -32,5 +33,9 @@ export default defineConfig({
     // The desktop shell always ships the matching build, so source maps cost
     // bundle size for no debugging benefit in production.
     sourcemap: false,
+  },
+  test: {
+    environment: 'jsdom',
+    globals: true,
   },
 })

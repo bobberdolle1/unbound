@@ -18,6 +18,9 @@ export const DoodleSelect = ({ value, options, onChange, disabled, up }: { value
   return (
     <div className="relative w-full" ref={dropdownRef}>
       <div 
+        role="combobox"
+        aria-expanded={isOpen}
+        tabIndex={disabled ? -1 : 0}
         className={cn(
           "w-full px-4 py-3 font-bold text-base flex items-center justify-between transition-all duration-200 rounded-xl border-2",
           "cursor-pointer",
@@ -30,6 +33,12 @@ export const DoodleSelect = ({ value, options, onChange, disabled, up }: { value
           borderColor: 'var(--ui-border)',
         }}
         onClick={() => !disabled && setIsOpen(!isOpen)}
+        onKeyDown={(e) => {
+          if (!disabled && (e.key === 'Enter' || e.key === ' ')) {
+            e.preventDefault();
+            setIsOpen(!isOpen);
+          }
+        }}
       >
         <span className="truncate">{value || 'Выбрать стратегию'}</span>
         <span className={cn("font-bold text-lg transition-transform duration-200", isOpen && "rotate-180")} style={{ color: 'var(--ui-text-muted)' }}>
