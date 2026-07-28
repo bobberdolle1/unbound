@@ -54,10 +54,14 @@ func TestCLIHeadlessMode(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	t.Log("Executing CLI mode with --cli --profile='Standard Split' --debug")
+	profileName := "Standard Split"
+	if runtime.GOOS == "darwin" {
+		profileName = "Ultimate Bypass (Multi-Strategy)"
+	}
 
-	cmd := exec.CommandContext(ctx, tempBinary, "--cli", "--profile=Standard Split", "--debug")
+	t.Logf("Executing CLI mode with --cli --profile='%s' --debug", profileName)
 
+	cmd := exec.CommandContext(ctx, tempBinary, "--cli", "--profile="+profileName, "--debug")
 	output, err := cmd.CombinedOutput()
 	outputStr := string(output)
 
@@ -207,7 +211,11 @@ func TestCLIDebugMode(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, tempBinary, "--cli", "--profile=Standard Split", "--debug")
+	profileName := "Standard Split"
+	if runtime.GOOS == "darwin" {
+		profileName = "Ultimate Bypass (Multi-Strategy)"
+	}
+	cmd := exec.CommandContext(ctx, tempBinary, "--cli", "--profile="+profileName, "--debug")
 	output, _ := cmd.CombinedOutput()
 	outputStr := string(output)
 

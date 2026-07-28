@@ -44,15 +44,10 @@ type macProfile struct {
 // tpws via loopback.
 func tpwsPfRules(tcpPorts string) []string {
 	return []string{
-		// Redirect outgoing TCP (from any non-root process) to loopback so
-		// the rdr rule can catch it. root is excluded to avoid a loop
-		// (tpws itself runs as root or as a system daemon).
-		fmt.Sprintf("pass out route-to (lo0 127.0.0.1) proto tcp to port {%s} user { >0 }", tcpPorts),
-		// Rewrite dest port to tpws listening port on loopback.
+		// 1. Translation (rdr) rules MUST come before filtering (pass/block) rules in pfctl!
 		fmt.Sprintf("rdr pass on lo0 inet proto tcp from !127.0.0.0/8 to any port {%s} -> 127.0.0.1 port %s", tcpPorts, tpwsPort),
-		// Block outgoing QUIC/HTTP3 so browsers fall back to TCP (QUIC
-		// bypasses the TCP proxy entirely and causes YouTube to skip DPI
-		// mitigation).
+		// 2. Filtering (pass out / block drop out) rules come after translation rules.
+		fmt.Sprintf("pass out route-to (lo0 127.0.0.1) proto tcp to port {%s} user { >0 }", tcpPorts),
 		"block drop out quick proto udp to port 443",
 	}
 }
@@ -63,14 +58,12 @@ var macBuiltinProfiles = map[string]macProfile{
 		Args: []string{
 			"--bind-addr=127.0.0.1",
 			"--filter-tcp=80",
-			"--dpi-desync=fake,multisplit",
-			"--dpi-desync-split-pos=method+2",
-			"--dpi-desync-fooling=md5sig",
+			"--split-pos=method+2",
+			"--hostcase",
 			"--new",
 			"--filter-tcp=443",
-			"--dpi-desync=fake,multidisorder",
-			"--dpi-desync-split-pos=1,midsld",
-			"--dpi-desync-fooling=badseq,md5sig",
+			"--split-pos=1,midsld",
+			"--disorder",
 		},
 	},
 	"Discord Voice Optimized": {
@@ -78,13 +71,12 @@ var macBuiltinProfiles = map[string]macProfile{
 		Args: []string{
 			"--bind-addr=127.0.0.1",
 			"--filter-tcp=443",
-			"--dpi-desync=fake,split",
-			"--dpi-desync-split-pos=1",
-			"--dpi-desync-fooling=md5sig",
+			"--split-pos=1",
+			"--disorder",
 			"--new",
 			"--filter-tcp=5222,5223,5228",
-			"--dpi-desync=disorder",
-			"--dpi-desync-split-pos=2",
+			"--split-pos=2",
+			"--disorder",
 		},
 	},
 	"YouTube QUIC Aggressive": {
@@ -92,14 +84,13 @@ var macBuiltinProfiles = map[string]macProfile{
 		Args: []string{
 			"--bind-addr=127.0.0.1",
 			"--filter-tcp=80",
-			"--dpi-desync=fake,multisplit",
-			"--dpi-desync-split-pos=method+2",
-			"--dpi-desync-fooling=md5sig",
+			"--split-pos=method+2",
+			"--hostcase",
 			"--new",
 			"--filter-tcp=443",
-			"--dpi-desync=fake,multisplit",
-			"--dpi-desync-split-pos=1,midsld",
-			"--dpi-desync-fooling=md5sig",
+			"--split-pos=1,midsld",
+			"--tlsrec=1,midsld",
+			"--disorder",
 		},
 	},
 	"Telegram API Bypass": {
@@ -107,13 +98,12 @@ var macBuiltinProfiles = map[string]macProfile{
 		Args: []string{
 			"--bind-addr=127.0.0.1",
 			"--filter-tcp=443",
-			"--dpi-desync=fake,split",
-			"--dpi-desync-split-pos=1",
-			"--dpi-desync-fooling=md5sig",
+			"--split-pos=1",
+			"--disorder",
 			"--new",
 			"--filter-tcp=5222,5223,5228",
-			"--dpi-desync=disorder",
-			"--dpi-desync-split-pos=2",
+			"--split-pos=2",
+			"--disorder",
 		},
 	},
 	"Standard HTTPS/QUIC": {
@@ -121,9 +111,8 @@ var macBuiltinProfiles = map[string]macProfile{
 		Args: []string{
 			"--bind-addr=127.0.0.1",
 			"--filter-tcp=443",
-			"--dpi-desync=fake,split",
-			"--dpi-desync-split-pos=1",
-			"--dpi-desync-fooling=md5sig",
+			"--split-pos=1",
+			"--disorder",
 		},
 	},
 	"HTTP + HTTPS Split": {
@@ -131,12 +120,12 @@ var macBuiltinProfiles = map[string]macProfile{
 		Args: []string{
 			"--bind-addr=127.0.0.1",
 			"--filter-tcp=80",
-			"--dpi-desync=split",
-			"--dpi-desync-split-pos=method+2",
+			"--split-pos=method+2",
+			"--hostcase",
 			"--new",
 			"--filter-tcp=443",
-			"--dpi-desync=disorder",
-			"--dpi-desync-split-pos=2",
+			"--split-pos=2",
+			"--disorder",
 		},
 	},
 }
