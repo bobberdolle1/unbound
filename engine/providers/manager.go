@@ -1,14 +1,17 @@
+// Package providers manages engine implementations for packet bypass across OSes.
 package providers
 
 import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 )
 
 type ProviderManager struct {
 	providers      map[string]BypassProvider
 	activeProvider BypassProvider
+	startedAt      time.Time
 	mu             sync.Mutex
 }
 
@@ -62,16 +65,24 @@ func (m *ProviderManager) Start(ctx context.Context, engineName string, profileN
 	}
 
 	m.activeProvider = p
-	return p.Start(ctx, profileName)
+	err := p.Start(ctx, profileName)
+	if err == nil {
+		m.startedAt = time.Now()
+	}
+	return err
 }
 
 func (m *ProviderManager) Stop() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.activeProvider != nil {
-		return m.activeProvider.Stop()
+	if m.activeProvider == nil {
+		return nil
 	}
-	return nil
+	err := m.activeProvider.Stop()
+	if err == nil {
+		m.startedAt = time.Time{}
+	}
+	return err
 }
 
 func (m *ProviderManager) GetStatus() Status {
@@ -100,4 +111,32 @@ func (m *ProviderManager) CheckPrivileges() (bool, error) {
 		return p.CheckPrivileges()
 	}
 	return false, fmt.Errorf("no providers registered")
+}
+func (m *ProviderManager) GetUptime() time.Duration {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !m.startedAt.IsZero() {
+		return time.Since(m.startedAt)
+	}
+	return 0
+}
+
+func (m *ProviderManager) GetStatusInfo() map[string]interface{} {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	status := StatusStopped
+	engineName := ""
+	if m.activeProvider != nil {
+		status = m.activeProvider.GetStatus()
+		engineName = m.activeProvider.Name()
+	}
+	var uptimeSec int64
+	if !m.startedAt.IsZero() {
+		uptimeSec = int64(time.Since(m.startedAt).Seconds())
+	}
+	return map[string]interface{}{
+		"status":         string(status),
+		"engine":         engineName,
+		"uptime_seconds": uptimeSec,
+	}
 }

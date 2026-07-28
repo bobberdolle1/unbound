@@ -182,14 +182,23 @@ func runHeadlessMode(profileName string, debugMode bool) {
 	fmt.Println("✓ Engine started successfully")
 	fmt.Println("Press Ctrl+C to stop...")
 
+	done := make(chan struct{})
 	go func() {
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
-		for range ticker.C {
-			logs := manager.GetLogs()
-			if len(logs) > 0 {
-				lastLog := logs[len(logs)-1]
-				fmt.Printf("[LOG] %s\n", lastLog)
+		var lastPrintedCount int
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				logs := manager.GetLogs()
+				if len(logs) > lastPrintedCount {
+					for _, line := range logs[lastPrintedCount:] {
+						fmt.Printf("[LOG] %s\n", line)
+					}
+					lastPrintedCount = len(logs)
+				}
 			}
 		}
 	}()
@@ -200,8 +209,21 @@ func runHeadlessMode(profileName string, debugMode bool) {
 
 	fmt.Println("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	fmt.Println("Shutting down gracefully...")
-	if err := manager.Stop(); err != nil {
-		log.Printf("Error stopping engine: %v", err)
+	close(done)
+
+	stopDone := make(chan error, 1)
+	go func() {
+		stopDone <- manager.Stop()
+	}()
+
+	select {
+	case err := <-stopDone:
+		if err != nil {
+			log.Printf("Error stopping engine: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		log.Printf("Warning: engine stop timed out after 5 seconds, forcing exit")
+		os.Exit(1)
 	}
 	fmt.Println("✓ Engine stopped")
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")

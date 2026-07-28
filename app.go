@@ -21,6 +21,7 @@ type App struct {
 	startMinimized bool
 	debugMode      bool
 	autoTuneCancel context.CancelFunc
+	mu             sync.Mutex
 }
 
 func NewApp() *App {
@@ -217,6 +218,9 @@ func (a *App) StopEngine() error {
 func (a *App) GetStatus() string {
 	return string(a.manager.GetStatus())
 }
+func (a *App) GetStatusInfo() map[string]interface{} {
+	return a.manager.GetStatusInfo()
+}
 
 func (a *App) GetLogs() []string {
 	return a.manager.GetLogs()
@@ -307,20 +311,25 @@ func (a *App) AutoTune() string {
 	logger := engine.GetLogger()
 	notifMgr := engine.GetNotificationManager()
 
+	a.mu.Lock()
 	if a.autoTuneCancel != nil {
+		a.mu.Unlock()
 		logger.Warn("App", "AutoTune already running")
 		return "Already running"
 	}
 
 	tuneCtx, cancel := context.WithCancel(a.ctx)
 	a.autoTuneCancel = cancel
+	a.mu.Unlock()
 
 	logger.Info("App", "AutoTune process started")
 	notifMgr.Info("Автоподбор", "Начинаем оптимизацию профиля...")
 	wailsruntime.EventsEmit(a.ctx, "autotune_start", true)
 
 	defer func() {
+		a.mu.Lock()
 		a.autoTuneCancel = nil
+		a.mu.Unlock()
 		wailsruntime.EventsEmit(a.ctx, "autotune_start", false)
 	}()
 
@@ -363,9 +372,12 @@ func (a *App) AutoTune() string {
 }
 
 func (a *App) CancelAutoTune() {
-	if a.autoTuneCancel != nil {
-		a.autoTuneCancel()
-		a.autoTuneCancel = nil
+	a.mu.Lock()
+	cancel := a.autoTuneCancel
+	a.autoTuneCancel = nil
+	a.mu.Unlock()
+	if cancel != nil {
+		cancel()
 	}
 }
 

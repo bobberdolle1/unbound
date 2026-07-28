@@ -35,7 +35,7 @@ func CheckForUpdates(currentVersion string) (UpdateInfo, error) {
 	}
 
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	req.Header.Set("User-Agent", "Unbound-DPI-Bypass")
+	req.Header.Set("User-Agent", UserAgent())
 
 	resp, err := client.Do(req)
 	if err != nil {
