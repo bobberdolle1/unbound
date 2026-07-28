@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
@@ -443,9 +445,61 @@ func resolveProfileAlias(available []string, input string) string {
 	return input
 }
 
+func editBypassListCLI(listName string) {
+	listsDir, err := engine.GetListsDir()
+	if err != nil {
+		fmt.Printf("❌ Ошибка получения директории списков: %v\n", err)
+		return
+	}
+	targetPath := filepath.Join(listsDir, listName)
+	if _, err := os.Stat(targetPath); os.IsNotExist(err) {
+		_ = os.WriteFile(targetPath, []byte("# Добавьте домены/IP по одному на строку\n"), 0644)
+	}
+
+	fmt.Printf("Открываем %s...\n", targetPath)
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "windows":
+		cmd = exec.Command("notepad", targetPath)
+	case "darwin":
+		cmd = exec.Command("open", "-e", targetPath)
+	default:
+		editor := os.Getenv("EDITOR")
+		if editor == "" {
+			editor = "nano"
+		}
+		cmd = exec.Command(editor, targetPath)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+	}
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("Warning: не удалось открыть редактор: %v\nПуть к файлу: %s\n", err, targetPath)
+	}
+}
+
+func toggleSecureDNSCLI() {
+	enabled := isSecureDNSEnabledImpl()
+	newState := !enabled
+	if err := setSecureDNSImpl(newState); err != nil {
+		fmt.Printf("❌ Ошибка переключения Secure DNS: %v\n", err)
+		return
+	}
+	if newState {
+		fmt.Println("✓ Secure DNS (Cloudflare DoH) успешно включён!")
+	} else {
+		fmt.Println("✓ Secure DNS выключен (возвращены системные настройки DNS).")
+	}
+}
+
 func runControlCenterMenu(debugMode bool) {
 	attachConsole()
 	for {
+		dnsStatus := "отключен"
+		if isSecureDNSEnabledImpl() {
+			dnsStatus = "ВКЛЮЧЁН (Cloudflare DoH)"
+		}
+
 		fmt.Println("\n===================================================")
 		fmt.Printf("  🚀 UNBOUND CONTROL CENTER v%s (%s/%s)\n", engine.Version, runtime.GOOS, runtime.GOARCH)
 		fmt.Println("===================================================")
@@ -454,12 +508,16 @@ func runControlCenterMenu(debugMode bool) {
 		fmt.Println(" [3] Диагностика подключения (--test)")
 		fmt.Println(" [4] Установить в автозапуск / службу")
 		fmt.Println(" [5] Удалить из автозапуска / службы")
-		fmt.Println(" [6] Проверить конфликты и статус")
-		fmt.Println(" [7] Очистить кэш Discord")
-		fmt.Println(" [8] Остановить все процессы обхода и сбросить драйверы")
-		fmt.Println(" [9] Выход")
+		fmt.Println(" [6] Редактировать список YouTube (youtube.txt)")
+		fmt.Println(" [7] Редактировать список Discord (discord.txt)")
+		fmt.Println(" [8] Редактировать список исключений (ipset-exclude.txt)")
+		fmt.Printf(" [9] Переключить Secure DNS [Текущий статус: %s]\n", dnsStatus)
+		fmt.Println(" [10] Проверить конфликты и статус")
+		fmt.Println(" [11] Очистить кэш Discord")
+		fmt.Println(" [12] Остановить все процессы обхода и сбросить драйверы")
+		fmt.Println(" [13] Выход")
 		fmt.Println("===================================================")
-		fmt.Print("Выберите пункт меню (1-9): ")
+		fmt.Print("Выберите пункт меню (1-13): ")
 
 		var choice string
 		fmt.Scanln(&choice)
@@ -487,6 +545,14 @@ func runControlCenterMenu(debugMode bool) {
 				fmt.Println("✓ Автозапуск успешно удалён!")
 			}
 		case "6":
+			editBypassListCLI("youtube.txt")
+		case "7":
+			editBypassListCLI("discord.txt")
+		case "8":
+			editBypassListCLI("ipset-exclude.txt")
+		case "9":
+			toggleSecureDNSCLI()
+		case "10":
 			conflicts := checkConflictsImpl()
 			if len(conflicts) == 0 {
 				fmt.Println("✓ Конфликтующие процессы не обнаружены.")
@@ -496,21 +562,21 @@ func runControlCenterMenu(debugMode bool) {
 					fmt.Println("  ", c)
 				}
 			}
-		case "7":
+		case "11":
 			app := NewApp()
 			if err := app.ClearDiscordCache(); err != nil {
 				fmt.Printf("❌ Ошибка очистки кэша Discord: %v\n", err)
 			} else {
 				fmt.Println("✓ Кэш Discord очищен!")
 			}
-		case "8":
+		case "12":
 			app := NewApp()
 			if err := app.KillWinws2(); err != nil {
 				fmt.Printf("❌ Ошибка остановки процессов: %v\n", err)
 			} else {
 				fmt.Println("✓ Все процессы остановлены и правила сброшены!")
 			}
-		case "9":
+		case "13":
 			return
 		default:
 			fmt.Println("Неверный выбор, попробуйте снова.")
