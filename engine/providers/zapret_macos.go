@@ -620,6 +620,10 @@ func (e *ZapretMacOSProvider) currentProfileName() string {
 	return e.currentProfile
 }
 
+func (e *ZapretMacOSProvider) CurrentProfile() string {
+	return e.currentProfileName()
+}
+
 func (e *ZapretMacOSProvider) setStatusLocked(status Status) {
 	if e.status == status {
 		return

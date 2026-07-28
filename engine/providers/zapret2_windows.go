@@ -352,3 +352,9 @@ func (e *Zapret2WindowsProvider) addLog(msg string) {
 		e.onLogAdd(msg)
 	}
 }
+
+func (e *Zapret2WindowsProvider) CurrentProfile() string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.currentProfile
+}

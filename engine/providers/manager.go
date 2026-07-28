@@ -121,6 +121,22 @@ func (m *ProviderManager) GetUptime() time.Duration {
 	return 0
 }
 
+// CurrentProfileName returns the currently active profile name for the given engine.
+// Returns empty string if no profile is active or engine not found.
+func (m *ProviderManager) CurrentProfileName(engineName string) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.activeProvider == nil {
+		return ""
+	}
+	if p, ok := m.providers[engineName]; ok && p == m.activeProvider {
+		if bp, ok := p.(BypassProviderWithCallbacks); ok {
+			return bp.CurrentProfile()
+		}
+	}
+	return ""
+}
+
 func (m *ProviderManager) GetStatusInfo() map[string]interface{} {
 	m.mu.Lock()
 	defer m.mu.Unlock()

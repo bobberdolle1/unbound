@@ -8,7 +8,7 @@ import { DoodleSelect } from './components/DoodleSelect';
 import { DoodleCheckbox } from './components/DoodleCheckbox';
 import { PingChart } from './components/PingChart';
 
-import { GetEngineNames, GetProfiles, StartEngine, StopEngine, GetLogs, AutoTune, CancelAutoTune, GetSettings, SaveSettings, GetLivePing, ShowNotification, EnableAutoStart, DisableAutoStart, IsAutoStartEnabled, CheckConflicts, KillConflicts, CheckPrivileges, RunDiagnostics, ClearDiscordCache, KillWinws2, QuitApp, GetAppVersion, GetOSPlatform, HideWindowToTray, GetBypassLists, ReadBypassList, SaveBypassList, ExportLogs, SaveCustomScript, LoadCustomScript, VerifyEngineAssets } from '../wailsjs/go/main/App';
+import { GetEngineNames, GetProfiles, StartEngine, StopEngine, GetLogs, AutoTune, CancelAutoTune, GetSettings, SaveSettings, GetLivePing, ShowNotification, EnableAutoStart, DisableAutoStart, IsAutoStartEnabled, CheckConflicts, KillConflicts, CheckPrivileges, RunDiagnostics, ClearDiscordCache, KillWinws2, QuitApp, GetAppVersion, GetOSPlatform, HideWindowToTray, GetBypassLists, ReadBypassList, SaveBypassList, ExportLogs, SaveCustomScript, LoadCustomScript, VerifyEngineAssets, GenerateDiagnosticReport, ToggleFavoriteProfile, GetFavoriteProfiles, UpdateHostlistsNow, AutoReconnectMonitor, StopAutoReconnect } from '../wailsjs/go/main/App';
 import { EventsOn, WindowMinimise } from '../wailsjs/runtime/runtime';
 
 export default function App() {
@@ -39,7 +39,9 @@ export default function App() {
     showLogs: boolean,
     enableTCPTimestamps: boolean,
     discordCacheAutoClean: boolean,
-    secureDns: boolean
+    secureDns: boolean,
+    autoReconnect: boolean,
+    favoriteProfiles: string[]
   }>({
     autoStart: false,
     startMinimized: false,
@@ -50,7 +52,9 @@ export default function App() {
     showLogs: true,
     enableTCPTimestamps: false,
     discordCacheAutoClean: false,
-    secureDns: false
+    secureDns: false,
+    autoReconnect: true,
+    favoriteProfiles: []
   });
   const [livePingData, setLivePingData] = useState<{active: boolean, latency: number, status: string, services?: Record<string, number>}>({active: false, latency: 0, status: 'stopped'});
   const [pingHistory, setPingHistory] = useState<number[]>([]);
@@ -78,6 +82,9 @@ export default function App() {
     totalTargets: number;
     msg: string;
   } | null>(null);
+  const [favoriteProfiles, setFavoriteProfiles] = useState<string[]>([]);
+  const [isGeneratingReport, setIsGeneratingReport] = useState<boolean>(false);
+  const [isUpdatingHostlists, setIsUpdatingHostlists] = useState<boolean>(false);
   const handleVerifyAssets = async () => {
     setIsVerifyingAssets(true);
     try {
@@ -110,6 +117,62 @@ export default function App() {
       setIsVerifyingAssets(false);
     }
   };
+
+  const handleToggleFavorite = async () => {
+    try {
+      const favs = await ToggleFavoriteProfile(selectedProfile);
+      setFavoriteProfiles(favs || []);
+    } catch (err) {
+      console.error('ToggleFavorite failed:', err);
+    }
+  };
+
+  const handleDiagnosticReport = async () => {
+    setIsGeneratingReport(true);
+    try {
+      const report = await GenerateDiagnosticReport();
+      await ExportLogs(report);
+      setToasts(prev => [...prev, {
+        id: Date.now(),
+        type: 'success',
+        title: 'Диагностический отчёт',
+        message: 'Отчёт сохранён в файл'
+      }]);
+    } catch (err) {
+      console.error('DiagnosticReport failed:', err);
+    } finally {
+      setIsGeneratingReport(false);
+    }
+  };
+
+  const handleUpdateHostlists = async () => {
+    setIsUpdatingHostlists(true);
+    try {
+      const result = await UpdateHostlistsNow();
+      setToasts(prev => [...prev, {
+        id: Date.now(),
+        type: 'success',
+        title: 'Хостлисты обновлены',
+        message: result || 'Списки доменов успешно обновлены'
+      }]);
+    } catch (err) {
+      setToasts(prev => [...prev, {
+        id: Date.now(),
+        type: 'error',
+        title: 'Ошибка обновления',
+        message: 'Не удалось обновить хостлисты'
+      }]);
+    } finally {
+      setIsUpdatingHostlists(false);
+    }
+  };
+
+  const sortedProfiles = [...profiles].sort((a, b) => {
+    const aFav = favoriteProfiles.includes(a) ? -1 : 0;
+    const bFav = favoriteProfiles.includes(b) ? -1 : 0;
+    return aFav - bFav;
+  });
+
   const openLuaEditor = async () => {
     try {
       const code = await LoadCustomScript();
@@ -260,8 +323,13 @@ export default function App() {
         showLogs: s.showLogs !== undefined ? s.showLogs : true,
         enableTCPTimestamps: s.enableTCPTimestamps || false,
         discordCacheAutoClean: s.discordCacheAutoClean || false,
-        secureDns: s.secureDns || false
+        secureDns: s.secureDns || false,
+        autoReconnect: s.autoReconnect !== undefined ? s.autoReconnect : true,
+        favoriteProfiles: s.favoriteProfiles || []
       });
+    });
+    GetFavoriteProfiles().then((favs: string[]) => {
+      setFavoriteProfiles(favs || []);
     });
   }, []);
   useEffect(() => {
@@ -343,6 +411,10 @@ export default function App() {
         setAutotuneProgress(null);
       }, 10000);
     });
+    EventsOn('profile_changed', (profile: string) => {
+      setSelectedProfile(profile);
+      setScanLogs(prev => [...prev, `🔄 Авто-переключение на профиль: ${profile}`]);
+    });
   }, []);
 
   useEffect(() => {
@@ -409,7 +481,9 @@ export default function App() {
         showLogs: loadedSettings.showLogs !== undefined ? loadedSettings.showLogs : true,
         enableTCPTimestamps: loadedSettings.enableTCPTimestamps || false,
         discordCacheAutoClean: loadedSettings.discordCacheAutoClean || false,
-        secureDns: loadedSettings.secureDns || false
+        secureDns: loadedSettings.secureDns || false,
+        autoReconnect: loadedSettings.autoReconnect !== undefined ? loadedSettings.autoReconnect : true,
+        favoriteProfiles: loadedSettings.favoriteProfiles || []
       });
     } catch (err) {
       console.error(err);
@@ -738,13 +812,30 @@ export default function App() {
             ) : null}
           </div>
           
-          <DoodleSelect 
-            value={selectedProfile}
-            options={profiles}
-            onChange={(val) => setSelectedProfile(val)}
-            disabled={isConnected || disableMain || !selectedEngine}
-            up={false}
-          />
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <DoodleSelect
+                value={selectedProfile}
+                options={sortedProfiles}
+                onChange={(val) => setSelectedProfile(val)}
+                disabled={isConnected || disableMain || !selectedEngine}
+                up={false}
+              />
+            </div>
+            <button
+              onClick={handleToggleFavorite}
+              disabled={!selectedProfile}
+              className={cn(
+                "px-3 py-2 rounded-xl border-2 transition-all duration-200 hover:scale-105 active:scale-95",
+                favoriteProfiles.includes(selectedProfile)
+                  ? "bg-amber-400/20 border-amber-400/40 text-amber-400"
+                  : "bg-transparent border-[var(--ui-border)] text-[var(--ui-text-muted)] hover:border-amber-400/40"
+              )}
+              title={favoriteProfiles.includes(selectedProfile) ? "Убрать из избранного" : "Добавить в избранное"}
+            >
+              {favoriteProfiles.includes(selectedProfile) ? '★' : '☆'}
+            </button>
+          </div>
           {selectedProfile === 'Custom Profile' && (
             <button
               onClick={openLuaEditor}
@@ -1239,6 +1330,22 @@ export default function App() {
                 onChange={() => setSettings({...settings, secureDns: !settings.secureDns})}
               />
 
+              <DoodleCheckbox
+                id="autoReconnect"
+                label="Авто-реконнект"
+                desc="Автоматически переключать профиль при блокировке"
+                checked={settings.autoReconnect}
+                onChange={() => {
+                  const newVal = !settings.autoReconnect;
+                  setSettings({...settings, autoReconnect: newVal});
+                  if (newVal && isConnected) {
+                    AutoReconnectMonitor();
+                  } else {
+                    StopAutoReconnect();
+                  }
+                }}
+              />
+
               {/* Theme selector */}
               <div className="flex flex-col gap-2 p-3 rounded-xl border-2 relative z-40" style={{ background: 'var(--ui-panel)', borderColor: 'var(--ui-border)' }}>
                 <div>
@@ -1310,6 +1417,22 @@ export default function App() {
                 >
                   <SketchyStar className="w-4 h-4 text-emerald-600" />
                   {isVerifyingAssets ? 'Проверка хешей...' : 'Проверить целостность файлов (SHA256)'}
+                </button>
+                <button 
+                  onClick={handleDiagnosticReport}
+                  disabled={isGeneratingReport}
+                  className="w-full flex items-center justify-center gap-2 py-2 sketch-box bg-blue-50 hover:bg-blue-100 text-blue-800 font-bold text-sm transition-all duration-150 hover:scale-[1.02] active:scale-[0.98]"
+                >
+                  <SketchyTerminal className="w-4 h-4 text-blue-600" />
+                  {isGeneratingReport ? 'Генерация отчёта...' : 'Экспорт диагностического отчёта'}
+                </button>
+                <button 
+                  onClick={handleUpdateHostlists}
+                  disabled={isUpdatingHostlists}
+                  className="w-full flex items-center justify-center gap-2 py-2 sketch-box bg-purple-50 hover:bg-purple-100 text-purple-800 font-bold text-sm transition-all duration-150 hover:scale-[1.02] active:scale-[0.98]"
+                >
+                  <SketchyGear className="w-4 h-4 text-purple-600" />
+                  {isUpdatingHostlists ? 'Обновление...' : 'Обновить хостлисты'}
                 </button>
                 <button 
                   onClick={handleClearCache}

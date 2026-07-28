@@ -31,4 +31,5 @@ type BypassProviderWithCallbacks interface {
 	SetStatusCallback(func(Status))
 	SetLogCallback(func(string))
 	RegisterProfile(string, []string)
+	CurrentProfile() string
 }

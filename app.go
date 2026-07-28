@@ -16,12 +16,13 @@ import (
 )
 
 type App struct {
-	ctx            context.Context
-	manager        *providers.ProviderManager
-	startMinimized bool
-	debugMode      bool
-	autoTuneCancel context.CancelFunc
-	mu             sync.Mutex
+	ctx                 context.Context
+	manager             *providers.ProviderManager
+	startMinimized      bool
+	debugMode           bool
+	autoTuneCancel      context.CancelFunc
+	autoReconnectCancel context.CancelFunc
+	mu                  sync.Mutex
 }
 
 func NewApp() *App {
@@ -640,4 +641,226 @@ func (a *App) IsSecureDNSEnabled() bool {
 }
 func (a *App) VerifyEngineAssets() engine.AssetVerificationResult {
 	return engine.VerifyAssets()
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// QoA: Auto-reconnect
+// ──────────────────────────────────────────────────────────────────────────────
+
+// AutoReconnectMonitor starts a goroutine that monitors connectivity and
+// falls back to the next profile if the current one becomes blocked.
+// Only one monitor runs at a time; calling again cancels the previous one.
+func (a *App) AutoReconnectMonitor() {
+	a.mu.Lock()
+	if a.autoReconnectCancel != nil {
+		a.autoReconnectCancel()
+	}
+	ctx, cancel := context.WithCancel(a.ctx)
+	a.autoReconnectCancel = cancel
+	a.mu.Unlock()
+
+	go func() {
+		defer cancel()
+		blockedCount := 0
+		maxBlocked := 3
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+			if a.manager.GetStatus() != providers.StatusRunning {
+				blockedCount = 0
+				continue
+			}
+			ping := a.GetLivePing()
+			status, _ := ping["status"].(string)
+			if status == "blocked" || status == "disconnected" {
+				blockedCount++
+			} else {
+				blockedCount = 0
+				continue
+			}
+			if blockedCount >= maxBlocked {
+				logger := engine.GetLogger()
+				logger.Warn("AutoReconnect", fmt.Sprintf("Profile blocked for %d consecutive checks, switching...", blockedCount))
+				wailsruntime.EventsEmit(a.ctx, "autotune_log", "⚠️ Профиль заблокирован, переключаем...")
+				_ = a.manager.Stop()
+				time.Sleep(500 * time.Millisecond)
+				names := a.manager.GetEngineNames()
+				if len(names) == 0 {
+					blockedCount = 0
+					continue
+				}
+				profiles := a.manager.GetProfiles(names[0])
+				if len(profiles) < 2 {
+					blockedCount = 0
+					continue
+				}
+				for i, p := range profiles {
+					if p == a.manager.CurrentProfileName(names[0]) {
+						next := profiles[(i+1)%len(profiles)]
+						if err := a.manager.Start(ctx, names[0], next); err != nil {
+							logger.Error("AutoReconnect", fmt.Sprintf("Failed to start %s: %v", next, err))
+						} else {
+							logger.Info("AutoReconnect", fmt.Sprintf("Switched to profile: %s", next))
+							wailsruntime.EventsEmit(a.ctx, "autotune_log", fmt.Sprintf("✅ Переключено на профиль: %s", next))
+							wailsruntime.EventsEmit(a.ctx, "profile_changed", next)
+						}
+						break
+					}
+				}
+				blockedCount = 0
+			}
+		}
+	}()
+}
+
+// StopAutoReconnect cancels the auto-reconnect monitor if running.
+func (a *App) StopAutoReconnect() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.autoReconnectCancel != nil {
+		a.autoReconnectCancel()
+		a.autoReconnectCancel = nil
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// QoA: Favorite profiles
+// ──────────────────────────────────────────────────────────────────────────────
+
+func (a *App) ToggleFavoriteProfile(profile string) ([]string, error) {
+	s, err := engine.GetSettings()
+	if err != nil {
+		return nil, err
+	}
+	if s.FavoriteProfiles == nil {
+		s.FavoriteProfiles = []string{}
+	}
+	found := -1
+	for i, f := range s.FavoriteProfiles {
+		if f == profile {
+			found = i
+			break
+		}
+	}
+	if found >= 0 {
+		s.FavoriteProfiles = append(s.FavoriteProfiles[:found], s.FavoriteProfiles[found+1:]...)
+	} else {
+		s.FavoriteProfiles = append(s.FavoriteProfiles, profile)
+	}
+	if err := engine.SaveSettings(s); err != nil {
+		return nil, err
+	}
+	return s.FavoriteProfiles, nil
+}
+
+func (a *App) GetFavoriteProfiles() []string {
+	s, err := engine.GetSettings()
+	if err != nil || s.FavoriteProfiles == nil {
+		return []string{}
+	}
+	return s.FavoriteProfiles
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// QoA: Diagnostic report
+// ──────────────────────────────────────────────────────────────────────────────
+
+func (a *App) GenerateDiagnosticReport() string {
+	logger := engine.GetLogger()
+	var report string
+	report += "# UNBOUND Diagnostic Report\n"
+	report += fmt.Sprintf("**Version**: %s\n", engine.Version)
+	report += fmt.Sprintf("**OS**: %s/%s\n", runtime.GOOS, runtime.GOARCH)
+	report += fmt.Sprintf("**Date**: %s\n\n", time.Now().Format("2006-01-02 15:04:05"))
+
+	// Engine status
+	report += "## Engine Status\n"
+	report += fmt.Sprintf("- Status: %s\n", string(a.manager.GetStatus()))
+	report += fmt.Sprintf("- Privileges: %v\n", a.CheckPrivileges())
+	report += fmt.Sprintf("- SecureDNS: %v\n\n", a.IsSecureDNSEnabled())
+
+	// Profiles
+	report += "## Available Profiles\n"
+	for _, name := range a.manager.GetEngineNames() {
+		for _, p := range a.manager.GetProfiles(name) {
+			report += fmt.Sprintf("- %s\n", p)
+		}
+	}
+	report += "\n"
+
+	// Conflicts
+	report += "## Conflict Detection\n"
+	conflicts := a.CheckConflicts()
+	if len(conflicts) == 0 {
+		report += "- No conflicts detected\n"
+	} else {
+		for _, c := range conflicts {
+			report += fmt.Sprintf("- %s\n", c)
+		}
+	}
+	report += "\n"
+
+	// Connectivity probe
+	report += "## Connectivity Probe\n"
+	targets := []struct{ Name, URL string }{
+		{"YouTube", "https://www.youtube.com"},
+		{"Discord", "https://discord.com"},
+		{"Instagram", "https://www.instagram.com"},
+		{"Cloudflare", "https://1.1.1.1"},
+	}
+	for _, t := range targets {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		lat, err := engine.SimplePing(ctx, t.URL)
+		cancel()
+		if err == nil {
+			report += fmt.Sprintf("- %s: OK (%dms)\n", t.Name, lat.Milliseconds())
+		} else {
+			report += fmt.Sprintf("- %s: FAIL (%v)\n", t.Name, err)
+		}
+	}
+	report += "\n"
+
+	// Asset verification
+	report += "## Asset Integrity\n"
+	vr := engine.VerifyAssets()
+	if vr.Verified {
+		report += fmt.Sprintf("- %d files verified, all hashes match\n", vr.TotalFiles)
+	} else {
+		report += fmt.Sprintf("- ERROR: %s\n", vr.Error)
+	}
+	report += "\n"
+
+	// Recent logs
+	report += "## Recent Logs (last 30)\n"
+	logs := logger.GetEntriesFormatted()
+	start := 0
+	if len(logs) > 30 {
+		start = len(logs) - 30
+	}
+	for _, l := range logs[start:] {
+		report += fmt.Sprintf("```\n%s\n```\n", l)
+	}
+
+	logger.Info("Diagnostic", "Report generated")
+	return report
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// QoA: Hostlist auto-update
+// ──────────────────────────────────────────────────────────────────────────────
+
+func (a *App) UpdateHostlistsNow() (string, error) {
+	logger := engine.GetLogger()
+	logger.Info("Hostlists", "Manual hostlist update triggered")
+	if err := providers.SyncHostlists(); err != nil {
+		logger.Errorf("Hostlists", "Update failed: %v", err)
+		return "", err
+	}
+	logger.Info("Hostlists", "Hostlists updated successfully")
+	return "Hostlists updated", nil
 }

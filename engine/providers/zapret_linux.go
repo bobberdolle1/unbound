@@ -446,6 +446,10 @@ func (e *ZapretLinuxProvider) currentProfileName() string {
 	return e.currentProfile
 }
 
+func (e *ZapretLinuxProvider) CurrentProfile() string {
+	return e.currentProfileName()
+}
+
 func (e *ZapretLinuxProvider) setStatusLocked(status Status) {
 	if e.status == status {
 		return

@@ -45,6 +45,8 @@ export namespace engine {
 	    enableTCPTimestamps: boolean;
 	    discordCacheAutoClean: boolean;
 	    secureDns: boolean;
+	    favoriteProfiles: string[];
+	    autoReconnect: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -62,6 +64,8 @@ export namespace engine {
 	        this.enableTCPTimestamps = source["enableTCPTimestamps"];
 	        this.discordCacheAutoClean = source["discordCacheAutoClean"];
 	        this.secureDns = source["secureDns"];
+	        this.favoriteProfiles = source["favoriteProfiles"];
+	        this.autoReconnect = source["autoReconnect"];
 	    }
 	}
 
