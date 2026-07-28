@@ -118,6 +118,10 @@ export function LoadCustomScript() {
   return window['go']['main']['App']['LoadCustomScript']();
 }
 
+export function LoadPingHistory() {
+  return window['go']['main']['App']['LoadPingHistory']();
+}
+
 export function QuitApp() {
   return window['go']['main']['App']['QuitApp']();
 }
@@ -136,6 +140,10 @@ export function SaveBypassList(arg1, arg2) {
 
 export function SaveCustomScript(arg1) {
   return window['go']['main']['App']['SaveCustomScript'](arg1);
+}
+
+export function SavePingHistory(arg1, arg2) {
+  return window['go']['main']['App']['SavePingHistory'](arg1, arg2);
 }
 
 export function SaveSettings(arg1) {

@@ -8,7 +8,7 @@ import { DoodleSelect } from './components/DoodleSelect';
 import { DoodleCheckbox } from './components/DoodleCheckbox';
 import { PingChart } from './components/PingChart';
 
-import { GetEngineNames, GetProfiles, StartEngine, StopEngine, GetLogs, AutoTune, CancelAutoTune, GetSettings, SaveSettings, GetLivePing, ShowNotification, EnableAutoStart, DisableAutoStart, IsAutoStartEnabled, CheckConflicts, KillConflicts, CheckPrivileges, RunDiagnostics, ClearDiscordCache, KillWinws2, QuitApp, GetAppVersion, GetOSPlatform, HideWindowToTray, GetBypassLists, ReadBypassList, SaveBypassList, ExportLogs, SaveCustomScript, LoadCustomScript, VerifyEngineAssets, GenerateDiagnosticReport, ToggleFavoriteProfile, GetFavoriteProfiles, UpdateHostlistsNow, AutoReconnectMonitor, StopAutoReconnect } from '../wailsjs/go/main/App';
+import { GetEngineNames, GetProfiles, StartEngine, StopEngine, GetLogs, AutoTune, CancelAutoTune, GetSettings, SaveSettings, GetLivePing, ShowNotification, EnableAutoStart, DisableAutoStart, IsAutoStartEnabled, CheckConflicts, KillConflicts, CheckPrivileges, RunDiagnostics, ClearDiscordCache, KillWinws2, QuitApp, GetAppVersion, GetOSPlatform, HideWindowToTray, GetBypassLists, ReadBypassList, SaveBypassList, ExportLogs, SaveCustomScript, LoadCustomScript, VerifyEngineAssets, GenerateDiagnosticReport, ToggleFavoriteProfile, GetFavoriteProfiles, UpdateHostlistsNow, AutoReconnectMonitor, StopAutoReconnect, SavePingHistory, LoadPingHistory } from '../wailsjs/go/main/App';
 import { EventsOn, WindowMinimise } from '../wailsjs/runtime/runtime';
 
 export default function App() {
@@ -263,6 +263,8 @@ export default function App() {
           if (stat === 'ok') {
             setPingHistory(prev => [...prev.slice(-14), lat]);
           }
+          // Persist ping history
+          SavePingHistory(lat, stat).catch(() => {});
         }).catch(() => setLivePingData({active: false, latency: 0, status: 'error'}));
       } else {
         setLivePingData({active: false, latency: 0, status: 'stopped'});
@@ -331,6 +333,12 @@ export default function App() {
     GetFavoriteProfiles().then((favs: string[]) => {
       setFavoriteProfiles(favs || []);
     });
+    LoadPingHistory().then((records: any[]) => {
+      if (records && records.length > 0) {
+        const recent = records.slice(-15).map((r: any) => r.lat || 0).filter((l: number) => l > 0);
+        if (recent.length > 0) setPingHistory(recent);
+      }
+    }).catch(() => {});
   }, []);
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

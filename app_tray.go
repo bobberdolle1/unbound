@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	_ "embed"
+	"fmt"
 	"os"
 	"time"
 
@@ -33,17 +34,21 @@ func (a *App) onTrayReady() {
 	mStatus := systray.AddMenuItem("Статус: Отключено", "Текущий статус двигателя")
 	mStatus.Disable()
 
+	mPing := systray.AddMenuItem("Пинг: —", "Задержка до целевых сервисов")
+	mPing.Disable()
+
 	systray.AddSeparator()
 
 	mShow := systray.AddMenuItem("Развернуть Unbound", "Показать окно приложения")
 	mConnect := systray.AddMenuItem("Подключить", "Запустить обход DPI")
 	mDisconnect := systray.AddMenuItem("Отключить", "Остановить обход DPI")
 	mDisconnect.Hide()
+	mAutoTune := systray.AddMenuItem("Автоподбор", "Запустить автоматический подбор профиля")
 
 	systray.AddSeparator()
 	mQuit := systray.AddMenuItem("Выход", "Остановить двигатель и выйти из приложения")
 
-	// Логика обновления меню в зависимости от статуса
+	// Обновление статуса и пинга в трее
 	go func() {
 		for {
 			status := a.manager.GetStatus()
@@ -51,12 +56,25 @@ func (a *App) onTrayReady() {
 				mStatus.SetTitle("Статус: Подключено")
 				mConnect.Hide()
 				mDisconnect.Show()
+				mAutoTune.Disable()
+				ping := a.GetLivePing()
+				lat, _ := ping["latency"].(int64)
+				pingSt, _ := ping["status"].(string)
+				if pingSt == "ok" && lat > 0 {
+					mPing.SetTitle(fmt.Sprintf("Пинг: %dмс", lat))
+				} else if pingSt == "blocked" {
+					mPing.SetTitle("Пинг: Заблокировано")
+				} else {
+					mPing.SetTitle("Пинг: —")
+				}
 			} else {
 				mStatus.SetTitle("Статус: Отключено")
 				mConnect.Show()
 				mDisconnect.Hide()
+				mAutoTune.Enable()
+				mPing.SetTitle("Пинг: —")
 			}
-			time.Sleep(1 * time.Second)
+			time.Sleep(2 * time.Second)
 		}
 	}()
 
@@ -68,16 +86,28 @@ func (a *App) onTrayReady() {
 				runtime.WindowShow(a.ctx)
 
 			case <-mConnect.ClickedCh:
-				// Запуск дефолтного профиля или автотюна
+				engines := a.manager.GetEngineNames()
+				if len(engines) == 0 {
+					continue
+				}
 				settings, _ := a.GetSettings()
-				profile := "Unbound Ultimate (God Mode)"
+				profile := ""
 				if settings != nil && settings.DefaultProfile != "" {
 					profile = settings.DefaultProfile
 				}
-				a.StartEngine("Zapret 2 (winws)", profile)
+				if profile == "" {
+					profiles := a.manager.GetProfiles(engines[0])
+					if len(profiles) > 0 {
+						profile = profiles[0]
+					}
+				}
+				a.StartEngine(engines[0], profile)
 
 			case <-mDisconnect.ClickedCh:
 				a.StopEngine()
+
+			case <-mAutoTune.ClickedCh:
+				go a.AutoTune()
 
 			case <-mQuit.ClickedCh:
 				a.manager.Stop()

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -100,6 +101,50 @@ func (a *App) startup(ctx context.Context) {
 	// Log registered engines
 	engines := a.manager.GetEngineNames()
 	logger.Infof("App", "Registered engines: %v", engines)
+
+	// Auto-recovery: try last profile, fallback to AutoTune if it fails
+	if settings != nil && settings.AutoStart && settings.StartupProfileMode != "Автоподбор" {
+		go func() {
+			time.Sleep(3 * time.Second) // wait for UI to initialize
+			engineName := ""
+			if len(engines) > 0 {
+				engineName = engines[0]
+			}
+			if engineName == "" {
+				return
+			}
+			profiles := a.manager.GetProfiles(engineName)
+			profileName := settings.DefaultProfile
+			if profileName == "" || !contains(profiles, profileName) {
+				if len(profiles) > 0 {
+					profileName = profiles[0]
+				} else {
+					return
+				}
+			}
+			logger.Info("Startup", fmt.Sprintf("Auto-recovery: trying profile %s", profileName))
+			if err := a.manager.Start(ctx, engineName, profileName); err != nil {
+				logger.Warnf("Startup", "Profile %s failed: %v, running AutoTune", profileName, err)
+				autoProfile := a.AutoTune()
+				if autoProfile != "Failed" && autoProfile != "Already running" {
+					logger.Info("Startup", fmt.Sprintf("Auto-recovery: switched to %s", autoProfile))
+				}
+			} else {
+				// Verify connectivity after 5s
+				time.Sleep(5 * time.Second)
+				ping := a.GetLivePing()
+				status, _ := ping["status"].(string)
+				if status == "blocked" || status == "disconnected" {
+					logger.Warn("Startup", "Profile started but connectivity blocked, running AutoTune")
+					_ = a.manager.Stop()
+					autoProfile := a.AutoTune()
+					if autoProfile != "Failed" && autoProfile != "Already running" {
+						logger.Info("Startup", fmt.Sprintf("Auto-recovery: switched to %s", autoProfile))
+					}
+				}
+			}
+		}()
+	}
 
 	a.setupTray()
 
@@ -650,6 +695,7 @@ func (a *App) VerifyEngineAssets() engine.AssetVerificationResult {
 // AutoReconnectMonitor starts a goroutine that monitors connectivity and
 // falls back to the next profile if the current one becomes blocked.
 // Only one monitor runs at a time; calling again cancels the previous one.
+// Stops after maxCycles full rotations through all profiles.
 func (a *App) AutoReconnectMonitor() {
 	a.mu.Lock()
 	if a.autoReconnectCancel != nil {
@@ -663,13 +709,28 @@ func (a *App) AutoReconnectMonitor() {
 		defer cancel()
 		blockedCount := 0
 		maxBlocked := 3
-		ticker := time.NewTicker(15 * time.Second)
+		maxCycles := 3
+		cyclesDone := 0
+		switchCount := 0
+		lastSwitch := time.Time{}
+		cooldown := 30 * time.Second
+		checkInterval := 15 * time.Second
+		ticker := time.NewTicker(checkInterval)
 		defer ticker.Stop()
+
+		logger := engine.GetLogger()
+		logger.Info("AutoReconnect", "Monitor started")
+
 		for {
 			select {
 			case <-ctx.Done():
+				logger.Info("AutoReconnect", "Monitor stopped")
 				return
 			case <-ticker.C:
+			}
+			// Respect cooldown after a switch
+			if !lastSwitch.IsZero() && time.Since(lastSwitch) < cooldown {
+				continue
 			}
 			if a.manager.GetStatus() != providers.StatusRunning {
 				blockedCount = 0
@@ -684,11 +745,6 @@ func (a *App) AutoReconnectMonitor() {
 				continue
 			}
 			if blockedCount >= maxBlocked {
-				logger := engine.GetLogger()
-				logger.Warn("AutoReconnect", fmt.Sprintf("Profile blocked for %d consecutive checks, switching...", blockedCount))
-				wailsruntime.EventsEmit(a.ctx, "autotune_log", "⚠️ Профиль заблокирован, переключаем...")
-				_ = a.manager.Stop()
-				time.Sleep(500 * time.Millisecond)
 				names := a.manager.GetEngineNames()
 				if len(names) == 0 {
 					blockedCount = 0
@@ -699,19 +755,39 @@ func (a *App) AutoReconnectMonitor() {
 					blockedCount = 0
 					continue
 				}
+				// Track cycles: each time we wrap around, increment cyclesDone
+				currentIndex := -1
+				currentName := a.manager.CurrentProfileName(names[0])
 				for i, p := range profiles {
-					if p == a.manager.CurrentProfileName(names[0]) {
-						next := profiles[(i+1)%len(profiles)]
-						if err := a.manager.Start(ctx, names[0], next); err != nil {
-							logger.Error("AutoReconnect", fmt.Sprintf("Failed to start %s: %v", next, err))
-						} else {
-							logger.Info("AutoReconnect", fmt.Sprintf("Switched to profile: %s", next))
-							wailsruntime.EventsEmit(a.ctx, "autotune_log", fmt.Sprintf("✅ Переключено на профиль: %s", next))
-							wailsruntime.EventsEmit(a.ctx, "profile_changed", next)
-						}
+					if p == currentName {
+						currentIndex = i
 						break
 					}
 				}
+				nextIndex := (currentIndex + 1) % len(profiles)
+				if nextIndex == 0 && switchCount > 0 {
+					cyclesDone++
+				}
+				if cyclesDone >= maxCycles {
+					logger.Warn("AutoReconnect", fmt.Sprintf("All %d profiles blocked after %d full cycles, stopping monitor.", len(profiles), maxCycles))
+					wailsruntime.EventsEmit(a.ctx, "autotune_log", "❌ Все профили заблокированы. Авто-реконнект остановлен.")
+					wailsruntime.EventsEmit(a.ctx, "profile_error", "Все профили заблокированы после "+fmt.Sprintf("%d", maxCycles)+" циклов")
+					return
+				}
+				logger.Warn("AutoReconnect", fmt.Sprintf("Profile blocked for %d consecutive checks, switching...", blockedCount))
+				wailsruntime.EventsEmit(a.ctx, "autotune_log", "⚠️ Профиль заблокирован, переключаем...")
+				_ = a.manager.Stop()
+				time.Sleep(500 * time.Millisecond)
+				next := profiles[nextIndex]
+				if err := a.manager.Start(ctx, names[0], next); err != nil {
+					logger.Error("AutoReconnect", fmt.Sprintf("Failed to start %s: %v", next, err))
+				} else {
+					logger.Info("AutoReconnect", fmt.Sprintf("Switched to profile: %s", next))
+					wailsruntime.EventsEmit(a.ctx, "autotune_log", fmt.Sprintf("✅ Переключено на профиль: %s", next))
+					wailsruntime.EventsEmit(a.ctx, "profile_changed", next)
+				}
+				switchCount++
+				lastSwitch = time.Now()
 				blockedCount = 0
 			}
 		}
@@ -863,4 +939,69 @@ func (a *App) UpdateHostlistsNow() (string, error) {
 	}
 	logger.Info("Hostlists", "Hostlists updated successfully")
 	return "Hostlists updated", nil
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// QoA: Ping history persistence
+// ──────────────────────────────────────────────────────────────────────────────
+
+const pingHistoryFile = "ping_history.json"
+const maxPingHistory = 100
+
+type PingRecord struct {
+	Timestamp int64  `json:"ts"`
+	Latency   int64  `json:"lat"`
+	Status    string `json:"st"`
+}
+
+func (a *App) SavePingHistory(latency int64, status string) {
+	path, err := engine.GetConfigDir()
+	if err != nil {
+		return
+	}
+	filePath := filepath.Join(path, pingHistoryFile)
+
+	var records []PingRecord
+	data, err := os.ReadFile(filePath)
+	if err == nil {
+		_ = json.Unmarshal(data, &records)
+	}
+	records = append(records, PingRecord{
+		Timestamp: time.Now().Unix(),
+		Latency:   latency,
+		Status:    status,
+	})
+	if len(records) > maxPingHistory {
+		records = records[len(records)-maxPingHistory:]
+	}
+	out, _ := json.Marshal(records)
+	_ = os.WriteFile(filePath, out, 0644)
+}
+
+func (a *App) LoadPingHistory() []PingRecord {
+	path, err := engine.GetConfigDir()
+	if err != nil {
+		return nil
+	}
+	filePath := filepath.Join(path, pingHistoryFile)
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil
+	}
+	var records []PingRecord
+	_ = json.Unmarshal(data, &records)
+	return records
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ──────────────────────────────────────────────────────────────────────────────
+
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
 }

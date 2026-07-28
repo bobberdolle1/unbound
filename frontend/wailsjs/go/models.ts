@@ -71,3 +71,24 @@ export namespace engine {
 
 }
 
+export namespace main {
+	
+	export class PingRecord {
+	    ts: number;
+	    lat: number;
+	    st: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new PingRecord(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ts = source["ts"];
+	        this.lat = source["lat"];
+	        this.st = source["st"];
+	    }
+	}
+
+}
+
