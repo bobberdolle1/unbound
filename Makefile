@@ -52,8 +52,8 @@ frontend: ## Build the desktop UI (required before any Go build)
 
 # main.go embeds frontend/dist, so the Go build cannot run before the UI is
 # built. Depending on it here avoids a confusing //go:embed failure.
-build: frontend ## Build the CLI binary for the host platform
-	@go build -trimpath -ldflags="$(LDFLAGS)" -o build/bin/$(BIN_NAME) .
+build: frontend ## Build the desktop GUI binary for the host platform
+	@go build -trimpath -tags desktop,production -ldflags="$(LDFLAGS)" -o build/bin/$(BIN_NAME) .
 	@echo "built build/bin/$(BIN_NAME) ($(VERSION))"
 
 gui: ## Build the desktop app via Wails

@@ -593,6 +593,9 @@ func TestScripts_ParseAndValidate(t *testing.T) {
 		t.Skip("bash not installed — skipping script parsing test")
 	}
 
+	if out, err := exec.Command(bashPath, "-c", "exit 0").CombinedOutput(); err != nil {
+		t.Skipf("bash is not executable on this environment — skipping script parsing test: %v (%s)", err, strings.TrimSpace(string(out)))
+	}
 	for _, s := range scripts {
 		fullPath := filepath.Join(repoRoot, s)
 		if _, err := os.Stat(fullPath); os.IsNotExist(err) {

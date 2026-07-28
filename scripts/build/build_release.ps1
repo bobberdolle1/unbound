@@ -3,7 +3,7 @@
 
 $ErrorActionPreference = "Stop"
 
-$VERSION = "1.0.4"
+$VERSION = "0.1.0-refresh"
 $PROJECT_ROOT = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $BUILD_DIR    = Join-Path $PROJECT_ROOT "build\bin"
 $DIST_DIR     = Join-Path $PROJECT_ROOT "dist"
@@ -34,7 +34,7 @@ Write-Host "[2/3] Building via Wails..." -ForegroundColor Yellow
 Push-Location $PROJECT_ROOT
 try {
     $goExe = (Get-Command go).Source
-    & wails build -clean -compiler="$goExe" -o unbound.exe
+    & wails build -clean -compiler="$goExe" -o unbound.exe -ldflags "-X unbound/engine.Version=$VERSION"
     if ($LASTEXITCODE -ne 0) { throw "wails build failed." }
     Write-Host "OK: Wails build completed." -ForegroundColor Green
 } finally {
@@ -55,8 +55,11 @@ New-Item -ItemType Directory -Path $RELEASE_DIR -Force | Out-Null
 if (-not (Test-Path $DIST_DIR)) { New-Item -ItemType Directory -Path $DIST_DIR -Force | Out-Null }
 
 Copy-Item $builtExe (Join-Path $RELEASE_DIR "unbound.exe")
-Copy-Item (Join-Path $PROJECT_ROOT "README_RELEASE.txt") (Join-Path $RELEASE_DIR "README.txt")
-
+if (Test-Path (Join-Path $PROJECT_ROOT "README_RELEASE.txt")) {
+    Copy-Item (Join-Path $PROJECT_ROOT "README_RELEASE.txt") (Join-Path $RELEASE_DIR "README.txt")
+} elseif (Test-Path (Join-Path $PROJECT_ROOT "README.md")) {
+    Copy-Item (Join-Path $PROJECT_ROOT "README.md") (Join-Path $RELEASE_DIR "README.txt")
+}
 $zipPath = Join-Path $DIST_DIR "$RELEASE_NAME.zip"
 if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
 Compress-Archive -Path "$RELEASE_DIR\*" -DestinationPath $zipPath -CompressionLevel Optimal

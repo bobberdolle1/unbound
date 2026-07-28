@@ -19,7 +19,11 @@ func writeExecutable(t *testing.T, dir, name string, mode os.FileMode) string {
 
 func TestResolveEngineBinaryPrefersAssetDir(t *testing.T) {
 	assetDir := t.TempDir()
-	want := writeExecutable(t, assetDir, "nfqws", 0o755)
+	binaryName := "nfqws"
+	if runtime.GOOS == "windows" {
+		binaryName = "nfqws.exe"
+	}
+	want := writeExecutable(t, assetDir, binaryName, 0o755)
 
 	got, err := ResolveEngineBinary("nfqws", assetDir)
 	if err != nil {
@@ -60,7 +64,11 @@ func TestResolveEngineBinaryRestoresExecutableBit(t *testing.T) {
 
 func TestResolveEngineBinaryIgnoresDirectories(t *testing.T) {
 	assetDir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(assetDir, "nfqws"), 0o755); err != nil {
+	dirName := "nfqws"
+	if runtime.GOOS == "windows" {
+		dirName = "nfqws.exe"
+	}
+	if err := os.Mkdir(filepath.Join(assetDir, dirName), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
