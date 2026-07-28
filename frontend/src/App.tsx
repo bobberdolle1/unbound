@@ -267,13 +267,10 @@ export default function App() {
 
   useEffect(() => {
     if (selectedEngine) {
-      console.log('[DEBUG] selectedEngine changed:', selectedEngine);
       GetProfiles(selectedEngine).then((p: string[]) => {
-        console.log('[DEBUG] Loaded profiles:', p);
         setProfiles(p || []);
         if (p && p.length > 0) {
           if (!selectedProfile || !p.includes(selectedProfile)) {
-            console.log('[DEBUG] Setting selectedProfile to:', p[0]);
             setSelectedProfile(p[0]);
           }
         } else if (!p || p.length === 0) {
@@ -346,10 +343,8 @@ export default function App() {
   }, [isLogExpanded]);
 
   const toggleConnection = async () => {
-    console.log('[DEBUG] toggleConnection called, status:', status);
     try {
       if (status === 'Running' || status === 'Starting') {
-        console.log('[DEBUG] Stopping engine...');
         await StopEngine();
       } else {
         let eToStart = selectedEngine;
@@ -362,7 +357,6 @@ export default function App() {
           pToStart = profiles[0];
           setSelectedProfile(pToStart);
         }
-        console.log('[DEBUG] Starting engine:', eToStart, pToStart);
         await StartEngine(eToStart || "", pToStart || "");
       }
     } catch (err) {
@@ -372,16 +366,13 @@ export default function App() {
   };
 
   const handleAutoTune = async () => {
-    console.log('[DEBUG] handleAutoTune called');
     setIsScanning(true);
     setScanLogs([]);
     setScanSuccess(null);
     setScanProgress('🔍 Сканирую профили...');
     if (settings.showLogs) setIsLogExpanded(true);
     try {
-      console.log('[DEBUG] Calling AutoTune...');
       const bestProfile = await AutoTune();
-      console.log('[DEBUG] AutoTune result:', bestProfile);
       if (bestProfile && bestProfile !== "Failed") {
         setSelectedProfile(bestProfile);
         setScanProgress(`✅ Найдено: ${bestProfile}`);
@@ -695,7 +686,7 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-4 text-gray-500 app-no-drag">
-          <button onClick={WindowMinimise} className="hover:text-black font-marker text-xl leading-none" title="Свернуть">
+          <button onClick={WindowMinimise} className="hover:text-[var(--ui-text)] transition-colors font-marker text-xl leading-none" title="Свернуть">
             _
           </button>
           <button onClick={HideWindowToTray} className="hover:text-red-500 font-marker text-xl leading-none pb-1" title="Закрыть в трей">
@@ -817,15 +808,16 @@ export default function App() {
       {settings.showLogs && (
         <div 
           className={cn(
-            "flex-none w-full bg-[#f8f9fa] border-t-4 border-gray-800 transition-all duration-300 flex flex-col z-20 app-no-drag shadow-[0_-10px_20px_rgba(0,0,0,0.05)]",
+            "flex-none w-full border-t-2 transition-all duration-300 flex flex-col z-20 app-no-drag shadow-[0_-10px_20px_rgba(0,0,0,0.05)]",
             isLogExpanded ? "h-[220px]" : "h-14"
           )}
+          style={{ background: 'var(--ui-panel)', borderColor: 'var(--ui-border)' }}
         >
           <div 
-            className="flex items-center justify-between px-6 h-14 cursor-pointer hover:bg-gray-100 transition-colors"
+            className="flex items-center justify-between px-6 h-14 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
             onClick={() => setIsLogExpanded(!isLogExpanded)}
           >
-            <div className="flex items-center gap-3 text-gray-700 font-bold text-lg">
+            <div className="flex items-center gap-3 font-bold text-lg" style={{ color: 'var(--ui-text)' }}>
               <SketchyTerminal className="w-6 h-6" />
               <span>{isScanning ? 'Лог сканера' : 'Журнал'}</span>
               {isLogExpanded && displayLogs.length > 0 && (
@@ -834,13 +826,14 @@ export default function App() {
                     e.stopPropagation();
                     handleExportLogs();
                   }}
-                  className="ml-3 px-3 py-1 bg-white hover:bg-gray-100 border-2 border-gray-800 text-gray-800 rounded font-marker text-xs transition-transform duration-100 hover:scale-105 active:scale-95 shadow-[1px_1px_0_#222]"
+                  className="ml-3 px-3 py-1 border-2 text-xs font-marker rounded transition-transform duration-100 hover:scale-105 active:scale-95 shadow-[1px_1px_0_#222]"
+                  style={{ background: 'var(--ui-panel)', borderColor: 'var(--ui-border)', color: 'var(--ui-text)' }}
                 >
                   Экспорт
                 </button>
               )}
             </div>
-            <div className="font-marker text-xl text-gray-500">
+            <div className="font-marker text-xl" style={{ color: 'var(--ui-text-muted)' }}>
               {isLogExpanded ? '\\/' : '^'}
             </div>
           </div>
@@ -848,11 +841,13 @@ export default function App() {
           <div 
             ref={logsContainerRef}
             className={cn(
-            "flex-1 overflow-y-auto px-6 py-2 font-mono text-sm leading-relaxed transition-opacity duration-300 bg-[#f8f9fa] text-blue-800 select-text",
+            "flex-1 overflow-y-auto px-6 py-2 font-mono text-sm leading-relaxed transition-opacity duration-300 select-text",
             isLogExpanded ? "opacity-100 block" : "opacity-0 hidden"
-          )}>
+          )}
+          style={{ background: 'var(--ui-panel)', color: 'var(--ui-text)' }}
+          >
             {displayLogs.length === 0 ? (
-              <div className="text-gray-400 h-full flex items-center justify-center font-hand text-lg font-bold">Пока пусто...</div>
+              <div className="h-full flex items-center justify-center font-hand text-lg font-bold" style={{ color: 'var(--ui-text-muted)' }}>Пока пусто...</div>
             ) : (
               <div className="space-y-2 pb-4">
                 {displayLogs.map((rawLog, i) => {
@@ -865,11 +860,12 @@ export default function App() {
                     <div 
                       key={i} 
                       className={cn(
-                        "break-words pl-2 border-l-2 border-blue-200",
-                        isError ? "text-red-600 font-bold" : 
-                        isSuccess ? "text-green-700 font-bold" : 
-                        "text-blue-800 font-medium"
+                        "break-words pl-2 border-l-2",
+                        isError ? "text-red-500 font-bold border-red-500" : 
+                        isSuccess ? "text-emerald-500 font-bold border-emerald-500" : 
+                        "font-medium border-indigo-400/50"
                       )}
+                      style={{ color: !isError && !isSuccess ? 'var(--ui-text)' : undefined }}
                     >
                       <span className="opacity-50 mr-2 select-none">~</span>
                       <span>{log}</span>
