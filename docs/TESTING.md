@@ -42,7 +42,7 @@ sudo UNBOUND_FIREWALL_TEST=1 go test -v ./engine/providers/ -run Live
 ## 3. Пошаговый Чек-лист Ручного Тестирования (Manual QA)
 
 ### 🪟 Windows (WinDivert + winws2.exe)
-- [x] Автоматический запрос UAC-прав при старте приложения.
+- [x] GUI автоматически запрашивает UAC, а `--version` и `--list-profiles --json` запускаются и отдают stdout без повышения.
 - [x] Запуск и остановка профиля `Recommended (hostfakesplit)` без ошибок.
 - [x] Кнопка **«Остановить winws2.exe»** корректно убивает процесс и отгружает драйвер WinDivert.
 - [x] Сворачивание в трей при клике на крестик (открытие через иконку в трее).

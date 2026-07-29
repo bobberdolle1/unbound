@@ -29,6 +29,8 @@ import (
 var assets embed.FS
 
 func main() {
+	attachConsole()
+
 	cliMode := flag.Bool("cli", false, "Run in headless CLI mode")
 	profileName := flag.String("profile", "", "Profile to use in CLI mode (default: interactive selection)")
 	autoTuneMode := flag.Bool("autotune", false, "Run AutoTune benchmark in CLI mode and start the best profile")
@@ -41,6 +43,7 @@ func main() {
 	showVersion := flag.Bool("version", false, "Print the version and exit")
 	listProfiles := flag.Bool("list-profiles", false, "List the profiles available on this platform and exit")
 	controlMode := flag.Bool("control", false, "Run interactive Control Center menu in CLI")
+	runDuration := flag.Duration("run-duration", 0, "Stop CLI automatically after this duration (0 = wait for signal)")
 
 	flag.Usage = func() {
 		fmt.Printf("UNBOUND ClearFlow Engine v%s (%s/%s)\n", engine.Version, runtime.GOOS, runtime.GOARCH)
@@ -48,27 +51,25 @@ func main() {
 		fmt.Println("Options:")
 		flag.PrintDefaults()
 		fmt.Println("\nExamples:")
-		fmt.Println("  unbound --cli                                Run interactive CLI mode")
+		fmt.Println("  unbound --cli                                Run headless CLI mode")
 		fmt.Println("  unbound --cli --autotune                     Run AutoTune in CLI and start best profile")
 		fmt.Println("  unbound --cli --profile=\"Alternative 2\"       Start CLI with specific profile")
 		fmt.Println("  unbound --test                               Run quick connectivity diagnostic probe")
 		fmt.Println("  unbound --list-profiles --json               List profiles in JSON format")
 		fmt.Println("  unbound --install-service                    Enable OS autostart service")
-	}
-	flag.Usage = func() {
-		fmt.Printf("UNBOUND ClearFlow Engine v%s (%s/%s)\n", engine.Version, runtime.GOOS, runtime.GOARCH)
-		fmt.Println("Usage: unbound [options]")
-		fmt.Println("Options:")
-		flag.PrintDefaults()
-		fmt.Println("\nExamples:")
-		fmt.Println("  unbound --cli                                Run headless CLI mode with default profile")
-		fmt.Println("  unbound --cli --autotune                     Run AutoTune in CLI and start the best profile")
-		fmt.Println("  unbound --cli --profile=\"Alternative 2\"       Start CLI mode with specific profile")
-		fmt.Println("  unbound --list-profiles                      List all profiles for this OS")
-		fmt.Println("  unbound --list-profiles --json               List profiles in JSON format")
+		fmt.Println("  unbound --uninstall-service                  Disable OS autostart service")
+		fmt.Println("  unbound --control                            Open the interactive Control Center")
 	}
 
 	flag.Parse()
+	if !isBindingsBuild() {
+		if relaunched, err := relaunchElevatedIfNeeded(requiresElevationForMode(*showVersion, *testMode, *listProfiles, *cliMode, *autoTuneMode, *installService, *uninstallService, *controlMode)); err != nil {
+			log.Fatalf("Failed to request administrator privileges: %v", err)
+		} else if relaunched {
+			return
+		}
+	}
+
 	if *showVersion {
 		if *jsonOutput {
 			fmt.Printf("{\"version\":\"%s\",\"os\":\"%s\",\"arch\":\"%s\"}\n", engine.Version, runtime.GOOS, runtime.GOARCH)
@@ -113,7 +114,7 @@ func main() {
 	}
 
 	if *cliMode || *autoTuneMode {
-		runHeadlessMode(*profileName, *autoTuneMode, *debugMode)
+		runHeadlessMode(*profileName, *autoTuneMode, *debugMode, *runDuration)
 		return
 	}
 	app := NewApp()
@@ -155,6 +156,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+}
+
+func requiresElevationForMode(showVersion, testMode, listProfiles, cliMode, autoTuneMode, installService, uninstallService, controlMode bool) bool {
+	return !(showVersion || testMode || listProfiles || cliMode || autoTuneMode || installService || uninstallService || controlMode)
 }
 
 // newHeadlessManager performs the setup shared by --cli and --list-profiles.
@@ -226,7 +231,7 @@ func runTestProbe() {
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 }
 
-func runHeadlessMode(profileName string, runAutoTune bool, debugMode bool) {
+func runHeadlessMode(profileName string, runAutoTune bool, debugMode bool, runDuration time.Duration) {
 	attachConsole()
 
 	fmt.Println("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -335,6 +340,10 @@ func runHeadlessMode(profileName string, runAutoTune bool, debugMode bool) {
 		log.Fatal("Root privileges required. Re-run with sudo.")
 	}
 
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sigChan)
+
 	ctx := context.Background()
 	if err := manager.Start(ctx, engineName, profileName); err != nil {
 		log.Fatalf("Failed to start engine: %v", err)
@@ -391,9 +400,17 @@ func runHeadlessMode(profileName string, runAutoTune bool, debugMode bool) {
 			}
 		}
 	}()
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	<-sigChan
+	if runDuration > 0 {
+		timer := time.NewTimer(runDuration)
+		defer timer.Stop()
+		select {
+		case <-sigChan:
+		case <-timer.C:
+			fmt.Printf("Run duration %s elapsed; stopping...\n", runDuration)
+		}
+	} else {
+		<-sigChan
+	}
 
 	fmt.Println("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	fmt.Println("Shutting down gracefully...")
@@ -527,10 +544,10 @@ func runControlCenterMenu(debugMode bool) {
 
 		switch choice {
 		case "1":
-			runHeadlessMode("", true, debugMode)
+			runHeadlessMode("", true, debugMode, 0)
 			return
 		case "2":
-			runHeadlessMode("", false, debugMode)
+			runHeadlessMode("", false, debugMode, 0)
 			return
 		case "3":
 			runTestProbe()

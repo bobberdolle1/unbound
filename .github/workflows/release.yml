@@ -96,7 +96,7 @@ jobs:
         run: |
           go vet ./...
           go test ./...
-          ./scripts/check.sh assets
+          bash ./scripts/check.sh assets
 
 
   # ───────────────────────────────────────────────────────────────────────────
@@ -143,11 +143,27 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $version = & "build/bin/unbound.exe" --version
-          if ($LASTEXITCODE -ne 0 -or $version -notmatch [regex]::Escape($env:VERSION)) {
+          function Invoke-Unbound([string[]] $Arguments, [string] $Name) {
+            $stdout = Join-Path $env:RUNNER_TEMP "$Name.stdout"
+            $stderr = Join-Path $env:RUNNER_TEMP "$Name.stderr"
+            $process = Start-Process `
+              -FilePath "build/bin/unbound.exe" `
+              -ArgumentList $Arguments `
+              -Wait -PassThru -NoNewWindow `
+              -RedirectStandardOutput $stdout `
+              -RedirectStandardError $stderr
+            $output = if (Test-Path $stdout) { Get-Content $stdout -Raw } else { "" }
+            if ($process.ExitCode -ne 0) {
+              $errorOutput = if (Test-Path $stderr) { Get-Content $stderr -Raw } else { "" }
+              throw "Windows $Name smoke test failed with exit $($process.ExitCode): $errorOutput"
+            }
+            return $output
+          }
+          $version = Invoke-Unbound @("--version") "version"
+          if ($version -notmatch [regex]::Escape($env:VERSION)) {
             throw "Windows version smoke test failed: $version"
           }
-          $profiles = (& "build/bin/unbound.exe" --list-profiles --json | ConvertFrom-Json)
+          $profiles = (Invoke-Unbound @("--list-profiles", "--json") "profiles" | ConvertFrom-Json)
           if (-not $profiles.PSObject.Properties -or $profiles.PSObject.Properties.Count -eq 0) {
             throw "Windows profile catalog is empty"
           }

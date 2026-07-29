@@ -125,7 +125,7 @@ check_assets() {
         warn "sha256sum not available - skipping"
         return
     fi
-    run "engine asset checksums" ./scripts/engine-assets.sh verify
+    run "engine asset checksums" bash ./scripts/engine-assets.sh verify
 }
 
 # ── Go ───────────────────────────────────────────────────────────────────────

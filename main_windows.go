@@ -3,10 +3,14 @@
 package main
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"unbound/engine"
 	"unbound/engine/providers"
+	"unsafe"
 )
 
 func attachConsole() {
@@ -29,6 +33,52 @@ func attachConsole() {
 		os.Stdout = stdout
 		os.Stderr = stdout
 	}
+}
+
+func relaunchElevatedIfNeeded(required bool) (bool, error) {
+	if !required {
+		return false, nil
+	}
+	elevated, err := checkAdminPrivileges()
+	if err != nil {
+		return false, err
+	}
+	if elevated {
+		return false, nil
+	}
+
+	executable, err := os.Executable()
+	if err != nil {
+		return false, err
+	}
+	verb, _ := syscall.UTF16PtrFromString("runas")
+	file, _ := syscall.UTF16PtrFromString(executable)
+	parameters, _ := syscall.UTF16PtrFromString(commandLine(os.Args[1:]))
+	directory, _ := syscall.UTF16PtrFromString(filepath.Dir(executable))
+	shellExecute := syscall.NewLazyDLL("shell32.dll").NewProc("ShellExecuteW")
+	result, _, _ := shellExecute.Call(
+		0,
+		uintptr(unsafe.Pointer(verb)),
+		uintptr(unsafe.Pointer(file)),
+		uintptr(unsafe.Pointer(parameters)),
+		uintptr(unsafe.Pointer(directory)),
+		1,
+	)
+	if result <= 32 {
+		return false, fmt.Errorf("ShellExecuteW failed with code %d", result)
+	}
+	return true, nil
+}
+
+func commandLine(args []string) string {
+	var command strings.Builder
+	for i, arg := range args {
+		if i > 0 {
+			command.WriteByte(' ')
+		}
+		command.WriteString(syscall.EscapeArg(arg))
+	}
+	return command.String()
 }
 
 func registerHeadlessProvider(manager *providers.ProviderManager, assets *engine.AssetPaths, listsDir string, debugMode bool) {

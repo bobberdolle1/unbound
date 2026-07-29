@@ -163,7 +163,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: ./scripts/check.sh assets
+      - run: bash ./scripts/check.sh assets
 
   # ───────────────────────────────────────────────────────────────────────────
   # Shell scripts — syntax validation
@@ -173,4 +173,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: ./scripts/check.sh shell
+      - run: bash ./scripts/check.sh shell

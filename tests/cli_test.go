@@ -12,6 +12,12 @@ import (
 	"time"
 )
 
+func engineStarted(output string) bool {
+	return strings.Contains(output, "Engine started") ||
+		strings.Contains(output, "started successfully") ||
+		strings.Contains(output, "Press Ctrl+C")
+}
+
 // testBinaryPath returns a temp path with the executable suffix the host OS
 // expects. Hardcoding ".exe" made these tests Windows-only for no reason.
 func testBinaryPath(name string) string {
@@ -73,18 +79,17 @@ func TestCLIHeadlessMode(t *testing.T) {
 
 	t.Log("Test binary built successfully at:", tempBinary)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	profileName := firstCLIProfile(t, tempBinary)
 
 	t.Logf("Executing CLI mode with --cli --profile='%s' --debug", profileName)
 
-	cmd := exec.CommandContext(ctx, tempBinary, "--cli", "--profile="+profileName, "--debug")
-	output, err := cmd.CombinedOutput()
-	outputStr := string(output)
-
-	outputBytes := []byte(outputStr)
+	cmd := exec.CommandContext(ctx, tempBinary, "--cli", "--profile="+profileName, "--debug", "--run-duration=1s")
+	outputBytes, err := cmd.CombinedOutput()
+	outputStr := string(outputBytes)
+	started := engineStarted(outputStr)
 	cleanOutput := strings.Map(func(r rune) rune {
 		if r < 32 && r != '\n' && r != '\r' && r != '\t' {
 			return -1
@@ -96,6 +101,9 @@ func TestCLIHeadlessMode(t *testing.T) {
 	t.Logf("First 100 bytes (hex): %x", outputBytes[:min(100, len(outputBytes))])
 
 	skipIfNoRuntimeEnvironment(t, cleanOutput)
+	if !started {
+		t.Fatalf("CLI exited before the engine reported a successful start: %v\n%s", err, cleanOutput)
+	}
 
 	t.Logf("Output contains UNBOUND: %v", strings.Contains(cleanOutput, "UNBOUND"))
 	t.Logf("Output contains Profile: %v", strings.Contains(cleanOutput, "Profile"))
@@ -103,19 +111,15 @@ func TestCLIHeadlessMode(t *testing.T) {
 	t.Logf("Output contains Engine: %v", strings.Contains(cleanOutput, "Engine"))
 
 	if ctx.Err() == context.DeadlineExceeded {
-		t.Log("Context timeout reached (expected behavior - engine was running)")
+		t.Fatal("CLI did not report a successful engine start before the timeout")
 	}
 
 	if err != nil {
-		exitErr, ok := err.(*exec.ExitError)
-		if ok {
-			exitCode := exitErr.ExitCode()
-			if exitCode == -1 || exitCode == 1 {
-				t.Log("Process was terminated by context (expected)")
-			} else {
-				t.Errorf("Unexpected exit code: %d", exitCode)
-			}
-		}
+		t.Fatalf("CLI exited with an error after startup: %v\n%s", err, cleanOutput)
+	}
+
+	if !strings.Contains(cleanOutput, "Engine stopped") {
+		t.Fatal("CLI did not complete graceful engine shutdown")
 	}
 
 	t.Run("Console Attachment", func(t *testing.T) {
@@ -163,11 +167,7 @@ func TestCLIHeadlessMode(t *testing.T) {
 			return r
 		}, outputStr)
 
-		hasEngineStart := strings.Contains(cleanOutput, "Engine started") ||
-			strings.Contains(cleanOutput, "started successfully") ||
-			strings.Contains(cleanOutput, "Starting") ||
-			strings.Contains(cleanOutput, "Profile:") ||
-			strings.Contains(cleanOutput, "Press Ctrl+C")
+		hasEngineStart := engineStarted(cleanOutput)
 
 		if !hasEngineStart {
 			t.Error("Output does not contain evidence of engine initialization")

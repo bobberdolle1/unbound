@@ -82,6 +82,38 @@ make clean      # Очистка артефактов
 
 ---
 
+## GitHub Actions локально через `act`
+
+`act` запускает только Linux-контейнеры. Он воспроизводит Ubuntu jobs, зависимости, matrix-сборки Linux и обмен artifacts, но не эмулирует `windows-latest` или `macos-latest`.
+
+```bash
+# CI jobs; локальный artifact server обязателен для upload-artifact/download-artifact
+mkdir -p .act-artifacts
+act workflow_dispatch -W .github/workflows/ci.yml \
+  -j frontend -j engine-assets -j shell \
+  -P ubuntu-latest=catthehacker/ubuntu:act-latest \
+  --artifact-server-path .act-artifacts
+
+# Release verify + Linux amd64/arm64 package/smoke/upload.
+# --privileged нужен реальному CLI E2E для NFQUEUE/firewall.
+act workflow_dispatch -W .github/workflows/release.yml \
+  -j build-linux \
+  -P ubuntu-latest=catthehacker/ubuntu:act-latest \
+  --artifact-server-path .act-artifacts \
+  --container-options="--privileged"
+```
+
+Windows job проверяется нативно через `scripts/build/build_windows.ps1`; macOS job — на настоящем Mac:
+
+```bash
+./scripts/check.sh
+./scripts/build/build_darwin.sh universal
+```
+
+`act` на Mac всё равно использует Linux Docker и не может собрать/подписать Wails `.app`. Для полного локального аналога `build-macos` нужен нативный macOS runner с Xcode и `codesign`; публикация GitHub Release дополнительно требует `GITHUB_TOKEN`.
+
+---
+
 ## Linux firewall integration в Docker
 
 Обычный unit-test не проверяет, принимает ли ядро реальные `nftables`/`iptables` правила. На Linux Docker host или Docker Desktop с поддержкой NFQUEUE запустите привилегированный контейнер:

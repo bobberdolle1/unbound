@@ -20,6 +20,7 @@ node_modules/
 build/bin/
 /dist/
 release/
+/.act-artifacts/
 
 # Wails embeds frontend/dist, so `go build` fails on a clean clone unless the
 # directory exists. Keep the placeholder, ignore everything Vite writes there.
