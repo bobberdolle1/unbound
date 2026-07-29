@@ -78,6 +78,50 @@ sequenceDiagram
 
 ---
 
+## 🖥 Использование без GUI (Консольный режим и Запускные Скрипты)
+
+Помимо основного десктопного GUI, UNBOUND поддерживает полноценную работу в консоли и готовые скрипты запуска для **Windows**, **macOS** и **Linux**.
+
+### 1. Интерактивный Control Center (`unbound --control`)
+Встроенный консольный менеджер (работает 100% одинаково на всех трех ОС):
+```bash
+# Запуск главного меню управления
+sudo ./unbound --control
+```
+**Возможности меню:**
+- ⚡ **AutoTune**: Автоматический подбор и запуск лучшей стратегии.
+- 🎯 **Выбор профиля**: Запуск любой поддерживаемой ОС стратегии.
+- 🔍 **Диагностика (`--test`)**: Проверка доступности YouTube, Discord, Instagram, Cloudflare, Ozon.
+- ⚙️ **Автозапуск**: Включение/выключение автозапуска службы (Task Scheduler / LaunchAgent / systemd).
+- 📝 **Списки обхода**: Редактирование `youtube.txt`, `discord.txt`, `ipset-exclude.txt` в системном редакторе.
+- 🌐 **Secure DNS**: Переключение Cloudflare DoH (1.1.1.1) с отображением текущего статуса.
+- 🛡 **Конфликты**: Проверка конфликтующих процессов (GoodbyeDPI, ByeDPI, sing-box) и правил файрвола.
+- 🧹 **Очистка Discord**: Исправление голосовых каналов Discord в 1 клик.
+- 🛑 **Экстренный сброс**: Остановка процессов и сброс драйверов WinDivert / pf / nftables.
+
+### 2. Кликабельные запускные скрипты в релизных архивах
+В каждый релизный архив включен комплект готовых запускных скриптов:
+- **🪟 Windows (`.cmd` в `scripts/control_windows/`)**:
+  - `service_control.cmd` — открыть меню управления.
+  - `general_autotune.cmd`, `general_recommended.cmd`, `general_universal.cmd`, `general_alt1_multisplit.cmd`, `general_alt2_fake_tls.cmd` — запуск профилей с авто-запросом прав Администратора.
+- **🍎 macOS (`.command` в `scripts/control_macOS/`)**:
+  - `service_control.command`, `general_autotune.command`, `general_ultimate.command`, `general_discord.command`, `general_youtube.command`, `general_telegram.command` — запуск из Finder с подтягиванием `sudo`.
+- **🐧 Linux (`.sh` в `scripts/control_linux/`)**:
+  - `service_control.sh`, `general_autotune.sh`, `general_ultimate.sh`, `general_discord.sh`, `general_youtube.sh`, `general_telegram.sh`.
+
+### 3. Быстрые алиасы для CLI (`--profile`)
+Вы можете запускать профили по коротким именам:
+```bash
+sudo ./unbound --cli --profile rec        # Recommended (hostfakesplit)
+sudo ./unbound --cli --profile universal  # Universal 2026 (All-in-One)
+sudo ./unbound --cli --profile alt1       # Alternative 1 (multisplit)
+sudo ./unbound --cli --profile ultimate   # Ultimate Bypass (macOS/Linux)
+sudo ./unbound --cli --profile discord    # Discord Voice Optimized
+sudo ./unbound --cli --profile youtube    # YouTube QUIC Aggressive
+```
+
+---
+
 ## 🛠 Сборка из исходников
 
 ### Требования:
