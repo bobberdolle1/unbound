@@ -26,13 +26,7 @@ func TestAutoTune(t *testing.T) {
 		t.Fatalf("Failed to extract assets: %v", err)
 	}
 
-	provider := providers.NewZapret2WindowsProvider(
-		assets.BinDir,
-		assets.LuaDir,
-		assets.ListDir,
-		true,
-		false,
-	)
+	provider := providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir, assets.ListDir, assets.EngineSHA256, true, false)
 
 	profiles := GetProfiles(assets.LuaDir)
 

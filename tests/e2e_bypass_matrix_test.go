@@ -43,12 +43,12 @@ func TestE2EBypassMatrix(t *testing.T) {
 		t.Skip("Skipping E2E matrix test - requires administrator privileges")
 	}
 
-	binPath, luaDir, err := setupTestEnvironment()
+	binPath, luaDir, engineSHA256, err := setupTestEnvironment()
 	if err != nil {
 		t.Fatalf("Failed to setup test environment: %v", err)
 	}
 
-	provider := providers.NewZapret2WindowsProvider(binPath, luaDir, "", true, false)
+	provider := providers.NewZapret2WindowsProvider(binPath, luaDir, "", engineSHA256, true, false)
 
 	profiles := engine.GetProfiles(luaDir)
 	for _, profile := range profiles {
@@ -296,26 +296,19 @@ func truncate(s string, maxLen int) string {
 	return s[:maxLen-3] + "..."
 }
 
-func setupTestEnvironment() (string, string, error) {
-	wd, err := os.Getwd()
+func setupTestEnvironment() (string, string, string, error) {
+	assets, err := engine.ExtractAssets()
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
-
-	if strings.HasSuffix(wd, "tests") {
-		wd = filepath.Dir(wd)
+	if _, err := os.Stat(filepath.Join(assets.BinDir, "winws2.exe")); err != nil {
+		return "", "", "", fmt.Errorf("winws2.exe not found at %s: %w", assets.BinDir, err)
 	}
-
-	binPath := filepath.Join(wd, "engine", "core_bin", "windows")
-	luaDir := filepath.Join(wd, "engine", "lua_scripts")
-
-	if _, err := os.Stat(filepath.Join(binPath, "winws2.exe")); os.IsNotExist(err) {
-		return "", "", fmt.Errorf("winws2.exe not found at %s", binPath)
+	if _, err := os.Stat(filepath.Join(assets.LuaDir, "zapret-lib.lua")); err != nil {
+		return "", "", "", fmt.Errorf("zapret-lib.lua not found at %s: %w", assets.LuaDir, err)
 	}
-
-	if _, err := os.Stat(filepath.Join(luaDir, "zapret-lib.lua")); os.IsNotExist(err) {
-		return "", "", fmt.Errorf("zapret-lib.lua not found at %s", luaDir)
+	if assets.EngineSHA256 == "" {
+		return "", "", "", fmt.Errorf("winws2.exe expected SHA-256 is missing")
 	}
-
-	return binPath, luaDir, nil
+	return assets.BinDir, assets.LuaDir, assets.EngineSHA256, nil
 }

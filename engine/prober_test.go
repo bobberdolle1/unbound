@@ -4,8 +4,6 @@ package engine
 
 import (
 	"context"
-	"crypto/tls"
-	"net/http"
 	"testing"
 	"time"
 
@@ -22,7 +20,8 @@ func TestBypassRouting(t *testing.T) {
 		t.Fatalf("Failed to extract assets: %v", err)
 	}
 
-	provider := providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir, assets.ListDir, false, true)
+	provider := providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir, assets.ListDir, assets.EngineSHA256, false, true)
+	RegisterWindowsProfileCatalog(provider, assets.LuaDir)
 
 	hasPriv, err := provider.CheckPrivileges()
 	if err != nil {
@@ -40,18 +39,18 @@ func TestBypassRouting(t *testing.T) {
 		description string
 	}{
 		{
-			name:        "Telegram Web with MTProto",
-			profile:     "Telegram MTProto",
-			targetURL:   "https://web.telegram.org",
+			name:        "Discord with Recommended",
+			profile:     "Recommended (hostfakesplit)",
+			targetURL:   "https://discord.com",
 			expectOK:    true,
-			description: "Telegram should be accessible with any-protocol desync",
+			description: "Discord should establish verified TLS",
 		},
 		{
-			name:        "GoogleVideo with Ultimate Combo",
-			profile:     "The Ultimate Combo",
+			name:        "GoogleVideo with Universal",
+			profile:     "Universal 2026 (All-in-One)",
 			targetURL:   "https://googlevideo.com",
 			expectOK:    true,
-			description: "GoogleVideo CDN should be accessible",
+			description: "GoogleVideo CDN should establish verified TLS",
 		},
 	}
 
@@ -74,32 +73,18 @@ func TestBypassRouting(t *testing.T) {
 
 			t.Logf("Testing connectivity to: %s", tc.targetURL)
 
-			client := &http.Client{
-				Timeout: 15 * time.Second,
-				Transport: &http.Transport{
-					TLSClientConfig: &tls.Config{
-						InsecureSkipVerify: true,
-					},
-				},
-			}
-
-			resp, err := client.Get(tc.targetURL)
-			if err != nil {
+			probeCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+			result, probeErr := ProbeConnection(probeCtx, tc.targetURL)
+			cancel()
+			if probeErr != nil {
 				if tc.expectOK {
-					t.Errorf("Expected success but got error: %v", err)
+					t.Errorf("Expected verified TLS success but got error: %v", probeErr)
 					t.Logf("Provider logs:\n%v", provider.GetLogs())
 				}
+			} else if tc.expectOK && (!result.Success || !result.CertValid) {
+				t.Errorf("Expected a verified TLS connection, got %+v", result)
 			} else {
-				defer resp.Body.Close()
-				t.Logf("HTTP Status: %d", resp.StatusCode)
-
-				if tc.expectOK && (resp.StatusCode < 200 || resp.StatusCode >= 500) {
-					t.Errorf("Expected 2xx/3xx/4xx status but got %d", resp.StatusCode)
-				}
-
-				if resp.StatusCode >= 200 && resp.StatusCode < 500 {
-					t.Logf("✓ %s: SUCCESS (HTTP %d)", tc.description, resp.StatusCode)
-				}
+				t.Logf("✓ %s: SUCCESS (%dms, issuer=%s)", tc.description, result.Latency.Milliseconds(), result.CertIssuer)
 			}
 
 			err = provider.Stop()

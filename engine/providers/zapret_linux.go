@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -41,9 +42,9 @@ type linuxProfile struct {
 	Args    []string
 }
 
-// builtinProfiles are the strategies shipped with the Linux build. Each entry
-// pairs the netfilter rules that select traffic with the nfqws desync
-// arguments applied to it.
+// builtinProfiles are native zapret2 strategies. The firewall selectors stay
+// separate from the Lua action chain so the kernel only queues traffic a
+// profile can affect.
 var builtinProfiles = map[string]linuxProfile{
 	"Ultimate Bypass (Multi-Strategy)": {
 		Filters: []packetFilter{
@@ -51,11 +52,19 @@ var builtinProfiles = map[string]linuxProfile{
 			{Proto: "udp", Ports: "443,3478,50000:65535"},
 		},
 		Args: []string{
-			"--filter-tcp=80", "--dpi-desync=fake,multisplit", "--dpi-desync-split-pos=method+2", "--dpi-desync-fooling=md5sig", "--new",
-			"--filter-tcp=443", "--dpi-desync=fake,multidisorder", "--dpi-desync-split-pos=1,midsld", "--dpi-desync-fooling=badseq,md5sig", "--new",
-			"--filter-tcp=5222,5223,5228", "--dpi-desync=disorder", "--dpi-desync-split-pos=2", "--new",
-			"--filter-udp=443", "--dpi-desync=fake", "--dpi-desync-repeats=10", "--dpi-desync-udplen-increment=2", "--new",
-			"--filter-udp=3478,50000-65535", "--dpi-desync=fake", "--dpi-desync-repeats=8",
+			"--filter-tcp=80", "--payload=http_req", "--out-range=-d8",
+			"--lua-desync=fake:blob=fake_default_tls:tcp_md5",
+			"--lua-desync=multisplit:pos=method+2", "--new",
+			"--filter-tcp=443", "--payload=tls_client_hello", "--out-range=-d8",
+			"--lua-desync=fake:blob=fake_default_tls:tcp_seq=-66000:tcp_md5",
+			"--lua-desync=multidisorder:pos=1,midsld", "--new",
+			"--filter-tcp=5222,5223,5228", "--payload=known", "--out-range=-d8",
+			"--lua-desync=multidisorder:pos=2", "--new",
+			"--filter-udp=443", "--payload=quic_initial",
+			"--lua-desync=fake:blob=quic_google:repeats=10", "--new",
+			"--filter-udp=3478,50000-65535", "--filter-l7=discord,stun",
+			"--payload=stun,discord_ip_discovery",
+			"--lua-desync=fake:blob=fake_default_udp:repeats=8",
 		},
 	},
 	"Discord Voice Optimized": {
@@ -64,10 +73,14 @@ var builtinProfiles = map[string]linuxProfile{
 			{Proto: "udp", Ports: "443,3478,50000:65535"},
 		},
 		Args: []string{
-			"--filter-tcp=443", "--dpi-desync=fake,split", "--dpi-desync-split-pos=1", "--dpi-desync-fooling=md5sig", "--new",
-			"--filter-udp=443", "--dpi-desync=fake", "--dpi-desync-repeats=10", "--new",
-			"--filter-udp=3478", "--dpi-desync=fake", "--dpi-desync-repeats=8", "--new",
-			"--filter-udp=50000-65535", "--dpi-desync=fake", "--dpi-desync-repeats=8",
+			"--filter-tcp=443", "--payload=tls_client_hello", "--out-range=-d8",
+			"--lua-desync=fake:blob=fake_default_tls:tcp_md5",
+			"--lua-desync=multisplit:pos=1", "--new",
+			"--filter-udp=443", "--payload=quic_initial",
+			"--lua-desync=fake:blob=quic_google:repeats=10", "--new",
+			"--filter-udp=3478,50000-65535", "--filter-l7=discord,stun",
+			"--payload=stun,discord_ip_discovery",
+			"--lua-desync=fake:blob=fake_default_udp:repeats=8",
 		},
 	},
 	"YouTube QUIC Aggressive": {
@@ -76,9 +89,14 @@ var builtinProfiles = map[string]linuxProfile{
 			{Proto: "udp", Ports: "443"},
 		},
 		Args: []string{
-			"--filter-tcp=80", "--dpi-desync=fake,multisplit", "--dpi-desync-split-pos=method+2", "--dpi-desync-fooling=md5sig", "--new",
-			"--filter-tcp=443", "--dpi-desync=fake,multisplit", "--dpi-desync-split-pos=1,midsld", "--dpi-desync-fooling=md5sig", "--new",
-			"--filter-udp=443", "--dpi-desync=fake", "--dpi-desync-repeats=12", "--dpi-desync-udplen-increment=2",
+			"--filter-tcp=80", "--payload=http_req", "--out-range=-d8",
+			"--lua-desync=fake:blob=fake_default_tls:tcp_md5",
+			"--lua-desync=multisplit:pos=method+2", "--new",
+			"--filter-tcp=443", "--payload=tls_client_hello", "--out-range=-d8",
+			"--lua-desync=fake:blob=fake_default_tls:tcp_md5",
+			"--lua-desync=multisplit:pos=1,midsld", "--new",
+			"--filter-udp=443", "--payload=quic_initial",
+			"--lua-desync=fake:blob=quic_google:repeats=12",
 		},
 	},
 	"Telegram API Bypass": {
@@ -87,9 +105,13 @@ var builtinProfiles = map[string]linuxProfile{
 			{Proto: "udp", Ports: "443"},
 		},
 		Args: []string{
-			"--filter-tcp=443", "--dpi-desync=fake,split", "--dpi-desync-split-pos=1", "--dpi-desync-fooling=md5sig", "--new",
-			"--filter-tcp=5222,5223,5228", "--dpi-desync=disorder", "--dpi-desync-split-pos=2", "--new",
-			"--filter-udp=443", "--dpi-desync=fake", "--dpi-desync-repeats=8",
+			"--filter-tcp=443", "--payload=tls_client_hello", "--out-range=-d8",
+			"--lua-desync=fake:blob=fake_default_tls:tcp_md5",
+			"--lua-desync=multisplit:pos=1", "--new",
+			"--filter-tcp=5222,5223,5228", "--payload=known", "--out-range=-d8",
+			"--lua-desync=multidisorder:pos=2", "--new",
+			"--filter-udp=443", "--payload=quic_initial",
+			"--lua-desync=fake:blob=quic_google:repeats=8",
 		},
 	},
 	"Standard HTTPS/QUIC": {
@@ -98,8 +120,11 @@ var builtinProfiles = map[string]linuxProfile{
 			{Proto: "udp", Ports: "443"},
 		},
 		Args: []string{
-			"--filter-tcp=443", "--dpi-desync=fake,split", "--dpi-desync-split-pos=1", "--dpi-desync-fooling=md5sig", "--new",
-			"--filter-udp=443", "--dpi-desync=fake", "--dpi-desync-repeats=6",
+			"--filter-tcp=443", "--payload=tls_client_hello", "--out-range=-d8",
+			"--lua-desync=fake:blob=fake_default_tls:tcp_md5",
+			"--lua-desync=multisplit:pos=1", "--new",
+			"--filter-udp=443", "--payload=quic_initial",
+			"--lua-desync=fake:blob=quic_google:repeats=6",
 		},
 	},
 	"HTTP + HTTPS Split": {
@@ -107,8 +132,10 @@ var builtinProfiles = map[string]linuxProfile{
 			{Proto: "tcp", Ports: "80,443", HandshakeOnly: true},
 		},
 		Args: []string{
-			"--filter-tcp=80", "--dpi-desync=split", "--dpi-desync-split-pos=method+2", "--new",
-			"--filter-tcp=443", "--dpi-desync=disorder", "--dpi-desync-split-pos=2",
+			"--filter-tcp=80", "--payload=http_req", "--out-range=-d8",
+			"--lua-desync=multisplit:pos=method+2", "--new",
+			"--filter-tcp=443", "--payload=tls_client_hello", "--out-range=-d8",
+			"--lua-desync=multidisorder:pos=2",
 		},
 	},
 }
@@ -127,18 +154,16 @@ var profileOrder = []string{
 type ZapretLinuxProvider struct {
 	mu sync.Mutex
 
-	status         Status
-	logs           []string
-	cmd            *exec.Cmd
-	cancel         context.CancelFunc
-	binPath        string
-	listsDir       string
-	currentProfile string
-	firewall       linuxFirewall
+	status               Status
+	logs                 []string
+	cmd                  *exec.Cmd
+	cancel               context.CancelFunc
+	binPath              string
+	luaDir               string
+	expectedEngineSHA256 string
+	currentProfile       string
+	firewall             linuxFirewall
 
-	// customProfiles holds strategies registered at runtime (the Custom
-	// Profile builder and the auto-tuner). Previously the Linux provider had
-	// no RegisterProfile at all, so those features silently did nothing.
 	customProfiles map[string][]string
 	customOrder    []string
 
@@ -146,19 +171,19 @@ type ZapretLinuxProvider struct {
 	onLog    func(string)
 }
 
-// NewZapretLinuxProvider builds the Linux engine provider. binPath is the
-// resolved path to the nfqws executable; listsDir holds the hostlists.
-func NewZapretLinuxProvider(binPath, listsDir string) BypassProvider {
+// NewZapretLinuxProvider builds the bundled zapret2 NFQUEUE provider.
+func NewZapretLinuxProvider(binPath, luaDir, expectedEngineSHA256 string) BypassProvider {
 	return &ZapretLinuxProvider{
-		status:         StatusStopped,
-		binPath:        binPath,
-		listsDir:       listsDir,
-		customProfiles: make(map[string][]string),
-		logs:           []string{"Zapret Engine (Linux/nfqws) initialized."},
+		status:               StatusStopped,
+		binPath:              binPath,
+		luaDir:               luaDir,
+		expectedEngineSHA256: strings.ToLower(expectedEngineSHA256),
+		customProfiles:       make(map[string][]string),
+		logs:                 []string{"Zapret 2 Engine (Linux/nfqws2) initialized."},
 	}
 }
 
-func (e *ZapretLinuxProvider) Name() string { return "Zapret (nfqws)" }
+func (e *ZapretLinuxProvider) Name() string { return "Zapret 2 (nfqws2)" }
 
 func (e *ZapretLinuxProvider) CheckPrivileges() (bool, error) {
 	return syscall.Geteuid() == 0, nil
@@ -235,11 +260,22 @@ func (e *ZapretLinuxProvider) resolveProfile(name string) (linuxProfile, error) 
 	return linuxProfile{}, fmt.Errorf("профиль не найден: %s", name)
 }
 
+func (e *ZapretLinuxProvider) commandArgs(profile linuxProfile) []string {
+	args := []string{
+		"--qnum=" + nfqueueNum,
+		"--lua-init=@" + filepath.ToSlash(filepath.Join(e.luaDir, "zapret-lib.lua")),
+		"--lua-init=@" + filepath.ToSlash(filepath.Join(e.luaDir, "zapret-antidpi.lua")),
+		"--lua-init=@" + filepath.ToSlash(filepath.Join(e.luaDir, "init_vars.lua")),
+	}
+	return append(args, profile.Args...)
+}
+
 func (e *ZapretLinuxProvider) Start(ctx context.Context, profileName string) error {
 	// Stop outside the lock: Stop takes the same mutex, and the previous
 	// implementation unlocked mid-function while holding a deferred unlock,
 	// which double-unlocks as soon as any error path is taken.
 	if e.GetStatus() == StatusRunning {
+
 		if e.currentProfileName() == profileName {
 			return nil
 		}
@@ -255,6 +291,11 @@ func (e *ZapretLinuxProvider) Start(ctx context.Context, profileName string) err
 	if err != nil {
 		e.setStatusLocked(StatusError)
 		return err
+	}
+
+	if err := verifyFileSHA256(e.binPath, e.expectedEngineSHA256); err != nil {
+		e.setStatusLocked(StatusError)
+		return fmt.Errorf("refusing to execute unverified nfqws2: %w", err)
 	}
 
 	e.setStatusLocked(StatusStarting)
@@ -274,12 +315,9 @@ func (e *ZapretLinuxProvider) Start(ctx context.Context, profileName string) err
 	}
 	e.firewall = firewall
 
-	args := append([]string{"--qnum=" + nfqueueNum}, profile.Args...)
-	if e.listsDir != "" {
-		args = append(args, "--hostlist-auto="+e.listsDir+"/autohostlist.txt")
-	}
+	args := e.commandArgs(profile)
 
-	e.addLogLocked(fmt.Sprintf("[%s] Запускаем nfqws, профиль: %s", e.Name(), profileName))
+	e.addLogLocked(fmt.Sprintf("[%s] Запускаем nfqws2, профиль: %s", e.Name(), profileName))
 
 	// No --daemon: nfqws would fork and exit, cmd.Wait() would return
 	// immediately, and the provider would report the engine as stopped while

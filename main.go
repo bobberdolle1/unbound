@@ -176,6 +176,7 @@ func newHeadlessManager(debugMode bool) (*providers.ProviderManager, *engine.Ass
 
 func runListProfilesJSON(debugMode bool) {
 	manager, _ := newHeadlessManager(debugMode)
+	defer func() { _ = engine.CleanupExtractedAssets() }()
 	res := make(map[string][]string)
 	for _, name := range manager.GetEngineNames() {
 		res[name] = manager.GetProfiles(name)
@@ -189,6 +190,7 @@ func runListProfiles(debugMode bool) {
 	attachConsole()
 
 	manager, _ := newHeadlessManager(debugMode)
+	defer func() { _ = engine.CleanupExtractedAssets() }()
 	fmt.Printf("UNBOUND v%s (%s/%s) — Available Profiles:\n", engine.Version, runtime.GOOS, runtime.GOARCH)
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	for _, name := range manager.GetEngineNames() {
@@ -238,6 +240,7 @@ func runHeadlessMode(profileName string, runAutoTune bool, debugMode bool) {
 	}
 
 	manager, assets := newHeadlessManager(debugMode)
+	defer func() { _ = engine.CleanupExtractedAssets() }()
 
 	engineNames := manager.GetEngineNames()
 	if len(engineNames) == 0 {
@@ -247,11 +250,11 @@ func runHeadlessMode(profileName string, runAutoTune bool, debugMode bool) {
 
 	if runAutoTune {
 		fmt.Println("⚡ Running AutoTune benchmark in CLI mode...")
-		provider := providers.NewAutoTuneProvider(assets.BinDir, assets.LuaDir, assets.ListDir)
+		provider := providers.NewAutoTuneProvider(assets.BinDir, assets.LuaDir, assets.ListDir, assets.EngineSHA256)
 		if provider == nil {
 			log.Fatalf("No engine provider available for AutoTune on %s", runtime.GOOS)
 		}
-		allProfiles := append(engine.GetProfiles(assets.LuaDir), engine.GetAdvancedProfiles(assets.LuaDir)...)
+		allProfiles := engine.PrepareAutoTuneProfiles(provider, assets.LuaDir)
 		progressFn := func(step, total int, profile string, okCount, totalTargets int, msg string) {
 			pct := (step * 100) / total
 			barLen := 20
@@ -291,17 +294,16 @@ func runHeadlessMode(profileName string, runAutoTune bool, debugMode bool) {
 
 		if choice == "A" {
 			fmt.Println("⚡ Starting AutoTune...")
-			provider := providers.NewAutoTuneProvider(assets.BinDir, assets.LuaDir, assets.ListDir)
-			if provider != nil {
-				allProfiles := append(engine.GetProfiles(assets.LuaDir), engine.GetAdvancedProfiles(assets.LuaDir)...)
-				result, err := engine.RunAutoTuneV2WithContext(context.Background(), provider, allProfiles)
-				if err == nil {
-					profileName = result.ProfileName
-				}
+			provider := providers.NewAutoTuneProvider(assets.BinDir, assets.LuaDir, assets.ListDir, assets.EngineSHA256)
+			if provider == nil {
+				log.Fatalf("No engine provider available for AutoTune on %s", runtime.GOOS)
 			}
-			if profileName == "" {
-				profileName = profiles[0]
+			allProfiles := engine.PrepareAutoTuneProfiles(provider, assets.LuaDir)
+			result, err := engine.RunAutoTuneV2WithContext(context.Background(), provider, allProfiles)
+			if err != nil {
+				log.Fatalf("AutoTune failed: %v", err)
 			}
+			profileName = result.ProfileName
 		} else {
 			idx := 0
 			if choice != "" {

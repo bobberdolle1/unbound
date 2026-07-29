@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -37,6 +38,27 @@ func skipIfNoRuntimeEnvironment(t *testing.T, output string) {
 	}
 }
 
+func firstCLIProfile(t *testing.T, binary string) string {
+	t.Helper()
+	cmd := exec.Command(binary, "--list-profiles", "--json")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		skipIfNoRuntimeEnvironment(t, string(output))
+		t.Fatalf("could not list native profiles: %v\n%s", err, output)
+	}
+	var catalog map[string][]string
+	if err := json.Unmarshal(output, &catalog); err != nil {
+		t.Fatalf("invalid --list-profiles JSON: %v\n%s", err, output)
+	}
+	for _, profiles := range catalog {
+		if len(profiles) > 0 {
+			return profiles[0]
+		}
+	}
+	t.Fatal("native profile catalog is empty")
+	return ""
+}
+
 func TestCLIHeadlessMode(t *testing.T) {
 	t.Log("Building temporary test binary...")
 
@@ -54,10 +76,7 @@ func TestCLIHeadlessMode(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	profileName := "Standard Split"
-	if runtime.GOOS == "darwin" {
-		profileName = "Ultimate Bypass (Multi-Strategy)"
-	}
+	profileName := firstCLIProfile(t, tempBinary)
 
 	t.Logf("Executing CLI mode with --cli --profile='%s' --debug", profileName)
 
@@ -211,10 +230,7 @@ func TestCLIDebugMode(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	profileName := "Standard Split"
-	if runtime.GOOS == "darwin" {
-		profileName = "Ultimate Bypass (Multi-Strategy)"
-	}
+	profileName := firstCLIProfile(t, tempBinary)
 	cmd := exec.CommandContext(ctx, tempBinary, "--cli", "--profile="+profileName, "--debug")
 	output, _ := cmd.CombinedOutput()
 	outputStr := string(output)

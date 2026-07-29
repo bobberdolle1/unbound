@@ -96,3 +96,23 @@ func TestSecureDNS_Verification(t *testing.T) {
 	// (Actual setting of secure DNS requires admin privileges and modify system network state, so we won't execute it to avoid breaking user's DNS during test)
 	_ = app.IsSecureDNSEnabled()
 }
+
+func TestAutoReconnectDoesNotStartDuringAutoTuneOrShutdown(t *testing.T) {
+	for _, setup := range []struct {
+		name string
+		run  func(*App)
+	}{
+		{name: "AutoTune active", run: func(app *App) { app.autoTuneCancel = func() {} }},
+		{name: "shutdown active", run: func(app *App) { app.closing = true }},
+	} {
+		t.Run(setup.name, func(t *testing.T) {
+			app := NewApp()
+			app.ctx = context.Background()
+			setup.run(app)
+			app.AutoReconnectMonitor()
+			if app.autoReconnectCancel != nil || app.autoReconnectID != 0 {
+				t.Fatal("auto-reconnect monitor started during an exclusive lifecycle")
+			}
+		})
+	}
+}

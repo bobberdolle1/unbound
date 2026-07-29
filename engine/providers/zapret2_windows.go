@@ -34,44 +34,47 @@ func getCustomScriptPath() (string, error) {
 }
 
 type Zapret2WindowsProvider struct {
-	status         Status
-	logs           []string
-	cmd            *exec.Cmd
-	mu             sync.Mutex
-	binPath        string
-	luaDir         string
-	listDir        string
-	currentProfile string
-	debugMode      bool
-	gameFilter     bool
-	profileMap     map[string][]string
-	profileNames   []string
-	onStatusChange func(Status)
-	onLogAdd       func(string)
-	logFile        *os.File
-	engineReady    chan bool
+	status               Status
+	logs                 []string
+	cmd                  *exec.Cmd
+	mu                   sync.Mutex
+	logMu                sync.Mutex
+	binPath              string
+	luaDir               string
+	listDir              string
+	expectedEngineSHA256 string
+	currentProfile       string
+	debugMode            bool
+	gameFilter           bool
+	profileMap           map[string][]string
+	profileNames         []string
+	onStatusChange       func(Status)
+	onLogAdd             func(string)
+	logFile              *os.File
+	engineReady          chan bool
 }
 
-func NewZapret2WindowsProvider(binPath, luaDir, listDir string, debugMode bool, gameFilter bool) *Zapret2WindowsProvider {
+func NewZapret2WindowsProvider(binPath, luaDir, listDir, expectedEngineSHA256 string, debugMode bool, gameFilter bool) *Zapret2WindowsProvider {
 	InitLogger()
 
 	var logFile *os.File
 	if debugMode {
 		logPath := filepath.Join(os.TempDir(), "unbound_debug.log")
-		logFile, _ = os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		logFile, _ = os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	}
 
 	return &Zapret2WindowsProvider{
-		status:      StatusStopped,
-		binPath:     binPath,
-		luaDir:      luaDir,
-		listDir:     listDir,
-		debugMode:   debugMode,
-		gameFilter:  gameFilter,
-		profileMap:  make(map[string][]string),
-		logs:        []string{"Zapret 2 Engine (Windows) initialized."},
-		logFile:     logFile,
-		engineReady: make(chan bool, 1),
+		status:               StatusStopped,
+		binPath:              binPath,
+		luaDir:               luaDir,
+		listDir:              listDir,
+		expectedEngineSHA256: strings.ToLower(expectedEngineSHA256),
+		debugMode:            debugMode,
+		gameFilter:           gameFilter,
+		profileMap:           make(map[string][]string),
+		logs:                 []string{"Zapret 2 Engine (Windows) initialized."},
+		logFile:              logFile,
+		engineReady:          make(chan bool, 1),
 	}
 }
 
@@ -82,16 +85,18 @@ func (e *Zapret2WindowsProvider) SetStatusCallback(cb func(Status)) {
 }
 
 func (e *Zapret2WindowsProvider) SetLogCallback(cb func(string)) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	e.logMu.Lock()
+	defer e.logMu.Unlock()
 	e.onLogAdd = cb
 }
 
 func (e *Zapret2WindowsProvider) RegisterProfile(name string, args []string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.profileMap[name] = args
-	e.profileNames = append(e.profileNames, name)
+	if _, exists := e.profileMap[name]; !exists {
+		e.profileNames = append(e.profileNames, name)
+	}
+	e.profileMap[name] = append([]string(nil), args...)
 }
 
 func (e *Zapret2WindowsProvider) Name() string {
@@ -128,17 +133,10 @@ func (e *Zapret2WindowsProvider) GetProfiles() []string {
 	return append(names, "Custom Profile")
 }
 
-func (e *Zapret2WindowsProvider) getProfileArgsLocked(profileName string) []string {
+func (e *Zapret2WindowsProvider) getProfileArgsLocked(profileName string) ([]string, error) {
 	profileArgs, exists := e.profileMap[profileName]
-
 	if !exists && profileName != "Custom Profile" {
-		// Fallback profile if not found
-		profileArgs = []string{
-			"--filter-tcp=443",
-			"--out-range=-d10",
-			"--payload=tls_client_hello",
-			"--lua-desync=multisplit:pos=1",
-		}
+		return nil, fmt.Errorf("profile not found: %s", profileName)
 	}
 
 	absLuaLib, _ := filepath.Abs(filepath.Join(e.luaDir, "zapret-lib.lua"))
@@ -183,17 +181,18 @@ func (e *Zapret2WindowsProvider) getProfileArgsLocked(profileName string) []stri
 
 	if profileName == "Custom Profile" {
 		customScriptPath, err := getCustomScriptPath()
-		if err == nil {
-			absCustomScript, _ := filepath.Abs(customScriptPath)
-			customScriptSlash := filepath.ToSlash(absCustomScript)
-			args = append(args, "--lua-init=@"+customScriptSlash)
-			args = append(args, "--filter-tcp=443", "--out-range=-d10", "--payload=tls_client_hello", "--lua-desync=multisplit:pos=1")
+		if err != nil {
+			return nil, fmt.Errorf("resolve custom profile: %w", err)
 		}
+		absCustomScript, _ := filepath.Abs(customScriptPath)
+		customScriptSlash := filepath.ToSlash(absCustomScript)
+		args = append(args, "--lua-init=@"+customScriptSlash)
+		args = append(args, "--filter-tcp=443", "--out-range=-d10", "--payload=tls_client_hello", "--lua-desync=multisplit:pos=1")
 	} else {
 		args = append(args, profileArgs...)
 	}
 
-	return args
+	return args, nil
 }
 
 func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) error {
@@ -215,6 +214,11 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 		e.mu.Lock()
 	}
 
+	args, err := e.getProfileArgsLocked(profileName)
+	if err != nil {
+		return err
+	}
+
 	// Sync hostlist files from remote sources with fallback
 	if err := SyncHostlists(); err != nil {
 		e.addLog(fmt.Sprintf("Предупреждение синхронизации списков: %v", err))
@@ -223,12 +227,16 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 	e.engineReady = make(chan bool, 1)
 	e.status = StatusStarting
 	winwsPath := filepath.Join(e.binPath, "winws2.exe")
-	args := e.getProfileArgsLocked(profileName)
 
 	// Log full command for debugging
 	cmdLine := winwsPath + " " + strings.Join(args, " ")
 	e.addLog(fmt.Sprintf("[CMD] %s", cmdLine))
 	WriteLog(fmt.Sprintf("Starting winws2 with profile '%s': %s", profileName, cmdLine))
+
+	if err := verifyFileSHA256(winwsPath, e.expectedEngineSHA256); err != nil {
+		e.status = StatusError
+		return fmt.Errorf("refusing to execute unverified winws2: %w", err)
+	}
 
 	e.cmd = exec.Command(winwsPath, args...)
 	e.cmd.Dir = e.binPath
@@ -241,6 +249,7 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 		e.status = StatusError
 		return err
 	}
+	startedCmd := e.cmd
 
 	var wg sync.WaitGroup
 
@@ -259,18 +268,20 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 	e.status = StatusRunning
 	e.currentProfile = profileName
 
-	go func() {
-		e.cmd.Wait()
+	go func(cmd *exec.Cmd) {
+		_ = cmd.Wait()
 		wg.Wait()
 		e.mu.Lock()
 		defer e.mu.Unlock()
-		if e.currentProfile == profileName {
+		if e.cmd == cmd && e.currentProfile == profileName {
+			e.cmd = nil
+			e.currentProfile = ""
 			e.status = StatusStopped
 			if e.onStatusChange != nil {
 				e.onStatusChange(e.status)
 			}
 		}
-	}()
+	}(startedCmd)
 
 	return nil
 }
@@ -325,7 +336,6 @@ func (e *Zapret2WindowsProvider) Stop() error {
 		}
 		runHidden("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", e.cmd.Process.Pid))
 		time.Sleep(200 * time.Millisecond)
-		runHidden("taskkill", "/F", "/T", "/IM", "winws2.exe")
 		e.cmd = nil
 	}
 
@@ -346,18 +356,22 @@ func (e *Zapret2WindowsProvider) GetStatus() Status {
 }
 
 func (e *Zapret2WindowsProvider) GetLogs() []string {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	return e.logs
+	e.logMu.Lock()
+	defer e.logMu.Unlock()
+	return append([]string(nil), e.logs...)
 }
 
 func (e *Zapret2WindowsProvider) addLog(msg string) {
+	e.logMu.Lock()
 	e.logs = append(e.logs, msg)
 	if len(e.logs) > 100 {
-		e.logs = e.logs[1:]
+		copy(e.logs, e.logs[len(e.logs)-100:])
+		e.logs = e.logs[:100]
 	}
-	if e.onLogAdd != nil {
-		e.onLogAdd(msg)
+	callback := e.onLogAdd
+	e.logMu.Unlock()
+	if callback != nil {
+		callback(msg)
 	}
 }
 

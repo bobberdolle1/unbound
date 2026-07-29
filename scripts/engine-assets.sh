@@ -39,24 +39,24 @@ generate() {
 #
 # Provenance
 # ----------
-#   engine/core_bin/windows/winws2.exe        Zapret 2, https://github.com/bol-van/zapret2
-#   engine/core_bin/windows/WinDivert*.dll    WinDivert, bundled with the Zapret 2 release
-#   engine/core_bin/windows/WinDivert*.sys    WinDivert kernel driver, ditto
+#   engine/core_bin/windows/*                 Zapret 2 v1.0.3 Windows x86_64 bundle
+#   engine/core_bin/linux/{amd64,arm64}/*     Zapret 2 v1.0.3 Linux release bundle
 #   engine/core_bin/windows/goodbyedpi.exe    https://github.com/ValdikSS/GoodbyeDPI
-#   engine/core_bin/*.bin                     fake-packet payloads from the Zapret 2 release
-#   engine/lua_scripts/zapret-*.lua           Zapret 2 sources; the rest are local
+#   engine/core_bin/*.bin                     fake-packet payloads from Zapret releases
+#   engine/lua_scripts/zapret-{lib,antidpi,auto,obfs,pcap,tests}.lua
+#                                               Zapret 2 v1.0.3; other Lua files are local
 #   engine/windivert.filter/*                 local WinDivert filter presets
 #
-# The binaries live only in upstream *releases*, not in upstream git, so they
-# cannot be fetched by a build script the way scripts/fetch-tpws.sh fetches
-# tpws. Updating them is a manual, deliberate step: download the release,
-# replace the files, rerun `generate`, and record the version below.
+# Zapret 2 snapshot
+# -----------------
+#   Tag:          v1.0.3
+#   Commit:       b78b52c4cd7f843da3ff0848a3430afbd401bdf2
+#   Release URL:  https://github.com/bol-van/zapret2/releases/tag/v1.0.3
+#   Source asset: zapret2-v1.0.3.zip
+#   Asset SHA256: 734fbea360aa863cd5c724f8b941116aaa250434d699b1ce99769e5f632a7a77
 #
-# Bundled Zapret 2 version: v1.0.3
-#   As of this manifest, every Lua script this project actually loads
-#   (zapret-lib.lua and zapret-antidpi.lua) is byte-identical to upstream
-#   v1.0.3. The one file that differs, zapret-tests.lua, is an upstream demo
-#   that nothing in this repository references.
+# Windows binaries, Linux binaries and all six standard Lua files are copied
+# from that one verified release archive. Never update them independently.
 # ============================================================================
 HEADER
         for dir in "${TRACKED_DIRS[@]}"; do

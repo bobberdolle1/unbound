@@ -5,18 +5,16 @@ package providers
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
 
 func TestZapret2ProviderInitialization(t *testing.T) {
-	provider := NewZapret2WindowsProvider(
-		"test/bin",
-		"test/lua",
-		"test/lists",
-		false,
-		false,
-	)
+	provider := NewZapret2WindowsProvider("test/bin", "test/lua", "test/lists", "", false, false)
 
 	if provider == nil {
 		t.Fatal("Provider initialization failed")
@@ -33,8 +31,30 @@ func TestZapret2ProviderInitialization(t *testing.T) {
 	t.Log("Provider initialized successfully")
 }
 
+func TestVerifyFileSHA256(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "winws2.exe")
+	data := []byte("trusted engine")
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	hash := sha256.Sum256(data)
+	expected := hex.EncodeToString(hash[:])
+	if err := verifyFileSHA256(path, expected); err != nil {
+		t.Fatalf("trusted file rejected: %v", err)
+	}
+	if err := verifyFileSHA256(path, ""); err == nil {
+		t.Fatal("missing expected hash was accepted")
+	}
+	if err := os.WriteFile(path, []byte("tampered"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyFileSHA256(path, expected); err == nil {
+		t.Fatal("tampered engine was accepted")
+	}
+}
+
 func TestProfileRegistration(t *testing.T) {
-	provider := NewZapret2WindowsProvider("", "", "", false, false)
+	provider := NewZapret2WindowsProvider("", "", "", "", false, false)
 
 	testProfiles := []struct {
 		name string
@@ -71,19 +91,36 @@ func TestProfileRegistration(t *testing.T) {
 	t.Logf("Successfully registered %d profiles", len(testProfiles))
 }
 
+func TestProfileRegistrationIsIdempotentAndUnknownFails(t *testing.T) {
+	provider := NewZapret2WindowsProvider("", "", "", "", false, false)
+	provider.RegisterProfile("Known", []string{"--filter-tcp=443"})
+	provider.RegisterProfile("Known", []string{"--filter-tcp=80"})
+
+	names := provider.GetProfiles()
+	knownCount := 0
+	for _, name := range names {
+		if name == "Known" {
+			knownCount++
+		}
+	}
+	if knownCount != 1 {
+		t.Fatalf("duplicate registration produced %d Known entries", knownCount)
+	}
+	if _, err := provider.getProfileArgsLocked("Unknown"); err == nil {
+		t.Fatal("unknown profile silently fell back to a different strategy")
+	}
+}
+
 func TestGetProfileArgs(t *testing.T) {
-	provider := NewZapret2WindowsProvider(
-		"test/bin",
-		"test/lua",
-		"test/lists",
-		true,
-		false,
-	)
+	provider := NewZapret2WindowsProvider("test/bin", "test/lua", "test/lists", "", true, false)
 
 	testArgs := []string{"--filter-tcp=443", "--lua-desync=multisplit:pos=1"}
 	provider.RegisterProfile("Test Profile", testArgs)
 
-	args := provider.getProfileArgsLocked("Test Profile")
+	args, err := provider.getProfileArgsLocked("Test Profile")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if len(args) == 0 {
 		t.Error("Profile args should not be empty")
@@ -121,7 +158,7 @@ func TestGetProfileArgs(t *testing.T) {
 }
 
 func TestStatusTransitions(t *testing.T) {
-	provider := NewZapret2WindowsProvider("", "", "", false, false)
+	provider := NewZapret2WindowsProvider("", "", "", "", false, false)
 
 	if provider.GetStatus() != StatusStopped {
 		t.Error("Initial status should be Stopped")
@@ -151,7 +188,7 @@ func TestStatusTransitions(t *testing.T) {
 }
 
 func TestLogManagement(t *testing.T) {
-	provider := NewZapret2WindowsProvider("", "", "", false, false)
+	provider := NewZapret2WindowsProvider("", "", "", "", false, false)
 
 	initialLogs := provider.GetLogs()
 	if len(initialLogs) == 0 {
@@ -171,7 +208,7 @@ func TestLogManagement(t *testing.T) {
 }
 
 func TestWaitReady(t *testing.T) {
-	provider := NewZapret2WindowsProvider("", "", "", false, false)
+	provider := NewZapret2WindowsProvider("", "", "", "", false, false)
 
 	go func() {
 		time.Sleep(100 * time.Millisecond)
@@ -187,7 +224,7 @@ func TestWaitReady(t *testing.T) {
 }
 
 func TestWaitReadyTimeout(t *testing.T) {
-	provider := NewZapret2WindowsProvider("", "", "", false, false)
+	provider := NewZapret2WindowsProvider("", "", "", "", false, false)
 
 	ready := provider.WaitReady(100 * time.Millisecond)
 	if ready {
@@ -198,7 +235,7 @@ func TestWaitReadyTimeout(t *testing.T) {
 }
 
 func TestCheckPrivileges(t *testing.T) {
-	provider := NewZapret2WindowsProvider("", "", "", false, false)
+	provider := NewZapret2WindowsProvider("", "", "", "", false, false)
 
 	hasPriv, err := provider.CheckPrivileges()
 	if err != nil {
@@ -209,7 +246,7 @@ func TestCheckPrivileges(t *testing.T) {
 }
 
 func TestStatusCallback(t *testing.T) {
-	provider := NewZapret2WindowsProvider("", "", "", false, false)
+	provider := NewZapret2WindowsProvider("", "", "", "", false, false)
 
 	callbackCalled := false
 	var receivedStatus Status
@@ -236,7 +273,7 @@ func TestStatusCallback(t *testing.T) {
 }
 
 func TestConcurrentAccess(t *testing.T) {
-	provider := NewZapret2WindowsProvider("", "", "", false, false)
+	provider := NewZapret2WindowsProvider("", "", "", "", false, false)
 
 	done := make(chan bool)
 
@@ -272,7 +309,7 @@ func TestConcurrentAccess(t *testing.T) {
 }
 
 func TestStartWithoutPrivileges(t *testing.T) {
-	provider := NewZapret2WindowsProvider("", "", "", false, false)
+	provider := NewZapret2WindowsProvider("", "", "", "", false, false)
 
 	ctx := context.Background()
 	err := provider.Start(ctx, "Test Profile")

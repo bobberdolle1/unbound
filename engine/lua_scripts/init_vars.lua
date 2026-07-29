@@ -69,11 +69,7 @@ tls_youtube = tls_mod(fake_default_tls, 'sni=youtube.com')
 
 -- init_vars.lua
 function invert_bytes(s)
-    local result = ""
-    for i = 1, #s do
-        result = result .. string.char(bit.bxor(string.byte(s, i), 0xFF))
-    end
-    return result
+    return bxor(s, string.rep("\xFF", #s))
 end
 
 fake_inverted_tls = invert_bytes(fake_default_tls)

@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
 )
+
+var settingsMu sync.Mutex
 
 const (
 	ConfigDirName      = "Unbound"
@@ -84,11 +87,16 @@ func GetSettingsPath() (string, error) {
 }
 
 func GetSettings() (*Settings, error) {
+	settingsMu.Lock()
+	defer settingsMu.Unlock()
+	return loadSettings()
+}
+
+func loadSettings() (*Settings, error) {
 	settingsPath, err := GetSettingsPath()
 	if err != nil {
 		return getDefaultSettings(), err
 	}
-
 	data, err := os.ReadFile(settingsPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -96,43 +104,52 @@ func GetSettings() (*Settings, error) {
 		}
 		return getDefaultSettings(), err
 	}
-
 	var settings Settings
 	if err := json.Unmarshal(data, &settings); err != nil {
 		return getDefaultSettings(), err
 	}
-
 	return &settings, nil
 }
 
 func SaveSettings(settings *Settings) error {
+	settingsMu.Lock()
+	err := writeSettings(settings)
+	settingsMu.Unlock()
+	if err != nil {
+		return err
+	}
+	return applyAutoStartSetting(settings.AutoStart)
+}
+
+func SaveLastProfile(profileName string) error {
+	settingsMu.Lock()
+	defer settingsMu.Unlock()
+	settings, err := loadSettings()
+	if err != nil {
+		return err
+	}
+	settings.DefaultProfile = profileName
+	return writeSettings(settings)
+}
+
+func writeSettings(settings *Settings) error {
 	settingsPath, err := GetSettingsPath()
 	if err != nil {
 		return err
 	}
-
 	data, err := json.Marshal(settings)
 	if err != nil {
 		return err
 	}
-
-	if err := os.WriteFile(settingsPath, data, 0644); err != nil {
-		return err
-	}
-
-	if err := applyAutoStartSetting(settings.AutoStart); err != nil {
-		return err
-	}
-
-	return nil
+	return os.WriteFile(settingsPath, data, 0644)
 }
 
 func getDefaultSettings() *Settings {
 	return &Settings{
 		AutoStart:          false,
 		StartMinimized:     false,
-		DefaultProfile:     "Unbound Ultimate (God Mode)",
-		StartupProfileMode: "Last Used",
+		DefaultProfile:     "",
+		StartupProfileMode: "Последний использованный",
 		GameFilter:         true,
 		AutoUpdateEnabled:  true,
 		ShowLogs:           true,

@@ -11,6 +11,12 @@ import { PingChart } from './components/PingChart';
 import { GetEngineNames, GetProfiles, StartEngine, StopEngine, GetLogs, AutoTune, CancelAutoTune, GetSettings, SaveSettings, GetLivePing, ShowNotification, EnableAutoStart, DisableAutoStart, IsAutoStartEnabled, CheckConflicts, KillConflicts, CheckPrivileges, RunDiagnostics, ClearDiscordCache, KillWinws2, QuitApp, GetAppVersion, GetOSPlatform, HideWindowToTray, GetBypassLists, ReadBypassList, SaveBypassList, ExportLogs, SaveCustomScript, LoadCustomScript, VerifyEngineAssets, GenerateDiagnosticReport, ToggleFavoriteProfile, GetFavoriteProfiles, UpdateHostlistsNow, AutoReconnectMonitor, StopAutoReconnect, SavePingHistory, LoadPingHistory } from '../wailsjs/go/main/App';
 import { EventsOn, WindowMinimise } from '../wailsjs/runtime/runtime';
 
+const normalizeStartupProfileMode = (mode?: string) => {
+  if (!mode || mode === 'Last Used' || mode === 'last_used') return 'Последний использованный';
+  if (mode === 'AutoTune' || mode === 'autotune') return 'Автоподбор';
+  return mode;
+};
+
 export default function App() {
   const [engines, setEngines] = useState<string[]>([]);
   const [selectedEngine, setSelectedEngine] = useState<string>('');
@@ -45,7 +51,7 @@ export default function App() {
   }>({
     autoStart: false,
     startMinimized: false,
-    defaultProfile: 'Unbound Ultimate (God Mode)',
+    defaultProfile: '',
     startupProfileMode: 'Последний использованный',
     gameFilter: true,
     autoUpdateEnabled: true,
@@ -318,8 +324,8 @@ export default function App() {
       setSettings({
         autoStart: s.autoStart || false,
         startMinimized: s.startMinimized || false,
-        defaultProfile: s.defaultProfile || 'Unbound Ultimate (God Mode)',
-        startupProfileMode: s.startupProfileMode || 'Last Used',
+        defaultProfile: s.defaultProfile || '',
+        startupProfileMode: normalizeStartupProfileMode(s.startupProfileMode),
         gameFilter: s.gameFilter !== undefined ? s.gameFilter : false,
         autoUpdateEnabled: s.autoUpdateEnabled !== undefined ? s.autoUpdateEnabled : true,
         showLogs: s.showLogs !== undefined ? s.showLogs : true,
@@ -482,8 +488,8 @@ export default function App() {
       setSettings({
         autoStart: autoStartEnabled,
         startMinimized: loadedSettings.startMinimized || false,
-        defaultProfile: loadedSettings.defaultProfile || 'Unbound Ultimate (God Mode)',
-        startupProfileMode: loadedSettings.startupProfileMode || 'Последний использованный',
+        defaultProfile: loadedSettings.defaultProfile || '',
+        startupProfileMode: normalizeStartupProfileMode(loadedSettings.startupProfileMode),
         gameFilter: loadedSettings.gameFilter !== undefined ? loadedSettings.gameFilter : false,
         autoUpdateEnabled: loadedSettings.autoUpdateEnabled !== undefined ? loadedSettings.autoUpdateEnabled : true,
         showLogs: loadedSettings.showLogs !== undefined ? loadedSettings.showLogs : true,

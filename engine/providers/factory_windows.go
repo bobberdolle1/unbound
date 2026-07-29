@@ -2,6 +2,6 @@
 
 package providers
 
-func NewAutoTuneProvider(binDir, luaDir, listDir string) BypassProvider {
-	return NewZapret2WindowsProvider(binDir, luaDir, listDir, true, false)
+func NewAutoTuneProvider(binDir, luaDir, listDir, engineSHA256 string) BypassProvider {
+	return NewZapret2WindowsProvider(binDir, luaDir, listDir, engineSHA256, true, false)
 }

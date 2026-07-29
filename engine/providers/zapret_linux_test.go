@@ -10,7 +10,7 @@ import (
 
 func newTestProvider(t *testing.T) *ZapretLinuxProvider {
 	t.Helper()
-	p, ok := NewZapretLinuxProvider("/nonexistent/nfqws", t.TempDir()).(*ZapretLinuxProvider)
+	p, ok := NewZapretLinuxProvider("/nonexistent/nfqws2", t.TempDir(), strings.Repeat("0", 64)).(*ZapretLinuxProvider)
 	if !ok {
 		t.Fatal("NewZapretLinuxProvider did not return *ZapretLinuxProvider")
 	}
@@ -37,7 +37,7 @@ func TestGetProfilesIsStable(t *testing.T) {
 func TestRegisterProfileAppearsAfterBuiltins(t *testing.T) {
 	p := newTestProvider(t)
 
-	p.RegisterProfile("Custom Profile", []string{"--filter-tcp=443", "--dpi-desync=fake"})
+	p.RegisterProfile("Custom Profile", []string{"--filter-tcp=443", "--lua-desync=fake"})
 	profiles := p.GetProfiles()
 
 	if len(profiles) != len(profileOrder)+1 {
@@ -114,16 +114,71 @@ func TestEveryBuiltinProfileHasFiltersAndArgs(t *testing.T) {
 			continue
 		}
 		if len(profile.Filters) == 0 {
-			t.Errorf("%q queues no traffic: nfqws would start and see nothing", name)
+			t.Errorf("%q queues no traffic: nfqws2 would start and see nothing", name)
 		}
 		if len(profile.Args) == 0 {
-			t.Errorf("%q passes no desync arguments to nfqws", name)
+			t.Errorf("%q passes no Lua desync arguments to nfqws2", name)
 		}
 	}
 
 	if len(profileOrder) != len(builtinProfiles) {
 		t.Errorf("profileOrder lists %d profiles but %d are defined; the extras would be invisible in the UI",
 			len(profileOrder), len(builtinProfiles))
+	}
+}
+
+func TestBuiltinProfilesUseZapret2LuaContract(t *testing.T) {
+	for name, profile := range builtinProfiles {
+		joined := strings.Join(profile.Args, " ")
+		if strings.Contains(joined, "--dpi-desync") {
+			t.Errorf("%q still contains zapret1 --dpi-desync arguments", name)
+		}
+		if !strings.Contains(joined, "--lua-desync=") {
+			t.Errorf("%q has no zapret2 Lua action", name)
+		}
+	}
+}
+
+func TestCommandArgsKeepGlobalInitOutsideProfileBlocks(t *testing.T) {
+	p := newTestProvider(t)
+	profile := builtinProfiles["Ultimate Bypass (Multi-Strategy)"]
+	args := p.commandArgs(profile)
+
+	firstFilter := -1
+	for i, arg := range args {
+		if strings.HasPrefix(arg, "--filter-") {
+			firstFilter = i
+			break
+		}
+	}
+	if firstFilter < 0 {
+		t.Fatal("generated argv has no profile filter")
+	}
+	for i := 1; i < firstFilter; i++ {
+		if !strings.HasPrefix(args[i], "--lua-init=@") {
+			t.Fatalf("global argv[%d] = %q, want Lua init before profile blocks", i, args[i])
+		}
+	}
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "--hostlist-auto=") {
+			t.Fatalf("global autohostlist leaked into one profile block: %q", arg)
+		}
+	}
+
+	blockHasAction := false
+	for _, arg := range args[firstFilter:] {
+		if strings.HasPrefix(arg, "--lua-desync=") {
+			blockHasAction = true
+		}
+		if arg == "--new" {
+			if !blockHasAction {
+				t.Fatal("profile block before --new has no Lua action")
+			}
+			blockHasAction = false
+		}
+	}
+	if !blockHasAction {
+		t.Fatal("final profile block has no Lua action")
 	}
 }
 

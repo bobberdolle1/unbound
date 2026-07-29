@@ -3,9 +3,9 @@ package engine
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"fmt"
 	"net"
+	neturl "net/url"
 	"strings"
 	"time"
 )
@@ -17,22 +17,11 @@ type ProbeResult struct {
 	CertValid     bool
 	CertIssuer    string
 	Error         string
+	TLSVersion    uint16
 	ConnectionRST bool
 }
 
-var trustedIssuers = map[string][]string{
-	"discord.com": {
-		"DigiCert", "Let's Encrypt", "Google Trust Services",
-	},
-	"googlevideo.com": {
-		"Google Trust Services", "GTS",
-	},
-	"youtube.com": {
-		"Google Trust Services", "GTS",
-	},
-}
-
-func ProbeConnection(ctx context.Context, targetURL string, engine DPIEngine) (ProbeResult, error) {
+func ProbeConnection(ctx context.Context, targetURL string) (ProbeResult, error) {
 	result := ProbeResult{
 		URL:     targetURL,
 		Success: false,
@@ -46,31 +35,8 @@ func ProbeConnection(ctx context.Context, targetURL string, engine DPIEngine) (P
 	startTime := time.Now()
 
 	tlsConfig := &tls.Config{
-		ServerName:         host,
-		InsecureSkipVerify: false,
-		VerifyPeerCertificate: func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
-			if len(verifiedChains) == 0 || len(verifiedChains[0]) == 0 {
-				result.CertValid = false
-				return fmt.Errorf("no certificate chain provided")
-			}
-
-			cert := verifiedChains[0][0]
-			result.CertIssuer = cert.Issuer.Organization[0]
-
-			if expectedIssuers, ok := trustedIssuers[host]; ok {
-				for _, expected := range expectedIssuers {
-					if strings.Contains(result.CertIssuer, expected) {
-						result.CertValid = true
-						return nil
-					}
-				}
-				result.CertValid = false
-				return fmt.Errorf("untrusted issuer: %s (expected one of %v)", result.CertIssuer, expectedIssuers)
-			}
-
-			result.CertValid = true
-			return nil
-		},
+		ServerName: host,
+		MinVersion: tls.VersionTLS12,
 	}
 
 	tlsDialer := &tls.Dialer{
@@ -80,7 +46,7 @@ func ProbeConnection(ctx context.Context, targetURL string, engine DPIEngine) (P
 		Config: tlsConfig,
 	}
 
-	conn, err := tlsDialer.DialContext(ctx, "tcp", host+":443")
+	conn, err := tlsDialer.DialContext(ctx, "tcp4", host+":443")
 	if err != nil {
 		result.Error = err.Error()
 		if strings.Contains(err.Error(), "connection reset") || strings.Contains(err.Error(), "ECONNRESET") {
@@ -101,12 +67,24 @@ func ProbeConnection(ctx context.Context, targetURL string, engine DPIEngine) (P
 		result.Error = fmt.Sprintf("TLS handshake failed: %v", err)
 		return result, err
 	}
-
+	state := tlsConn.ConnectionState()
+	if len(state.VerifiedChains) == 0 || len(state.VerifiedChains[0]) == 0 {
+		result.Error = "TLS handshake returned no verified certificate chain"
+		return result, fmt.Errorf("%s", result.Error)
+	}
+	cert := state.VerifiedChains[0][0]
+	if len(cert.Issuer.Organization) > 0 {
+		result.CertIssuer = cert.Issuer.Organization[0]
+	} else {
+		result.CertIssuer = cert.Issuer.CommonName
+	}
+	result.CertValid = true
+	result.TLSVersion = state.Version
 	result.Success = true
 	return result, nil
 }
 
-func ProbeMultipleTargets(ctx context.Context, targets []string, engine DPIEngine) []ProbeResult {
+func ProbeMultipleTargets(ctx context.Context, targets []string) []ProbeResult {
 	results := make([]ProbeResult, 0, len(targets))
 
 	for _, target := range targets {
@@ -114,7 +92,7 @@ func ProbeMultipleTargets(ctx context.Context, targets []string, engine DPIEngin
 		case <-ctx.Done():
 			return results
 		default:
-			result, _ := ProbeConnection(ctx, target, engine)
+			result, _ := ProbeConnection(ctx, target)
 			results = append(results, result)
 		}
 	}
@@ -158,8 +136,8 @@ func SimplePing(ctx context.Context, targetURL string) (time.Duration, error) {
 	}
 
 	tlsConfig := &tls.Config{
-		ServerName:         host,
-		InsecureSkipVerify: true,
+		ServerName: host,
+		MinVersion: tls.VersionTLS12,
 	}
 
 	conn, err := tls.DialWithDialer(dialer, "tcp", host+":443", tlsConfig)
@@ -172,14 +150,10 @@ func SimplePing(ctx context.Context, targetURL string) (time.Duration, error) {
 	return latency, nil
 }
 
-func extractHost(url string) string {
-	url = strings.TrimPrefix(url, "https://")
-	url = strings.TrimPrefix(url, "http://")
-	if idx := strings.Index(url, "/"); idx != -1 {
-		url = url[:idx]
+func extractHost(rawURL string) string {
+	parsed, err := neturl.Parse(rawURL)
+	if err != nil || parsed.Hostname() == "" {
+		return ""
 	}
-	if idx := strings.Index(url, ":"); idx != -1 {
-		url = url[:idx]
-	}
-	return url
+	return strings.ToLower(parsed.Hostname())
 }

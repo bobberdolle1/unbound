@@ -21,10 +21,7 @@ func checkAdminPrivileges() (bool, error) {
 	return os.Geteuid() == 0, nil
 }
 
-// registerOSProviders wires the Linux nfqws provider into the manager. It used
-// to be an empty function, so the Linux GUI started with no engines registered
-// at all: the engine dropdown was empty and StartEngine always failed with
-// "engine not found".
+// registerOSProviders wires the bundled Linux nfqws2 provider into the manager.
 func registerOSProviders(a *App, assets *engine.AssetPaths) {
 	logger := engine.GetLogger()
 
@@ -33,18 +30,13 @@ func registerOSProviders(a *App, assets *engine.AssetPaths) {
 		logger.Errorf("App", "%v", err)
 		engine.GetNotificationManager().Error(
 			"Движок не найден",
-			"Не найден бинарник nfqws. Установите пакет zapret или положите nfqws рядом с приложением.",
+			"Встроенный nfqws2 не найден или не прошёл проверку целостности.",
 		)
 		return
 	}
-	logger.Infof("App", "Using nfqws binary at %s", binPath)
+	logger.Infof("App", "Using nfqws2 binary at %s", binPath)
 
-	listsDir, err := engine.GetListsDir()
-	if err != nil {
-		listsDir = assets.ListDir
-	}
-
-	provider := providers.NewZapretLinuxProvider(binPath, listsDir)
+	provider := providers.NewZapretLinuxProvider(binPath, assets.LuaDir, assets.EngineSHA256)
 
 	if cb, ok := provider.(providers.BypassProviderWithCallbacks); ok {
 		cb.SetStatusCallback(func(status providers.Status) {

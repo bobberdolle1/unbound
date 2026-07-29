@@ -43,7 +43,7 @@ func registerOSProviders(a *App, assets *engine.AssetPaths) {
 		listsDir = assets.ListDir
 	}
 
-	zapretProvider := providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir, listsDir, a.debugMode, gameFilter)
+	zapretProvider := providers.NewZapret2WindowsProvider(assets.BinDir, assets.LuaDir, listsDir, assets.EngineSHA256, a.debugMode, gameFilter)
 
 	// Register status callback for Wails events
 	zapretProvider.SetStatusCallback(func(status providers.Status) {
@@ -55,18 +55,7 @@ func registerOSProviders(a *App, assets *engine.AssetPaths) {
 		runtime.EventsEmit(a.ctx, "engine_log", log)
 	})
 
-	// Register built-in profiles (includes all reference profiles)
-	registered := make(map[string]bool)
-	for _, p := range engine.GetProfiles(assets.LuaDir) {
-		zapretProvider.RegisterProfile(p.Name, p.Args)
-		registered[p.Name] = true
-	}
-	for _, p := range engine.GetAdvancedProfiles(assets.LuaDir) {
-		if !registered[p.Name] {
-			zapretProvider.RegisterProfile(p.Name, p.Args)
-			registered[p.Name] = true
-		}
-	}
+	engine.RegisterWindowsProfileCatalog(zapretProvider, assets.LuaDir)
 
 	a.manager.Register(zapretProvider)
 }

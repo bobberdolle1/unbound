@@ -1,200 +1,148 @@
-//go:build windows
-
 package engine
 
 import (
 	"context"
-	"crypto/tls"
-	"net/http"
-	"net/http/httptest"
+	"errors"
+	"sync"
 	"testing"
 	"time"
+
 	"unbound/engine/providers"
 )
 
-func TestAutoTuneV2WithMockDPI(t *testing.T) {
-	mockDPIServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(100 * time.Millisecond)
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
-	}))
-	defer mockDPIServer.Close()
+type fakeAutoTuneProvider struct {
+	mu      sync.Mutex
+	active  string
+	starts  []string
+	stopCnt int
+}
 
-	mockBlockedServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(50 * time.Millisecond)
-		panic("simulated DPI drop")
-	}))
-	defer mockBlockedServer.Close()
+func (p *fakeAutoTuneProvider) Name() string                   { return "fake" }
+func (p *fakeAutoTuneProvider) CheckPrivileges() (bool, error) { return true, nil }
+func (p *fakeAutoTuneProvider) GetProfiles() []string          { return []string{"First", "Best"} }
+func (p *fakeAutoTuneProvider) Start(_ context.Context, profile string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.active = profile
+	p.starts = append(p.starts, profile)
+	return nil
+}
+func (p *fakeAutoTuneProvider) Stop() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.active = ""
+	p.stopCnt++
+	return nil
+}
+func (p *fakeAutoTuneProvider) GetStatus() providers.Status {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.active == "" {
+		return providers.StatusStopped
+	}
+	return providers.StatusRunning
+}
+func (p *fakeAutoTuneProvider) GetLogs() []string { return nil }
+func (p *fakeAutoTuneProvider) CurrentProfile() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.active
+}
 
-	testTargets = []Target{{Name: "mock1", URL: mockDPIServer.URL, Priority: 10}, {Name: "mock2", URL: mockBlockedServer.URL, Priority: 10}}
+func TestAutoTuneV3MeasuresBaselineAndRanksEveryProfile(t *testing.T) {
+	provider := &fakeAutoTuneProvider{}
+	targets := []Target{
+		{Name: "blocked", URL: "https://blocked.test", Priority: 30},
+		{Name: "open", URL: "https://open.test", Priority: 10},
+	}
+	probe := func(_ context.Context, targetURL string) (ProbeResult, error) {
+		active := provider.CurrentProfile()
+		if targetURL == "https://blocked.test" && active == "" {
+			return ProbeResult{URL: targetURL, Error: "blocked"}, errors.New("blocked")
+		}
+		latency := 80 * time.Millisecond
+		if active == "Best" {
+			latency = 20 * time.Millisecond
+		}
+		return ProbeResult{URL: targetURL, Success: true, CertValid: true, TLSVersion: 0x0304, Latency: latency}, nil
+	}
+	options := AutoTuneOptions{Targets: targets, Probe: probe, ProbeTimeout: time.Second, MinimumOK: 2}
+	profiles := []Profile{{Name: "First"}, {Name: "Best"}}
 
-	assets, err := ExtractAssets()
+	result, err := RunAutoTuneV3(context.Background(), provider, profiles, nil, options)
 	if err != nil {
-		t.Skipf("Skipping test: assets not available: %v", err)
+		t.Fatal(err)
 	}
-
-	provider := providers.NewZapret2WindowsProvider(
-		assets.BinDir,
-		assets.LuaDir,
-		assets.ListDir,
-		false,
-		false,
-	)
-
-	profiles := []Profile{
-		{Name: "Test Profile 1", Args: []string{"--filter-tcp=443"}},
-		{Name: "Test Profile 2", Args: []string{"--filter-tcp=80,443"}},
+	if result.ProfileName != "Best" {
+		t.Fatalf("winner = %q, want Best", result.ProfileName)
 	}
-
-	for _, prof := range profiles {
-		provider.RegisterProfile(prof.Name, prof.Args)
+	if result.RecoveredTargets != 1 || result.BaselineAvailable != 1 {
+		t.Fatalf("unexpected baseline delta: %+v", result)
 	}
+	provider.mu.Lock()
+	defer provider.mu.Unlock()
+	if len(provider.starts) != len(profiles) {
+		t.Fatalf("tested %d profiles, want %d", len(provider.starts), len(profiles))
+	}
+	if provider.active != "" {
+		t.Fatalf("benchmark provider left active on %q", provider.active)
+	}
+}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+func TestAutoTuneV3RejectsConnectivityRegression(t *testing.T) {
+	provider := &fakeAutoTuneProvider{}
+	targets := []Target{
+		{Name: "blocked", URL: "https://blocked.test", Priority: 30},
+		{Name: "open", URL: "https://open.test", Priority: 30},
+	}
+	probe := func(_ context.Context, targetURL string) (ProbeResult, error) {
+		active := provider.CurrentProfile()
+		ok := (targetURL == "https://open.test" && active == "") || (targetURL == "https://blocked.test" && active != "")
+		if !ok {
+			return ProbeResult{URL: targetURL, Error: "unreachable"}, errors.New("unreachable")
+		}
+		return ProbeResult{URL: targetURL, Success: true, CertValid: true, Latency: 20 * time.Millisecond}, nil
+	}
+	options := AutoTuneOptions{Targets: targets, Probe: probe, ProbeTimeout: time.Second, MinimumOK: 1}
 
-	done := make(chan bool)
-	var result *AutoTuneResult
-	var testErr error
+	result, err := RunAutoTuneV3(context.Background(), provider, []Profile{{Name: "Regressive"}}, nil, options)
+	if err == nil || result != nil {
+		t.Fatalf("regressive profile accepted: result=%+v err=%v", result, err)
+	}
+}
 
+func TestAutoTuneV3CancellationStopsActiveProvider(t *testing.T) {
+	provider := &fakeAutoTuneProvider{}
+	ctx, cancel := context.WithCancel(context.Background())
+	options := AutoTuneOptions{
+		Targets: []Target{{Name: "target", URL: "https://target.test", Priority: 1}},
+		Probe: func(context.Context, string) (ProbeResult, error) {
+			return ProbeResult{Success: true, CertValid: true}, nil
+		},
+		ProbeTimeout:       time.Second,
+		StabilizationDelay: time.Minute,
+		MinimumOK:          1,
+	}
+	done := make(chan error, 1)
 	go func() {
-		result, testErr = RunAutoTuneV2WithContext(context.Background(), provider, profiles)
-		done <- true
+		_, err := RunAutoTuneV3(ctx, provider, []Profile{{Name: "Profile"}}, nil, options)
+		done <- err
 	}()
 
+	deadline := time.Now().Add(time.Second)
+	for provider.GetStatus() != providers.StatusRunning && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	cancel()
 	select {
-	case <-done:
-		if testErr != nil && ctx.Err() == nil {
-			t.Logf("Auto-tune completed with error (expected): %v", testErr)
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("cancellation error = %v", err)
 		}
-		if result != nil {
-			t.Logf("Result: %+v", result)
-		}
-	case <-ctx.Done():
-		t.Fatal("Auto-tune test timed out - possible deadlock")
+	case <-time.After(time.Second):
+		t.Fatal("AutoTune did not stop after cancellation")
 	}
-}
-
-func TestAutoTuneV2Timeout(t *testing.T) {
-	slowServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(10 * time.Second)
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer slowServer.Close()
-
-	testTargets = []Target{{Name: "slow", URL: slowServer.URL, Priority: 10}}
-
-	assets, err := ExtractAssets()
-	if err != nil {
-		t.Skipf("Skipping test: assets not available: %v", err)
-	}
-
-	provider := providers.NewZapret2WindowsProvider(
-		assets.BinDir,
-		assets.LuaDir,
-		assets.ListDir,
-		false,
-		false,
-	)
-
-	profiles := []Profile{
-		{Name: "Timeout Test", Args: []string{"--filter-tcp=443"}},
-	}
-
-	for _, prof := range profiles {
-		provider.RegisterProfile(prof.Name, prof.Args)
-	}
-
-	start := time.Now()
-	result, err := RunAutoTuneV2WithContext(context.Background(), provider, profiles)
-	elapsed := time.Since(start)
-
-	if elapsed > 20*time.Second {
-		t.Errorf("Auto-tune took too long: %v", elapsed)
-	}
-
-	if err == nil && result == nil {
-		t.Error("Expected error or result, got neither")
-	}
-
-	t.Logf("Test completed in %v", elapsed)
-}
-
-func TestTestBypassWithMockServers(t *testing.T) {
-	goodServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("Success"))
-	}))
-	defer goodServer.Close()
-
-	badServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(10 * time.Second)
-	}))
-	defer badServer.Close()
-
-	originalTargets := testTargets
-	testTargets = []Target{
-		{Name: "good", URL: goodServer.URL, Priority: 10},
-		{Name: "bad", URL: badServer.URL, Priority: 10},
-	}
-	defer func() { testTargets = originalTargets }()
-
-	result := testBypassParallel("Mock Profile")
-
-	if result == nil {
-		t.Fatal("Expected result, got nil")
-	}
-
-	if result.ProfileName != "Mock Profile" {
-		t.Errorf("Expected profile name 'Mock Profile', got '%s'", result.ProfileName)
-	}
-
-	successCount := 0
-	for _, status := range result.Results {
-		if status.OK {
-			successCount++
-		}
-	}
-
-	if successCount == 0 {
-		t.Error("Expected at least one successful test")
-	}
-
-	t.Logf("Success rate: %d/%d", successCount, len(result.Results))
-}
-
-func TestHTTPClientConfiguration(t *testing.T) {
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("User-Agent") == "" {
-			t.Error("User-Agent header missing")
-		}
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-
-	client := &http.Client{
-		Timeout: 3 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
-			},
-		},
-	}
-
-	req, err := http.NewRequest("GET", server.URL, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("Expected status 200, got %d", resp.StatusCode)
+	if provider.GetStatus() != providers.StatusStopped {
+		t.Fatal("provider remained active after cancellation")
 	}
 }

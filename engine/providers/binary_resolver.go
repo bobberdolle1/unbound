@@ -20,7 +20,7 @@ import (
 // about every platform at once - such as the startup validator - can name them.
 const (
 	WindowsEngineBinary = "winws2.exe"
-	LinuxEngineBinary   = "nfqws"
+	LinuxEngineBinary   = "nfqws2"
 	MacOSEngineBinary   = "tpws"
 )
 

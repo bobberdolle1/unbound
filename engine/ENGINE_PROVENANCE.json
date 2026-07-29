@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "bundles": [
+    {
+      "name": "zapret2",
+      "tag": "v1.0.3",
+      "commit": "b78b52c4cd7f843da3ff0848a3430afbd401bdf2",
+      "releaseUrl": "https://github.com/bol-van/zapret2/releases/tag/v1.0.3",
+      "sourceAsset": "zapret2-v1.0.3.zip",
+      "sourceAssetSha256": "734fbea360aa863cd5c724f8b941116aaa250434d699b1ce99769e5f632a7a77",
+      "license": "MIT",
+      "licenseFile": "third_party/ZAPRET2_LICENSE.txt",
+      "paths": [
+        "core_bin/windows/WinDivert.dll",
+        "core_bin/windows/WinDivert64.sys",
+        "core_bin/windows/cygwin1.dll",
+        "core_bin/windows/ip2net.exe",
+        "core_bin/windows/killall.exe",
+        "core_bin/windows/mdig.exe",
+        "core_bin/windows/winws2.exe",
+        "core_bin/linux/amd64/ip2net",
+        "core_bin/linux/amd64/mdig",
+        "core_bin/linux/amd64/nfqws2",
+        "core_bin/linux/arm64/ip2net",
+        "core_bin/linux/arm64/mdig",
+        "core_bin/linux/arm64/nfqws2",
+        "lua_scripts/zapret-antidpi.lua",
+        "lua_scripts/zapret-auto.lua",
+        "lua_scripts/zapret-lib.lua",
+        "lua_scripts/zapret-obfs.lua",
+        "lua_scripts/zapret-pcap.lua",
+        "lua_scripts/zapret-tests.lua"
+      ]
+    },
+    {
+      "name": "zapret",
+      "tag": "v72.13",
+      "commit": "87e058624c72863db53bdaf7fb6f16576dddb6ab",
+      "releaseUrl": "https://github.com/bol-van/zapret/releases/tag/v72.13",
+      "sourceAsset": "zapret-v72.13.zip",
+      "sourceAssetSha256": "c493e33a0dc4eba23a8686efdaba55f59755ad6ade3564aebd9d13f4c65e2e0c",
+      "license": "MIT",
+      "licenseFile": "third_party/ZAPRET_LICENSE.txt",
+      "paths": [
+        "core_bin/darwin/tpws"
+      ]
+    }
+  ]
+}

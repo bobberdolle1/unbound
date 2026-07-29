@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,8 +23,16 @@ type App struct {
 	startMinimized      bool
 	debugMode           bool
 	autoTuneCancel      context.CancelFunc
+	autoTuneWG          sync.WaitGroup
 	autoReconnectCancel context.CancelFunc
+	autoReconnectWG     sync.WaitGroup
+	startupCancel       context.CancelFunc
+	startupWG           sync.WaitGroup
+	autoReconnectID     uint64
+	profileChangeMu     sync.Mutex
+	profileChange       bool
 	mu                  sync.Mutex
+	closing             bool
 }
 
 func NewApp() *App {
@@ -102,45 +111,71 @@ func (a *App) startup(ctx context.Context) {
 	engines := a.manager.GetEngineNames()
 	logger.Infof("App", "Registered engines: %v", engines)
 
-	// Auto-recovery: try last profile, fallback to AutoTune if it fails
-	if settings != nil && settings.AutoStart && settings.StartupProfileMode != "Автоподбор" {
+	// Auto-recovery: use the selected native profile, the last successful
+	// profile, or run AutoTune explicitly.
+	if settings != nil && settings.AutoStart {
+		startupCtx, cancelStartup := context.WithCancel(ctx)
+		a.mu.Lock()
+		a.startupCancel = cancelStartup
+		a.startupWG.Add(1)
+		a.mu.Unlock()
 		go func() {
-			time.Sleep(3 * time.Second) // wait for UI to initialize
-			engineName := ""
-			if len(engines) > 0 {
-				engineName = engines[0]
+			defer a.startupWG.Done()
+			defer cancelStartup()
+			timer := time.NewTimer(3 * time.Second)
+			defer timer.Stop()
+			select {
+			case <-startupCtx.Done():
+				return
+			case <-timer.C:
 			}
-			if engineName == "" {
+			if strings.EqualFold(strings.TrimSpace(settings.StartupProfileMode), "autotune") ||
+				strings.TrimSpace(settings.StartupProfileMode) == "Автоподбор" {
+				a.AutoTune()
 				return
 			}
+			if len(engines) == 0 {
+				return
+			}
+			engineName := engines[0]
 			profiles := a.manager.GetProfiles(engineName)
+			if len(profiles) == 0 {
+				return
+			}
 			profileName := settings.DefaultProfile
-			if profileName == "" || !contains(profiles, profileName) {
-				if len(profiles) > 0 {
-					profileName = profiles[0]
-				} else {
-					return
-				}
+			if contains(profiles, settings.StartupProfileMode) {
+				profileName = settings.StartupProfileMode
+			}
+			if !contains(profiles, profileName) {
+				profileName = profiles[0]
 			}
 			logger.Info("Startup", fmt.Sprintf("Auto-recovery: trying profile %s", profileName))
-			if err := a.manager.Start(ctx, engineName, profileName); err != nil {
+			if err := a.manager.Start(startupCtx, engineName, profileName); err != nil {
 				logger.Warnf("Startup", "Profile %s failed: %v, running AutoTune", profileName, err)
 				autoProfile := a.AutoTune()
-				if autoProfile != "Failed" && autoProfile != "Already running" {
+				if autoProfile != "Failed" && autoProfile != "Already running" && autoProfile != "Shutting down" {
 					logger.Info("Startup", fmt.Sprintf("Auto-recovery: switched to %s", autoProfile))
 				}
-			} else {
-				// Verify connectivity after 5s
-				time.Sleep(5 * time.Second)
-				ping := a.GetLivePing()
-				status, _ := ping["status"].(string)
-				if status == "blocked" || status == "disconnected" {
-					logger.Warn("Startup", "Profile started but connectivity blocked, running AutoTune")
-					_ = a.manager.Stop()
-					autoProfile := a.AutoTune()
-					if autoProfile != "Failed" && autoProfile != "Already running" {
-						logger.Info("Startup", fmt.Sprintf("Auto-recovery: switched to %s", autoProfile))
-					}
+				return
+			}
+			_ = engine.SaveLastProfile(profileName)
+			if settings.AutoReconnect {
+				a.AutoReconnectMonitor()
+			}
+			timer.Reset(5 * time.Second)
+			select {
+			case <-startupCtx.Done():
+				return
+			case <-timer.C:
+			}
+			ping := a.GetLivePing()
+			status, _ := ping["status"].(string)
+			if status == "blocked" || status == "disconnected" {
+				logger.Warn("Startup", "Profile started but connectivity blocked, running AutoTune")
+				_ = a.manager.Stop()
+				autoProfile := a.AutoTune()
+				if autoProfile != "Failed" && autoProfile != "Already running" && autoProfile != "Shutting down" {
+					logger.Info("Startup", fmt.Sprintf("Auto-recovery: switched to %s", autoProfile))
 				}
 			}
 		}()
@@ -157,7 +192,30 @@ func (a *App) startup(ctx context.Context) {
 }
 
 func (a *App) shutdown(ctx context.Context) {
-	a.manager.Stop()
+	a.mu.Lock()
+	a.closing = true
+	autoTuneCancel := a.autoTuneCancel
+	autoReconnectCancel := a.autoReconnectCancel
+	startupCancel := a.startupCancel
+	a.mu.Unlock()
+	if autoTuneCancel != nil {
+		autoTuneCancel()
+	}
+	if startupCancel != nil {
+		startupCancel()
+	}
+	if autoReconnectCancel != nil {
+		autoReconnectCancel()
+	}
+	a.profileChangeMu.Lock()
+	a.profileChangeMu.Unlock()
+	a.startupWG.Wait()
+	a.autoTuneWG.Wait()
+	a.autoReconnectWG.Wait()
+	_ = a.manager.Stop()
+	if err := engine.CleanupExtractedAssets(); err != nil {
+		engine.GetLogger().Warnf("App", "Runtime cleanup failed: %v", err)
+	}
 }
 
 func (a *App) GetEngineNames() []string {
@@ -168,10 +226,45 @@ func (a *App) GetProfiles(engineName string) []string {
 	return a.manager.GetProfiles(engineName)
 }
 
-func (a *App) StartEngine(engineName string, profileName string) error {
+func (a *App) beginManualProfileChange() bool {
+	a.profileChangeMu.Lock()
+	a.mu.Lock()
+	if a.closing {
+		a.mu.Unlock()
+		a.profileChangeMu.Unlock()
+		return false
+	}
+	a.profileChange = true
+	autoTuneCancel := a.autoTuneCancel
+	autoReconnectCancel := a.autoReconnectCancel
+	a.mu.Unlock()
+	if autoTuneCancel != nil {
+		autoTuneCancel()
+	}
+	if autoReconnectCancel != nil {
+		autoReconnectCancel()
+	}
+	a.autoTuneWG.Wait()
+	a.autoReconnectWG.Wait()
+	return true
+}
+
+func (a *App) endManualProfileChange() {
+	a.mu.Lock()
+	a.profileChange = false
+	a.mu.Unlock()
+	a.profileChangeMu.Unlock()
+}
+
+func (a *App) StartEngine(engineName string, profileName string) (err error) {
+	manualChangeStarted := false
 	defer func() {
 		if r := recover(); r != nil {
-			wailsruntime.LogErrorf(a.ctx, "PANIC in StartEngine: %v", r)
+			if manualChangeStarted {
+				a.endManualProfileChange()
+			}
+			err = fmt.Errorf("StartEngine panic: %v", r)
+			wailsruntime.LogErrorf(a.ctx, "%v", err)
 		}
 	}()
 
@@ -226,6 +319,16 @@ func (a *App) StartEngine(engineName string, profileName string) error {
 
 	logger.Info("App", "Administrator privileges confirmed")
 
+	if !a.beginManualProfileChange() {
+		return fmt.Errorf("application is shutting down")
+	}
+	defer func() {
+		if manualChangeStarted {
+			a.endManualProfileChange()
+			manualChangeStarted = false
+		}
+	}()
+	manualChangeStarted = true
 	logger.Info("App", "Stopping current engine if running...")
 	wailsruntime.LogInfo(a.ctx, "Stopping current engine if running...")
 	a.manager.Stop()
@@ -243,6 +346,10 @@ func (a *App) StartEngine(engineName string, profileName string) error {
 
 	if err == nil {
 		logger.Infof("App", "Engine started successfully: %s", profileName)
+		if saveErr := engine.SaveLastProfile(profileName); saveErr != nil {
+			logger.Warnf("App", "Could not persist last profile: %v", saveErr)
+		}
+		wailsruntime.EventsEmit(a.ctx, "profile_changed", profileName)
 		notifMgr.Success("Успешный запуск", fmt.Sprintf("Профиль: %s", profileName))
 		wailsruntime.EventsEmit(a.ctx, "status_changed", "Running")
 		wailsruntime.LogInfof(a.ctx, "Started: %s", profileName)
@@ -252,14 +359,32 @@ func (a *App) StartEngine(engineName string, profileName string) error {
 		wailsruntime.LogErrorf(a.ctx, "Start failed: %v", err)
 		wailsruntime.EventsEmit(a.ctx, "engine_error", err.Error())
 	}
+	a.endManualProfileChange()
+	manualChangeStarted = false
+	if err == nil {
+		if settings, settingsErr := engine.GetSettings(); settingsErr == nil && settings.AutoReconnect {
+			a.AutoReconnectMonitor()
+		}
+	}
 	return err
 }
 func (a *App) AddDefenderExclusion() error {
 	return engine.AddDefenderExclusion()
 }
 
-func (a *App) StopEngine() error {
-	err := a.manager.Stop()
+func (a *App) StopEngine() (err error) {
+	if !a.beginManualProfileChange() {
+		return fmt.Errorf("application is shutting down")
+	}
+	changeEnded := false
+	defer func() {
+		if !changeEnded {
+			a.endManualProfileChange()
+		}
+	}()
+	err = a.manager.Stop()
+	a.endManualProfileChange()
+	changeEnded = true
 	wailsruntime.EventsEmit(a.ctx, "status_changed", "Stopped")
 	return err
 }
@@ -361,6 +486,16 @@ func (a *App) AutoTune() string {
 	notifMgr := engine.GetNotificationManager()
 
 	a.mu.Lock()
+	if a.closing {
+		a.mu.Unlock()
+		logger.Warn("App", "AutoTune rejected during shutdown")
+		return "Shutting down"
+	}
+	if a.profileChange {
+		a.mu.Unlock()
+		logger.Warn("App", "AutoTune rejected during manual profile change")
+		return "Already running"
+	}
 	if a.autoTuneCancel != nil {
 		a.mu.Unlock()
 		logger.Warn("App", "AutoTune already running")
@@ -369,16 +504,52 @@ func (a *App) AutoTune() string {
 
 	tuneCtx, cancel := context.WithCancel(a.ctx)
 	a.autoTuneCancel = cancel
+	a.autoTuneWG.Add(1)
 	a.mu.Unlock()
+	defer a.autoTuneWG.Done()
 
 	logger.Info("App", "AutoTune process started")
 	notifMgr.Info("Автоподбор", "Начинаем оптимизацию профиля...")
 	wailsruntime.EventsEmit(a.ctx, "autotune_start", true)
 
+	resumeAutoReconnect := false
 	defer func() {
 		a.mu.Lock()
 		a.autoTuneCancel = nil
+		closing := a.closing
 		a.mu.Unlock()
+		if !resumeAutoReconnect || closing {
+			return
+		}
+		settings, err := engine.GetSettings()
+		if err == nil && settings.AutoReconnect {
+			a.AutoReconnectMonitor()
+		}
+	}()
+
+	statusInfo := a.manager.GetStatusInfo()
+	previousEngine, _ := statusInfo["engine"].(string)
+	previousProfile := a.manager.CurrentProfileName(previousEngine)
+	previousWasRunning := statusInfo["status"] == string(providers.StatusRunning) && previousEngine != "" && previousProfile != ""
+	managerStopped := false
+	winnerActivated := false
+	defer func() {
+		if !managerStopped || winnerActivated || !previousWasRunning {
+			return
+		}
+		a.mu.Lock()
+		closing := a.closing
+		a.mu.Unlock()
+		if closing {
+			return
+		}
+		if err := a.manager.Start(a.ctx, previousEngine, previousProfile); err != nil {
+			logger.Errorf("App", "Could not restore previous profile %s: %v", previousProfile, err)
+			wailsruntime.EventsEmit(a.ctx, "autotune_log", fmt.Sprintf("⚠ Не удалось восстановить прежний профиль %s: %v", previousProfile, err))
+		} else {
+			logger.Infof("App", "Restored previous profile after AutoTune failure: %s", previousProfile)
+			wailsruntime.EventsEmit(a.ctx, "autotune_log", fmt.Sprintf("↩ Восстановлен прежний профиль: %s", previousProfile))
+		}
 	}()
 
 	// Helper to emit failure and stop scanning in one place
@@ -398,17 +569,32 @@ func (a *App) AutoTune() string {
 		return failAutoTune("Не удалось извлечь файлы движка", fmt.Sprintf("❌ Ошибка: %v", err))
 	}
 
-	provider := providers.NewAutoTuneProvider(assets.BinDir, assets.LuaDir, assets.ListDir)
+	provider := providers.NewAutoTuneProvider(assets.BinDir, assets.LuaDir, assets.ListDir, assets.EngineSHA256)
 	if provider == nil {
 		logger.Error("App", "AutoTune has no usable engine provider on this platform")
+
 		notifMgr.Error("Ошибка автоподбора", "Движок обхода не найден на этой системе")
 		return failAutoTune("Движок обхода не найден. Установите nfqws/tpws/winws2.", "❌ Движок обхода не найден на этой системе")
 	}
 
-	// LOAD ALL PROFILES
-	allProfiles := append(engine.GetProfiles(assets.LuaDir), engine.GetAdvancedProfiles(assets.LuaDir)...)
-	logger.Infof("App", "Loaded %d profiles for testing", len(allProfiles))
+	a.mu.Lock()
+	reconnectCancel := a.autoReconnectCancel
+	resumeAutoReconnect = reconnectCancel != nil
+	a.mu.Unlock()
+	if reconnectCancel != nil {
+		reconnectCancel()
+		a.autoReconnectWG.Wait()
+	}
+
+	allProfiles := engine.PrepareAutoTuneProfiles(provider, assets.LuaDir)
+	logger.Infof("App", "Loaded %d native profiles for testing", len(allProfiles))
 	wailsruntime.EventsEmit(a.ctx, "autotune_log", fmt.Sprintf("Загружено %d профилей для тестирования", len(allProfiles)))
+
+	if err := a.manager.Stop(); err != nil {
+		logger.Errorf("App", "Could not stop active engine before AutoTune: %v", err)
+		return failAutoTune(fmt.Sprintf("Не удалось остановить текущий профиль: %v", err), fmt.Sprintf("❌ AutoTune не запущен: %v", err))
+	}
+	managerStopped = true
 
 	progressCb := func(step, total int, profile string, okCount, totalTargets int, msg string) {
 		pct := int((float64(step) / float64(total)) * 100)
@@ -421,7 +607,6 @@ func (a *App) AutoTune() string {
 			"totalTargets": totalTargets,
 			"msg":          msg,
 		})
-		wailsruntime.EventsEmit(a.ctx, "autotune_log", fmt.Sprintf("[%d/%d] %s", step, total, msg))
 	}
 
 	result, err := engine.RunAutoTuneV2WithProgress(tuneCtx, provider, allProfiles, progressCb)
@@ -431,8 +616,21 @@ func (a *App) AutoTune() string {
 		return failAutoTune(fmt.Sprintf("Автоподбор не удался: %v", err), fmt.Sprintf("❌ Ошибка: %v", err))
 	}
 
-	logger.Infof("App", "AutoTune completed successfully: %s", result.ProfileName)
-	wailsruntime.EventsEmit(a.ctx, "autotune_log", fmt.Sprintf("✅ Найден лучший профиль: %s (счёт: %d)", result.ProfileName, result.Score))
+	engineNames := a.manager.GetEngineNames()
+	if len(engineNames) == 0 {
+		return failAutoTune("Движок обхода не зарегистрирован", "❌ Невозможно запустить выбранный профиль")
+	}
+	if err := a.manager.Start(a.ctx, engineNames[0], result.ProfileName); err != nil {
+		logger.Errorf("App", "AutoTune winner could not be activated: %v", err)
+		return failAutoTune(fmt.Sprintf("Профиль найден, но не запустился: %v", err), fmt.Sprintf("❌ Ошибка запуска %s: %v", result.ProfileName, err))
+	}
+	winnerActivated = true
+	resumeAutoReconnect = true
+	if saveErr := engine.SaveLastProfile(result.ProfileName); saveErr != nil {
+		logger.Warnf("App", "Could not persist AutoTune winner: %v", saveErr)
+	}
+	logger.Infof("App", "AutoTune completed and activated: %s", result.ProfileName)
+	wailsruntime.EventsEmit(a.ctx, "autotune_log", fmt.Sprintf("✅ Запущен лучший профиль: %s (счёт: %d, восстановлено целей: %d)", result.ProfileName, result.Score, result.RecoveredTargets))
 	wailsruntime.EventsEmit(a.ctx, "autotune_complete", map[string]interface{}{
 		"success": true,
 		"profile": result.ProfileName,
@@ -444,7 +642,6 @@ func (a *App) AutoTune() string {
 func (a *App) CancelAutoTune() {
 	a.mu.Lock()
 	cancel := a.autoTuneCancel
-	a.autoTuneCancel = nil
 	a.mu.Unlock()
 	if cancel != nil {
 		cancel()
@@ -701,15 +898,30 @@ func (a *App) VerifyEngineAssets() engine.AssetVerificationResult {
 // Stops after maxCycles full rotations through all profiles.
 func (a *App) AutoReconnectMonitor() {
 	a.mu.Lock()
+	if a.closing || a.autoTuneCancel != nil || a.profileChange {
+		a.mu.Unlock()
+		return
+	}
 	if a.autoReconnectCancel != nil {
 		a.autoReconnectCancel()
 	}
 	ctx, cancel := context.WithCancel(a.ctx)
 	a.autoReconnectCancel = cancel
+	a.autoReconnectID++
+	monitorID := a.autoReconnectID
+	a.autoReconnectWG.Add(1)
 	a.mu.Unlock()
 
 	go func() {
 		defer cancel()
+		defer a.autoReconnectWG.Done()
+		defer func() {
+			a.mu.Lock()
+			if a.autoReconnectID == monitorID {
+				a.autoReconnectCancel = nil
+			}
+			a.mu.Unlock()
+		}()
 		blockedCount := 0
 		maxBlocked := 3
 		maxCycles := 3
@@ -780,8 +992,15 @@ func (a *App) AutoReconnectMonitor() {
 				logger.Warn("AutoReconnect", fmt.Sprintf("Profile blocked for %d consecutive checks, switching...", blockedCount))
 				wailsruntime.EventsEmit(a.ctx, "autotune_log", "⚠️ Профиль заблокирован, переключаем...")
 				_ = a.manager.Stop()
-				time.Sleep(500 * time.Millisecond)
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(500 * time.Millisecond):
+				}
 				next := profiles[nextIndex]
+				if err := ctx.Err(); err != nil {
+					return
+				}
 				if err := a.manager.Start(ctx, names[0], next); err != nil {
 					logger.Error("AutoReconnect", fmt.Sprintf("Failed to start %s: %v", next, err))
 				} else {
@@ -800,10 +1019,10 @@ func (a *App) AutoReconnectMonitor() {
 // StopAutoReconnect cancels the auto-reconnect monitor if running.
 func (a *App) StopAutoReconnect() {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.autoReconnectCancel != nil {
-		a.autoReconnectCancel()
-		a.autoReconnectCancel = nil
+	cancel := a.autoReconnectCancel
+	a.mu.Unlock()
+	if cancel != nil {
+		cancel()
 	}
 }
 
