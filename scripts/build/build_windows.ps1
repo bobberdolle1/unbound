@@ -1,43 +1,50 @@
-﻿# ============================================================================
-# UNBOUND — Windows Standalone Build Script (PowerShell)
-# ============================================================================
-# Usage:
-#   .\scripts\build\build_windows.ps1 [-Debug]
-# ============================================================================
+﻿# UNBOUND — native Windows Wails build.
+# Usage: .\scripts\build\build_windows.ps1 [-DebugBuild]
+# Environment: UNBOUND_VERSION=<override>
 
 [CmdletBinding()]
-param([switch]$Debug)
+param([switch]$DebugBuild)
 
-$ScriptDir   = $PSScriptRoot
-$ProjectRoot = Split-Path (Split-Path $ScriptDir -Parent) -Parent
-$BuildDir    = Join-Path $ProjectRoot "build\bin"
+$ErrorActionPreference = "Stop"
+$ProjectRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+$BuildDir = Join-Path $ProjectRoot "build\bin"
 
-function Write-Info  { Write-Host "[INFO] $args" -ForegroundColor Cyan }
-function Write-Ok    { Write-Host "[OK] $args" -ForegroundColor Green }
-
-$DebugFlag = ""
-if ($Debug) {
-    $DebugFlag = "-gcflags='all=-N -l'"
-    Write-Info "Building in DEBUG mode"
+foreach ($Command in @("go", "node", "npm", "wails")) {
+    if (-not (Get-Command $Command -ErrorAction SilentlyContinue)) {
+        throw "$Command is required but was not found in PATH"
+    }
 }
-
-Write-Info "Building Windows binary..."
-
-New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
 
 Push-Location $ProjectRoot
 try {
-    $goArgs = @("build", "-trimpath")
-    if ($Debug) { $goArgs += "-gcflags=all=-N -l" }
-    $goArgs += "-o", "$BuildDir\unbound.exe"
-    $goArgs += "./..."
+    $ConfigVersion = (Get-Content "wails.json" -Raw | ConvertFrom-Json).info.productVersion
+    $Version = if ($env:UNBOUND_VERSION) { $env:UNBOUND_VERSION } else { $ConfigVersion }
+    $WailsArgs = @(
+        "build",
+        "-clean",
+        "-o", "unbound.exe",
+        "-ldflags", "-X unbound/engine.Version=$Version"
+    )
+    if ($DebugBuild) {
+        $WailsArgs += "-debug"
+    }
 
-    & go $goArgs
+    Write-Host "[INFO] Building native Windows Wails app v$Version..." -ForegroundColor Cyan
+    & wails $WailsArgs
+    if ($LASTEXITCODE -ne 0) {
+        throw "Wails build failed with exit code $LASTEXITCODE"
+    }
 
-    if ($LASTEXITCODE -ne 0) { throw "Go build failed" }
+    $Output = Join-Path $BuildDir "unbound.exe"
+    if (-not (Test-Path $Output -PathType Leaf)) {
+        throw "Wails reported success but did not create $Output"
+    }
 
-    Write-Ok "Windows binary built: $BuildDir\unbound.exe"
-    Get-ChildItem "$BuildDir\unbound.exe" | Select-Object Name, Length
+    $File = Get-Item $Output
+    if ($File.Length -le 0) {
+        throw "Built executable is empty: $Output"
+    }
+    Write-Host "[OK] Windows Wails app built: $Output ($($File.Length) bytes)" -ForegroundColor Green
 } finally {
     Pop-Location
 }

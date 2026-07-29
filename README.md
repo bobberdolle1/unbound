@@ -121,7 +121,7 @@ sudo ./unbound --cli --profile youtube    # macOS/Linux: YouTube
 
 ### Требования:
 - **Go** 1.25+
-- **Node.js** 20+
+- **Node.js** 22.13+
 - **Wails v2.13+**: `go install github.com/wailsapp/wails/v2/cmd/wails@v2.13.0`
 
 ### Команды сборки:

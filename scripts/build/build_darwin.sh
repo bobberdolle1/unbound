@@ -1,96 +1,75 @@
-#!/bin/bash
-# macOS build script for UNBOUND
+#!/usr/bin/env bash
+# Build the native macOS Wails application.
 # Usage: ./scripts/build/build_darwin.sh [amd64|arm64|universal] [debug]
-# Example: ./scripts/build/build_darwin.sh arm64
-#          ./scripts/build/build_darwin.sh universal debug
+# Environment: UNBOUND_VERSION=<override>
 
-set -e
+set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PLATFORM="${1:-universal}"
-DEBUG_FLAG=""
+MODE="${2:-}"
 
-if [ "$2" = "debug" ]; then
-    DEBUG_FLAG="-debug"
+case "$PLATFORM" in
+    amd64|arm64|universal) ;;
+    *) echo "[ERROR] Unsupported macOS platform: $PLATFORM" >&2; exit 2 ;;
+esac
+if [ -n "$MODE" ] && [ "$MODE" != "debug" ]; then
+    echo "[ERROR] Unknown build mode: $MODE" >&2
+    exit 2
 fi
-
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "🍎 UNBOUND — macOS Build"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "Platform: $PLATFORM"
-[ -n "$DEBUG_FLAG" ] && echo "Mode: DEBUG" || echo "Mode: RELEASE"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-# Check prerequisites
-if ! command -v go &> /dev/null; then
-    echo "❌ Go not found. Install: brew install go"
+if [ "$(uname -s)" != "Darwin" ]; then
+    echo "[ERROR] macOS Wails bundles must be built natively on macOS" >&2
     exit 1
 fi
+for command in go node npm wails codesign; do
+    command -v "$command" >/dev/null 2>&1 || {
+        echo "[ERROR] $command is required" >&2
+        exit 1
+    }
+done
 
-if ! command -v wails &> /dev/null; then
-    echo "❌ Wails CLI not found. Install: go install github.com/wailsapp/wails/v2/cmd/wails@latest"
+cd "$PROJECT_ROOT"
+test -f engine/core_bin/darwin/tpws || {
+    echo "[ERROR] Bundled Universal tpws is missing" >&2
     exit 1
-fi
+}
+VERSION="${UNBOUND_VERSION:-$(node -p "require('./wails.json').info.productVersion")}"
 
-# Check engine binary availability
-if [ -f "engine/core_bin/darwin/tpws" ]; then
-    echo "✓ Bundled macOS tpws binary detected in engine/core_bin/darwin/tpws"
-elif command -v tpws &> /dev/null || [ -f "/opt/homebrew/bin/tpws" ] || [ -f "/usr/local/bin/tpws" ]; then
-    echo "✓ System tpws binary detected"
-else
-    echo "⚠️  tpws binary not found in PATH or standard locations"
-    echo "   Install zapret: brew install zapret (or build manually)"
-fi
+echo "[INFO] Building frontend..."
+(cd frontend && npm ci --no-audit --no-fund && npm run build)
 
-# Build frontend
-echo ""
-echo "📦 Building frontend..."
-if [ -d "frontend" ]; then
-    cd frontend
-    npm install
-    npm run build
-    cd ..
-else
-    echo "⚠️  frontend/ directory not found, skipping"
+WAILS_ARGS=(build -platform "darwin/$PLATFORM" -clean -ldflags "-X unbound/engine.Version=$VERSION")
+if [ "$MODE" = "debug" ]; then
+    WAILS_ARGS+=(-debug)
 fi
-
-# Build macOS app
-echo ""
-echo "🔨 Building macOS app..."
 
 export CGO_LDFLAGS="-framework UniformTypeIdentifiers ${CGO_LDFLAGS:-}"
-xattr -cr . 2>/dev/null || true
-if [ "$PLATFORM" = "universal" ]; then
-    wails build -platform darwin/universal $DEBUG_FLAG -ldflags "-X unbound/engine.Version=0.1.0-refresh" || true
-else
-    wails build -platform darwin/$PLATFORM $DEBUG_FLAG -ldflags "-X unbound/engine.Version=0.1.0-refresh" || true
-fi
+echo "[INFO] Building macOS $PLATFORM Wails app v$VERSION..."
+wails "${WAILS_ARGS[@]}"
 
 APP_PATH=""
-if [ -d "build/bin/Unbound.app" ]; then
-    APP_PATH="build/bin/Unbound.app"
-elif [ -d "build/bin/unbound.app" ]; then
-    APP_PATH="build/bin/unbound.app"
+for candidate in build/bin/unbound.app build/bin/Unbound.app; do
+    if [ -d "$candidate" ]; then
+        APP_PATH="$candidate"
+        break
+    fi
+done
+if [ -z "$APP_PATH" ]; then
+    echo "[ERROR] Wails reported success but no app bundle was created" >&2
+    exit 1
 fi
 
-if [ -n "$APP_PATH" ]; then
-    xattr -cr "$APP_PATH" 2>/dev/null || true
-    codesign --force --deep -s - "$APP_PATH" 2>/dev/null || true
-    echo "✓ App bundle signed: $APP_PATH"
-fi
+xattr -cr "$APP_PATH" 2>/dev/null || true
+codesign --force --deep -s - "$APP_PATH"
+codesign --verify --deep --strict "$APP_PATH"
 
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "✅ Build complete!"
-echo "📁 Output: build/bin/Unbound.app"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-# Show file info
-if [ -d "build/bin/Unbound.app" ]; then
-    du -sh build/bin/Unbound.app
-    echo ""
-    echo "To run:"
-    echo "  open build/bin/Unbound.app"
-    echo ""
-    echo "CLI mode:"
-    echo "  ./build/bin/Unbound.app/Contents/MacOS/Unbound --cli"
+EXECUTABLE="$(find "$APP_PATH/Contents/MacOS" -type f -perm -111 | head -1)"
+if [ -z "$EXECUTABLE" ]; then
+    echo "[ERROR] App bundle has no executable" >&2
+    exit 1
 fi
+"$EXECUTABLE" --version | grep -F "$VERSION" >/dev/null
+"$EXECUTABLE" --list-profiles --json >/dev/null
+
+echo "[OK] macOS app built and smoke-tested: $APP_PATH"

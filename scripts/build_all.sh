@@ -6,10 +6,10 @@
 #   ./build_all.sh <target> [options]
 #
 # Targets:
-#   windows          - Build Windows GUI binary via Wails
-#   darwin           - Build macOS binary via Wails
-#   linux            - Build Linux CLI/GUI binary
-#   all              - Build all desktop targets (Windows, Linux, macOS)
+#   windows          - Build the native Windows Wails application
+#   darwin           - Build the native macOS Universal Wails application
+#   linux            - Cross-build the Linux CLI for amd64
+#   all              - Build Linux plus the native GUI target available on this host
 #
 # Options:
 #   --debug          - Enable debug build mode
@@ -20,7 +20,7 @@
 # Examples:
 #   ./build_all.sh windows
 #   ./build_all.sh linux --debug
-#   ./build_all.sh all --clean --version 0.1.0-refresh
+#   ./build_all.sh all --clean --version 0.2.1
 # ============================================================================
 
 set -euo pipefail
@@ -90,110 +90,70 @@ do_clean() {
     log_ok "Clean complete"
 }
 
-# ── Frontend build ───────────────────────────────────────────────────────────
-build_frontend() {
-    log_step "Building frontend assets"
-    require_cmd npm "https://nodejs.org/"
-    if [ -d "$PROJECT_ROOT/frontend" ]; then
-        pushd "$PROJECT_ROOT/frontend" >/dev/null
-        npm install --include=dev
-        npm run build
-        popd >/dev/null
-        log_ok "Frontend built"
-    else
-        log_warn "frontend/ directory not found, skipping"
-    fi
+
+# ── Native/cross-platform builders ──────────────────────────────────────────
+host_os() {
+    case "$(uname -s)" in
+        Darwin) echo darwin ;;
+        MINGW*|MSYS*|CYGWIN*) echo windows ;;
+        Linux) echo linux ;;
+        *) echo unsupported ;;
+    esac
 }
 
-# ── Windows (via Wails + Wine cross-compile or native) ───────────────────────
 build_windows() {
     local ver
     ver="$(resolve_version)"
-    log_step "Building Windows binary (wails)"
-    require_cmd go "https://go.dev/dl/"
-    require_cmd wails "go install github.com/wailsapp/wails/v2/cmd/wails@latest"
+    log_step "Building native Windows Wails application"
+    if [ "$(host_os)" != "windows" ]; then
+        log_error "Windows Wails builds must run natively on Windows"
+        return 1
+    fi
+    require_cmd powershell.exe "Windows PowerShell"
 
-    build_frontend
-
-    local debug_flag=""
-    [ "$DEBUG_MODE" = true ] && debug_flag="-debug"
-
-    wails build -platform windows/amd64 -clean -o "unbound.exe" $debug_flag \
-        -ldflags "-X unbound/engine.Version=${ver}"
-
-    local out="$BUILD_DIR/bin"
-    mkdir -p "$DIST_DIR/unbound-v${ver}-win64"
-    cp -f "$out/unbound.exe" "$DIST_DIR/unbound-v${ver}-win64/" 2>/dev/null || \
-    cp -f "$BUILD_DIR/bin/unbound.exe" "$DIST_DIR/unbound-v${ver}-win64/" 2>/dev/null || true
-    cp -rf "$PROJECT_ROOT/scripts/control_windows/"*.cmd "$DIST_DIR/unbound-v${ver}-win64/" 2>/dev/null || true
-
-    log_ok "Windows binary built: $DIST_DIR/unbound-v${ver}-win64/"
+    local args=()
+    [ "$DEBUG_MODE" = true ] && args+=("-DebugBuild")
+    UNBOUND_VERSION="$ver" powershell.exe -NoProfile -ExecutionPolicy Bypass \
+        -File "$PROJECT_ROOT/scripts/build/build_windows.ps1" "${args[@]}"
+    log_ok "Windows app built: $BUILD_DIR/bin/unbound.exe"
 }
 
-# ── macOS / Darwin (native, must run on Mac) ────────────────────────────────
 build_darwin() {
     local ver
     ver="$(resolve_version)"
-    log_step "Building macOS binary (wails)"
-    require_cmd go "brew install go"
-    require_cmd wails "go install github.com/wailsapp/wails/v2/cmd/wails@latest"
-
-    build_frontend
-
-    local debug_flag=""
-    [ "$DEBUG_MODE" = true ] && debug_flag="-debug"
-    export CGO_LDFLAGS="-framework UniformTypeIdentifiers ${CGO_LDFLAGS:-}"
-    xattr -cr . 2>/dev/null || true
-    wails build -platform darwin/universal $debug_flag \
-        -ldflags "-X unbound/engine.Version=${ver}" || true
-    if [ -d "$BUILD_DIR/bin/unbound.app" ]; then
-        xattr -cr "$BUILD_DIR/bin/unbound.app" 2>/dev/null || true
-        codesign --force --deep -s - "$BUILD_DIR/bin/unbound.app" 2>/dev/null || true
-        cp -rf "$PROJECT_ROOT/scripts/control_macOS/"*.command "$BUILD_DIR/bin/" 2>/dev/null || true
+    log_step "Building native macOS Universal Wails application"
+    if [ "$(host_os)" != "darwin" ]; then
+        log_error "macOS Wails builds must run natively on macOS"
+        return 1
     fi
 
-    log_ok "macOS app built: $BUILD_DIR/bin/Unbound.app"
+    local args=()
+    [ "$DEBUG_MODE" = true ] && args+=("debug")
+    UNBOUND_VERSION="$ver" "$PROJECT_ROOT/scripts/build/build_darwin.sh" universal "${args[@]}"
 }
 
-# ── Linux (native or Docker) ─────────────────────────────────────────────────
 build_linux() {
     local ver
     ver="$(resolve_version)"
-    log_step "Building Linux binary"
-    require_cmd go "https://go.dev/dl/"
+    log_step "Building Linux amd64 CLI"
 
-    build_frontend
-
-    local debug_flag=""
-    [ "$DEBUG_MODE" = true ] && debug_flag="-tags debug"
-
-    # Build CLI mode binary for Linux
-    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
-        -ldflags="$(go_ldflags)" -o "$BUILD_DIR/bin/unbound-linux" $debug_flag .
-
-    mkdir -p "$DIST_DIR/unbound-v${ver}-linux-amd64"
-    cp -f "$BUILD_DIR/bin/unbound-linux" "$DIST_DIR/unbound-v${ver}-linux-amd64/" 2>/dev/null || true
-    cp -rf "$PROJECT_ROOT/scripts/control_linux/"*.sh "$DIST_DIR/unbound-v${ver}-linux-amd64/" 2>/dev/null || true
-    log_ok "Linux binary built: $BUILD_DIR/bin/unbound-linux"
+    local args=()
+    [ "$DEBUG_MODE" = true ] && args+=("debug")
+    GOARCH=amd64 UNBOUND_VERSION="$ver" \
+        "$PROJECT_ROOT/scripts/build/build_linux.sh" "${args[@]}"
+    log_ok "Linux CLI built: $BUILD_DIR/bin/unbound-linux-amd64"
 }
 
-# ── All targets ──────────────────────────────────────────────────────────────
 build_all() {
-    log_step "Building ALL desktop targets"
-    echo -e "  ${CYAN}•${NC} Linux"
+    log_step "Building every target available on this host"
     build_linux
-
-    if command -v wails &>/dev/null; then
-        echo -e "  ${CYAN}•${NC} Windows"
-        build_windows
-    fi
-
-    if [[ "$(uname -s)" == "Darwin" ]]; then
-        echo -e "  ${CYAN}•${NC} macOS"
-        build_darwin
-    fi
-
-    log_ok "Desktop builds complete"
+    case "$(host_os)" in
+        windows) build_windows ;;
+        darwin) build_darwin ;;
+        linux) log_info "Linux has no additional native release target" ;;
+        *) log_error "Unsupported build host"; return 1 ;;
+    esac
+    log_ok "Host-supported builds complete"
 }
 
 # ── Usage / Help ─────────────────────────────────────────────────────────────
