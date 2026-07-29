@@ -22,7 +22,13 @@ func (a *App) setupTray() {
 }
 
 func (a *App) onBeforeClose(ctx context.Context) bool {
-	// Hide to tray on X click
+	a.mu.Lock()
+	closing := a.closing
+	a.mu.Unlock()
+	if closing {
+		return false // Allow clean exit when app is shutting down
+	}
+	// Hide to tray on window X click
 	runtime.WindowHide(ctx)
 	return true
 }
@@ -46,7 +52,7 @@ func getAppMenu(a *App) *menu.Menu {
 	})
 	fileMenu.AddSeparator()
 	fileMenu.AddText("Quit", keys.CmdOrCtrl("q"), func(cbdata *menu.CallbackData) {
-		runtime.Quit(a.ctx)
+		a.QuitApp()
 	})
 
 	return AppMenu

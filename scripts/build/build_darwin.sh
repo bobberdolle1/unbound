@@ -60,8 +60,9 @@ if [ -z "$APP_PATH" ]; then
     exit 1
 fi
 
+xattr -d com.apple.quarantine "$APP_PATH" 2>/dev/null || true
 xattr -cr "$APP_PATH" 2>/dev/null || true
-codesign --force --deep -s - "$APP_PATH"
+codesign --force --deep --options runtime -s - "$APP_PATH"
 codesign --verify --deep --strict "$APP_PATH"
 
 EXECUTABLE="$(find "$APP_PATH/Contents/MacOS" -type f -perm -111 | head -1)"

@@ -3,31 +3,17 @@
 package main
 
 import (
-	"os"
-	"os/exec"
-	"strings"
-
 	"unbound/engine"
 	"unbound/engine/providers"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-// checkAdminPrivileges reports whether the process is root or the user has admin rights.
+// checkAdminPrivileges reports whether the process can run on macOS.
+// Privileges for pfctl are requested gracefully via osascript when starting
+// the bypass engine, so standard user GUI sessions start without error overlays.
 func checkAdminPrivileges() (bool, error) {
-	if os.Geteuid() == 0 {
-		return true, nil
-	}
-	out, err := exec.Command("id", "-Gn").Output()
-	if err == nil {
-		groups := strings.Fields(string(out))
-		for _, g := range groups {
-			if g == "admin" || g == "wheel" {
-				return true, nil
-			}
-		}
-	}
-	return false, nil
+	return true, nil
 }
 
 func registerOSProviders(a *App, assets *engine.AssetPaths) {

@@ -317,7 +317,9 @@ export default function App() {
     
     GetEngineNames().then((e: string[]) => {
       setEngines(e || []);
-      if (e && e.length > 0) setSelectedEngine(e[0]);
+      if (e && e.length > 0) {
+        setSelectedEngine((prev) => (prev && e.includes(prev) ? prev : e[0]));
+      }
     });
     
     GetSettings().then((s: any) => {
@@ -359,19 +361,23 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (selectedEngine) {
-      GetProfiles(selectedEngine).then((p: string[]) => {
-        setProfiles(p || []);
-        if (p && p.length > 0) {
-          if (!selectedProfile || !p.includes(selectedProfile)) {
-            setSelectedProfile(p[0]);
-          }
-        } else if (!p || p.length === 0) {
-          console.error('No profiles loaded from backend. Check engine registration.');
+    let engineToUse = selectedEngine;
+    if ((!engineToUse || (engines.length > 0 && !engines.includes(engineToUse))) && engines.length > 0) {
+      engineToUse = engines[0];
+      setSelectedEngine(engineToUse);
+    }
+    if (engineToUse) {
+      GetProfiles(engineToUse).then((p: string[]) => {
+        const list = p || [];
+        setProfiles(list);
+        if (list.length > 0) {
+          setSelectedProfile((prev) => (prev && list.includes(prev) ? prev : list[0]));
+        } else {
+          console.error('No profiles loaded from backend for engine:', engineToUse);
         }
       });
     }
-  }, [selectedEngine]);
+  }, [selectedEngine, engines]);
 
   useEffect(() => {
     EventsOn('privilege_error', (msg: string) => {

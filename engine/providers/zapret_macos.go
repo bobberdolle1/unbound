@@ -20,7 +20,8 @@ import (
 const pfAnchorName = "com.unbound.zapret"
 
 // tpwsPort is the port that tpws listens on for transparent proxying.
-const tpwsPort = "988"
+// Using a non-privileged port (>= 1024) allows tpws to bind as standard user.
+const tpwsPort = "9888"
 
 // macProfile holds the pf rules and tpws arguments for a bypass strategy.
 // On macOS, tpws is a transparent TCP proxy. Traffic is redirected to it
@@ -285,25 +286,85 @@ func runPfctlPrivileged(stdinInput string, args ...string) ([]byte, error) {
 	return exec.CommandContext(ctx, "osascript", "-e", script).CombinedOutput()
 }
 
-// ensurePfConfAnchors patches /etc/pf.conf to add our rdr-anchor and anchor
-// lines if they are not already present. This is idempotent and only modifies
-// the two anchor-reference lines; it does not touch any other rules.
-//
-// Returns true if a reload of pf.conf is needed (i.e. we patched it).
-func ensurePfConfAnchors() (bool, error) {
-	const pfConf = "/etc/pf.conf"
+// loadPfAnchor enables pf (idempotent), optionally patches pf.conf anchors,
+// reloads pf.conf, then loads our ruleset into the anchor.
+// loadPfAnchor enables pf, patches /etc/pf.conf if needed, and loads anchor rules in a single privileged operation.
+func (e *ZapretMacOSProvider) loadPfAnchor(rules []string) error {
+	ruleset := strings.Join(rules, "\n") + "\n"
+	rulesTmp, err := os.CreateTemp("", "unbound_pf_rules_*.tmp")
+	if err != nil {
+		return fmt.Errorf("mktemp pf rules: %w", err)
+	}
+	rulesPath := rulesTmp.Name()
+	defer os.Remove(rulesPath)
 
+	if _, err := rulesTmp.WriteString(ruleset); err != nil {
+		rulesTmp.Close()
+		return fmt.Errorf("write pf rules: %w", err)
+	}
+	rulesTmp.Close()
+
+	patched, pfConfTmpPath, err := preparePfConfPatch()
+	if err != nil {
+		e.addLogLocked("Предупреждение подготовки pf.conf: " + err.Error())
+	}
+	if pfConfTmpPath != "" {
+		defer os.Remove(pfConfTmpPath)
+	}
+
+	if os.Geteuid() == 0 {
+		_ = exec.Command("pfctl", "-e").Run()
+		if patched && pfConfTmpPath != "" {
+			if err := os.WriteFile("/etc/pf.conf", []byte(pfConfTmpPath), 0644); err == nil {
+				_ = exec.Command("pfctl", "-f", "/etc/pf.conf").Run()
+			}
+		}
+		out, err := exec.Command("pfctl", "-a", pfAnchorName, "-f", rulesPath).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("pfctl loading anchor: %s", strings.TrimSpace(string(out)))
+		}
+		return nil
+	}
+
+	// Combine all setup tasks into a single privileged shell invocation so osascript prompts ONCE.
+	var scriptCmds []string
+	scriptCmds = append(scriptCmds, "pfctl -e 2>/dev/null || true")
+	if patched && pfConfTmpPath != "" {
+		scriptCmds = append(scriptCmds, fmt.Sprintf("cp %s /etc/pf.conf && pfctl -f /etc/pf.conf", pfConfTmpPath))
+	}
+	scriptCmds = append(scriptCmds, fmt.Sprintf("pfctl -a %s -f %s", pfAnchorName, rulesPath))
+
+	compoundCmd := strings.Join(scriptCmds, " && ")
+	escapedScript := strings.ReplaceAll(compoundCmd, `\`, `\\`)
+	escapedScript = strings.ReplaceAll(escapedScript, `"`, `\"`)
+	script := fmt.Sprintf(`do shell script "%s" with administrator privileges`, escapedScript)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
+	out, err := exec.CommandContext(ctx, "osascript", "-e", script).CombinedOutput()
+	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		if msg == "" {
+			return fmt.Errorf("pfctl single-prompt setup: %w", err)
+		}
+		return fmt.Errorf("pfctl single-prompt setup: %s", msg)
+	}
+
+	return nil
+}
+
+func preparePfConfPatch() (bool, string, error) {
+	const pfConf = "/etc/pf.conf"
 	data, err := os.ReadFile(pfConf)
 	if err != nil {
-		return false, fmt.Errorf("не удалось прочитать %s: %w", pfConf, err)
+		return false, "", err
 	}
 	content := string(data)
-
 	needsRdr := !strings.Contains(content, `rdr-anchor "`+pfAnchorName+`"`)
 	needsAnchor := !strings.Contains(content, `anchor "`+pfAnchorName+`"`)
-
 	if !needsRdr && !needsAnchor {
-		return false, nil // already patched
+		return false, "", nil
 	}
 
 	lines := strings.Split(content, "\n")
@@ -312,12 +373,10 @@ func ensurePfConfAnchors() (bool, error) {
 	anchorInserted := !needsAnchor
 
 	for _, line := range lines {
-		// Insert rdr-anchor before the com.apple rdr-anchor line.
 		if !rdrInserted && strings.Contains(line, `rdr-anchor "com.apple`) {
 			out = append(out, `rdr-anchor "`+pfAnchorName+`"`)
 			rdrInserted = true
 		}
-		// Insert anchor before the com.apple filter anchor line.
 		if !anchorInserted && strings.Contains(line, `anchor "com.apple`) && !strings.Contains(line, "load") {
 			out = append(out, `anchor "`+pfAnchorName+`"`)
 			anchorInserted = true
@@ -325,7 +384,6 @@ func ensurePfConfAnchors() (bool, error) {
 		out = append(out, line)
 	}
 
-	// Fallback: append if we never found a good insertion point.
 	if !rdrInserted {
 		out = append(out, `rdr-anchor "`+pfAnchorName+`"`)
 	}
@@ -333,74 +391,18 @@ func ensurePfConfAnchors() (bool, error) {
 		out = append(out, `anchor "`+pfAnchorName+`"`)
 	}
 
-	newContent := strings.Join(out, "\n")
-
-	// Write via a temp file + privileged move to avoid a partial write.
 	tmpFile, err := os.CreateTemp("", "pf.conf.*.tmp")
 	if err != nil {
-		return false, fmt.Errorf("mktemp: %w", err)
+		return false, "", err
 	}
 	tmpPath := tmpFile.Name()
-	defer os.Remove(tmpPath)
-
-	if _, err := tmpFile.WriteString(newContent); err != nil {
+	if _, err := tmpFile.WriteString(strings.Join(out, "\n")); err != nil {
 		tmpFile.Close()
-		return false, fmt.Errorf("запись в temp-файл: %w", err)
+		os.Remove(tmpPath)
+		return false, "", err
 	}
 	tmpFile.Close()
-	if os.Geteuid() == 0 {
-		if err := os.WriteFile(pfConf, []byte(newContent), 0644); err != nil {
-			return false, fmt.Errorf("не удалось записать %s: %w", pfConf, err)
-		}
-		return true, nil
-	}
-
-	// Copy via privileged shell.
-	cpCmd := fmt.Sprintf("cp %s %s", tmpPath, pfConf)
-	escapedCp := strings.ReplaceAll(cpCmd, `"`, `\"`)
-	script := fmt.Sprintf(`do shell script "%s" with administrator privileges`, escapedCp)
-	if out2, err2 := exec.Command("osascript", "-e", script).CombinedOutput(); err2 != nil {
-		return false, fmt.Errorf("не удалось записать %s: %s", pfConf, strings.TrimSpace(string(out2)))
-	}
-
-	return true, nil
-}
-
-// loadPfAnchor enables pf (idempotent), optionally patches pf.conf anchors,
-// reloads pf.conf, then loads our ruleset into the anchor.
-func (e *ZapretMacOSProvider) loadPfAnchor(rules []string) error {
-	// 1. Enable pf (macOS disables it by default).
-	if out, err := runPfctlPrivileged("", "-e"); err != nil {
-		msg := strings.TrimSpace(string(out))
-		if !strings.Contains(msg, "already enabled") {
-			e.addLogLocked("Предупреждение pfctl -e: " + msg)
-		}
-	}
-
-	// 2. Ensure our anchors are referenced in /etc/pf.conf.
-	patched, err := ensurePfConfAnchors()
-	if err != nil {
-		e.addLogLocked("ВНИМАНИЕ: " + err.Error() +
-			" — правила загружены без якоря; перезапустите с правами root.")
-	} else if patched {
-		e.addLogLocked("Добавлены якоря в /etc/pf.conf, перезагружаем конфиг...")
-		// Reload pf.conf so the new anchor references take effect.
-		if out, err := runPfctlPrivileged("", "-f", "/etc/pf.conf"); err != nil {
-			e.addLogLocked("Предупреждение pfctl -f pf.conf: " + strings.TrimSpace(string(out)))
-		}
-	}
-
-	// 3. Load our ruleset into the anchor.
-	ruleset := strings.Join(rules, "\n") + "\n"
-	if out, err := runPfctlPrivileged(ruleset, "-a", pfAnchorName, "-f", "-"); err != nil {
-		msg := strings.TrimSpace(string(out))
-		if msg == "" {
-			return fmt.Errorf("pfctl загрузка якоря: %w", err)
-		}
-		return fmt.Errorf("pfctl загрузка якоря: %s", msg)
-	}
-
-	return nil
+	return true, tmpPath, nil
 }
 
 // sendMacOSNotification displays a native macOS desktop notification toast.
