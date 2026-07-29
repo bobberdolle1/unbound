@@ -1,4 +1,4 @@
-# 🧪 Руководство по тестированию и верификации UNBOUND Refresh `v0.1.0-refresh`
+# 🧪 Руководство по тестированию и верификации UNBOUND Refresh `v0.2.1`
 
 Настоящее руководство подробно описывает процедуры локального тестирования, проверки кода и контроля качества (QA) для **UNBOUND Refresh**.
 
@@ -52,7 +52,7 @@ sudo UNBOUND_FIREWALL_TEST=1 go test -v ./engine/providers/ -run Live
 ### 🐧 Linux (NFQUEUE + nftables / iptables)
 - [x] Проверка root-привилегий при старте.
 - [x] Создание изолированной таблицы `inet unbound` в `nftables` (или правил в `iptables`).
-- [x] Запуск и остановка `nfqws` с флагом `--queue-bypass` (сети не блокируются при аварии).
+- [x] Запуск и остановка `nfqws2` с `--qnum` и `--lua-init` (очередь использует fail-open bypass при аварии).
 - [x] Гарантированный `Flush` правил фаервола при завершении процесса (`SIGTERM`/`SIGINT`).
 - [x] Сборка и запуск CLI-версии (`./build/bin/unbound-linux --version`).
 

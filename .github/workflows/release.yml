@@ -60,11 +60,50 @@ jobs:
           echo "version=$VER" >> "$GITHUB_OUTPUT"
           echo "Resolved version: $VER"
 
+  verify:
+    name: Verify release commit
+    runs-on: ubuntu-latest
+    needs: resolve-version
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Frontend gate
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run typecheck
+          npm test
+          npm run build
+      - name: Version consistency gate
+        env:
+          VERSION: ${{ needs.resolve-version.outputs.version }}
+        run: |
+          set -euo pipefail
+          test "$(jq -r '.info.productVersion' wails.json)" = "$VERSION"
+          test "$(jq -r '.version' frontend/package.json)" = "$VERSION"
+          grep -F "## [$VERSION]" CHANGELOG.md
+          go run . --version | grep -F "$VERSION"
+
+      - name: Go and asset gate
+        run: |
+          go vet ./...
+          go test ./...
+          ./scripts/check.sh assets
+
+
   # ───────────────────────────────────────────────────────────────────────────
   build-windows:
     name: Windows (Wails)
     runs-on: windows-latest
-    needs: resolve-version
+    needs: [resolve-version, verify]
     env:
       VERSION: ${{ needs.resolve-version.outputs.version }}
     steps:
@@ -81,12 +120,37 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      - name: Build frontend and run native release gate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Push-Location frontend
+          npm ci
+          npm test
+          npm run build
+          Pop-Location
+          go vet ./...
+          go test ./...
+
       - name: Install Wails CLI
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.13.0
 
       - name: Build
         run: wails build -clean -o unbound.exe -ldflags "-X unbound/engine.Version=${env:VERSION}"
         shell: pwsh
+
+      - name: Smoke-test Windows binary
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $version = & "build/bin/unbound.exe" --version
+          if ($LASTEXITCODE -ne 0 -or $version -notmatch [regex]::Escape($env:VERSION)) {
+            throw "Windows version smoke test failed: $version"
+          }
+          $profiles = (& "build/bin/unbound.exe" --list-profiles --json | ConvertFrom-Json)
+          if (-not $profiles.PSObject.Properties -or $profiles.PSObject.Properties.Count -eq 0) {
+            throw "Windows profile catalog is empty"
+          }
 
       - name: Package
         shell: pwsh
@@ -95,11 +159,26 @@ jobs:
           $dist = "release/unbound-v${env:VERSION}-windows-amd64"
           New-Item -ItemType Directory -Force -Path $dist | Out-Null
           Copy-Item "build/bin/unbound.exe" $dist
-          # README_RELEASE.txt does not exist in the repository; ship the real
-          # README and licence instead of failing the build on a missing file.
           Copy-Item "README.md" "$dist/README.md"
-          Copy-Item "LICENSE"   "$dist/LICENSE"
+          Copy-Item "LICENSE" "$dist/LICENSE"
+          Copy-Item "engine/third_party/ZAPRET2_LICENSE.txt" "$dist/ZAPRET2_LICENSE.txt"
+          Copy-Item "engine/third_party/ZAPRET_LICENSE.txt" "$dist/ZAPRET_LICENSE.txt"
+          Copy-Item "engine/ENGINE_PROVENANCE.json" "$dist/ENGINE_PROVENANCE.json"
+          Copy-Item "scripts/control_windows/*" $dist
+          Get-ChildItem $dist -File | Sort-Object Name | ForEach-Object {
+            "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
+          } | Set-Content "$dist/BUNDLE_SHA256SUMS.txt" -Encoding ascii
           Compress-Archive -Path "$dist/*" -DestinationPath "$dist.zip" -Force
+          $smoke = Join-Path $env:RUNNER_TEMP "unbound-release-smoke"
+          Expand-Archive "$dist.zip" $smoke -Force
+          if (
+            -not (Test-Path "$smoke/unbound.exe") -or
+            -not (Test-Path "$smoke/ZAPRET2_LICENSE.txt") -or
+            -not (Test-Path "$smoke/ZAPRET_LICENSE.txt") -or
+            -not (Test-Path "$smoke/general_autotune.cmd")
+          ) {
+            throw "Windows archive is missing required runtime, licence, or control files"
+          }
 
       - uses: actions/upload-artifact@v4
         with:
@@ -111,7 +190,7 @@ jobs:
   build-linux:
     name: Linux (CLI)
     runs-on: ubuntu-latest
-    needs: resolve-version
+    needs: [resolve-version, verify]
     env:
       VERSION: ${{ needs.resolve-version.outputs.version }}
     strategy:
@@ -120,6 +199,11 @@ jobs:
           - goarch: amd64
           - goarch: arm64
     steps:
+
+      - uses: docker/setup-qemu-action@v3
+        if: matrix.goarch == 'arm64'
+        with:
+          platforms: arm64
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
@@ -157,12 +241,40 @@ jobs:
             -ldflags="-s -w -X unbound/engine.Version=${VERSION}" \
             -o "build/bin/unbound-linux-${GOARCH}" .
 
-      - name: Package
+      - name: Package and smoke-test
         run: |
           set -euo pipefail
-          mkdir -p release
-          tar -czf "release/unbound-v${VERSION}-linux-${{ matrix.goarch }}.tar.gz" \
-            -C build/bin "unbound-linux-${{ matrix.goarch }}"
+          dist="release/unbound-v${VERSION}-linux-${{ matrix.goarch }}"
+          mkdir -p "$dist"
+          cp "build/bin/unbound-linux-${{ matrix.goarch }}" "$dist/unbound"
+          chmod +x "$dist/unbound"
+          cp README.md LICENSE "$dist/"
+          cp engine/third_party/ZAPRET2_LICENSE.txt "$dist/"
+          cp engine/third_party/ZAPRET_LICENSE.txt "$dist/"
+          cp engine/ENGINE_PROVENANCE.json "$dist/"
+          cp scripts/control_linux/*.sh "$dist/"
+          cat > "$dist/run-unbound.sh" <<'SCRIPT'
+          #!/usr/bin/env sh
+          set -eu
+          HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+          exec "$HERE/unbound" --control "$@"
+          SCRIPT
+          chmod +x "$dist/"*.sh
+          (
+            cd "$dist"
+            find . -maxdepth 1 -type f ! -name BUNDLE_SHA256SUMS.txt -exec sha256sum {} \; | sort -k2 > BUNDLE_SHA256SUMS.txt
+          )
+          tar -czf "${dist}.tar.gz" -C release "$(basename "$dist")"
+
+          smoke="$(mktemp -d)"
+          tar -xzf "${dist}.tar.gz" -C "$smoke"
+          root="$smoke/$(basename "$dist")"
+          test -x "$root/unbound"
+          test -f "$root/ZAPRET2_LICENSE.txt"
+          test -f "$root/ZAPRET_LICENSE.txt"
+          test -x "$root/general_autotune.sh"
+          "$root/unbound" --version | grep -F "$VERSION"
+          "$root/unbound" --list-profiles --json | jq -e 'to_entries | (length > 0 and all(.[]; (.value | length > 0)))'
 
       - uses: actions/upload-artifact@v4
         with:
@@ -174,7 +286,7 @@ jobs:
   build-macos:
     name: macOS (Wails universal)
     runs-on: macos-latest
-    needs: resolve-version
+    needs: [resolve-version, verify]
     env:
       VERSION: ${{ needs.resolve-version.outputs.version }}
     steps:
@@ -199,7 +311,7 @@ jobs:
           wails build -platform darwin/universal -clean \
             -ldflags "-X unbound/engine.Version=${VERSION}"
 
-      - name: Package
+      - name: Package and smoke-test
         run: |
           set -euo pipefail
           mkdir -p release
@@ -208,9 +320,34 @@ jobs:
             echo "::error::wails build produced no .app bundle"
             exit 1
           fi
-          ditto -c -k --sequesterRsrc --keepParent \
-            "$app" "release/unbound-v${VERSION}-macos-universal.zip"
+          dist="release/unbound-v${VERSION}-macos-universal"
+          mkdir -p "$dist"
+          cp -R "$app" "$dist/"
+          cp README.md LICENSE "$dist/"
+          cp engine/third_party/ZAPRET2_LICENSE.txt "$dist/"
+          cp engine/third_party/ZAPRET_LICENSE.txt "$dist/"
+          cp engine/ENGINE_PROVENANCE.json "$dist/"
+          cp scripts/control_macOS/*.command "$dist/"
+          chmod +x "$dist/"*.command
+          executable="$(find "$dist" -path '*/Contents/MacOS/*' -type f -perm -111 | head -1)"
+          if [ -z "$executable" ]; then
+            echo "::error::macOS app contains no executable"
+            exit 1
+          fi
+          (
+            cd "$dist"
+            find . -type f ! -name BUNDLE_SHA256SUMS.txt -exec shasum -a 256 {} \; | sort -k2 > BUNDLE_SHA256SUMS.txt
+          )
+          ditto -c -k --sequesterRsrc --keepParent "$dist" "${dist}.zip"
 
+          smoke="$(mktemp -d)"
+          ditto -x -k "${dist}.zip" "$smoke"
+          smoke_executable="$(find "$smoke" -path '*/Contents/MacOS/*' -type f -perm -111 | head -1)"
+          test -n "$smoke_executable"
+          smoke_root="$smoke/$(basename "$dist")"
+          test -f "$smoke_root/ZAPRET_LICENSE.txt"
+          test -x "$smoke_root/general_autotune.command"
+          "$smoke_executable" --version | grep -F "$VERSION"
       - uses: actions/upload-artifact@v4
         with:
           name: unbound-macos
@@ -222,11 +359,16 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - resolve-version
+      - verify
       - build-windows
       - build-linux
       - build-macos
     if: >-
       always() &&
+      needs.verify.result == 'success' &&
+      needs.build-windows.result == 'success' &&
+      needs.build-linux.result == 'success' &&
+      needs.build-macos.result == 'success' &&
       (github.ref_type == 'tag' ||
        (github.event_name == 'workflow_dispatch' && inputs.release))
     steps:
@@ -236,6 +378,15 @@ jobs:
         with:
           path: artifacts/
 
+
+      - name: Generate release checksums
+        run: |
+          set -euo pipefail
+          find artifacts -type f \( -name '*.zip' -o -name '*.tar.gz' \) -print0 \
+            | sort -z \
+            | xargs -0 sha256sum \
+            | sed 's#  artifacts/[^/]*/#  #' > artifacts/SHA256SUMS.txt
+          test -s artifacts/SHA256SUMS.txt
       - name: Extract release notes from CHANGELOG
         id: notes
         env:
@@ -271,6 +422,7 @@ jobs:
           files: |
             artifacts/**/*.zip
             artifacts/**/*.tar.gz
+            artifacts/SHA256SUMS.txt
           draft: ${{ github.ref_type != 'tag' }}
           prerelease: ${{ contains(needs.resolve-version.outputs.version, 'dev') || contains(needs.resolve-version.outputs.version, 'beta') || contains(needs.resolve-version.outputs.version, 'rc') }}
           generate_release_notes: true
