@@ -14,7 +14,7 @@ package engine
 //
 // Keep the default in step with the newest CHANGELOG entry so plain
 // `go build` and `wails build` still report something truthful.
-var Version = "0.1.5"
+var Version = "0.2.0"
 
 // UserAgent is the HTTP User-Agent used for list updates and connectivity
 // probes.

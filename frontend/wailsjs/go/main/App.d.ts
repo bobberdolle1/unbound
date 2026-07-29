@@ -3,6 +3,8 @@
 import {engine} from '../models';
 import {main} from '../models';
 
+export function AddDefenderExclusion():Promise<void>;
+
 export function AutoReconnectMonitor():Promise<void>;
 
 export function AutoTune():Promise<string>;

@@ -2,10 +2,10 @@
 
 <img src="./build/logo.svg" alt="UNBOUND Logo" width="140" />
 
-# UNBOUND Refresh `v0.1.5`
+# UNBOUND Refresh `v0.2.0`
 **Локальный настольный оркестратор обхода DPI-блокировок для Windows, Linux и macOS.**
 
-[![Version](https://img.shields.io/badge/Status-v0.1.5-6366f1?style=for-the-badge&logo=rocket)](#)
+[![Version](https://img.shields.io/badge/Status-v0.2.0-6366f1?style=for-the-badge&logo=rocket)](#)
 [![Security](https://img.shields.io/badge/Security-Verified_100%25-10b981?style=for-the-badge&logo=shield)](SECURITY.md)
 [![License](https://img.shields.io/badge/License-GPL--3.0-blue?style=for-the-badge)](LICENSE)
 [![Language](https://img.shields.io/badge/Language-Russian_🇷🇺-10b981?style=for-the-badge)](#)

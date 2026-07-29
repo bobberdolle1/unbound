@@ -254,6 +254,9 @@ func (a *App) StartEngine(engineName string, profileName string) error {
 	}
 	return err
 }
+func (a *App) AddDefenderExclusion() error {
+	return engine.AddDefenderExclusion()
+}
 
 func (a *App) StopEngine() error {
 	err := a.manager.Stop()

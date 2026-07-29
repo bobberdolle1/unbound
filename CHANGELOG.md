@@ -2,6 +2,15 @@
 
 Все значимые изменения проекта документируются в этом файле.
 
+## [0.2.0] - 2026-07-28
+### 🚀 Релиз UNBOUND v0.2.0 — Переработка AutoTune, Defender & macOS Gatekeeper Fix
+- **Фикс AutoTune (IPv4 force)**: `http.Transport` в `autotune.go` переведён на `tcp4` принудительно, чтобы проверочный трафик шел строго через фильтры WinDivert/NFQUEUE/pf (решена проблема ложных сбоев на Windows).
+- **Замена зондов зондирования на GET Range**: Переход с `HEAD /favicon.ico` на полноценный `GET` с заголовочным диапазоном `Range: bytes=0-1024` для предотвращения обрывов со стороны CDN (GoogleVideo, Discord CDN, Instagram).
+- **Защита от Защитника Windows (Defender)**: Добавлен метод `AddDefenderExclusion()` (Wails + CLI) для автоматического вноса `%APPDATA%\Unbound` и `%TEMP%\clearflow` в исключения Defender через PowerShell.
+- **Фикс macOS Quarantine ("Приложение повреждено...")**: Все `.command` скрипты для macOS автоматически снимают атрибут карантина `xattr -dr com.apple.quarantine` с себя и `Unbound.app` при первом запуске.
+- **Очистка релиза на GitHub**: Очищены все сырые плавающие бинарники из GitHub Releases, оставлены строго 3 отформатированных архива.
+---
+
 ## [0.1.5] - 2026-07-28
 ### 🚀 Релиз UNBOUND v0.1.5 — Интерактивный Control Center и Запускные Скрипты
 - **Интерактивный CLI Control Center (`unbound --control`)**: Нативное консольное меню управления (аналог `service.bat`), работающее одинаково на Windows, macOS и Linux. Поддерживает AutoTune, запуск профилей, диагностику `--test`, управление автозапуском, редактирование списков `youtube.txt`/`discord.txt`/`ipset-exclude.txt`, переключение Secure DNS (Cloudflare DoH), проверку конфликтов, очистку кэша Discord и сброс драйверов.

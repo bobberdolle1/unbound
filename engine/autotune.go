@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -34,16 +35,16 @@ type Target struct {
 // Расширенный список целей для тестирования — отражает реальные российские блокировки
 var testTargets = []Target{
 	// Высокий приоритет — основные цели (30 очков каждый)
-	{Name: "YouTube", URL: "https://www.youtube.com/favicon.ico", Priority: 30},
-	{Name: "Discord", URL: "https://discord.com/favicon.ico", Priority: 30},
-	{Name: "Instagram", URL: "https://www.instagram.com/favicon.ico", Priority: 20},
+	{Name: "YouTube", URL: "https://www.youtube.com", Priority: 30},
+	{Name: "Discord", URL: "https://discord.com", Priority: 30},
+	{Name: "Instagram", URL: "https://www.instagram.com", Priority: 20},
 	// Средний приоритет — часто блокируемые
-	{Name: "Twitter/X", URL: "https://twitter.com/favicon.ico", Priority: 15},
-	{Name: "Facebook", URL: "https://www.facebook.com/favicon.ico", Priority: 15},
-	{Name: "RuTracker", URL: "https://rutracker.org/favicon.ico", Priority: 15},
+	{Name: "Twitter/X", URL: "https://twitter.com", Priority: 15},
+	{Name: "Facebook", URL: "https://www.facebook.com", Priority: 15},
+	{Name: "RuTracker", URL: "https://rutracker.org", Priority: 15},
 	// Низкий приоритет — VPN и прочее
-	{Name: "NordVPN", URL: "https://nordvpn.com/favicon.ico", Priority: 10},
-	{Name: "Proton", URL: "https://proton.me/favicon.ico", Priority: 10},
+	{Name: "NordVPN", URL: "https://nordvpn.com", Priority: 10},
+	{Name: "Proton", URL: "https://proton.me", Priority: 10},
 }
 
 type AutoTuneProgressFn func(step, total int, profile string, okCount, totalTargets int, msg string)
@@ -228,10 +229,18 @@ func testTargetWithContext(ctx context.Context, url string) TargetStatus {
 	logger := GetLogger()
 	start := time.Now()
 
-	// Используем HEAD для скорости (как probe.trolling.website)
+	// Force IPv4 dialer so probe traffic passes through WinDivert / NFQUEUE / pf rules
+	dialer := &net.Dialer{
+		Timeout:   4 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+
 	client := &http.Client{
-		Timeout: 5 * time.Second, // Strict 5-second timeout
+		Timeout: 6 * time.Second,
 		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				return dialer.DialContext(ctx, "tcp4", addr)
+			},
 			TLSClientConfig: &tls.Config{
 				MinVersion:         tls.VersionTLS12,
 				MaxVersion:         tls.VersionTLS13,
@@ -247,30 +256,18 @@ func testTargetWithContext(ctx context.Context, url string) TargetStatus {
 		},
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "HEAD", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return TargetStatus{OK: false, Error: err.Error()}
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	req.Header.Set("Range", "bytes=0-1024")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		// Попробуем GET если HEAD не сработал
-		req2, err2 := http.NewRequestWithContext(ctx, "GET", url, nil)
-		if err2 != nil {
-			return TargetStatus{OK: false, Error: err2.Error()}
-		}
-		req2.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-		resp2, err3 := client.Do(req2)
-		if err3 != nil {
-			logger.Debugf("AutoTune", "Цель %s недоступна: %v", url, err3)
-			return TargetStatus{OK: false, Error: err3.Error()}
-		}
-		defer resp2.Body.Close()
-		latency := time.Since(start)
-		isTLS13 := resp2.TLS != nil && resp2.TLS.Version == tls.VersionTLS13
-		isOK := resp2.StatusCode < 500
-		return TargetStatus{OK: isOK, Latency: latency, TLS13: isTLS13}
+		logger.Debugf("AutoTune", "Цель %s недоступна: %v", url, err)
+		return TargetStatus{OK: false, Error: err.Error()}
 	}
 	defer resp.Body.Close()
 
