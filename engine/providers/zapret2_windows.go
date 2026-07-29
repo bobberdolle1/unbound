@@ -155,10 +155,19 @@ func (e *Zapret2WindowsProvider) getProfileArgsLocked(profileName string) []stri
 	// 3. Single unified profile with auto-detection
 	// 4. Port lists use COMMA separation
 
-	args := []string{
-		"--wf-l3=ipv4,ipv6",
-		"--wf-tcp-out=443",
-		"--wf-udp-out=443,50000-65535",
+	args := []string{}
+
+	// Only add base WinDivert filter if profile doesn't define its own --wf-tcp-out/--wf-udp-out
+	hasWfTcp := false
+	for _, arg := range profileArgs {
+		if strings.HasPrefix(arg, "--wf-tcp-out=") || strings.HasPrefix(arg, "--wf-l3=") {
+			hasWfTcp = true
+			break
+		}
+	}
+
+	if !hasWfTcp {
+		args = append(args, "--wf-l3=ipv4,ipv6", "--wf-tcp-out=443", "--wf-udp-out=443,50000-65535")
 	}
 
 	// Lua initialization MUST come before any profile definitions
@@ -169,7 +178,6 @@ func (e *Zapret2WindowsProvider) getProfileArgsLocked(profileName string) []stri
 	if e.debugMode {
 		args = append(args, "--debug=1")
 	}
-
 	// REMOVED: Global hostlist/ipset causes profile 0 to match everything
 	// Now using --hostlist-auto in individual profiles for dynamic detection
 

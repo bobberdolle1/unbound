@@ -88,7 +88,8 @@ func RunAutoTuneV2WithProgress(ctx context.Context, provider providers.BypassPro
 
 			result := testBypassParallel(profile.Name)
 			provider.Stop()
-			time.Sleep(500 * time.Millisecond)
+			// Pause 1.5s so WinDivert / pf / nftables driver handles close completely before the next profile starts
+			time.Sleep(1500 * time.Millisecond)
 
 			// Логируем детали
 			okCount := countOK(result)
