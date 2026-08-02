@@ -2,10 +2,10 @@
 
 <img src="./build/logo.svg" alt="UNBOUND Logo" width="140" />
 
-# UNBOUND Refresh `v0.2.1`
+# UNBOUND Refresh `v0.2.3`
 **Локальный настольный оркестратор обхода DPI-блокировок для Windows, Linux и macOS.**
 
-[![Version](https://img.shields.io/badge/Status-v0.2.1-6366f1?style=for-the-badge&logo=rocket)](#)
+[![Version](https://img.shields.io/badge/Status-v0.2.3-6366f1?style=for-the-badge&logo=rocket)](#)
 [![Security](https://img.shields.io/badge/Security-SHA256_pinned-10b981?style=for-the-badge&logo=shield)](SECURITY.md)
 [![License](https://img.shields.io/badge/License-GPL--3.0-blue?style=for-the-badge)](LICENSE)
 [![Language](https://img.shields.io/badge/Language-Russian_🇷🇺-10b981?style=for-the-badge)](#)
@@ -135,10 +135,10 @@ cd unbound
 cd frontend && npm ci && npm run build && cd ..
 
 # 3. Сборка CLI-версии
-go build -trimpath -ldflags="-s -w -X unbound/engine.Version=0.2.1" -o build/bin/unbound .
+go build -trimpath -ldflags="-s -w -X unbound/engine.Version=0.2.3" -o build/bin/unbound .
 
 # 4. Сборка десктопного GUI (Wails)
-wails build -clean -ldflags "-X unbound/engine.Version=0.2.1"
+wails build -clean -ldflags "-X unbound/engine.Version=0.2.3"
 ```
 
 ### Локальные проверки:
@@ -151,7 +151,7 @@ make quick     # Быстрая проверка без кросс-компил�
 
 ## 🗂 Структура репозитория и релизы
 
-- **`master`**: актуальная ветка Unbound Refresh (`v0.2.1`), сфокусированная на Windows, Linux и macOS.
+- **`master`**: актуальная ветка Unbound Refresh (`v0.2.3`), сфокусированная на Windows, Linux и macOS.
 - **`legacy/v2.x`**: Заархивированная ветка предыдущего репозитория (версии v2.x) со всеми экспериментальными модулями (Android, Magisk, OpenWrt, Decky, Web Extension, LG WebOS, tvOS).
 
 ---

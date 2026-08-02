@@ -128,8 +128,11 @@ build_darwin() {
     fi
 
     local args=()
-    [ "$DEBUG_MODE" = true ] && args+=("debug")
-    UNBOUND_VERSION="$ver" "$PROJECT_ROOT/scripts/build/build_darwin.sh" universal "${args[@]}"
+    if [ "$DEBUG_MODE" = true ]; then
+        UNBOUND_VERSION="$ver" "$PROJECT_ROOT/scripts/build/build_darwin.sh" universal debug
+    else
+        UNBOUND_VERSION="$ver" "$PROJECT_ROOT/scripts/build/build_darwin.sh" universal
+    fi
 }
 
 build_linux() {
@@ -137,10 +140,11 @@ build_linux() {
     ver="$(resolve_version)"
     log_step "Building Linux amd64 CLI"
 
-    local args=()
-    [ "$DEBUG_MODE" = true ] && args+=("debug")
-    GOARCH=amd64 UNBOUND_VERSION="$ver" \
-        "$PROJECT_ROOT/scripts/build/build_linux.sh" "${args[@]}"
+    if [ "$DEBUG_MODE" = true ]; then
+        GOARCH=amd64 UNBOUND_VERSION="$ver" "$PROJECT_ROOT/scripts/build/build_linux.sh" debug
+    else
+        GOARCH=amd64 UNBOUND_VERSION="$ver" "$PROJECT_ROOT/scripts/build/build_linux.sh"
+    fi
     log_ok "Linux CLI built: $BUILD_DIR/bin/unbound-linux-amd64"
 }
 

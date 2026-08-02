@@ -1,13 +1,28 @@
-//go:build darwin
-
 package main
 
 import (
+	"os"
+	"os/exec"
+	"strings"
+
 	"unbound/engine"
 	"unbound/engine/providers"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
+
+func stripSelfQuarantine() {
+	execPath, err := os.Executable()
+	if err != nil {
+		return
+	}
+	idx := strings.Index(execPath, ".app/")
+	if idx != -1 {
+		appPath := execPath[:idx+4]
+		_ = exec.Command("xattr", "-d", "com.apple.quarantine", appPath).Run()
+		_ = exec.Command("xattr", "-cr", appPath).Run()
+	}
+}
 
 // checkAdminPrivileges reports whether the process can run on macOS.
 // Privileges for pfctl are requested gracefully via osascript when starting
@@ -17,6 +32,7 @@ func checkAdminPrivileges() (bool, error) {
 }
 
 func registerOSProviders(a *App, assets *engine.AssetPaths) {
+	stripSelfQuarantine()
 	logger := engine.GetLogger()
 
 	binPath, err := providers.ResolveEngineBinary(providers.MacOSEngineBinary, assets.BinDir)

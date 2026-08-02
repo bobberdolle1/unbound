@@ -257,8 +257,47 @@ func (e *ZapretMacOSProvider) resolveProfile(name string) (macProfile, error) {
 // pf helpers
 // ──────────────────────────────────────────────────────────────────────────────
 
-// runPfctlPrivileged runs pfctl, prompting for admin password via osascript if
-// needed. It uses a non-interactive timeout to avoid blocking shutdown.
+const sudoersFilePath = "/etc/sudoers.d/unbound_zapret"
+const sudoersContent = "ALL ALL=(ALL) NOPASSWD: /sbin/pfctl, /bin/cp\n"
+
+// EnsureSudoersConfigured checks if /etc/sudoers.d/unbound_zapret exists.
+// If missing, it prompts the user ONCE via osascript with administrator privileges to create it.
+func EnsureSudoersConfigured() error {
+	if _, err := os.Stat(sudoersFilePath); err == nil {
+		return nil
+	}
+
+	cmdStr := fmt.Sprintf("mkdir -p /etc/sudoers.d && echo '%s' > %s && chmod 0440 %s",
+		strings.TrimSpace(sudoersContent), sudoersFilePath, sudoersFilePath)
+
+	escapedScript := strings.ReplaceAll(cmdStr, `\`, `\\`)
+	escapedScript = strings.ReplaceAll(escapedScript, `"`, `\"`)
+	script := fmt.Sprintf(`do shell script "%s" with administrator privileges`, escapedScript)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	out, err := exec.CommandContext(ctx, "osascript", "-e", script).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to create sudoers file: %s (%w)", strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+func trySudoN(stdinInput string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	cmdArgs := append([]string{"-n", "pfctl"}, args...)
+	cmd := exec.CommandContext(ctx, "sudo", cmdArgs...)
+	if stdinInput != "" {
+		cmd.Stdin = strings.NewReader(stdinInput)
+	}
+	return cmd.CombinedOutput()
+}
+
+// runPfctlPrivileged runs pfctl, attempting non-interactive sudo via sudoers helper
+// first, falling back to osascript if needed.
 func runPfctlPrivileged(stdinInput string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -271,14 +310,25 @@ func runPfctlPrivileged(stdinInput string, args ...string) ([]byte, error) {
 		return cmd.CombinedOutput()
 	}
 
-	// Build the shell command string.
+	// First attempt non-interactive sudo.
+	if out, err := trySudoN(stdinInput, args...); err == nil {
+		return out, nil
+	}
+
+	// If sudo -n fails, ensure sudoers helper is configured and retry.
+	if sErr := EnsureSudoersConfigured(); sErr == nil {
+		if out, err := trySudoN(stdinInput, args...); err == nil {
+			return out, nil
+		}
+	}
+
+	// Fallback to osascript if sudo -n still fails.
 	pfCmd := "pfctl " + strings.Join(args, " ")
 	if stdinInput != "" {
 		escaped := strings.ReplaceAll(stdinInput, "'", "'\"'\"'")
 		pfCmd = fmt.Sprintf("printf '%%s' '%s' | pfctl %s", escaped, strings.Join(args, " "))
 	}
 
-	// Escape for embedding inside an AppleScript string literal.
 	escapedScript := strings.ReplaceAll(pfCmd, `\`, `\\`)
 	escapedScript = strings.ReplaceAll(escapedScript, `"`, `\"`)
 	script := fmt.Sprintf(`do shell script "%s" with administrator privileges`, escapedScript)
@@ -288,7 +338,6 @@ func runPfctlPrivileged(stdinInput string, args ...string) ([]byte, error) {
 
 // loadPfAnchor enables pf (idempotent), optionally patches pf.conf anchors,
 // reloads pf.conf, then loads our ruleset into the anchor.
-// loadPfAnchor enables pf, patches /etc/pf.conf if needed, and loads anchor rules in a single privileged operation.
 func (e *ZapretMacOSProvider) loadPfAnchor(rules []string) error {
 	ruleset := strings.Join(rules, "\n") + "\n"
 	rulesTmp, err := os.CreateTemp("", "unbound_pf_rules_*.tmp")
@@ -326,8 +375,22 @@ func (e *ZapretMacOSProvider) loadPfAnchor(rules []string) error {
 		return nil
 	}
 
-	// Combine all setup tasks into a single privileged shell invocation so osascript prompts ONCE.
+	// Try non-interactive sudo (with pfctl and cp) if sudoers is configured.
+	if sErr := EnsureSudoersConfigured(); sErr == nil {
+		_ = exec.Command("sudo", "-n", "pfctl", "-e").Run()
+		if patched && pfConfTmpPath != "" {
+			_ = exec.Command("sudo", "-n", "cp", pfConfTmpPath, "/etc/pf.conf").Run()
+			_ = exec.Command("sudo", "-n", "pfctl", "-f", "/etc/pf.conf").Run()
+		}
+		if _, err := exec.Command("sudo", "-n", "pfctl", "-a", pfAnchorName, "-f", rulesPath).CombinedOutput(); err == nil {
+			return nil
+		}
+	}
+
+	// Fallback / First-run setup: combine all setup tasks into a single privileged shell invocation so osascript prompts ONCE.
 	var scriptCmds []string
+	scriptCmds = append(scriptCmds, fmt.Sprintf("mkdir -p /etc/sudoers.d && echo '%s' > %s && chmod 0440 %s",
+		strings.TrimSpace(sudoersContent), sudoersFilePath, sudoersFilePath))
 	scriptCmds = append(scriptCmds, "pfctl -e 2>/dev/null || true")
 	if patched && pfConfTmpPath != "" {
 		scriptCmds = append(scriptCmds, fmt.Sprintf("cp %s /etc/pf.conf && pfctl -f /etc/pf.conf", pfConfTmpPath))
@@ -366,7 +429,6 @@ func preparePfConfPatch() (bool, string, error) {
 	if !needsRdr && !needsAnchor {
 		return false, "", nil
 	}
-
 	lines := strings.Split(content, "\n")
 	var out []string
 	rdrInserted := !needsRdr
@@ -422,8 +484,10 @@ func (e *ZapretMacOSProvider) flushPfAnchor() {
 	}
 	e.anchorLoaded = false
 	e.addLogLocked("Убираем правила pf...")
-	_, _ = runPfctlPrivileged("", "-a", pfAnchorName, "-F", "all")
-	sendMacOSNotification("UNBOUND", "Правила обхода pf успешно очищены")
+	go func() {
+		_, _ = runPfctlPrivileged("", "-a", pfAnchorName, "-F", "all")
+		sendMacOSNotification("UNBOUND", "Правила обхода pf успешно очищены")
+	}()
 }
 
 func (e *ZapretMacOSProvider) anchorIsReferenced() bool {

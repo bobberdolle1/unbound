@@ -107,10 +107,10 @@ func (a *App) startup(ctx context.Context) {
 	// Register OS-specific providers
 	registerOSProviders(a, assets)
 
-	// Log registered engines
+	// Log registered engines and notify frontend
 	engines := a.manager.GetEngineNames()
 	logger.Infof("App", "Registered engines: %v", engines)
-
+	wailsruntime.EventsEmit(ctx, "engines_changed", engines)
 	// Auto-recovery: use the selected native profile, the last successful
 	// profile, or run AutoTune explicitly.
 	if settings != nil && settings.AutoStart {

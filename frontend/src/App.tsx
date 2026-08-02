@@ -315,12 +315,24 @@ export default function App() {
     };
     checkConflicts();
     
-    GetEngineNames().then((e: string[]) => {
-      setEngines(e || []);
-      if (e && e.length > 0) {
-        setSelectedEngine((prev) => (prev && e.includes(prev) ? prev : e[0]));
+    const loadEngines = async (retryCount = 0) => {
+      try {
+        const e = await GetEngineNames();
+        if (e && e.length > 0) {
+          setEngines(e);
+          setSelectedEngine((prev) => (prev && e.includes(prev) ? prev : e[0]));
+        } else if (retryCount < 3) {
+          const delays = [300, 800, 1500];
+          setTimeout(() => loadEngines(retryCount + 1), delays[retryCount]);
+        }
+      } catch (err) {
+        if (retryCount < 3) {
+          const delays = [300, 800, 1500];
+          setTimeout(() => loadEngines(retryCount + 1), delays[retryCount]);
+        }
       }
-    });
+    };
+    loadEngines();
     
     GetSettings().then((s: any) => {
       setSettings({
@@ -380,6 +392,18 @@ export default function App() {
   }, [selectedEngine, engines]);
 
   useEffect(() => {
+    EventsOn('engines_changed', (e: string[]) => {
+      if (e && e.length > 0) {
+        setEngines(e);
+        setSelectedEngine((prev) => (prev && e.includes(prev) ? prev : e[0]));
+        GetProfiles(e[0]).then((p: string[]) => {
+          if (p && p.length > 0) {
+            setProfiles(p);
+            setSelectedProfile((prev) => (prev && p.includes(prev) ? prev : p[0]));
+          }
+        });
+      }
+    });
     EventsOn('privilege_error', (msg: string) => {
       setPrivilegeError(msg);
     });
