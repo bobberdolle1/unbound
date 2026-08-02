@@ -5,6 +5,8 @@ package main
 import (
 	"context"
 
+	"unbound/engine"
+
 	"github.com/wailsapp/wails/v2/pkg/menu"
 	"github.com/wailsapp/wails/v2/pkg/menu/keys"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -22,15 +24,9 @@ func (a *App) setupTray() {
 }
 
 func (a *App) onBeforeClose(ctx context.Context) bool {
-	a.mu.Lock()
-	closing := a.closing
-	a.mu.Unlock()
-	if closing {
-		return false // Allow clean exit when app is shutting down
-	}
-	// Hide to tray on window X click
-	runtime.WindowHide(ctx)
-	return true
+	// Returning false allows macOS system quit requests (Dock icon "Завершить", Cmd+Q, OS shutdown)
+	// to terminate the application cleanly. Window 'X' button in UI calls HideWindowToTray() directly.
+	return false
 }
 
 func (a *App) ShowFromTray() {
@@ -47,7 +43,7 @@ func getAppMenu(a *App) *menu.Menu {
 		runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
 			Type:    runtime.InfoDialog,
 			Title:   "About Unbound",
-			Message: "Unbound v2.0.0\nUltimate DPI Bypass Engine",
+			Message: "Unbound v" + engine.Version + "\nUltimate DPI Bypass Engine",
 		})
 	})
 	fileMenu.AddSeparator()
