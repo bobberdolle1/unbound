@@ -258,7 +258,7 @@ func (e *ZapretMacOSProvider) resolveProfile(name string) (macProfile, error) {
 // ──────────────────────────────────────────────────────────────────────────────
 
 const sudoersFilePath = "/etc/sudoers.d/unbound_zapret"
-const sudoersContent = "ALL ALL=(ALL) NOPASSWD: /sbin/pfctl -a com.unbound.zapret*, /sbin/pfctl -f /etc/pf.conf, /sbin/pfctl -e, /sbin/pfctl -d, /sbin/pfctl -s *\n"
+const sudoersContent = "ALL ALL=(ALL) NOPASSWD: /sbin/pfctl\n"
 
 // EnsureSudoersConfigured checks if /etc/sudoers.d/unbound_zapret exists.
 // If missing, it prompts the user ONCE via osascript with administrator privileges to create it.
@@ -267,8 +267,21 @@ func EnsureSudoersConfigured() error {
 		return nil
 	}
 
-	cmdStr := fmt.Sprintf("mkdir -p /etc/sudoers.d && echo '%s' > %s && chmod 0440 %s",
-		strings.TrimSpace(sudoersContent), sudoersFilePath, sudoersFilePath)
+	tmpFile, err := os.CreateTemp("", "unbound_sudoers_*.tmp")
+	if err != nil {
+		return fmt.Errorf("mktemp sudoers: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
+
+	if _, err := tmpFile.WriteString(sudoersContent); err != nil {
+		tmpFile.Close()
+		return fmt.Errorf("write sudoers tmp: %w", err)
+	}
+	tmpFile.Close()
+
+	cmdStr := fmt.Sprintf("mkdir -p /etc/sudoers.d && cp %s %s && chmod 0440 %s",
+		tmpPath, sudoersFilePath, sudoersFilePath)
 
 	escapedScript := strings.ReplaceAll(cmdStr, `\`, `\\`)
 	escapedScript = strings.ReplaceAll(escapedScript, `"`, `\"`)
