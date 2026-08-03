@@ -36,6 +36,23 @@ test -f engine/core_bin/darwin/tpws || {
 }
 VERSION="${UNBOUND_VERSION:-$(node -p "require('./wails.json').info.productVersion")}"
 
+echo "[INFO] Generating high-resolution macOS iconset..."
+if [ -f "build/appicon.png" ] && command -v sips >/dev/null 2>&1 && command -v iconutil >/dev/null 2>&1; then
+    ICONSET_DIR="$(mktemp -d)/appicon.iconset"
+    mkdir -p "$ICONSET_DIR"
+    sips -z 16 16     build/appicon.png --out "$ICONSET_DIR/icon_16x16.png" >/dev/null 2>&1 || true
+    sips -z 32 32     build/appicon.png --out "$ICONSET_DIR/icon_16x16@2x.png" >/dev/null 2>&1 || true
+    sips -z 32 32     build/appicon.png --out "$ICONSET_DIR/icon_32x32.png" >/dev/null 2>&1 || true
+    sips -z 64 64     build/appicon.png --out "$ICONSET_DIR/icon_32x32@2x.png" >/dev/null 2>&1 || true
+    sips -z 128 128   build/appicon.png --out "$ICONSET_DIR/icon_128x128.png" >/dev/null 2>&1 || true
+    sips -z 256 256   build/appicon.png --out "$ICONSET_DIR/icon_128x128@2x.png" >/dev/null 2>&1 || true
+    sips -z 256 256   build/appicon.png --out "$ICONSET_DIR/icon_256x256.png" >/dev/null 2>&1 || true
+    sips -z 512 512   build/appicon.png --out "$ICONSET_DIR/icon_256x256@2x.png" >/dev/null 2>&1 || true
+    sips -z 512 512   build/appicon.png --out "$ICONSET_DIR/icon_512x512.png" >/dev/null 2>&1 || true
+    iconutil -c icns "$ICONSET_DIR" -o build/darwin/iconfile.icns >/dev/null 2>&1 || true
+    rm -rf "$ICONSET_DIR"
+fi
+
 echo "[INFO] Building frontend..."
 (cd frontend && npm ci --no-audit --no-fund && npm run build)
 
@@ -47,7 +64,6 @@ fi
 export CGO_LDFLAGS="-framework UniformTypeIdentifiers ${CGO_LDFLAGS:-}"
 echo "[INFO] Building macOS $PLATFORM Wails app v$VERSION..."
 wails "${WAILS_ARGS[@]}"
-
 APP_PATH=""
 for candidate in build/bin/unbound.app build/bin/Unbound.app; do
     if [ -d "$candidate" ]; then
@@ -92,13 +108,31 @@ echo "[INFO] Packaging $ZIP_NAME..."
 (cd "$STAGE_DIR" && ditto -c -k --sequesterRsrc --keepParent "Unbound.app" "$ZIP_PATH")
 
 echo "[INFO] Building macOS Disk Image $DMG_NAME..."
+DMG_STAGE="$(mktemp -d)"
+cp -R "$STAGE_APP" "$DMG_STAGE/Unbound.app"
+ln -s /Applications "$DMG_STAGE/Applications" 2>/dev/null || true
+cat > "$DMG_STAGE/ОБЯЗАТЕЛЬНО К ПРОЧТЕНИЮ.txt" << 'EOF'
+===================================================
+  🍎 ИНСТРУКЦИЯ ПО УСТАНОВКЕ UNBOUND НА macOS
+===================================================
+
+1. Перетащите "Unbound.app" в папку "Applications" (Программы).
+
+2. ПЕРВЫЙ ЗАПУСК (Apple Gatekeeper):
+   Так как приложение является открытым программным обеспечением (Open Source),
+   при первом запуске нажмите на Unbound.app ПРАВОЙ КНОПКОЙ МЫШИ (или Ctrl + клик)
+   и выберите «Открыть» (Open).
+
+   В появившемся окне macOS нажмите «Открыть» (Open).
+
+3. При первом подключении система запросит пароль администратора РОНО ОДИН РАЗ,
+   чтобы настроить правила сетевого файрвола pfctl.
+   Все последующие подключения будут происходить мгновенно в фоне!
+EOF
+
 TMP_DMG="$(mktemp -d)/Unbound.dmg"
-hdiutil create -volname "UNBOUND" -srcfolder "$STAGE_APP" -ov -format UDZO "$TMP_DMG" >/dev/null
+hdiutil create -volname "UNBOUND" -srcfolder "$DMG_STAGE" -ov -format UDZO "$TMP_DMG" >/dev/null
 mv "$TMP_DMG" "$DMG_PATH"
-
-rm -rf "$STAGE_DIR"
-
-echo "[OK] macOS app built, smoke-tested, and packaged:"
-echo "  - App Bundle: $APP_PATH"
+rm -rf "$DMG_STAGE" "$STAGE_DIR"
 echo "  - Zip Archive: $ZIP_PATH"
 echo "  - Disk Image: $DMG_PATH"
