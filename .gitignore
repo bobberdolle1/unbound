@@ -19,7 +19,7 @@ node_modules/
 # ─── Build output ───────────────────────────────────────────────────────────
 build/bin/
 /dist/
-release/
+/release/
 /.act-artifacts/
 
 # Wails embeds frontend/dist, so `go build` fails on a clean clone unless the

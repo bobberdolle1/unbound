@@ -74,9 +74,10 @@
 
 | Платформа | Драйвер / Механизм | Статус проверки |
 | :--- | :--- | :---: |
-| **macOS (Apple Silicon / Intel)** | `pf` redirect + Zapret `dvtws` / `tpws` | ✅ Runtime Verified |
-| **Windows 10 / 11** | `WinDivert` + Zapret 2 `winws2.exe` | ⚠️ Static Analysis Verified (Runtime Pending) |
-| **Linux (amd64 / arm64)** | `NFQUEUE` + `nftables` / `iptables` + `nfqws2` | ⚠️ Static Analysis Verified (Runtime Pending) |
+| **macOS Apple Silicon (`darwin/arm64`)** | `pf` redirect + Zapret `dvtws` / `tpws` | ✅ Runtime Verified |
+| **macOS Intel (`darwin/amd64`)** | `pf` redirect + Zapret `dvtws` / `tpws` | ⚠️ Not Tested |
+| **Windows 10 / 11 (`windows/amd64`)** | `WinDivert` + Zapret 2 `winws2.exe` | ⚠️ Static Analysis Verified (Runtime Pending) |
+| **Linux (`linux/amd64`)** | `NFQUEUE` + `nftables` / `iptables` + `nfqws2` | ⚠️ Static Analysis Verified (Runtime Pending) |
 
 ---
 
@@ -135,10 +136,10 @@ cd unbound
 cd frontend && npm ci && npm run build && cd ..
 
 # 3. Сборка CLI-версии
-go build -trimpath -ldflags="-s -w -X unbound/engine.Version=0.3.0" -o build/bin/unbound .
+go build -trimpath -ldflags="-s -w -X unbound/engine.Version=0.3.0-rc.1" -o build/bin/unbound .
 
 # 4. Сборка Wails GUI
-wails build -clean -ldflags "-X unbound/engine.Version=0.3.0"
+wails build -clean -ldflags "-X unbound/engine.Version=0.3.0-rc.1"
 ```
 
 ---
