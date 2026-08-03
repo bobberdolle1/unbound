@@ -258,7 +258,7 @@ func (e *ZapretMacOSProvider) resolveProfile(name string) (macProfile, error) {
 // ──────────────────────────────────────────────────────────────────────────────
 
 const sudoersFilePath = "/etc/sudoers.d/unbound_zapret"
-const sudoersContent = "ALL ALL=(ALL) NOPASSWD: /sbin/pfctl, /bin/cp\n"
+const sudoersContent = "ALL ALL=(ALL) NOPASSWD: /sbin/pfctl -a com.unbound.zapret*, /sbin/pfctl -f /etc/pf.conf, /sbin/pfctl -e, /sbin/pfctl -d, /sbin/pfctl -s *\n"
 
 // EnsureSudoersConfigured checks if /etc/sudoers.d/unbound_zapret exists.
 // If missing, it prompts the user ONCE via osascript with administrator privileges to create it.
@@ -364,8 +364,10 @@ func (e *ZapretMacOSProvider) loadPfAnchor(rules []string) error {
 	if os.Geteuid() == 0 {
 		_ = exec.Command("pfctl", "-e").Run()
 		if patched && pfConfTmpPath != "" {
-			if err := os.WriteFile("/etc/pf.conf", []byte(pfConfTmpPath), 0644); err == nil {
-				_ = exec.Command("pfctl", "-f", "/etc/pf.conf").Run()
+			if content, rErr := os.ReadFile(pfConfTmpPath); rErr == nil {
+				if err := os.WriteFile("/etc/pf.conf", content, 0644); err == nil {
+					_ = exec.Command("pfctl", "-f", "/etc/pf.conf").Run()
+				}
 			}
 		}
 		out, err := exec.Command("pfctl", "-a", pfAnchorName, "-f", rulesPath).CombinedOutput()
@@ -375,13 +377,9 @@ func (e *ZapretMacOSProvider) loadPfAnchor(rules []string) error {
 		return nil
 	}
 
-	// Try non-interactive sudo (with pfctl and cp) if sudoers is configured.
-	if sErr := EnsureSudoersConfigured(); sErr == nil {
+	// Try non-interactive sudo (with pfctl) if sudoers is configured and pf.conf does not need patching.
+	if sErr := EnsureSudoersConfigured(); sErr == nil && !patched {
 		_ = exec.Command("sudo", "-n", "pfctl", "-e").Run()
-		if patched && pfConfTmpPath != "" {
-			_ = exec.Command("sudo", "-n", "cp", pfConfTmpPath, "/etc/pf.conf").Run()
-			_ = exec.Command("sudo", "-n", "pfctl", "-f", "/etc/pf.conf").Run()
-		}
 		if _, err := exec.Command("sudo", "-n", "pfctl", "-a", pfAnchorName, "-f", rulesPath).CombinedOutput(); err == nil {
 			return nil
 		}
