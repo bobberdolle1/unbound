@@ -565,6 +565,7 @@ func TestFrontend_VitestSuite(t *testing.T) {
 
 	cmd := exec.Command("npm", "test")
 	cmd.Dir = filepath.Join(repoRoot, "frontend")
+	cmd.Env = append(os.Environ(), "NODE_ENV=test")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("frontend vitest suite failed: %v\n%s", err, out)

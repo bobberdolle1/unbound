@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "kind": "html",
+  "title": "unbound-concepts.html",
+  "entry": "unbound-concepts.html",
+  "renderer": "html",
+  "status": "complete",
+  "exports": [
+    "html",
+    "pdf",
+    "zip"
+  ],
+  "createdAt": "2026-08-03T16:01:05.153Z",
+  "updatedAt": "2026-08-03T16:01:05.153Z",
+  "metadata": {
+    "inferred": true,
+    "reconciled": true
+  }
+}

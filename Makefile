@@ -15,7 +15,7 @@ SHELL := /usr/bin/env bash
 
 # Keep in step with the newest CHANGELOG entry; release builds pass this to
 # -ldflags so the binary stops reporting a stale version.
-VERSION ?= 0.2.3
+VERSION ?= 0.3.0-rc.1
 LDFLAGS := -s -w -X unbound/engine.Version=$(VERSION)
 
 GOOS_HOST := $(shell go env GOOS 2>/dev/null)
@@ -36,6 +36,9 @@ check: ## Run every check CI would (gofmt, vet, tests, cross-compile, builds)
 
 quick: ## Same as check, skipping the slow cross-compilation step
 	@./scripts/check.sh --quick
+
+sync-logo: ## Synchronize logo master SVG to all derived PNG/ICO/ICNS assets
+	@python3 scripts/generate_all_icons.py
 
 fmt: ## Format all Go sources
 	@gofmt -w $$(gofmt -l . | grep -v '^frontend/') 2>/dev/null || true

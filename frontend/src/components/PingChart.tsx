@@ -4,8 +4,8 @@ export const PingChart = ({ history }: { history: number[] }) => {
   const minVal = 0;
   const range = maxVal - minVal;
   const width = 300;
-  const height = 50;
-  const padding = 5;
+  const height = 48;
+  const padding = 4;
 
   const points = history.map((val, idx) => {
     const x = padding + (idx / (history.length - 1 || 1)) * (width - padding * 2);
@@ -23,21 +23,27 @@ export const PingChart = ({ history }: { history: number[] }) => {
 
   return (
     <div
-      className="flex flex-col items-center mt-3 p-3.5 border-2 rounded-xl relative z-10 transition-all duration-200"
+      className="flex flex-col items-center mt-3 p-3 border rounded-xl relative z-10 transition-all duration-200 app-no-drag"
       style={{
-        background: 'var(--ui-panel)',
+        background: 'var(--ui-panel-transparent)',
         borderColor: 'var(--ui-border)',
-        boxShadow: '0 4px 14px rgba(0, 0, 0, 0.08)'
+        backdropFilter: 'blur(var(--ui-blur))',
+        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)'
       }}
     >
-      <div className="flex justify-between items-center w-full text-xs font-bold px-1 mb-2" style={{ color: 'var(--ui-text)' }}>
-        <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-          Задержка обхода (Live Latency)
+      <div className="flex justify-between items-center w-full text-xs font-medium px-1 mb-2" style={{ color: 'var(--ui-text)' }}>
+        <span className="flex items-center gap-2 font-semibold">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+          </span>
+          Задержка обхода
         </span>
         <div className="flex items-center gap-2">
-          <span className="text-[11px]" style={{ color: 'var(--ui-text-muted)' }}>ср: {avg} мс (мин: {min} / макс: {max})</span>
-          <span className="text-sm font-extrabold px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+          <span className="text-[11px] font-mono" style={{ color: 'var(--ui-text-dim)' }}>
+            ср: {avg} мс (мин: {min} / макс: {max})
+          </span>
+          <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
             {current} мс
           </span>
         </div>
@@ -45,12 +51,12 @@ export const PingChart = ({ history }: { history: number[] }) => {
       <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} className="overflow-visible">
         <defs>
           <linearGradient id="pingGradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--ui-accent, #10b981)" stopOpacity="0.35" />
-            <stop offset="100%" stopColor="var(--ui-accent, #10b981)" stopOpacity="0.0" />
+            <stop offset="0%" stopColor="var(--ui-accent, #38bdf8)" stopOpacity="0.3" />
+            <stop offset="100%" stopColor="var(--ui-accent, #38bdf8)" stopOpacity="0.0" />
           </linearGradient>
         </defs>
         <path d={areaD} fill="url(#pingGradient)" />
-        <path d={pathD} fill="none" stroke="var(--ui-accent, #10b981)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+        <path d={pathD} fill="none" stroke="var(--ui-accent, #38bdf8)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
         {history.map((_, idx) => {
           const [x, y] = points[idx].split(',').map(Number);
           return (
@@ -58,9 +64,9 @@ export const PingChart = ({ history }: { history: number[] }) => {
               key={idx}
               cx={x}
               cy={y}
-              r={idx === history.length - 1 ? 4.5 : 2}
-              fill="var(--ui-accent, #10b981)"
-              stroke="var(--ui-panel, #ffffff)"
+              r={idx === history.length - 1 ? 4 : 1.5}
+              fill="var(--ui-accent, #38bdf8)"
+              stroke="var(--ui-panel, #090c10)"
               strokeWidth={idx === history.length - 1 ? 2 : 1}
             />
           );

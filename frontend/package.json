@@ -1,14 +1,15 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "0.2.3",
+  "version": "0.3.0-rc.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "sync-logo": "python3 ../scripts/generate_all_icons.py"
   },
   "dependencies": {
     "clsx": "^2.1.1",

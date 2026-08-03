@@ -1,220 +1,249 @@
 @import "./fonts.css";
 @import "tailwindcss";
 
-:root, body.theme-doodle {
-  /* 1. DOODLE JUMP (Default Theme) */
-  --ui-bg: #f5f3ec;
-  --ui-panel: #ffffff;
-  --ui-panel-transparent: rgba(255, 255, 255, 0.95);
-  --ui-accent: #10b981;
-  --ui-accent-hover: #059669;
-  --ui-accent-gradient: linear-gradient(135deg, #10b981 0%, #047857 100%);
-  --ui-text: #18181b;
-  --ui-text-muted: #52525b;
-  --ui-border: #27272a;
-  --ui-radius: 14px;
-  --ui-blur: 0px;
-  --font-main: 'Comic Neue', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-accent: 'Permanent Marker', cursive, sans-serif;
-}
-
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   MODERN MINIMAL THEMES
+   PRECISION MONOCHROME DESIGN SYSTEM (UNBOUND v0.3.0-rc.1)
+   Industrial Minimal Architecture. 0% Blue Accent.
+   Strict black/white/neutrals. True WCAG contrast & focus rings.
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
-/* 2. MODERN DARK */
-body.theme-dark {
-  --ui-bg: #090d16;
-  --ui-panel: #121826;
-  --ui-panel-transparent: rgba(18, 24, 38, 0.90);
-  --ui-accent: #6366f1;
-  --ui-accent-hover: #4f46e5;
-  --ui-accent-gradient: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
-  --ui-text: #f8fafc;
-  --ui-text-muted: #94a3b8;
-  --ui-border: #1e293b;
-  --ui-radius: 16px;
-  --ui-blur: 16px;
+/* 1. MONOLITH (Strict Minimal Monochrome Dark - Default) */
+:root, body.theme-monolith {
+  --ui-bg: #080808;
+  --ui-panel: #141414;
+  --ui-panel-transparent: #141414;
+  --ui-surface-elevated: #1f1f1f;
+  --ui-surface-hover: #292929;
+  --ui-surface-active: #333333;
+  --ui-border: #2a2a2a;
+  --ui-border-strong: #525252;
+  
+  --ui-text: #f5f5f5;
+  --ui-text-muted: #a3a3a3;
+  --ui-text-dim: #737373;
+
+  --ui-btn-primary-bg: #ffffff;
+  --ui-btn-primary-fg: #080808;
+  --ui-btn-primary-hover: #e5e5e5;
+  
+  --ui-btn-sec-bg: #1f1f1f;
+  --ui-btn-sec-fg: #f5f5f5;
+  --ui-btn-sec-border: #2a2a2a;
+
+  --ui-focus-ring: 0 0 0 2px #080808, 0 0 0 4px #ffffff;
+  --ui-radius-sm: 6px;
+  --ui-radius: 8px;
+  --ui-radius-lg: 12px;
+  --ui-radius-pill: 980px;
+  --ui-inner-highlight: none;
   --font-main: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-accent: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-/* 3. MODERN LIGHT */
-body.theme-light {
-  --ui-bg: #f8fafc;
-  --ui-panel: #ffffff;
-  --ui-panel-transparent: rgba(255, 255, 255, 0.92);
-  --ui-accent: #4f46e5;
-  --ui-accent-hover: #4338ca;
-  --ui-accent-gradient: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
-  --ui-text: #0f172a;
-  --ui-text-muted: #64748b;
-  --ui-border: #e2e8f0;
-  --ui-radius: 16px;
-  --ui-blur: 12px;
-  --font-main: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-accent: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-/* 4. macOS GLASS (Liquid Glass - High Contrast & Backdrop Blur) */
-body.theme-liquid-glass, body.theme-macos26 {
-  --ui-bg: #070a12;
-  --ui-panel: rgba(15, 23, 42, 0.85);
-  --ui-panel-transparent: rgba(15, 23, 42, 0.90);
-  --ui-accent: #38bdf8;
-  --ui-accent-hover: #0284c7;
-  --ui-accent-gradient: linear-gradient(135deg, #0284c7 0%, #38bdf8 100%);
-  --ui-text: #f8fafc;
-  --ui-text-muted: #94a3b8;
-  --ui-border: rgba(255, 255, 255, 0.20);
-  --ui-radius: 20px;
-  --ui-blur: 24px;
-  --font-main: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-accent: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: radial-gradient(circle at 50% 0%, #1e1b4b 0%, #070a12 100%);
-}
-
-/* Legacy theme fallbacks to Default Doodle */
-body.theme-win95, body.theme-ghost, body.theme-skeuomorphic, body.theme-winxp, body.theme-win8, body.theme-ios26, body.theme-gravity {
-  --ui-bg: #f5f3ec;
-  --ui-panel: #ffffff;
-  --ui-panel-transparent: rgba(255, 255, 255, 0.95);
-  --ui-accent: #10b981;
-  --ui-accent-hover: #059669;
-  --ui-accent-gradient: linear-gradient(135deg, #10b981 0%, #047857 100%);
-  --ui-text: #18181b;
-  --ui-text-muted: #52525b;
-  --ui-border: #27272a;
-  --ui-radius: 14px;
-  --ui-blur: 0px;
-  --font-main: 'Comic Neue', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-accent: 'Permanent Marker', cursive, sans-serif;
-}
-
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   CORE APP STYLES & COMPONENTS
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-
-body {
-  font-family: var(--font-main);
+  --font-mono: 'SF Mono', ui-monospace, 'JetBrains Mono', monospace;
+  --font-accent: var(--font-main);
   background-color: var(--ui-bg);
   color: var(--ui-text);
-  overflow: hidden;
-  user-select: none;
-  transition: background 0.4s ease, color 0.4s ease;
-  -webkit-app-region: drag;
 }
 
-.font-marker {
-  font-family: var(--font-main);
-  font-weight: 700;
-  letter-spacing: -0.01em;
-}
+/* 2. PAPER (Warm Studio Light) */
+body.theme-paper {
+  --ui-bg: #f5f4f0;
+  --ui-panel: #ffffff;
+  --ui-panel-transparent: #ffffff;
+  --ui-surface-elevated: #eae8e1;
+  --ui-surface-hover: #dfddd5;
+  --ui-surface-active: #d5d3ca;
+  --ui-border: rgba(24, 24, 27, 0.12);
+  --ui-border-strong: rgba(24, 24, 27, 0.32);
+  
+  --ui-text: #141416;
+  --ui-text-muted: #666660;
+  --ui-text-dim: #888880;
 
-.sketch-box {
-  background: var(--ui-panel);
-  border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius);
-  backdrop-filter: blur(var(--ui-blur));
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-}
+  --ui-btn-primary-bg: #141416;
+  --ui-btn-primary-fg: #ffffff;
+  --ui-btn-primary-hover: #262628;
+  
+  --ui-btn-sec-bg: #ffffff;
+  --ui-btn-sec-fg: #141416;
+  --ui-btn-sec-border: rgba(24, 24, 27, 0.18);
 
-.doodle-btn {
-  background: var(--ui-accent-gradient, var(--ui-accent));
-  color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: var(--ui-radius);
-  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.3);
-  font-family: var(--font-main);
-  font-weight: 600;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.doodle-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.45);
-  opacity: 0.95;
-}
-
-.doodle-btn:active:not(:disabled) {
-  transform: translateY(1px);
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.2);
-}
-
-.doodle-btn-red {
-  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%) !important;
-  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.35) !important;
-}
-
-.doodle-btn-red:hover:not(:disabled) {
-  box-shadow: 0 6px 20px rgba(239, 68, 68, 0.5) !important;
-}
-
-.doodle-btn:disabled {
-  opacity: 0.4;
-  filter: grayscale(0.5);
-  cursor: not-allowed;
-  box-shadow: none !important;
-  transform: none !important;
-}
-
-.sketch-input {
-  background: var(--ui-panel-transparent);
-  border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius);
+  --ui-focus-ring: 0 0 0 2px #ffffff, 0 0 0 4px #141416;
+  --ui-radius-sm: 6px;
+  --ui-radius: 8px;
+  --ui-radius-lg: 12px;
+  --ui-radius-pill: 980px;
+  --ui-inner-highlight: none;
+  --font-main: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'SF Mono', ui-monospace, 'JetBrains Mono', monospace;
+  --font-accent: var(--font-main);
+  background-color: var(--ui-bg);
   color: var(--ui-text);
-  padding: 0.6rem 1rem;
-  outline: none;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.sketch-input:focus {
-  border-color: var(--ui-accent);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+/* 3. GRAPHITE (Material Steel Dark - Dense, Metallic Borders, Inset Highlight) */
+body.theme-graphite {
+  --ui-bg: #111214;
+  --ui-panel: #18191c;
+  --ui-panel-transparent: #18191c;
+  --ui-surface-elevated: #24262b;
+  --ui-surface-hover: #2e3037;
+  --ui-surface-active: #383b43;
+  --ui-border: #40434a;
+  --ui-border-strong: #525660;
+  
+  --ui-text: #f5f5f5;
+  --ui-text-muted: #a3a3a3;
+  --ui-text-dim: #737373;
+
+  --ui-btn-primary-bg: #e5e5e5;
+  --ui-btn-primary-fg: #111214;
+  --ui-btn-primary-hover: #ffffff;
+  
+  --ui-btn-sec-bg: #24262b;
+  --ui-btn-sec-fg: #f5f5f5;
+  --ui-btn-sec-border: #40434a;
+
+  --ui-focus-ring: 0 0 0 2px #111214, 0 0 0 4px #e5e5e5;
+  --ui-radius-sm: 4px;
+  --ui-radius: 6px;
+  --ui-radius-lg: 10px;
+  --ui-radius-pill: 980px;
+  --ui-inner-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --font-main: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'SF Mono', ui-monospace, 'JetBrains Mono', monospace;
+  --font-accent: var(--font-main);
+  background-color: var(--ui-bg);
+  color: var(--ui-text);
 }
 
-/* Scrollbar hiding logic preserved */
-::-webkit-scrollbar { width: 0; height: 0; }
-* { scrollbar-width: none; -ms-overflow-style: none; }
 
-.app-drag { -webkit-app-region: drag; }
-.app-no-drag { -webkit-app-region: no-drag; }
 
-/* AURA GLOWING EFFECTS */
-.aura-active {
-  box-shadow: inset 0 0 30px rgba(34, 197, 94, 0.12), 0 0 40px rgba(34, 197, 94, 0.25);
-  border: 1px solid rgba(34, 197, 94, 0.5) !important;
-}
-.aura-autotune {
-  animation: rainbow-border 3s linear infinite;
-  box-shadow: inset 0 0 30px rgba(168, 85, 247, 0.15), 0 0 40px rgba(168, 85, 247, 0.25);
-  border: 1px solid #a855f7 !important;
-}
-.aura-connecting {
-  animation: pulse-border 1.5s ease-in-out infinite;
-  box-shadow: inset 0 0 30px rgba(99, 102, 241, 0.15), 0 0 40px rgba(99, 102, 241, 0.25);
-  border: 1px solid #6366f1 !important;
-}
-.aura-error {
-  animation: error-pulse 1s ease-in-out infinite;
-  box-shadow: inset 0 0 30px rgba(239, 68, 68, 0.2), 0 0 40px rgba(239, 68, 68, 0.35);
-  border: 1px solid #ef4444 !important;
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
-@keyframes rainbow-border {
-  0% { border-color: #8b5cf6; }
-  33% { border-color: #ec4899; }
-  66% { border-color: #38bdf8; }
-  100% { border-color: #8b5cf6; }
+/* Wails Desktop Window Drag / No-Drag Utilities */
+.app-drag {
+  /* ponytail: Wails frameless window drag region */
+  -webkit-app-region: drag;
+  user-select: none;
 }
 
-@keyframes pulse-border {
-  0%, 100% { border-color: rgba(99, 102, 241, 0.3); }
-  50% { border-color: rgba(99, 102, 241, 1); }
+.app-no-drag {
+  -webkit-app-region: no-drag;
 }
 
-@keyframes error-pulse {
-  0%, 100% { border-color: rgba(239, 68, 68, 0.4); }
-  50% { border-color: rgba(239, 68, 68, 1); }
+/* Functional Focus-Visible */
+*:focus-visible {
+  outline: none !important;
+  box-shadow: var(--ui-focus-ring) !important;
+}
+
+/* Status Indicator LEDs */
+.status-dot-led {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+  transition: background-color 150ms ease;
+}
+
+.status-dot-led.disconnected { background: #737373; }
+.status-dot-led.connecting { background: #f59e0b; animation: led-pulse 1.2s infinite ease-in-out; }
+.status-dot-led.connected { background: #10b981; }
+.status-dot-led.error { background: #ef4444; }
+
+@keyframes led-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
+}
+
+/* Primary Button Styling */
+.btn-ui-primary {
+  background-color: var(--ui-btn-primary-bg);
+  color: var(--ui-btn-primary-fg);
+  border: 1px solid transparent;
+  border-radius: var(--ui-radius);
+  padding: 10px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  transition: background-color 150ms ease, transform 80ms ease, box-shadow 150ms ease;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.btn-ui-primary:hover:not(:disabled) {
+  background-color: var(--ui-btn-primary-hover);
+}
+
+.btn-ui-primary:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.btn-ui-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Secondary Button Styling */
+.btn-ui-secondary {
+  background-color: var(--ui-btn-sec-bg);
+  color: var(--ui-btn-sec-fg);
+  border: 1px solid var(--ui-btn-sec-border);
+  border-radius: var(--ui-radius);
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: background-color 150ms ease, border-color 150ms ease, transform 80ms ease;
+  box-shadow: var(--ui-inner-highlight);
+}
+
+.btn-ui-secondary:hover:not(:disabled) {
+  background-color: var(--ui-surface-hover);
+  border-color: var(--ui-border-strong);
+}
+
+.btn-ui-secondary:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn-ui-secondary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Scrollbar Customization */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--ui-border);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ui-border-strong);
 }
