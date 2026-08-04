@@ -68,12 +68,15 @@ describe('Extracted Components Unit Tests', () => {
       expect(windowService.toggleMaximise).toHaveBeenCalled();
     });
 
-    it('renders Windows titlebar and triggers handlers', () => {
-      render(<PlatformTitlebar platform="windows" appVersion="0.3.0" />);
+    it('renders Windows titlebar with maximize button and triggers handlers', () => {
+      render(<PlatformTitlebar platform="windows" appVersion="0.3.0-rc.2" />);
       expect(screen.getByText('UNBOUND Refresh')).toBeDefined();
 
       fireEvent.click(screen.getByTitle('Свернуть'));
       expect(windowService.minimise).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(screen.getByTitle('Развернуть'));
+      expect(windowService.toggleMaximise).toHaveBeenCalledTimes(1);
 
       fireEvent.click(screen.getByTitle('Закрыть'));
       expect(windowService.hideToTray).toHaveBeenCalledTimes(1);
@@ -86,14 +89,29 @@ describe('Extracted Components Unit Tests', () => {
   });
 
   describe('AppNavigation', () => {
-    it('switches tabs and renders both full and compact labels', () => {
+    it('switches tabs and renders both full and compact labels without truncation dots', () => {
       const onTabChange = vi.fn();
       render(<AppNavigation activeTab="main" onTabChange={onTabChange} />);
 
+      expect(screen.getAllByText('Главная').length).toBeGreaterThan(0);
+      expect(screen.getByText('Профили & LUA')).toBeDefined();
+      expect(screen.getByText('Профили')).toBeDefined();
       expect(screen.getByText('Списки обхода')).toBeDefined();
       expect(screen.getByText('Списки')).toBeDefined();
+      expect(screen.getAllByText('Настройки').length).toBeGreaterThan(0);
+
+      // Verify no ellipsis truncation character
+      expect(screen.queryByText(/…/)).toBeNull();
 
       fireEvent.click(screen.getByText('Списки обхода'));
+      expect(onTabChange).toHaveBeenCalledWith('lists');
+    });
+
+    it('triggers tab change when clicking compact tab label', () => {
+      const onTabChange = vi.fn();
+      render(<AppNavigation activeTab="main" onTabChange={onTabChange} />);
+
+      fireEvent.click(screen.getByText('Списки'));
       expect(onTabChange).toHaveBeenCalledWith('lists');
     });
   });

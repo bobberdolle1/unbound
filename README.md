@@ -2,10 +2,10 @@
 
 <img src="./build/logo.svg" alt="UNBOUND Logo" width="120" />
 
-# UNBOUND `v0.3.0-rc.1`
+# UNBOUND `v0.3.0-rc.2`
 **Локальный настольный оркестратор десинхронизации L3/L4 трафика для macOS, Windows и Linux.**
 
-[![Version](https://img.shields.io/badge/Version-v0.3.0--rc.1-08090b?style=for-the-badge&logo=rocket)](#)
+[![Version](https://img.shields.io/badge/Version-v0.3.0--rc.2-08090b?style=for-the-badge&logo=rocket)](#)
 [![Design](https://img.shields.io/badge/Design-Precision_Monochrome-10b981?style=for-the-badge)](#)
 [![Security](https://img.shields.io/badge/Security-SHA256_pinned-10b981?style=for-the-badge&logo=shield)](SECURITY.md)
 [![License](https://img.shields.io/badge/License-GPL--3.0-blue?style=for-the-badge)](LICENSE)
@@ -18,7 +18,7 @@
 
 ## 🎨 Интерфейс и Дизайн-Система (Precision Monochrome)
 
-В релиз-кандидате **v0.3.0-rc.1** фронтенд приложения полностью переработан в рамках концепции **Precision Monochrome** — строгого, чистого и дорогого десктопного минимализма:
+В релиз-кандидате **v0.3.0-rc.2** фронтенд приложения полностью переработан в рамках концепции **Precision Monochrome** — строгого, чистого и дорогого десктопного минимализма:
 
 - **0% лишнего неона и декоративных градиентов**: Выдержанная индустриальная палитра на основе глубокого обсидиана, графита и пастельной бумаги.
 - **Точечное использование цвета**: Семантические статус-диоды (зелёный — активен, жёлтый — подключение, красный — ошибка, серый — остановлен).
@@ -27,27 +27,10 @@
   - **`Monolith`**: Минималистичный монохромный обсидиан (`#08090b`).
   - **`Paper`**: Тёплая студийная светлая тема (`#f5f4f0`).
   - **`Graphite`**: Металлическая серо-стальная тема (`#121417`) со стальными рамками.
-  - **`Arcade Paper`**: Планируемая ретро-тема (на базе миллиметровки).
 
 <div align="center">
-  <img src="./wails-runtime-monolith.png" alt="UNBOUND v0.3.0-rc.1 Monolith UI" width="760" />
-  <p><em>UNBOUND v0.3.0-rc.1 — Главный экран в теме Monolith (macOS runtime)</em></p>
+  <p><em>Скриншоты интерфейса будут добавлены после завершения платформа-валидации. / Runtime screenshots will be added after platform validation.</em></p>
 </div>
-
-<details>
-<summary><b>📷 Посмотреть дополнительные скриншоты (Paper, Compact, Вкладки)</b></summary>
-
-<br/>
-
-| Тема Paper | Компактный режим (360px) |
-| :---: | :---: |
-| <img src="./docs/assets/screenshots/paper-main.png" width="360" /> | <img src="./docs/assets/screenshots/monolith-compact.png" width="220" /> |
-
-| Профили & LUA | Списки обхода | Настройки & Диагностика |
-| :---: | :---: | :---: |
-| <img src="./docs/assets/screenshots/profiles-lua-tab.png" width="240" /> | <img src="./docs/assets/screenshots/bypass-lists-tab.png" width="240" /> | <img src="./docs/assets/screenshots/settings-diagnostics.png" width="240" /> |
-
-</details>
 
 ---
 
@@ -136,10 +119,10 @@ cd unbound
 cd frontend && npm ci && npm run build && cd ..
 
 # 3. Сборка CLI-версии
-go build -trimpath -ldflags="-s -w -X unbound/engine.Version=0.3.0-rc.1" -o build/bin/unbound .
+go build -trimpath -ldflags="-s -w -X unbound/engine.Version=0.3.0-rc.2" -o build/bin/unbound .
 
 # 4. Сборка Wails GUI
-wails build -clean -ldflags "-X unbound/engine.Version=0.3.0-rc.1"
+wails build -clean -ldflags "-X unbound/engine.Version=0.3.0-rc.2"
 ```
 
 ---

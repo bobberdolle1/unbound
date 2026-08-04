@@ -1,4 +1,4 @@
-# UNBOUND v0.3.0-rc.1 — Windows 11 Smoke Test Matrix
+# UNBOUND v0.3.0-rc.2 — Windows 11 Smoke Test Matrix
 
 | № | Check Item | Status | Notes / Actual Behavior |
 | :-: | :--- | :-: | :--- |
@@ -11,7 +11,7 @@
 | 7 | `wails doctor` check | **NOT TESTED** | |
 | 8 | `wails build` production packaging | **NOT TESTED** | |
 | 9 | Application launch (`.exe`) | **NOT TESTED** | |
-| 10 | File version & Product version properties (`0.3.0-rc.1`) | **NOT TESTED** | |
+| 10 | File version & Product version properties (`0.3.0-rc.2`) | **NOT TESTED** | |
 | 11 | Multi-resolution Taskbar app icon | **NOT TESTED** | |
 | 12 | UAC Administrator prompt on startup | **NOT TESTED** | |
 | 13 | Launch without Administrator (graceful error overlay) | **NOT TESTED** | |
