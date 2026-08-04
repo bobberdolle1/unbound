@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-title UNBOUND — Control Center v0.1.5
+title UNBOUND Control Center
 
 net session >nul 2>&1
 if %errorLevel% neq 0 (
@@ -9,10 +9,12 @@ if %errorLevel% neq 0 (
 )
 
 cd /d "%~dp0"
-if exist "%~dp0unbound.exe" (
-    "%~dp0unbound.exe" --control
-) else if exist "%~dp0..\unbound.exe" (
-    "%~dp0..\unbound.exe" --control
+if exist "%~dp0Unbound.exe" (
+    "%~dp0Unbound.exe" --control
+) else if exist "%~dp0..\Unbound.exe" (
+    "%~dp0..\Unbound.exe" --control
+) else if exist "%~dp0..\..\build\bin\Unbound.exe" (
+    "%~dp0..\..\build\bin\Unbound.exe" --control
 ) else (
     echo [!] Ошибка: unbound.exe не найден!
     pause
