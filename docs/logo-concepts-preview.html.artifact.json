@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "kind": "html",
+  "title": "docs/logo-concepts-preview.html",
+  "entry": "docs/logo-concepts-preview.html",
+  "renderer": "html",
+  "status": "complete",
+  "exports": [
+    "html",
+    "pdf",
+    "zip"
+  ],
+  "createdAt": "2026-08-03T18:23:19.000Z",
+  "updatedAt": "2026-08-03T18:23:19.000Z",
+  "metadata": {
+    "inferred": true,
+    "reconciled": true
+  }
+}

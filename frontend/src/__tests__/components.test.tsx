@@ -1,14 +1,14 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { DoodleCheckbox } from '../components/DoodleCheckbox';
-import { DoodleSelect } from '../components/DoodleSelect';
+import { UICheckbox } from '../components/UICheckbox';
+import { UISelect } from '../components/UISelect';
 import { PingChart } from '../components/PingChart';
 
 describe('Frontend UI Components', () => {
-  describe('DoodleCheckbox', () => {
+  describe('UICheckbox', () => {
     it('should render label and description correctly', () => {
       render(
-        <DoodleCheckbox
+        <UICheckbox
           checked={false}
           onChange={() => {}}
           label="AutoStart"
@@ -23,7 +23,7 @@ describe('Frontend UI Components', () => {
     it('should trigger onChange callback on click and keyboard events', () => {
       const handleChange = vi.fn();
       render(
-        <DoodleCheckbox
+        <UICheckbox
           checked={false}
           onChange={handleChange}
           label="TCP Timestamps"
@@ -43,13 +43,13 @@ describe('Frontend UI Components', () => {
     });
   });
 
-  describe('DoodleSelect', () => {
+  describe('UISelect', () => {
     it('should display selected value and toggle options dropdown', () => {
       const handleChange = vi.fn();
       const options = ['Profile A', 'Profile B', 'Profile C'];
 
       render(
-        <DoodleSelect
+        <UISelect
           value="Profile A"
           options={options}
           onChange={handleChange}

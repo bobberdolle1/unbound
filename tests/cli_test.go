@@ -36,7 +36,9 @@ func skipIfNoRuntimeEnvironment(t *testing.T, output string) {
 	switch {
 	case strings.Contains(output, "privileges required"),
 		strings.Contains(output, "Run as administrator"),
-		strings.Contains(output, "Root privileges required"):
+		strings.Contains(output, "Root privileges required"),
+		strings.Contains(output, "Permission denied"),
+		strings.Contains(output, "you must be root"):
 		t.Skip("Skipping CLI E2E test - requires administrator/root privileges")
 	case strings.Contains(output, "не найден бинарник движка"),
 		strings.Contains(output, "No bypass engine is available"):

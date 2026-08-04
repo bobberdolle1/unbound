@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UNBOUND — Refactoring Checkpoint & Concept Showcase</title>
+  <style>
+    /* ─────────────────────────────────────────────────────────────────────────
+     * Apple Design System Tokens (:root)
+     * ───────────────────────────────────────────────────────────────────────── */
+    :root {
+      --bg: #ffffff;
+      --surface: #f5f5f7;
+      --surface-warm: #fbfbfd;
+
+      --fg: #1d1d1f;
+      --fg-2: #424245;
+      --muted: #6e6e73;
+      --meta: #86868b;
+
+      --border: #d2d2d7;
+      --border-soft: #e8e8ed;
+
+      --accent: #0071e3;
+      --accent-on: #ffffff;
+      --accent-hover: #0077ed;
+      --accent-active: #0066cc;
+
+      --font-display: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-body: "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: "SF Mono", ui-monospace, "JetBrains Mono", monospace;
+
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 14px;
+      --radius-pill: 980px;
+
+      --focus-ring: 0 0 0 3px rgba(56, 189, 248, 0.4);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-body);
+      background-color: #07090e;
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 24px;
+      line-height: 1.5;
+    }
+
+    .showcase-container {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* Top Control Bar */
+    .showcase-header {
+      background: #111622;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 14px;
+      padding: 20px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .brand-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-badge {
+      background: #0284c7;
+      color: white;
+      font-weight: 700;
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      letter-spacing: 0.05em;
+    }
+
+    .title-text h1 {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: #f8fafc;
+    }
+
+    .title-text p {
+      font-size: 13px;
+      color: #94a3b8;
+    }
+
+    .control-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .control-label {
+      font-size: 12px;
+      color: #64748b;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .btn-group {
+      display: flex;
+      background: #090c10;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      padding: 3px;
+      gap: 2px;
+    }
+
+    .btn-toggle {
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .btn-toggle:hover { color: #f8fafc; }
+    .btn-toggle.active {
+      background: #1e2636;
+      color: #38bdf8;
+    }
+
+    /* Grid Layout */
+    .preview-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+
+    @media (max-width: 1100px) {
+      .preview-grid { grid-template-columns: 1fr; }
+    }
+
+    .card-panel {
+      background: #111622;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 14px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .section-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: #f1f5f9;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 12px;
+    }
+
+    /* THEME TARGET CANVAS */
+    .theme-canvas {
+      border-radius: 12px;
+      padding: 24px;
+      transition: all 0.2s ease;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      border: 1px solid var(--ui-border);
+      background-color: var(--ui-bg);
+      color: var(--ui-text);
+      min-height: 480px;
+    }
+
+    /* THEME DEFINITIONS FOR CANVAS */
+    .canvas-obsidian {
+      --ui-bg: #090c10;
+      --ui-panel: #141923;
+      --ui-surface: #1e2636;
+      --ui-accent: #38bdf8;
+      --ui-accent-hover: #0284c7;
+      --ui-text: #f8fafc;
+      --ui-text-muted: #94a3b8;
+      --ui-border: rgba(255, 255, 255, 0.10);
+      --ui-border-strong: rgba(255, 255, 255, 0.22);
+      --ui-radius: 10px;
+      --font-main: 'Inter', sans-serif;
+    }
+
+    .canvas-chalk {
+      --ui-bg: #f8fafc;
+      --ui-panel: #ffffff;
+      --ui-surface: #f1f5f9;
+      --ui-accent: #0284c7;
+      --ui-accent-hover: #0369a1;
+      --ui-text: #0f172a;
+      --ui-text-muted: #475569;
+      --ui-border: rgba(15, 23, 42, 0.12);
+      --ui-border-strong: rgba(15, 23, 42, 0.28);
+      --ui-radius: 10px;
+      --font-main: 'Inter', sans-serif;
+    }
+
+    .canvas-titanium {
+      --ui-bg: #0d1117;
+      --ui-panel: #161b22;
+      --ui-surface: #21262d;
+      --ui-accent: #60a5fa;
+      --ui-accent-hover: #3b82f6;
+      --ui-text: #f0f6fc;
+      --ui-text-muted: #8b949e;
+      --ui-border: #30363d;
+      --ui-border-strong: #8b949e;
+      --ui-radius: 10px;
+      --font-main: 'Inter', sans-serif;
+    }
+
+    .canvas-doodle-arcade {
+      --ui-bg: #f4f1ea;
+      --ui-panel: #ffffff;
+      --ui-surface: #eae6dc;
+      --ui-accent: #5b9e38;
+      --ui-accent-hover: #48822b;
+      --ui-text: #22252a;
+      --ui-text-muted: #5a6069;
+      --ui-border: rgba(34, 37, 42, 0.18);
+      --ui-border-strong: rgba(34, 37, 42, 0.45);
+      --ui-radius: 10px;
+      --font-main: 'Inter', sans-serif;
+      background-image: radial-gradient(#d5cfc0 1px, transparent 1px);
+      background-size: 16px 16px;
+    }
+
+    .canvas-blueprint {
+      --ui-bg: #0b131e;
+      --ui-panel: #121d2b;
+      --ui-surface: #1a283a;
+      --ui-accent: #0ea5e9;
+      --ui-accent-hover: #0284c7;
+      --ui-text: #e2e8f0;
+      --ui-text-muted: #8b9eb3;
+      --ui-border: rgba(14, 165, 233, 0.20);
+      --ui-border-strong: rgba(14, 165, 233, 0.45);
+      --ui-radius: 8px;
+      --font-main: 'SF Mono', monospace;
+      background-image: linear-gradient(rgba(14, 165, 233, 0.05) 1px, transparent 1px),
+                        linear-gradient(90deg, rgba(14, 165, 233, 0.05) 1px, transparent 1px);
+      background-size: 20px 20px;
+    }
+
+    /* Window Frame Wrapper */
+    .app-window {
+      background: var(--ui-panel);
+      border: 1px solid var(--ui-border);
+      border-radius: var(--ui-radius);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: width 0.25s ease;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    .app-window.narrow { max-width: 360px; }
+    .app-window.wide { max-width: 760px; }
+
+    .window-header {
+      background: var(--ui-surface);
+      border-bottom: 1px solid var(--ui-border);
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .traffic-lights {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .dot { width: 11px; height: 11px; border-radius: 50%; }
+    .dot.red { background: #ff5f56; border: 0.5px solid #e0443e; }
+    .dot.yellow { background: #ffbd2e; border: 0.5px solid #dea123; }
+    .dot.green { background: #27c93f; border: 0.5px solid #1aab29; }
+
+    .win-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 12px;
+      color: var(--ui-text-muted);
+    }
+
+    .window-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--ui-text);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .window-body {
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* Component Specs Showcase */
+    .comp-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .comp-table th, .comp-table td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--ui-border);
+      font-size: 13px;
+    }
+
+    .comp-table th {
+      color: var(--ui-text-muted);
+      font-weight: 600;
+      font-size: 11px;
+      text-transform: uppercase;
+    }
+
+    /* UI Component Primitives */
+    .ui-btn {
+      background: var(--ui-accent);
+      color: white;
+      border: none;
+      border-radius: var(--ui-radius);
+      padding: 7px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background-color 0.15s ease, transform 0.1s ease;
+    }
+
+    .ui-btn:hover:not(:disabled) { background: var(--ui-accent-hover); }
+    .ui-btn:active:not(:disabled) { transform: translateY(1px); }
+    .ui-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .ui-btn.focus-sim { outline: none; box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.4); }
+
+    .ui-btn-secondary {
+      background: var(--ui-surface);
+      color: var(--ui-text);
+      border: 1px solid var(--ui-border);
+    }
+    .ui-btn-secondary:hover:not(:disabled) { border-color: var(--ui-border-strong); }
+
+    /* Custom UI Select */
+    .ui-select {
+      position: relative;
+      background: var(--ui-surface);
+      border: 1px solid var(--ui-border);
+      border-radius: var(--ui-radius);
+      padding: 8px 12px;
+      font-size: 13px;
+      color: var(--ui-text);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .ui-select:hover { border-color: var(--ui-border-strong); }
+
+    .ui-select-menu {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      margin-top: 4px;
+      background: var(--ui-panel);
+      border: 1px solid var(--ui-border-strong);
+      border-radius: var(--ui-radius);
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.3);
+      padding: 4px;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .ui-select-item {
+      padding: 7px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      color: var(--ui-text);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+    }
+
+    .ui-select-item:hover { background: var(--ui-surface); }
+    .ui-select-item.selected {
+      background: var(--ui-surface);
+      color: var(--ui-accent);
+      font-weight: 600;
+    }
+
+    /* Checkbox */
+    .ui-checkbox {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      cursor: pointer;
+      user-select: none;
+      color: var(--ui-text);
+    }
+
+    .checkbox-box {
+      width: 16px;
+      height: 16px;
+      border: 1px solid var(--ui-border-strong);
+      border-radius: 4px;
+      background: var(--ui-surface);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s ease;
+    }
+
+    .ui-checkbox.checked .checkbox-box {
+      background: var(--ui-accent);
+      border-color: var(--ui-accent);
+      color: white;
+    }
+
+    .ui-checkbox.disabled { opacity: 0.45; cursor: not-allowed; }
+
+    /* Ping Chart Sparkline */
+    .ping-sparkline {
+      background: var(--ui-surface);
+      border: 1px solid var(--ui-border);
+      border-radius: var(--ui-radius);
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .ping-val {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--ui-accent);
+    }
+
+    /* Option 4 Comparison Cards */
+    .option-card {
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 16px;
+      background: #141923;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .option-card.active {
+      border-color: #38bdf8;
+      box-shadow: 0 0 0 1px #38bdf8;
+    }
+
+    .option-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .option-title {
+      font-weight: 600;
+      font-size: 14px;
+      color: #f8fafc;
+    }
+
+    .badge-tag {
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+
+    .tag-game { background: rgba(91, 158, 56, 0.2); color: #5b9e38; }
+    .tag-eng { background: rgba(14, 165, 233, 0.2); color: #0ea5e9; }
+  </style>
+</head>
+<body>
+
+<div class="showcase-container">
+
+  <!-- Header & Controls -->
+  <header class="showcase-header">
+    <div class="brand-title">
+      <span class="brand-badge">CHECKPOINT 1</span>
+      <div class="title-text">
+        <h1>UNBOUND — Refactoring Phase 1 Audit & Previews</h1>
+        <p>Obsidian Industrial Minimal Design System · Desktop UX</p>
+      </div>
+    </div>
+
+    <div class="control-group">
+      <span class="control-label">Тема:</span>
+      <div class="btn-group">
+        <button class="btn-toggle active" onclick="setTheme('obsidian')">Obsidian Night</button>
+        <button class="btn-toggle" onclick="setTheme('chalk')">Studio Chalk</button>
+        <button class="btn-toggle" onclick="setTheme('titanium')">Titanium Steel</button>
+        <button class="btn-toggle" onclick="setTheme('doodle-arcade')">4A: Doodle Arcade</button>
+        <button class="btn-toggle" onclick="setTheme('blueprint')">4B: Blueprint</button>
+      </div>
+
+      <span class="control-label" style="margin-left:8px;">Окна:</span>
+      <div class="btn-group">
+        <button class="btn-toggle active" onclick="setWindowSize('wide')">Широкий (760px)</button>
+        <button class="btn-toggle" onclick="setWindowSize('narrow')">Узкий (360px)</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Grid -->
+  <main class="preview-grid">
+
+    <!-- Left: Main App Screen Mockup -->
+    <section class="card-panel">
+      <div class="section-title">
+        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        Интерактивный главный экран UNBOUND
+      </div>
+
+      <div id="themeCanvas" class="theme-canvas canvas-obsidian">
+        <div id="appWindow" class="app-window wide">
+          <!-- Window Header -->
+          <div class="window-header">
+            <div class="traffic-lights">
+              <span class="dot red"></span>
+              <span class="dot yellow"></span>
+              <span class="dot green"></span>
+            </div>
+            <div class="window-title">
+              <svg width="14" height="14" fill="none" stroke="var(--ui-accent)" stroke-width="2" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              UNBOUND Refresh v0.2.3
+            </div>
+            <div class="win-controls">
+              <span>Admin ✓</span>
+            </div>
+          </div>
+
+          <!-- Window Body -->
+          <div class="window-body">
+            <!-- Connection Control Card -->
+            <div style="background:var(--ui-panel); border:1px solid var(--ui-border); border-radius:var(--ui-radius); padding:20px; text-align:center; display:flex; flex-direction:column; align-items:center; gap:14px;">
+              
+              <div style="display:flex; align-items:center; gap:8px; font-size:12px; font-weight:600; color:var(--ui-text-muted);">
+                <span style="width:8px; height:8px; border-radius:50%; background:#10b981; display:inline-block;"></span>
+                СЛУЖБА АКТИВНА · ОБХОД ВТЮРЕН
+              </div>
+
+              <button class="ui-btn" style="padding:10px 28px; font-size:15px; border-radius:var(--ui-radius); background:var(--ui-accent); width:100%; max-width:260px; justify-content:center;">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10"/></svg>
+                Подключено
+              </button>
+
+              <div style="font-size:12px; color:var(--ui-text-muted);">
+                Стратегия: <strong style="color:var(--ui-text);">YouTube + Discord Auto (LUA v2)</strong>
+              </div>
+            </div>
+
+            <!-- Profile & Ping Bar -->
+            <div style="display:grid; grid-template-columns: 2fr 1fr; gap:12px;">
+              <!-- Profile Select -->
+              <div class="ui-select">
+                <span>Профиль: Discord & YouTube</span>
+                <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+              </div>
+
+              <!-- Ping Sparkline -->
+              <div class="ping-sparkline">
+                <div style="display:flex; flex-direction:column;">
+                  <span style="font-size:10px; color:var(--ui-text-muted); text-transform:uppercase;">Пинг</span>
+                  <span class="ping-val">24 ms</span>
+                </div>
+                <svg width="60" height="20" viewBox="0 0 60 20" fill="none" stroke="var(--ui-accent)" stroke-width="1.8">
+                  <path d="M0 15 L10 12 L20 16 L30 6 L40 10 L50 4 L60 8"/>
+                </svg>
+              </div>
+            </div>
+
+            <!-- Action Controls -->
+            <div style="display:flex; gap:10px;">
+              <button class="ui-btn ui-btn-secondary" style="flex:1; justify-content:center;">
+                <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                Автоподбор
+              </button>
+              <button class="ui-btn ui-btn-secondary" style="flex:1; justify-content:center;">
+                <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                Настройки
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right: Component Inspector & Theme 4 Proposals -->
+    <section class="card-panel">
+      <div class="section-title">
+        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+        Компоненты & Состояния (Component Inspector)
+      </div>
+
+      <!-- Component Matrix Table -->
+      <table class="comp-table">
+        <thead>
+          <tr>
+            <th>Элемент</th>
+            <th>Default / Normal</th>
+            <th>Hover / Focus</th>
+            <th>Active / Disabled</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Button Primary</strong></td>
+            <td><button class="ui-btn">Подключить</button></td>
+            <td><button class="ui-btn focus-sim">Focus Ring</button></td>
+            <td><button class="ui-btn" disabled>Disabled</button></td>
+          </tr>
+          <tr>
+            <td><strong>Button Destructive</strong></td>
+            <td><button class="ui-btn" style="background:#ef4444;">Отключить</button></td>
+            <td><button class="ui-btn" style="background:#dc2626;">Hover Red</button></td>
+            <td><button class="ui-btn" style="background:#ef4444;" disabled>Disabled</button></td>
+          </tr>
+          <tr>
+            <td><strong>UI Select</strong></td>
+            <td>
+              <div class="ui-select" style="min-width:140px;">
+                <span>Стандартный</span>
+                <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+              </div>
+            </td>
+            <td>
+              <div class="ui-select" style="min-width:140px; border-color:var(--ui-accent);">
+                <span>Выбор...</span>
+                <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+              </div>
+            </td>
+            <td>
+              <div class="ui-select" style="min-width:140px; opacity:0.5;">
+                <span>Заблокирован</span>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td><strong>UI Checkbox</strong></td>
+            <td>
+              <label class="ui-checkbox checked">
+                <span class="checkbox-box">✓</span>
+                Автозапуск
+              </label>
+            </td>
+            <td>
+              <label class="ui-checkbox">
+                <span class="checkbox-box" style="border-color:var(--ui-accent);"></span>
+                Hover State
+              </label>
+            </td>
+            <td>
+              <label class="ui-checkbox disabled">
+                <span class="checkbox-box"></span>
+                Отключен
+              </label>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- Theme 4 Proposals -->
+      <div style="margin-top:12px; display:flex; flex-direction:column; gap:12px;">
+        <div style="font-size:14px; font-weight:600; color:#f1f5f9;">
+          Предложения по 4-й теме (выберите направление):
+        </div>
+
+        <div class="option-card active">
+          <div class="option-header">
+            <span class="option-title">Вариант 4A: Doodle Jump Arcade</span>
+            <span class="badge-tag tag-game">Игровая / Ретро</span>
+          </div>
+          <p style="font-size:12px; color:#94a3b8;">
+            Настоящая игровая тема, узнаваемо вдохновлённая Doodle Jump: аккуратная миллиметровая сетка (`#f4f1ea`), шрифты SF Pro, темно-угольный текст (`#22252a`) и гармоничный зелёный акцент (`#5b9e38`). Без мусора и неряшливости.
+          </p>
+        </div>
+
+        <div class="option-card">
+          <div class="option-header">
+            <span class="option-title">Вариант 4B: Tactical Blueprint</span>
+            <span class="badge-tag tag-eng">Чистый Инжиниринг</span>
+          </div>
+          <p style="font-size:12px; color:#94a3b8;">
+            Полностью новая инженерная тема без отсылки к Doodle Jump: тёмно-синий фон сетки (`#0b131e`), моноширинный шрифт `SF Mono`, технический циановый акцент (`#0ea5e9`) и прецизионные 1px сетчатые линии.
+          </p>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+</div>
+
+<script>
+  function setTheme(theme) {
+    const canvas = document.getElementById('themeCanvas');
+    canvas.className = 'theme-canvas canvas-' + theme;
+    
+    document.querySelectorAll('.control-group .btn-group')[0].querySelectorAll('.btn-toggle').forEach(btn => {
+      btn.classList.remove('active');
+    });
+    event.target.classList.add('active');
+  }
+
+  function setWindowSize(size) {
+    const win = document.getElementById('appWindow');
+    if (size === 'narrow') {
+      win.className = 'app-window narrow';
+    } else {
+      win.className = 'app-window wide';
+    }
+    document.querySelectorAll('.control-group .btn-group')[1].querySelectorAll('.btn-toggle').forEach(btn => {
+      btn.classList.remove('active');
+    });
+    event.target.classList.add('active');
+  }
+</script>
+
+</body>
+</html>

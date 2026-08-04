@@ -1,0 +1,219 @@
+{
+    "Version":  "0.3.0-rc.3",
+    "StartTime":  "2026-08-04T11:13:44.5123962+03:00",
+    "Phases":  {
+                   "PhaseB_XrayOFF_UnboundOFF":  {
+                                                     "Description":  "Baseline without VPN or UNBOUND bypass",
+                                                     "SystemState":  {
+                                                                         "Timestamp":  "2026-08-04T11:13:59.6144534+03:00",
+                                                                         "WinwsActive":  false,
+                                                                         "WinwsPIDs":  "",
+                                                                         "UnboundActive":  false,
+                                                                         "UnboundPIDs":  "",
+                                                                         "WinDivertState":  "NotLoaded"
+                                                                     },
+                                                     "Probes":  [
+                                                                    {
+                                                                        "Name":  "YouTube",
+                                                                        "URL":  "https://www.youtube.com",
+                                                                        "Status":  "FAIL",
+                                                                        "StatusCode":  0,
+                                                                        "LatencyMs":  4026,
+                                                                        "Error":  "Exception calling \"GetResponse\" with \"0\" argument(s): \"Время ожидания операции истекло\""
+                                                                    },
+                                                                    {
+                                                                        "Name":  "Discord",
+                                                                        "URL":  "https://discord.com",
+                                                                        "Status":  "FAIL",
+                                                                        "StatusCode":  0,
+                                                                        "LatencyMs":  4036,
+                                                                        "Error":  "Exception calling \"GetResponse\" with \"0\" argument(s): \"Время ожидания операции истекло\""
+                                                                    },
+                                                                    {
+                                                                        "Name":  "Instagram",
+                                                                        "URL":  "https://www.instagram.com",
+                                                                        "Status":  "FAIL",
+                                                                        "StatusCode":  0,
+                                                                        "LatencyMs":  4049,
+                                                                        "Error":  "Exception calling \"GetResponse\" with \"0\" argument(s): \"Время ожидания операции истекло\""
+                                                                    },
+                                                                    {
+                                                                        "Name":  "Cloudflare",
+                                                                        "URL":  "https://www.cloudflare.com",
+                                                                        "Status":  "OK",
+                                                                        "StatusCode":  200,
+                                                                        "LatencyMs":  311,
+                                                                        "Error":  ""
+                                                                    },
+                                                                    {
+                                                                        "Name":  "Ozon",
+                                                                        "URL":  "https://www.ozon.ru",
+                                                                        "Status":  "FAIL",
+                                                                        "StatusCode":  0,
+                                                                        "LatencyMs":  173,
+                                                                        "Error":  "Exception calling \"GetResponse\" with \"0\" argument(s): \"Too many automatic redirections were attempted.\""
+                                                                    }
+                                                                ]
+                                                 },
+                   "PhaseA_XrayON_UnboundOFF":  {
+                                                    "Description":  "Control reference with Xray VPN active",
+                                                    "SystemState":  {
+                                                                        "Timestamp":  "2026-08-04T11:13:44.5484397+03:00",
+                                                                        "WinwsActive":  false,
+                                                                        "WinwsPIDs":  "",
+                                                                        "UnboundActive":  false,
+                                                                        "UnboundPIDs":  "",
+                                                                        "WinDivertState":  "NotLoaded"
+                                                                    },
+                                                    "Probes":  [
+                                                                   {
+                                                                       "Name":  "YouTube",
+                                                                       "URL":  "https://www.youtube.com",
+                                                                       "Status":  "FAIL",
+                                                                       "StatusCode":  0,
+                                                                       "LatencyMs":  4252,
+                                                                       "Error":  "Exception calling \"GetResponse\" with \"0\" argument(s): \"Время ожидания операции истекло\""
+                                                                   },
+                                                                   {
+                                                                       "Name":  "Discord",
+                                                                       "URL":  "https://discord.com",
+                                                                       "Status":  "FAIL",
+                                                                       "StatusCode":  0,
+                                                                       "LatencyMs":  4025,
+                                                                       "Error":  "Exception calling \"GetResponse\" with \"0\" argument(s): \"Время ожидания операции истекло\""
+                                                                   },
+                                                                   {
+                                                                       "Name":  "Instagram",
+                                                                       "URL":  "https://www.instagram.com",
+                                                                       "Status":  "FAIL",
+                                                                       "StatusCode":  0,
+                                                                       "LatencyMs":  4035,
+                                                                       "Error":  "Exception calling \"GetResponse\" with \"0\" argument(s): \"Время ожидания операции истекло\""
+                                                                   },
+                                                                   {
+                                                                       "Name":  "Cloudflare",
+                                                                       "URL":  "https://www.cloudflare.com",
+                                                                       "Status":  "OK",
+                                                                       "StatusCode":  200,
+                                                                       "LatencyMs":  386,
+                                                                       "Error":  ""
+                                                                   },
+                                                                   {
+                                                                       "Name":  "Ozon",
+                                                                       "URL":  "https://www.ozon.ru",
+                                                                       "Status":  "FAIL",
+                                                                       "StatusCode":  0,
+                                                                       "LatencyMs":  250,
+                                                                       "Error":  "Exception calling \"GetResponse\" with \"0\" argument(s): \"Too many automatic redirections were attempted.\""
+                                                                   }
+                                                               ]
+                                                },
+                   "PhaseC_XrayOFF_UnboundON":  {
+                                                    "Description":  "UNBOUND desync bypass active without VPN",
+                                                    "SystemState":  {
+                                                                        "Timestamp":  "2026-08-04T11:14:18.1041721+03:00",
+                                                                        "WinwsActive":  true,
+                                                                        "WinwsPIDs":  "14820",
+                                                                        "UnboundActive":  true,
+                                                                        "UnboundPIDs":  "21456",
+                                                                        "WinDivertState":  "Running"
+                                                                    },
+                                                    "Probes":  [
+                                                                   {
+                                                                       "Name":  "YouTube",
+                                                                       "URL":  "https://www.youtube.com",
+                                                                       "Status":  "OK",
+                                                                       "StatusCode":  200,
+                                                                       "LatencyMs":  267,
+                                                                       "Error":  ""
+                                                                   },
+                                                                   {
+                                                                       "Name":  "Discord",
+                                                                       "URL":  "https://discord.com",
+                                                                       "Status":  "OK",
+                                                                       "StatusCode":  200,
+                                                                       "LatencyMs":  233,
+                                                                       "Error":  ""
+                                                                   },
+                                                                   {
+                                                                       "Name":  "Instagram",
+                                                                       "URL":  "https://www.instagram.com",
+                                                                       "Status":  "OK",
+                                                                       "StatusCode":  200,
+                                                                       "LatencyMs":  400,
+                                                                       "Error":  ""
+                                                                   },
+                                                                   {
+                                                                       "Name":  "Cloudflare",
+                                                                       "URL":  "https://www.cloudflare.com",
+                                                                       "Status":  "OK",
+                                                                       "StatusCode":  200,
+                                                                       "LatencyMs":  325,
+                                                                       "Error":  ""
+                                                                   },
+                                                                   {
+                                                                       "Name":  "Ozon",
+                                                                       "URL":  "https://www.ozon.ru",
+                                                                       "Status":  "FAIL",
+                                                                       "StatusCode":  0,
+                                                                       "LatencyMs":  180,
+                                                                       "Error":  "Exception calling \"GetResponse\" with \"0\" argument(s): \"Too many automatic redirections were attempted.\""
+                                                                   }
+                                                               ]
+                                                },
+                   "PhaseD_XrayOFF_UnboundOFF_PostStop":  {
+                                                              "Description":  "Return to baseline after UNBOUND stop \u0026 cleanup",
+                                                              "SystemState":  {
+                                                                                  "Timestamp":  "2026-08-04T11:14:43.9885701+03:00",
+                                                                                  "WinwsActive":  false,
+                                                                                  "WinwsPIDs":  "",
+                                                                                  "UnboundActive":  false,
+                                                                                  "UnboundPIDs":  "",
+                                                                                  "WinDivertState":  "Running"
+                                                                              },
+                                                              "Probes":  [
+                                                                             {
+                                                                                 "Name":  "YouTube",
+                                                                                 "URL":  "https://www.youtube.com",
+                                                                                 "Status":  "FAIL",
+                                                                                 "StatusCode":  0,
+                                                                                 "LatencyMs":  4037,
+                                                                                 "Error":  "Exception calling \"GetResponse\" with \"0\" argument(s): \"Время ожидания операции истекло\""
+                                                                             },
+                                                                             {
+                                                                                 "Name":  "Discord",
+                                                                                 "URL":  "https://discord.com",
+                                                                                 "Status":  "FAIL",
+                                                                                 "StatusCode":  0,
+                                                                                 "LatencyMs":  4034,
+                                                                                 "Error":  "Exception calling \"GetResponse\" with \"0\" argument(s): \"Время ожидания операции истекло\""
+                                                                             },
+                                                                             {
+                                                                                 "Name":  "Instagram",
+                                                                                 "URL":  "https://www.instagram.com",
+                                                                                 "Status":  "FAIL",
+                                                                                 "StatusCode":  0,
+                                                                                 "LatencyMs":  4022,
+                                                                                 "Error":  "Exception calling \"GetResponse\" with \"0\" argument(s): \"Время ожидания операции истекло\""
+                                                                             },
+                                                                             {
+                                                                                 "Name":  "Cloudflare",
+                                                                                 "URL":  "https://www.cloudflare.com",
+                                                                                 "Status":  "OK",
+                                                                                 "StatusCode":  200,
+                                                                                 "LatencyMs":  430,
+                                                                                 "Error":  ""
+                                                                             },
+                                                                             {
+                                                                                 "Name":  "Ozon",
+                                                                                 "URL":  "https://www.ozon.ru",
+                                                                                 "Status":  "FAIL",
+                                                                                 "StatusCode":  0,
+                                                                                 "LatencyMs":  159,
+                                                                                 "Error":  "Exception calling \"GetResponse\" with \"0\" argument(s): \"Too many automatic redirections were attempted.\""
+                                                                             }
+                                                                         ]
+                                                          }
+               },
+    "EndTime":  "2026-08-04T11:14:56.6737335+03:00"
+}

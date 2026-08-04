@@ -1,10 +1,12 @@
 {
   "$schema": "https://wails.io/schemas/config.v2.json",
   "name": "unbound",
-  "width": 400,
-  "height": 650,
+  "width": 940,
+  "height": 700,
   "frameless": true,
-  "disableResize": true,
+  "disableResize": false,
+  "minWidth": 360,
+  "minHeight": 560,
   "outputfilename": "Unbound",
   "frontend:install": "npm install --include=dev",
   "frontend:build": "npm run build",
@@ -17,7 +19,7 @@
   "info": {
     "companyName": "UNBOUND",
     "productName": "UNBOUND ClearFlow Engine",
-    "productVersion": "0.2.3",
+    "productVersion": "0.3.0",
     "copyright": "Copyright \u00a9 2024-2026 UNBOUND Team",
     "comments": "UNBOUND Refresh - DPI bypass engine for Windows, Linux & macOS"
   },

@@ -2,7 +2,28 @@
 
 Все значимые изменения проекта документируются в этом файле.
 
-## [0.2.3] - 2026-07-29
+## [0.3.0] - 2026-08-04
+### 🚀 Релиз UNBOUND v0.3.0 — Precision Monochrome GUI, Window Resizing, Windows & Linux Validation
+
+#### Основные изменения:
+- **Новый Precision Monochrome GUI**: Индустриальный монохромный интерфейс с 0% цветного синего неона и детерминированными статус-диодами.
+- **Темы оформления**: Поддержка 3 строгих десктопных тем — `Monolith` (монохромный обсидиан), `Paper` (светлая студийная), `Graphite` (тёмная серо-стальная).
+- **Брендинг U-Break & Иконки**: Новый векторный логотип U-Break (`UILogo`) и мульти-разрешающая иконка приложения.
+- **Platform-Aware Titlebar**: Платформ-ориентированная шапка с кнопками управления окном для macOS (`ROOT`), Windows (`ADMIN ✓` + SVG контролы) и Linux.
+- **Window Resizing & Aspect Ratio**: Восстановлено изменение размера окна мышью (`disableResize: false`), размер 940×700px, адаптивная 2-колоночная сетка без обрезки и многоточий в навигации.
+- **Декомпозиция и Ретроспектива Frontend**: Выделены сервисы (`windowService`, `backendService`), хуки логики, строгие типы TypeScript и Vitest unit-тесты (36 тестов).
+- **Удаление Legacy Скевоморфизма**: Окончательное удаление устаревших Doodle/Sketchy элементов.
+- **Windows System Tray Icon**: Исправлен системный трей на Windows (замена PNG на встроенный `build/windows/icon.ico` с набором размеров 16x16...256x256).
+- **Windows Controlled Validation (No-Xray)**: Проведён автономный 4-фазный сетевой тест без сторонних VPN. Подтверждена работа обхода L3/L4 для YouTube, Discord и Instagram при выключенном Xray.
+- **Linux Docker Build Validation**: Настроена сборка в контейнере `ubuntu:24.04` (`-tags webkit2_41`), успешно собран нативный бинарник `Unbound-linux-amd64` (ldd: 0 missing libraries), проверен 136 embedded-активов и пройден headless smoke test под Xvfb/DBus.
+
+#### Известные ограничения:
+- **macOS Intel (`darwin/amd64`)**: Не тестировался (основное тестирование проводилось на Apple Silicon).
+- **Linux Desktop Integration**: Статус `Experimental` (проверены сборка и headless запуск в Docker; системный трей, polkit UI и нативные nftables/iptables на физическом Linux desktop требуют нативной проверки).
+- **Linux arm64 (`linux/arm64`)**: Не тестировался.
+
+---
+
 ### 🚀 Релиз UNBOUND v0.2.3 — macOS Usability Overhaul, Single Sudo Prompt & Clean DMG
 - **Единый запрос пароля sudo**: Добавлен модуль `EnsureSudoersConfigured()`, который при первом запуске под macOS запрашивает пароль администратора **ровно один раз** и создает правило `/etc/sudoers.d/unbound_zapret`. Все последующие подключения, отключения, смены профилей и запуск AutoTune выполняются мгновенно в фоне через `sudo -n` с **нулевым количеством всплывающих окон**.
 - **Устранён баг пустого списка стратегий**: Исправлена гонка инициализации Wails, из-за которой React опрашивал бэкенд до завершения регистрации провайдеров на macOS. Добавлено событие `engines_changed`, повторный опрос и автовыбор встроенных `tpws` стратегий (`Ultimate Bypass`, `Discord Voice Optimized`, `YouTube QUIC Aggressive` и др.).
