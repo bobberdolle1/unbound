@@ -49,7 +49,7 @@ describe('Extracted Components Unit Tests', () => {
   describe('PlatformTitlebar', () => {
     it('renders macOS controls and calls hideToTray / minimise / toggleMaximise on click', () => {
       render(<PlatformTitlebar platform="darwin" appVersion="0.3.0" />);
-      expect(screen.getByText('ROOT ✓')).toBeDefined();
+      expect(screen.getByText('ROOT')).toBeDefined();
 
       fireEvent.click(screen.getByTitle('Закрыть в трей'));
       expect(windowService.hideToTray).toHaveBeenCalledTimes(1);
@@ -189,6 +189,7 @@ describe('Extracted Components Unit Tests', () => {
       );
 
       expect(screen.getByRole('button', { name: /Подключить/i })).toBeDefined();
+      expect(screen.getByText('Автоподбор стратегии')).toBeDefined();
     });
   });
 

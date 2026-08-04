@@ -1,5 +1,5 @@
 import React from 'react';
-import { UIShield } from '../icons';
+import { UILogo, UIMinimize, UIMaximize, UIX, UICheck } from '../icons';
 import { windowService } from '../../services/window';
 
 interface PlatformTitlebarProps {
@@ -13,7 +13,7 @@ export const PlatformTitlebar: React.FC<PlatformTitlebarProps> = ({
 }) => {
   const isMac = platform === 'darwin';
   const isWin = platform === 'windows' || platform === 'win32';
-  const versionDisplay = appVersion ? `v${appVersion}` : 'v0.3.0';
+  const versionDisplay = appVersion ? `v${appVersion}` : 'v0.3.0-rc.3';
 
   return (
     <div
@@ -49,28 +49,47 @@ export const PlatformTitlebar: React.FC<PlatformTitlebarProps> = ({
             />
           </div>
           <div className="flex items-center gap-2 font-semibold text-xs text-[var(--ui-text)]">
-            <UIShield className="w-4 h-4" />
+            <UILogo className="w-4 h-4 text-[var(--ui-text)]" />
             <span>UNBOUND</span>
             <span className="text-[10px] font-mono text-[var(--ui-text-muted)]">{versionDisplay}</span>
           </div>
-          <div className="text-[10px] font-mono text-[var(--ui-text-dim)]">ROOT ✓</div>
+          <div className="flex items-center gap-1 text-[10px] font-mono text-[var(--ui-text-dim)]">
+            <span>ROOT</span>
+            <UICheck className="w-3 h-3 text-emerald-500" />
+          </div>
         </>
       ) : isWin ? (
         <>
-          <div className="flex items-center gap-2 font-semibold text-xs text-[var(--ui-text)]">
-            <UIShield className="w-4 h-4" />
+          <div className="flex items-center gap-2.5 font-semibold text-xs text-[var(--ui-text)]">
+            <UILogo className="w-4 h-4 text-[var(--ui-text)]" />
             <span>UNBOUND Refresh</span>
             <span className="text-[10px] font-mono text-[var(--ui-text-muted)]">{versionDisplay}</span>
+            <div className="flex items-center gap-1 text-[10px] font-mono text-[var(--ui-text-dim)] ml-2">
+              <span>ADMIN</span>
+              <UICheck className="w-3 h-3 text-emerald-500" />
+            </div>
           </div>
-          <div className="flex items-center gap-3 text-xs text-[var(--ui-text-muted)] app-no-drag">
-            <button onClick={() => windowService.minimise()} className="hover:text-[var(--ui-text)] px-1" title="Свернуть">
-              ─
+          <div className="flex items-center gap-1 text-xs text-[var(--ui-text-muted)] app-no-drag">
+            <button
+              onClick={() => windowService.minimise()}
+              className="p-1.5 rounded hover:bg-[var(--ui-surface-hover)] hover:text-[var(--ui-text)] transition-colors"
+              title="Свернуть"
+            >
+              <UIMinimize className="w-3.5 h-3.5" />
             </button>
-            <button onClick={() => windowService.toggleMaximise()} className="hover:text-[var(--ui-text)] px-1" title="Развернуть">
-              □
+            <button
+              onClick={() => windowService.toggleMaximise()}
+              className="p-1.5 rounded hover:bg-[var(--ui-surface-hover)] hover:text-[var(--ui-text)] transition-colors"
+              title="Развернуть"
+            >
+              <UIMaximize className="w-3.5 h-3.5" />
             </button>
-            <button onClick={() => windowService.hideToTray()} className="hover:text-red-400 px-1" title="Закрыть">
-              ✕
+            <button
+              onClick={() => windowService.hideToTray()}
+              className="p-1.5 rounded hover:bg-red-500/20 hover:text-red-400 transition-colors"
+              title="Закрыть"
+            >
+              <UIX className="w-3.5 h-3.5" />
             </button>
           </div>
         </>
@@ -78,7 +97,7 @@ export const PlatformTitlebar: React.FC<PlatformTitlebarProps> = ({
         /* Neutral Linux Titlebar */
         <>
           <div className="flex items-center gap-2 font-semibold text-xs text-[var(--ui-text)]">
-            <UIShield className="w-4 h-4" />
+            <UILogo className="w-4 h-4 text-[var(--ui-text)]" />
             <span>UNBOUND</span>
             <span className="text-[10px] font-mono text-[var(--ui-text-muted)]">{versionDisplay}</span>
           </div>
@@ -88,21 +107,21 @@ export const PlatformTitlebar: React.FC<PlatformTitlebarProps> = ({
               className="w-5 h-5 rounded bg-[var(--ui-border)] hover:bg-[var(--ui-border-strong)] text-xs flex items-center justify-center"
               title="Свернуть"
             >
-              ─
+              <UIMinimize className="w-3 h-3" />
             </button>
             <button
               onClick={() => windowService.toggleMaximise()}
               className="w-5 h-5 rounded bg-[var(--ui-border)] hover:bg-[var(--ui-border-strong)] text-xs flex items-center justify-center"
               title="Развернуть"
             >
-              □
+              <UIMaximize className="w-3 h-3" />
             </button>
             <button
               onClick={() => windowService.hideToTray()}
               className="w-5 h-5 rounded bg-[var(--ui-border)] hover:bg-[var(--ui-border-strong)] text-xs flex items-center justify-center"
               title="Закрыть"
             >
-              ✕
+              <UIX className="w-3 h-3" />
             </button>
           </div>
         </>
@@ -110,4 +129,3 @@ export const PlatformTitlebar: React.FC<PlatformTitlebarProps> = ({
     </div>
   );
 };
-

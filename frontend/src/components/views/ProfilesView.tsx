@@ -1,6 +1,6 @@
 import React from 'react';
 import { cn } from '../../lib/cn';
-import { UIGear } from '../icons';
+import { UIGear, UIStar } from '../icons';
 
 interface ProfilesViewProps {
   sortedProfiles: string[];
@@ -40,7 +40,7 @@ export const ProfilesView: React.FC<ProfilesViewProps> = ({
               )}
             >
               <span>{prof}</span>
-              {favoriteProfiles.includes(prof) && <span className="text-xs">★</span>}
+              {favoriteProfiles.includes(prof) && <UIStar className="w-3.5 h-3.5 fill-current text-amber-400" />}
             </div>
           ))}
         </div>

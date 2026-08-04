@@ -1,6 +1,6 @@
 import React from 'react';
 import { cn } from '../../lib/cn';
-import { UITerminal, UISpinner } from '../icons';
+import { UITerminal, UISpinner, UIX } from '../icons';
 
 interface DiagnosticResult {
   Component: string;
@@ -42,7 +42,7 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
             onClick={onClose}
             className="text-[var(--ui-text-muted)] hover:text-[var(--ui-text)] text-xs"
           >
-            ✕
+            <UIX className="w-4 h-4" />
           </button>
         </div>
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-
+import { UIX } from './components/icons';
 import { PlatformTitlebar } from './components/shell/PlatformTitlebar';
 import { AppNavigation, TabType } from './components/shell/AppNavigation';
 import { MainControlView } from './components/views/MainControlView';
@@ -294,7 +294,7 @@ export default function App() {
                 <div className="text-xs text-[var(--ui-text-muted)] leading-snug">{toast.message}</div>
               </div>
               <button onClick={() => removeToast(toast.id)} className="text-[var(--ui-text-muted)] hover:text-[var(--ui-text)] text-sm">
-                ✕
+                <UIX className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>

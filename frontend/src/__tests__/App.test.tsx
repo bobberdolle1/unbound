@@ -80,7 +80,7 @@ describe('UNBOUND App Main Integration Tests', () => {
       await waitFor(() => {
         expect(screen.getByTitle('Закрыть в трей')).toBeDefined();
         expect(screen.getByTitle('Свернуть')).toBeDefined();
-        expect(screen.getByText('ROOT ✓')).toBeDefined();
+        expect(screen.getByText('ROOT')).toBeDefined();
       });
     });
 
@@ -90,8 +90,8 @@ describe('UNBOUND App Main Integration Tests', () => {
 
       await waitFor(() => {
         expect(screen.getByText('UNBOUND Refresh')).toBeDefined();
-        expect(screen.getByText('─')).toBeDefined();
-        expect(screen.getByText('✕')).toBeDefined();
+        expect(screen.getByTitle('Свернуть')).toBeDefined();
+        expect(screen.getByTitle('Закрыть')).toBeDefined();
       });
     });
 
@@ -101,8 +101,8 @@ describe('UNBOUND App Main Integration Tests', () => {
 
       await waitFor(() => {
         expect(screen.getByText('UNBOUND')).toBeDefined();
-        expect(screen.getByText('─')).toBeDefined();
-        expect(screen.getByText('✕')).toBeDefined();
+        expect(screen.getByTitle('Свернуть')).toBeDefined();
+        expect(screen.getByTitle('Закрыть')).toBeDefined();
       });
     });
   });

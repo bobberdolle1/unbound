@@ -41,11 +41,28 @@ export const UICheck = ({ className, style }: IconProps) => (
   </svg>
 );
 
-export const UILogo = ({ className, style }: IconProps) => (
+export const UIZap = ({ className, style }: IconProps) => (
   <svg className={className} style={style} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M7 4h7.2a1 1 0 0 1 .7.3l.8.8a1 1 0 0 0 .7.3H19a1 1 0 0 1 1 1v10a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3z" />
-    <path d="M10.5 13.5l3-3 1.5 1.5" />
-    <circle cx="9.5" cy="14.5" r="1" fill="currentColor" stroke="none" />
+    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+  </svg>
+);
+
+export const UIMinimize = ({ className, style }: IconProps) => (
+  <svg className={className} style={style} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="5" y1="12" x2="19" y2="12" />
+  </svg>
+);
+
+export const UIMaximize = ({ className, style }: IconProps) => (
+  <svg className={className} style={style} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="4" y="4" width="16" height="16" rx="2" />
+  </svg>
+);
+
+export const UILogo = ({ className, style }: IconProps) => (
+  <svg className={className} style={style} viewBox="0 0 512 512" fill="none">
+    <path d="M 96 80 H 168 V 344 C 168 357.25 178.75 368 192 368 H 320 C 333.25 368 344 357.25 344 344 V 240 H 416 V 344 C 416 397.02 373.02 440 320 440 H 192 C 138.98 440 96 397.02 96 344 V 80 Z" fill="currentColor"/>
+    <rect x="344" y="80" width="72" height="112" rx="16" fill="currentColor"/>
   </svg>
 );
 
@@ -60,5 +77,3 @@ export const UINetwork = ({ className, style }: IconProps) => (
     <path d="M12 13v3" />
   </svg>
 );
-
-

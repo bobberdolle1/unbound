@@ -1,6 +1,7 @@
 import React from 'react';
 import { cn } from '../../lib/cn';
 import { UISelect } from '../UISelect';
+import { UIX } from '../icons';
 import { generateLuaCode } from '../../lib/lua';
 
 interface LuaEditorModalProps {
@@ -59,7 +60,7 @@ export const LuaEditorModal: React.FC<LuaEditorModalProps> = ({
             <span className="text-xs text-[var(--ui-text-muted)]">Настройка параметров LUA-обхода DPI</span>
           </div>
           <button onClick={onClose} className="text-[var(--ui-text-muted)] hover:text-[var(--ui-text)] text-sm">
-            ✕
+            <UIX className="w-4 h-4" />
           </button>
         </div>
 
