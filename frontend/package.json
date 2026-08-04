@@ -8,7 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "NODE_ENV=test vitest run",
+    "test": "vitest run",
     "sync-logo": "python3 ../scripts/generate_all_icons.py"
   },
   "dependencies": {

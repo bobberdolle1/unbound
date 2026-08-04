@@ -6,6 +6,9 @@
 *.ts text eol=lf
 *.tsx text eol=lf
 
+*.lua text eol=lf
+*.txt text eol=lf
+ENGINE_ASSETS.sha256 text eol=lf
 # Linguist overrides - hide data and assets from stats
 engine/lists/* linguist-generated=true
 engine/core_bin/* linguist-binary=true
