@@ -22,8 +22,7 @@ echo "=== GO TEST SUITE ==="
 go test ./...
 
 echo "=== NATIVE WAILS LINUX BUILD ==="
-# Wails build on Ubuntu 24.04 uses webkit2_41 tag
-wails build -clean -tags webkit2_41 -ldflags "-s -w -X unbound/engine.Version=0.3.0-rc.3" -o Unbound-linux-amd64
+wails build -clean -tags webkit2_41 -ldflags "-s -w -X unbound/engine.Version=0.3.0" -o Unbound-linux-amd64
 
 echo "=== ARTIFACT INSPECTION ==="
 BINARY="build/bin/Unbound-linux-amd64"

@@ -13,7 +13,7 @@ export const PlatformTitlebar: React.FC<PlatformTitlebarProps> = ({
 }) => {
   const isMac = platform === 'darwin';
   const isWin = platform === 'windows' || platform === 'win32';
-  const versionDisplay = appVersion ? `v${appVersion}` : 'v0.3.0-rc.3';
+  const versionDisplay = appVersion ? `v${appVersion}` : 'v0.3.0';
 
   return (
     <div

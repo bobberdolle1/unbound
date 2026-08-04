@@ -2,10 +2,10 @@
 
 <img src="./build/logo.svg" alt="UNBOUND Logo" width="120" />
 
-# UNBOUND `v0.3.0-rc.3`
+# UNBOUND `v0.3.0`
 **Локальный настольный оркестратор десинхронизации L3/L4 трафика для macOS, Windows и Linux.**
 
-[![Version](https://img.shields.io/badge/Version-v0.3.0--rc.3-08090b?style=for-the-badge&logo=rocket)](#)
+[![Version](https://img.shields.io/badge/Version-v0.3.0-08090b?style=for-the-badge&logo=rocket)](#)
 [![Design](https://img.shields.io/badge/Design-Precision_Monochrome-10b981?style=for-the-badge)](#)
 [![Security](https://img.shields.io/badge/Security-SHA256_pinned-10b981?style=for-the-badge&logo=shield)](SECURITY.md)
 [![License](https://img.shields.io/badge/License-GPL--3.0-blue?style=for-the-badge)](LICENSE)
@@ -18,7 +18,7 @@
 
 ## 🎨 Интерфейс и Дизайн-Система (Precision Monochrome)
 
-В релиз-кандидате **v0.3.0-rc.3** фронтенд приложения полностью переработан в рамках концепции **Precision Monochrome** — строгого, чистого и дорогого десктопного минимализма:
+В релизе **v0.3.0** фронтенд приложения полностью переработан в рамках концепции **Precision Monochrome** — строгого, чистого и дорогого десктопного минимализма:
 
 - **0% лишнего неона и декоративных градиентов**: Выдержанная индустриальная палитра на основе глубокого обсидиана, графита и пастельной бумаги.
 - **Точечное использование цвета**: Семантические статус-диоды (зелёный — активен, жёлтый — подключение, красный — ошибка, серый — остановлен).
@@ -59,9 +59,9 @@
 | :--- | :--- | :---: |
 | **Windows 11 x64 (`windows/amd64`)** | `WinDivert` + Zapret 2 `winws2.exe` | ✅ Runtime & Network Verified |
 | **macOS Apple Silicon (`darwin/arm64`)** | `pf` redirect + Zapret `dvtws` / `tpws` | ✅ Runtime Verified |
-| **Linux amd64 (`linux/amd64`)** | `NFQUEUE` + `nftables` / `iptables` + `nfqws2` | 🟡 Docker Build Verified (Headless Smoke Verified, Desktop Pending) |
+| **macOS Intel (`darwin/amd64`)** | `pf` redirect + Zapret `dvtws` / `tpws` | ⚠️ Not Tested |
+| **Linux amd64 (`linux/amd64`)** | `NFQUEUE` + `nftables` / `iptables` + `nfqws2` | 🟡 Experimental (Docker Build & Headless Smoke Verified, Desktop Pending) |
 | **Linux arm64 (`linux/arm64`)** | `NFQUEUE` + `nftables` / `iptables` + `nfqws2` | ⚠️ Not Tested |
----
 
 ## ⚡ Как работает движок
 
@@ -118,11 +118,9 @@ cd unbound
 cd frontend && npm ci && npm run build && cd ..
 
 # 3. Сборка CLI-версии
-go build -trimpath -ldflags="-s -w -X unbound/engine.Version=0.3.0-rc.3" -o build/bin/unbound .
-
+go build -trimpath -ldflags="-s -w -X unbound/engine.Version=0.3.0" -o build/bin/unbound .
 # 4. Сборка Wails GUI
-wails build -clean -ldflags "-X unbound/engine.Version=0.3.0-rc.3"
-```
+wails build -clean -ldflags "-X unbound/engine.Version=0.3.0"
 
 ---
 
