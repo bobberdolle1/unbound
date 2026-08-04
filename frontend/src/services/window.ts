@@ -1,9 +1,10 @@
-import { WindowMinimise } from '../../wailsjs/runtime/runtime';
+import { WindowMinimise, WindowToggleMaximise } from '../../wailsjs/runtime/runtime';
 import { HideWindowToTray, QuitApp, ShowNotification } from '../../wailsjs/go/main/App';
 import { EventsOn } from '../../wailsjs/runtime/runtime';
 
 export const windowService = {
   minimise: () => WindowMinimise(),
+  toggleMaximise: () => WindowToggleMaximise(),
   hideToTray: () => HideWindowToTray(),
   quit: () => QuitApp(),
   showNotification: (title: string, message: string) => ShowNotification(title, message),

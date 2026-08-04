@@ -123,10 +123,12 @@ func main() {
 
 	err := wails.Run(&options.App{
 		Title:             "UNBOUND",
-		Width:             400,
-		Height:            650,
+		Width:             940,
+		Height:            700,
+		MinWidth:          360,
+		MinHeight:         560,
 		Frameless:         true,
-		DisableResize:     true,
+		DisableResize:     false,
 		HideWindowOnClose: true,
 		OnBeforeClose:     app.onBeforeClose,
 		AssetServer: &assetserver.Options{

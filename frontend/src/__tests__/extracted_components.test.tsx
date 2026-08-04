@@ -12,6 +12,7 @@ import { windowService } from '../services/window';
 vi.mock('../services/window', () => ({
   windowService: {
     minimise: vi.fn(),
+    toggleMaximise: vi.fn(),
     hideToTray: vi.fn(),
     quit: vi.fn(),
     showNotification: vi.fn(),
@@ -46,7 +47,7 @@ describe('Extracted Components Unit Tests', () => {
   });
 
   describe('PlatformTitlebar', () => {
-    it('renders macOS controls and calls hideToTray / minimise on click', () => {
+    it('renders macOS controls and calls hideToTray / minimise / toggleMaximise on click', () => {
       render(<PlatformTitlebar platform="darwin" appVersion="0.3.0" />);
       expect(screen.getByText('ROOT ✓')).toBeDefined();
 
@@ -55,6 +56,16 @@ describe('Extracted Components Unit Tests', () => {
 
       fireEvent.click(screen.getByTitle('Свернуть'));
       expect(windowService.minimise).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(screen.getByTitle('Развернуть / Восстановить'));
+      expect(windowService.toggleMaximise).toHaveBeenCalledTimes(1);
+    });
+
+    it('triggers toggleMaximise on titlebar double-click', () => {
+      const { container } = render(<PlatformTitlebar platform="darwin" appVersion="0.3.0" />);
+      const titlebar = container.firstChild as HTMLElement;
+      fireEvent.doubleClick(titlebar);
+      expect(windowService.toggleMaximise).toHaveBeenCalled();
     });
 
     it('renders Windows titlebar and triggers handlers', () => {
@@ -75,9 +86,12 @@ describe('Extracted Components Unit Tests', () => {
   });
 
   describe('AppNavigation', () => {
-    it('switches tabs and handles keyboard activation', () => {
+    it('switches tabs and renders both full and compact labels', () => {
       const onTabChange = vi.fn();
       render(<AppNavigation activeTab="main" onTabChange={onTabChange} />);
+
+      expect(screen.getByText('Списки обхода')).toBeDefined();
+      expect(screen.getByText('Списки')).toBeDefined();
 
       fireEvent.click(screen.getByText('Списки обхода'));
       expect(onTabChange).toHaveBeenCalledWith('lists');

@@ -1,14 +1,14 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "0.3.0-rc.1",
+  "version": "0.3.0-rc.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "NODE_ENV=test vitest run",
     "sync-logo": "python3 ../scripts/generate_all_icons.py"
   },
   "dependencies": {
