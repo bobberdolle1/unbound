@@ -19,7 +19,7 @@ func getAppMenu(a *App) *menu.Menu {
 	return nil
 }
 
-//go:embed build/appicon.png
+//go:embed build/windows/icon.ico
 var iconData []byte
 
 func (a *App) setupTray() {
@@ -28,8 +28,8 @@ func (a *App) setupTray() {
 
 func (a *App) onTrayReady() {
 	systray.SetIcon(iconData)
-	systray.SetTitle("Unbound")
-	systray.SetTooltip("Unbound — двигатель обхода DPI")
+	systray.SetTitle("UNBOUND")
+	systray.SetTooltip("UNBOUND — обход DPI")
 
 	mStatus := systray.AddMenuItem("Статус: Отключено", "Текущий статус двигателя")
 	mStatus.Disable()
