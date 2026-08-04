@@ -81,51 +81,40 @@ export const MainControlView: React.FC<MainControlViewProps> = ({
         </div>
       </div>
 
-      {/* DESKTOP 2-COLUMN GRID (PROFILE SELECT & AUTO-TUNE LEFT, PING TELEMETRY RIGHT) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* LEFT COLUMN: PROFILE SELECTOR & AUTOTUNE */}
-        <div className="flex flex-col gap-3 justify-between">
-          <div className="bg-[var(--ui-surface-elevated)] border border-[var(--ui-border)] rounded-[var(--ui-radius)] p-4 space-y-3">
-            <div className="text-xs font-semibold text-[var(--ui-text-muted)]">Профиль обхода</div>
-            <div className="flex gap-2">
-              <div className="flex-1 min-w-0">
-                <UISelect
-                  value={selectedProfile}
-                  options={sortedProfiles}
-                  onChange={(val: string) => setSelectedProfile(val)}
-                  disabled={isConnected || disableMain || !selectedEngine}
-                />
-              </div>
-              <button
-                onClick={handleToggleFavorite}
-                disabled={!selectedProfile}
-                title={isFavorite ? 'Удалить из избранного' : 'Добавить в избранное'}
-                className={cn(
-                  'px-3 rounded-lg border transition-all flex items-center justify-center shrink-0',
-                  isFavorite
-                    ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
-                    : 'btn-ui-secondary'
-                )}
-              >
-                <UIStar className="w-4 h-4" />
-              </button>
-            </div>
+      {/* PROFILE SELECTOR & AUTOTUNE (RESPONSIVE GRID) */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="sm:col-span-2 flex gap-2">
+          <div className="flex-1 min-w-0">
+            <UISelect
+              value={selectedProfile}
+              options={sortedProfiles}
+              onChange={(val: string) => setSelectedProfile(val)}
+              disabled={isConnected || disableMain || !selectedEngine}
+            />
           </div>
-
           <button
-            onClick={handleAutoTune}
-            disabled={disableMain || isScanning}
-            className="btn-ui-secondary w-full justify-center py-2.5"
+            onClick={handleToggleFavorite}
+            disabled={!selectedProfile}
+            title={isFavorite ? 'Удалить из избранного' : 'Добавить в избранное'}
+            className={cn(
+              'px-3 rounded-lg border transition-all flex items-center justify-center shrink-0',
+              isFavorite
+                ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                : 'btn-ui-secondary'
+            )}
           >
-            <UIZap className="w-4 h-4" />
-            <span>{isScanning ? 'Сканирование...' : 'Автоподбор стратегии'}</span>
+            <UIStar className="w-4 h-4" />
           </button>
         </div>
 
-        {/* RIGHT COLUMN: COMPACT PING TELEMETRY */}
-        <div className="flex flex-col">
-          <PingChart history={pingHistory} livePingData={livePingData} />
-        </div>
+        <button
+          onClick={handleAutoTune}
+          disabled={disableMain || isScanning}
+          className="btn-ui-secondary w-full justify-center"
+        >
+          <UIZap className="w-4 h-4" />
+          <span>{isScanning ? 'Сканирование...' : 'Автоподбор стратегии'}</span>
+        </button>
       </div>
 
       {/* AUTOTUNE PROGRESS CARD */}
@@ -159,6 +148,17 @@ export const MainControlView: React.FC<MainControlViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* PING & NETWORK TELEMETRY */}
+      <div className="bg-[var(--ui-surface-elevated)] border border-[var(--ui-border)] rounded-[var(--ui-radius)] p-4 flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold text-[var(--ui-text-muted)]">Задержка соединения (Ping)</span>
+          <span className="text-xs font-mono font-semibold text-[var(--ui-text)]">
+            {livePingData?.latency ? `${livePingData.latency} ms` : '-- ms'}
+          </span>
+        </div>
+        <PingChart history={pingHistory} livePingData={livePingData} />
+      </div>
     </div>
   );
 };
