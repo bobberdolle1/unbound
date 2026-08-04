@@ -1,0 +1,51 @@
+# UNBOUND Linux Validation Dockerfile (Ubuntu 24.04 amd64)
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV GO_VERSION=1.24.0
+ENV NODE_VERSION=22.x
+ENV GOPATH=/go
+ENV GOROOT=/usr/local/go
+ENV PATH=$GOROOT/bin:$GOPATH/bin:/usr/local/bin:$PATH
+
+# Install core build dependencies, GTK3, WebKit2GTK 4.1, X11, DBus & networking tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    pkg-config \
+    libgtk-3-dev \
+    libwebkit2gtk-4.1-dev \
+    ca-certificates \
+    curl \
+    git \
+    xvfb \
+    dbus \
+    dbus-x11 \
+    x11-utils \
+    file \
+    binutils \
+    procps \
+    iptables \
+    nftables \
+    iproute2 \
+    net-tools \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Go
+RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" | tar -C /usr/local -xzf -
+
+# Install Node.js & npm
+RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION} | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Wails CLI v2.13.0
+RUN go install github.com/wailsapp/wails/v2/cmd/wails@v2.13.0
+
+WORKDIR /app
+
+# Copy project files into container
+COPY . .
+
+RUN chmod +x build/linux/docker-entrypoint-validation.sh
+
+ENTRYPOINT ["/bin/bash", "build/linux/docker-entrypoint-validation.sh"]
