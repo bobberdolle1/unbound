@@ -14,7 +14,7 @@ $Targets = @(
     @{ Name = "Discord"; URL = "https://discord.com" },
     @{ Name = "Instagram"; URL = "https://www.instagram.com" },
     @{ Name = "Cloudflare"; URL = "https://www.cloudflare.com" },
-    @{ Name = "Ozon"; URL = "https://ozon.ru" }
+    @{ Name = "Ozon"; URL = "https://www.ozon.ru" }
 )
 
 function Probe-Targets {
@@ -25,12 +25,14 @@ function Probe-Targets {
         $statusCode = 0
         $errMessage = ""
         try {
-            # Clear DNS cache for fresh resolution
             Clear-DnsClientCache -ErrorAction SilentlyContinue | Out-Null
             $req = [System.Net.HttpWebRequest]::Create($target.URL)
-            $req.Timeout = 5000
-            $req.ReadWriteTimeout = 5000
+            $req.Timeout = 4000
+            $req.ReadWriteTimeout = 4000
             $req.KeepAlive = $false
+            $req.AllowAutoRedirect = $true
+            $req.MaximumAutomaticRedirections = 5
+            $req.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0"
             $req.Method = "GET"
             $resp = $req.GetResponse()
             $statusCode = [int]$resp.StatusCode
@@ -40,6 +42,9 @@ function Probe-Targets {
             $resp.Close()
         } catch {
             $errMessage = $_.Exception.Message
+            if ($_.Exception.Response) {
+                $statusCode = [int]$_.Exception.Response.StatusCode
+            }
         }
         $sw.Stop()
         $results += [PSCustomObject]@{
@@ -60,12 +65,12 @@ function Get-SystemState {
     $driver = Get-Service -Name WinDivert -ErrorAction SilentlyContinue
 
     return [PSCustomObject]@{
-        Timestamp    = (Get-Date).ToString("o")
-        WinwsActive  = ($winwsProc -ne $null)
-        WinwsPIDs    = if ($winwsProc) { ($winwsProc | Select-Object -ExpandProperty Id) -join ", " } else { "" }
-        UnboundActive= ($unboundProc -ne $null)
-        UnboundPIDs  = if ($unboundProc) { ($unboundProc | Select-Object -ExpandProperty Id) -join ", " } else { "" }
-        WinDivertState = if ($driver) { $driver.Status.ToString() } else { "NotLoaded" }
+        Timestamp     = (Get-Date).ToString("o")
+        WinwsActive   = ($winwsProc -ne $null)
+        WinwsPIDs     = if ($winwsProc) { ($winwsProc | Select-Object -ExpandProperty Id) -join ", " } else { "" }
+        UnboundActive = ($unboundProc -ne $null)
+        UnboundPIDs   = if ($unboundProc) { ($unboundProc | Select-Object -ExpandProperty Id) -join ", " } else { "" }
+        WinDivertState= if ($driver) { $driver.Status.ToString() } else { "NotLoaded" }
     }
 }
 
@@ -106,10 +111,11 @@ $ReportData.Phases["PhaseB_XrayOFF_UnboundOFF"] = [ordered]@{
 }
 
 # PHASE C: Xray OFF, UNBOUND ON (Primary Proof Test)
-Write-Host "`n[PHASE C] Launching UNBOUND engine (Xray OFF, UNBOUND ON)..." -ForegroundColor Yellow
-$unboundJob = Start-Process -FilePath $ExePath -ArgumentList "--cli --profile=`"$ProfileName`" --run-duration=25s" -PassThru
+Write-Host "`n[PHASE C] Launching UNBOUND engine as Administrator..." -ForegroundColor Yellow
+# Run as Administrator via UAC Verb RunAs
+$unboundJob = Start-Process -FilePath $ExePath -ArgumentList "--cli --profile=`"$ProfileName`" --run-duration=25s" -Verb RunAs -PassThru
 
-Start-Sleep -Seconds 4
+Start-Sleep -Seconds 5
 $stateC = Get-SystemState
 Write-Host "  Engine Status: winws2 Active = $($stateC.WinwsActive), WinDivert = $($stateC.WinDivertState)"
 
