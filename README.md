@@ -57,11 +57,10 @@
 
 | Платформа | Драйвер / Механизм | Статус проверки |
 | :--- | :--- | :---: |
+| **Windows 11 x64 (`windows/amd64`)** | `WinDivert` + Zapret 2 `winws2.exe` | ✅ Runtime & Network Verified |
 | **macOS Apple Silicon (`darwin/arm64`)** | `pf` redirect + Zapret `dvtws` / `tpws` | ✅ Runtime Verified |
-| **macOS Intel (`darwin/amd64`)** | `pf` redirect + Zapret `dvtws` / `tpws` | ⚠️ Not Tested |
-| **Windows 10 / 11 (`windows/amd64`)** | `WinDivert` + Zapret 2 `winws2.exe` | ⚠️ Static Analysis Verified (Runtime Pending) |
-| **Linux (`linux/amd64`)** | `NFQUEUE` + `nftables` / `iptables` + `nfqws2` | ⚠️ Static Analysis Verified (Runtime Pending) |
-
+| **Linux amd64 (`linux/amd64`)** | `NFQUEUE` + `nftables` / `iptables` + `nfqws2` | 🟡 Docker Build Verified (Headless Smoke Verified, Desktop Pending) |
+| **Linux arm64 (`linux/arm64`)** | `NFQUEUE` + `nftables` / `iptables` + `nfqws2` | ⚠️ Not Tested |
 ---
 
 ## ⚡ Как работает движок

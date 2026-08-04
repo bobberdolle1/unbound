@@ -1,0 +1,10 @@
+.git
+.gitignore
+.vscode
+.idea
+frontend/node_modules
+frontend/dist
+build/bin
+build/*.json
+*.log
+*.tmp
