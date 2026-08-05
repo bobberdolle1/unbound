@@ -15,7 +15,7 @@ SHELL := /usr/bin/env bash
 
 # Keep in step with the newest CHANGELOG entry; release builds pass this to
 # -ldflags so the binary stops reporting a stale version.
-VERSION ?= 0.3.0
+VERSION ?= 0.3.1
 LDFLAGS := -s -w -X unbound/engine.Version=$(VERSION)
 
 GOOS_HOST := $(shell go env GOOS 2>/dev/null)

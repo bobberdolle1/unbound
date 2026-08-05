@@ -23,12 +23,10 @@ export const PingChart = ({ history, livePingData }: { history: number[]; livePi
 
   return (
     <div
-      className="flex flex-col items-center p-3 border rounded-xl relative z-10 transition-all duration-200 app-no-drag"
+      className="flex flex-col items-center p-2 rounded-lg relative z-10 transition-all duration-200 app-no-drag w-full"
       style={{
         background: 'var(--ui-panel-transparent)',
         borderColor: 'var(--ui-border)',
-        backdropFilter: 'blur(var(--ui-blur))',
-        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)'
       }}
     >
       <div className="flex justify-between items-center w-full text-xs font-medium px-1 mb-2" style={{ color: 'var(--ui-text)' }}>

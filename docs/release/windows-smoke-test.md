@@ -20,7 +20,7 @@
 | 16 | Close to system tray behavior | **PASS** | `windowService.hideToTray()` closes window to notification area without quitting process. |
 | 17 | Restore from system tray behavior | **PASS** | Tray context menu 'Show' action successfully calls `WindowShow` & `WindowUnminimise`. |
 | 18 | Application Quit | **PASS** | `windowService.quit()` cleanly releases WinDivert driver, cleans up temp asset dir, and exits process. |
-| 19 | Drag titlebar & non-drag interactive elements | **PASS** | Titlebar uses `app-drag` region while buttons retain `app-no-drag` interactive clickability. |
+| 19 | Drag titlebar & non-drag interactive elements | **PASS (v0.3.1)** | **v0.3.0 Published Artifact: FAIL** (Window drag was non-functional in Wails runtime due to missing `--wails-draggable: drag` CSS custom property). **v0.3.1 Local Build: PASS** (Fixed via `--wails-draggable: drag` on titlebar root and `--wails-draggable: no-drag` on control buttons). |
 | 20 | Monolith theme rendering | **PASS** | Monolith precision obsidian theme default variables (`--ui-bg`, `--ui-panel`, `--ui-border`) render as intended with 0% colored blue accents. |
 | 21 | Paper theme rendering | **PASS** | Paper light monochrome theme CSS variables validated in frontend palette definitions. |
 | 22 | Graphite theme rendering | **PASS** | Graphite dark industrial theme CSS variables validated in frontend palette definitions. |

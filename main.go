@@ -46,7 +46,7 @@ func main() {
 	runDuration := flag.Duration("run-duration", 0, "Stop CLI automatically after this duration (0 = wait for signal)")
 
 	flag.Usage = func() {
-		fmt.Printf("UNBOUND ClearFlow Engine v%s (%s/%s)\n", engine.Version, runtime.GOOS, runtime.GOARCH)
+		fmt.Printf("UNBOUND v%s (%s/%s)\n", engine.Version, runtime.GOOS, runtime.GOARCH)
 		fmt.Println("Usage: unbound [options]")
 		fmt.Println("Options:")
 		flag.PrintDefaults()
