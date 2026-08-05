@@ -7,12 +7,12 @@
 		"0409": {
 			"Comments": "UNBOUND Refresh - DPI bypass engine for Windows, Linux & macOS",
 			"CompanyName": "UNBOUND",
-			"FileDescription": "UNBOUND ClearFlow Engine",
+			"FileDescription": "UNBOUND",
 			"FileVersion": "0.3.1.0",
 			"InternalName": "Unbound",
 			"LegalCopyright": "Copyright \u00a9 2024-2026 UNBOUND Team",
 			"OriginalFilename": "Unbound.exe",
-			"ProductName": "UNBOUND ClearFlow Engine",
+			"ProductName": "UNBOUND",
 			"ProductVersion": "0.3.1"
 		}
 	}
