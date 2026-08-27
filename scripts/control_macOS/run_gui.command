@@ -6,19 +6,26 @@ xattr -d com.apple.quarantine "$DIR" 2>/dev/null || true
 xattr -cr "$DIR" 2>/dev/null || true
 
 TARGET_APP=""
-if [ -d "$DIR/unbound.app" ]; then
-    TARGET_APP="$DIR/unbound.app"
-elif [ -d "$DIR/Unbound.app" ]; then
-    TARGET_APP="$DIR/Unbound.app"
-fi
+for candidate in \
+    "$DIR/Unbound.app" \
+    "$DIR/unbound.app" \
+    "/Applications/Unbound.app" \
+    "/Applications/unbound.app" \
+    "$HOME/Applications/Unbound.app"
+do
+    if [ -d "$candidate" ]; then
+        TARGET_APP="$candidate"
+        break
+    fi
+done
 
 if [ -n "$TARGET_APP" ]; then
-    xattr -d com.apple.quarantine "$TARGET_APP" 2>/dev/null || true
-    xattr -d com.apple.quarantine "$TARGET_APP"/Contents/MacOS/* 2>/dev/null || true
+    xattr -dr com.apple.quarantine "$TARGET_APP" 2>/dev/null || true
     xattr -cr "$TARGET_APP" 2>/dev/null || true
+    codesign --force --deep -s - "$TARGET_APP" 2>/dev/null || true
     echo "✓ Атрибуты карантина сняты. Запускаем UNBOUND GUI..."
     open "$TARGET_APP"
 else
-    echo "[!] Ошибка: unbound.app не найден!"
+    echo "[!] Ошибка: Unbound.app не найден!"
     read -p "Нажмите Enter для выхода..."
 fi

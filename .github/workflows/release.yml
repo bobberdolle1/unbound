@@ -336,6 +336,12 @@ jobs:
             echo "::error::wails build produced no .app bundle"
             exit 1
           fi
+
+          # Ad-hoc code signing is mandatory on macOS to prevent "app is damaged / malware" Gatekeeper alerts
+          xattr -cr "$app" || true
+          codesign --force --deep -s - "$app"
+          codesign --verify --strict "$app"
+
           dist="release/unbound-v${VERSION}-macos-universal"
           mkdir -p "$dist"
           cp -R "$app" "$dist/"
@@ -356,6 +362,25 @@ jobs:
           )
           ditto -c -k --sequesterRsrc --keepParent "$dist" "${dist}.zip"
 
+          # Create DMG Image
+          dmg_stage="$(mktemp -d)"
+          cp -R "$app" "$dmg_stage/Unbound.app"
+          ln -s /Applications "$dmg_stage/Applications" || true
+          cat > "$dmg_stage/ОБЯЗАТЕЛЬНО К ПРОЧТЕНИЮ.txt" << 'EOF'
+          ===================================================
+            🍎 UNBOUND macOS Installation & Gatekeeper Fix
+          ===================================================
+
+          1. Перетащите Unbound.app в папку «Программы» (Applications).
+          2. Если macOS сообщает «Файл поврежден» или «Не удается проверить разработчика»:
+             Откройте Терминал и выполните:
+             xattr -cr /Applications/Unbound.app
+             или нажмите правой кнопкой мыши по Unbound.app -> Открыть -> Подтвердить.
+          ===================================================
+          EOF
+          hdiutil create -volname "UNBOUND" -srcfolder "$dmg_stage" -ov -format UDZO "${dist}.dmg"
+          rm -rf "$dmg_stage"
+
           smoke="$(mktemp -d)"
           ditto -x -k "${dist}.zip" "$smoke"
           smoke_executable="$(find "$smoke" -path '*/Contents/MacOS/*' -type f -perm -111 | head -1)"
@@ -367,9 +392,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: unbound-macos
-          path: release/*.zip
+          path: |
+            release/*.zip
+            release/*.dmg
           retention-days: 30
-
   release:
     name: Publish GitHub Release
     runs-on: ubuntu-latest
@@ -398,7 +424,7 @@ jobs:
       - name: Generate release checksums
         run: |
           set -euo pipefail
-          find artifacts -type f \( -name '*.zip' -o -name '*.tar.gz' \) -print0 \
+          find artifacts -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.dmg' \) -print0 \
             | sort -z \
             | xargs -0 sha256sum \
             | sed 's#  artifacts/[^/]*/#  #' > artifacts/SHA256SUMS.txt
@@ -438,6 +464,7 @@ jobs:
           files: |
             artifacts/**/*.zip
             artifacts/**/*.tar.gz
+            artifacts/**/*.dmg
             artifacts/SHA256SUMS.txt
           draft: ${{ github.ref_type != 'tag' }}
           prerelease: ${{ contains(needs.resolve-version.outputs.version, 'dev') || contains(needs.resolve-version.outputs.version, 'beta') || contains(needs.resolve-version.outputs.version, 'rc') }}

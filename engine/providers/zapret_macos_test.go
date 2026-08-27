@@ -185,3 +185,30 @@ func TestTpwsPfRules(t *testing.T) {
 		t.Error("tpwsPfRules missing QUIC block rule (UDP port 443 must be blocked so browsers use TCP)")
 	}
 }
+
+func TestMacOSProviderResolveProfileAliases(t *testing.T) {
+	p := NewZapretMacOSProvider("").(*ZapretMacOSProvider)
+
+	aliases := map[string]string{
+		"ultimate":    "Ultimate Bypass (Multi-Strategy)",
+		"ULTIMATE":    "Ultimate Bypass (Multi-Strategy)",
+		"youtube":     "YouTube QUIC Aggressive",
+		"discord":     "Discord Voice Optimized",
+		"telegram":    "Telegram API Bypass",
+		"https":       "Standard HTTPS/QUIC",
+		"split":       "HTTP + HTTPS Split",
+		"recommended": "Ultimate Bypass (Multi-Strategy)",
+	}
+
+	for alias, expectedName := range aliases {
+		prof, err := p.resolveProfile(alias)
+		if err != nil {
+			t.Errorf("resolveProfile(%q) failed: %v", alias, err)
+			continue
+		}
+		expectedProf, _ := p.resolveProfile(expectedName)
+		if len(prof.Args) != len(expectedProf.Args) {
+			t.Errorf("resolveProfile(%q) did not match %q args length (%d != %d)", alias, expectedName, len(prof.Args), len(expectedProf.Args))
+		}
+	}
+}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { UIX } from './components/icons';
 import { PlatformTitlebar } from './components/shell/PlatformTitlebar';
 import { AppNavigation, TabType } from './components/shell/AppNavigation';
@@ -11,7 +11,7 @@ import { ModalHost } from './components/modals/ModalHost';
 
 import { backendService } from './services/backend';
 import { windowService } from './services/window';
-import { engine } from '../wailsjs/go/models';
+import { engine as WailsEngine } from '../wailsjs/go/models';
 
 import { usePlatform } from './hooks/usePlatform';
 import { useEngineController } from './hooks/useEngineController';
@@ -66,7 +66,7 @@ export default function App() {
   const [privilegeError, setPrivilegeError] = useState<string>('');
   const [conflictWarning, setConflictWarning] = useState<string[]>([]);
   const [isDiagOpen, setIsDiagOpen] = useState<boolean>(false);
-  const [diagResults, setDiagResults] = useState<engine.DiagnosticResult[]>([]);
+  const [diagResults, setDiagResults] = useState<WailsEngine.DiagnosticResult[]>([]);
   const [isDiagRunning, setIsDiagRunning] = useState<boolean>(false);
 
   // Operations States
@@ -102,6 +102,19 @@ export default function App() {
     autoReconnect: true,
     favoriteProfiles: [],
   });
+  const initialSettingsLoaded = useRef(false);
+
+  const updateSettings = useCallback((newSettingsOrUpdater: React.SetStateAction<typeof settings>) => {
+    setSettings((prev) => {
+      const next = typeof newSettingsOrUpdater === 'function' ? newSettingsOrUpdater(prev) : newSettingsOrUpdater;
+      if (initialSettingsLoaded.current) {
+        backendService.saveSettings(new WailsEngine.Settings(next)).catch((err) => {
+          console.error('Failed to persist settings:', err);
+        });
+      }
+      return next;
+    });
+  }, []);
 
   // Theme sync
   useEffect(() => {
@@ -129,7 +142,7 @@ export default function App() {
       if (conflicts && conflicts.length > 0) setConflictWarning(conflicts);
     }).catch(() => {});
 
-    backendService.getSettings().then((s: engine.Settings) => {
+    backendService.getSettings().then((s: WailsEngine.Settings) => {
       setSettings({
         autoStart: s.autoStart || false,
         startMinimized: s.startMinimized || false,
@@ -144,7 +157,10 @@ export default function App() {
         autoReconnect: s.autoReconnect !== undefined ? s.autoReconnect : true,
         favoriteProfiles: s.favoriteProfiles || [],
       });
-    }).catch(() => {});
+      initialSettingsLoaded.current = true;
+    }).catch(() => {
+      initialSettingsLoaded.current = true;
+    });
   }, [platform]);
 
   // Event Subscriptions
@@ -367,7 +383,7 @@ export default function App() {
         {activeTab === 'settings' && (
           <SettingsView
             settings={settings}
-            setSettings={setSettings}
+            setSettings={updateSettings}
             theme={theme}
             setThemeState={setThemeState}
             handleRunDiagnostics={handleRunDiagnostics}

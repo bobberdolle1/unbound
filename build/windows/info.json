@@ -1,19 +1,19 @@
 {
 	"fixed": {
-		"file_version": "0.3.1.0",
-		"product_version": "0.3.1.0"
+		"file_version": "0.3.2.0",
+		"product_version": "0.3.2.0"
 	},
 	"info": {
 		"0409": {
 			"Comments": "UNBOUND Refresh - DPI bypass engine for Windows, Linux & macOS",
 			"CompanyName": "UNBOUND",
 			"FileDescription": "UNBOUND",
-			"FileVersion": "0.3.1.0",
+			"FileVersion": "0.3.2.0",
 			"InternalName": "Unbound",
 			"LegalCopyright": "Copyright \u00a9 2024-2026 UNBOUND Team",
 			"OriginalFilename": "Unbound.exe",
 			"ProductName": "UNBOUND",
-			"ProductVersion": "0.3.1"
+			"ProductVersion": "0.3.2"
 		}
 	}
 }

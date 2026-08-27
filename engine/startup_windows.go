@@ -45,7 +45,7 @@ func EnableAutoStart() error {
 	taskCmd := fmt.Sprintf(`"%s"`, exePath)
 	settings, _ := GetSettings()
 	if settings != nil && settings.StartMinimized {
-		taskCmd = fmt.Sprintf(`"%s" -tray`, exePath)
+		taskCmd = fmt.Sprintf(`"%s" --tray`, exePath)
 	}
 
 	args := []string{

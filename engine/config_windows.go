@@ -4,7 +4,6 @@ package engine
 
 import (
 	"golang.org/x/sys/windows/registry"
-	"os"
 )
 
 const (
@@ -13,25 +12,16 @@ const (
 )
 
 func applyAutoStartSetting(enable bool) error {
-	k, err := registry.OpenKey(registry.CURRENT_USER, RegistryRunKey, registry.ALL_ACCESS)
-	if err != nil {
-		return err
+	// Clean up any legacy registry autorun entry to prevent un-elevated launch conflicts
+	if k, err := registry.OpenKey(registry.CURRENT_USER, RegistryRunKey, registry.SET_VALUE); err == nil {
+		_ = k.DeleteValue(RegistryAppName)
+		_ = k.Close()
 	}
-	defer k.Close()
 
+	// On Windows, WinDivert driver requires administrative privileges (/RL HIGHEST),
+	// which is managed via Windows Task Scheduler in EnableAutoStart / DisableAutoStart.
 	if enable {
-		exePath, err := os.Executable()
-		if err != nil {
-			return err
-		}
-
-		cmdLine := `"` + exePath + `" --tray`
-		return k.SetStringValue(RegistryAppName, cmdLine)
-	} else {
-		err := k.DeleteValue(RegistryAppName)
-		if err != nil && err != registry.ErrNotExist {
-			return err
-		}
-		return nil
+		return EnableAutoStart()
 	}
+	return DisableAutoStart()
 }
