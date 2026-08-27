@@ -1,24 +1,47 @@
 #!/bin/bash
 # UNBOUND AutoTune for macOS
 DIR="$(cd "$(dirname "$0")" && pwd)"
-UNBOUND="$DIR/unbound"
-[ ! -f "$UNBOUND" ] && [ -f "$DIR/../unbound" ] && UNBOUND="$DIR/../unbound"
-[ ! -f "$UNBOUND" ] && [ -d "$DIR/unbound.app" ] && UNBOUND="$DIR/unbound.app/Contents/MacOS/unbound"
-[ ! -f "$UNBOUND" ] && [ -d "$DIR/Unbound.app" ] && UNBOUND="$DIR/Unbound.app/Contents/MacOS/unbound"
+UNBOUND=""
+for candidate in \
+    "$DIR/Unbound.app/Contents/MacOS/Unbound" \
+    "$DIR/Unbound.app/Contents/MacOS/unbound" \
+    "$DIR/unbound.app/Contents/MacOS/Unbound" \
+    "$DIR/unbound.app/Contents/MacOS/unbound" \
+    "$DIR/unbound" \
+    "$DIR/Unbound" \
+    "$DIR/../unbound" \
+    "$DIR/../Unbound" \
+    "/Applications/Unbound.app/Contents/MacOS/Unbound" \
+    "/Applications/Unbound.app/Contents/MacOS/unbound" \
+    "/Applications/unbound.app/Contents/MacOS/Unbound" \
+    "/Applications/unbound.app/Contents/MacOS/unbound"
+do
+    if [ -x "$candidate" ] || [ -f "$candidate" ]; then
+        UNBOUND="$candidate"
+        break
+    fi
+done
 
 # Remove macOS Gatekeeper quarantine attribute if present
 xattr -dr com.apple.quarantine "$DIR" 2>/dev/null || true
+xattr -cr "$DIR" 2>/dev/null || true
+if [ -d "$DIR/Unbound.app" ]; then
+    xattr -dr com.apple.quarantine "$DIR/Unbound.app" 2>/dev/null || true
+    xattr -cr "$DIR/Unbound.app" 2>/dev/null || true
+fi
 if [ -d "$DIR/unbound.app" ]; then
     xattr -dr com.apple.quarantine "$DIR/unbound.app" 2>/dev/null || true
+    xattr -cr "$DIR/unbound.app" 2>/dev/null || true
 fi
+
 if [ "$(id -u)" -ne 0 ]; then
     echo "Запрос прав администратора (sudo)..."
     exec sudo "$0" "$@"
 fi
 
-if [ -f "$UNBOUND" ]; then
+if [ -n "$UNBOUND" ] && [ -f "$UNBOUND" ]; then
     exec "$UNBOUND" --autotune
 else
-    echo "[!] Ошибка: unbound не найден!"
+    echo "[!] Ошибка: исполняемый файл Unbound не найден!"
     read -p "Нажмите Enter для выхода..."
 fi

@@ -11,21 +11,35 @@ xattr -d com.apple.quarantine "$DIR" 2>/dev/null || true
 xattr -cr "$DIR" 2>/dev/null || true
 
 TARGET_APP=""
-if [ -d "$DIR/unbound.app" ]; then
-    TARGET_APP="$DIR/unbound.app"
-elif [ -d "$DIR/Unbound.app" ]; then
-    TARGET_APP="$DIR/Unbound.app"
-fi
+for candidate in \
+    "$DIR/Unbound.app" \
+    "$DIR/unbound.app" \
+    "/Applications/Unbound.app" \
+    "/Applications/unbound.app" \
+    "$HOME/Applications/Unbound.app"
+do
+    if [ -d "$candidate" ]; then
+        TARGET_APP="$candidate"
+        break
+    fi
+done
 
 if [ -n "$TARGET_APP" ]; then
-    xattr -d com.apple.quarantine "$TARGET_APP" 2>/dev/null || true
-    xattr -d com.apple.quarantine "$TARGET_APP"/Contents/MacOS/* 2>/dev/null || true
+    echo "[1/4] Снятие атрибутов карантина с $TARGET_APP..."
+    xattr -dr com.apple.quarantine "$TARGET_APP" 2>/dev/null || true
     xattr -cr "$TARGET_APP" 2>/dev/null || true
+
+    echo "[2/4] Восстановление ad-hoc подписи..."
+    codesign --force --deep -s - "$TARGET_APP" 2>/dev/null || true
+
+    echo "[3/4] Добавление в Gatekeeper (spctl)..."
     spctl --add "$TARGET_APP" 2>/dev/null || true
-    echo "✓ Атрибуты защиты успешно сняты с $(basename "$TARGET_APP")!"
-    echo "Запускаем UNBOUND GUI..."
+
+    echo "[4/4] Запуск приложения..."
+    echo "✓ Приложение успешно подготовлено!"
     open "$TARGET_APP"
 else
-    echo "[!] Ошибка: unbound.app не найден в той же папке!"
+    echo "[!] Ошибка: Unbound.app не найден ни в текущей папке, ни в /Applications!"
+    echo "Пожалуйста, скопируйте Unbound.app в папку «Программы» (Applications) и повторите запуск."
     read -p "Нажмите Enter для выхода..."
 fi

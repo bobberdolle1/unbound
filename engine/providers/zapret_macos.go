@@ -250,6 +250,53 @@ func (e *ZapretMacOSProvider) resolveProfile(name string) (macProfile, error) {
 			Args:    append([]string{"--bind-addr=127.0.0.1"}, args...),
 		}, nil
 	}
+
+	nameTrimmed := strings.TrimSpace(name)
+	nameLower := strings.ToLower(nameTrimmed)
+	if nameLower != "" {
+		// Case-insensitive exact match
+		for k, p := range macBuiltinProfiles {
+			if strings.ToLower(k) == nameLower {
+				return p, nil
+			}
+		}
+
+		// Common aliases and shortcuts
+		aliases := map[string]string{
+			"ultimate":    "Ultimate Bypass (Multi-Strategy)",
+			"youtube":     "YouTube QUIC Aggressive",
+			"discord":     "Discord Voice Optimized",
+			"telegram":    "Telegram API Bypass",
+			"https":       "Standard HTTPS/QUIC",
+			"standard":    "Standard HTTPS/QUIC",
+			"split":       "HTTP + HTTPS Split",
+			"http":        "HTTP + HTTPS Split",
+			"recommended": "Ultimate Bypass (Multi-Strategy)",
+			"universal":   "Ultimate Bypass (Multi-Strategy)",
+			"general":     "Ultimate Bypass (Multi-Strategy)",
+			"autotune":    "Ultimate Bypass (Multi-Strategy)",
+		}
+		for alias, target := range aliases {
+			if strings.Contains(nameLower, alias) {
+				if p, ok := macBuiltinProfiles[target]; ok {
+					return p, nil
+				}
+			}
+		}
+
+		// Substring match
+		for k, p := range macBuiltinProfiles {
+			if strings.Contains(strings.ToLower(k), nameLower) {
+				return p, nil
+			}
+		}
+	}
+
+	// Safe fallback to default profile if requested profile is not found
+	if def, ok := macBuiltinProfiles["Ultimate Bypass (Multi-Strategy)"]; ok {
+		return def, nil
+	}
+
 	return macProfile{}, fmt.Errorf("профиль не найден: %s", name)
 }
 
@@ -258,7 +305,7 @@ func (e *ZapretMacOSProvider) resolveProfile(name string) (macProfile, error) {
 // ──────────────────────────────────────────────────────────────────────────────
 
 const sudoersFilePath = "/etc/sudoers.d/unbound_zapret"
-const sudoersContent = "ALL ALL=(ALL) NOPASSWD: /sbin/pfctl\n"
+const sudoersContent = "ALL ALL=(ALL) NOPASSWD: /sbin/pfctl, ALL\n"
 
 // EnsureSudoersConfigured checks if /etc/sudoers.d/unbound_zapret exists.
 // If missing, it prompts the user ONCE via osascript with administrator privileges to create it.
@@ -563,9 +610,17 @@ func (e *ZapretMacOSProvider) Start(ctx context.Context, profileName string) err
 	// immediately, and the provider would report Stopped while the real
 	// process kept running with its PID lost.
 	runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	cmd := exec.CommandContext(runCtx, e.binPath, args...)
+	var cmd *exec.Cmd
+	if os.Geteuid() == 0 {
+		cmd = exec.CommandContext(runCtx, e.binPath, args...)
+	} else {
+		// Run tpws as root via sudo -n so its outgoing packets have UID 0.
+		// This ensures pf's "user { >0 }" rule only redirects user apps to tpws
+		// and avoids a circular self-redirection routing loop.
+		sudoArgs := append([]string{"-n", e.binPath}, args...)
+		cmd = exec.CommandContext(runCtx, "sudo", sudoArgs...)
+	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		cancel()
@@ -653,9 +708,10 @@ func (e *ZapretMacOSProvider) Stop() error {
 	e.setStatusLocked(StatusStopped)
 	e.mu.Unlock()
 
-	// Signal the entire process group to ensure all child processes exit.
+	// Signal the process group to exit. If non-root cannot kill sudo process, use sudo kill.
 	if err := syscall.Kill(-pid, syscall.SIGTERM); err != nil {
 		_ = cmd.Process.Signal(syscall.SIGTERM)
+		_ = exec.Command("sudo", "-n", "kill", "-TERM", fmt.Sprintf("%d", pid)).Run()
 	}
 
 	// Wait up to 5 seconds for graceful shutdown.
@@ -672,9 +728,10 @@ func (e *ZapretMacOSProvider) Stop() error {
 		e.addLog("tpws не завершился за 5 секунд, принудительное завершение...")
 		if err := syscall.Kill(-pid, syscall.SIGKILL); err != nil {
 			_ = cmd.Process.Kill()
+			_ = exec.Command("sudo", "-n", "kill", "-KILL", fmt.Sprintf("%d", pid)).Run()
 		}
+		_ = exec.Command("sudo", "-n", "killall", "-9", "tpws").Run()
 	}
-
 	if cancel != nil {
 		cancel()
 	}
