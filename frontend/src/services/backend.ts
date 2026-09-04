@@ -31,6 +31,7 @@ export const backendService = {
   checkPrivileges: () => WailsApp.CheckPrivileges(),
   runDiagnostics: () => WailsApp.RunDiagnostics(),
   runDoctor: (mode: string) => WailsApp.RunDoctor(mode),
+  cancelDoctor: (runId: string) => WailsApp.CancelDoctor(runId),
   runBypassComparison: () => WailsApp.RunBypassComparison(),
   verifyEngineAssets: () => WailsApp.VerifyEngineAssets(),
   generateDiagnosticReport: (res?: engine.DoctorResult) => res ? WailsApp.GenerateDoctorReport(res) : WailsApp.GenerateDiagnosticReport(),

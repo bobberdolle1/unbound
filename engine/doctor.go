@@ -54,8 +54,28 @@ type DoctorResult struct {
 	ManualItems   []string          `json:"manualItems,omitempty"`
 }
 
-// RunDoctor performs system, engine, network, and service diagnostics in parallel.
+// DoctorProgress represents the live status payload streamed during diagnostics.
+type DoctorProgress struct {
+	RunID         string   `json:"runId"`
+	Mode          string   `json:"mode"`
+	Completed     int      `json:"completed"`
+	Total         int      `json:"total"`
+	Percent       int      `json:"percent"`
+	Running       []string `json:"running"`
+	LastCompleted string   `json:"lastCompleted"`
+	ElapsedMs     int64    `json:"elapsedMs"`
+}
+
+type DoctorProgressFn func(progress DoctorProgress)
+
+// RunDoctor preserves backwards compatibility without progress callback.
 func RunDoctor(ctx context.Context, mode string, activeProfile string, providerStatus providers.Status) (*DoctorResult, error) {
+	return RunDoctorWithProgress(ctx, mode, activeProfile, providerStatus, nil)
+}
+
+// RunDoctorWithProgress performs system, engine, network, and service diagnostics in parallel,
+// streaming real-time progress callbacks for each started and completed check.
+func RunDoctorWithProgress(ctx context.Context, mode string, activeProfile string, providerStatus providers.Status, onProgress DoctorProgressFn) (*DoctorResult, error) {
 	startTime := time.Now()
 	if mode != "extended" {
 		mode = "quick"
@@ -73,23 +93,6 @@ func RunDoctor(ctx context.Context, mode string, activeProfile string, providerS
 		Groups:        make([]DiagnosticGroup, 0, 8),
 	}
 
-	// 1. System group (Admin, Single Instance, TCP Timestamps)
-	sysGroup := runSystemDiagnostics()
-	result.Groups = append(result.Groups, sysGroup)
-
-	// 2. Engine group (Integrity, Binary, WinDivert, Lua, Process)
-	engGroup := runEngineDiagnostics(providerStatus, activeProfile)
-	result.Groups = append(result.Groups, engGroup)
-
-	// 3. Autostart group (Task Scheduler / service state)
-	autoGroup := runAutostartDiagnostics()
-	result.Groups = append(result.Groups, autoGroup)
-
-	// 4. Conflicts group (foreign winws, goodbyedpi, conflicting proxies)
-	confGroup := runConflictDiagnostics()
-	result.Groups = append(result.Groups, confGroup)
-
-	// 5-8. Network & Services groups
 	var probeDefs []ProbeDefinition
 	if mode == "extended" {
 		probeDefs = GetExtendedDiagnosticProbes()
@@ -97,13 +100,98 @@ func RunDoctor(ctx context.Context, mode string, activeProfile string, providerS
 		probeDefs = GetQuickDiagnosticProbes()
 	}
 
-	// Execute network probes concurrently with controlled worker pool
-	netProbes := executeProbeDefinitions(ctx, ce, probeDefs)
+	totalChecks := 4 + len(probeDefs) // 4 local groups + network probes
+	completedChecks := 0
+	var progressMu sync.Mutex
+	runningMap := make(map[string]bool)
+	runID := fmt.Sprintf("doc_%d", startTime.UnixNano())
+
+	reportProgress := func(lastCompleted string) {
+		if onProgress == nil {
+			return
+		}
+		progressMu.Lock()
+		runningList := make([]string, 0, len(runningMap))
+		for name := range runningMap {
+			runningList = append(runningList, name)
+		}
+		pct := (completedChecks * 100) / totalChecks
+		if pct > 100 {
+			pct = 100
+		}
+		p := DoctorProgress{
+			RunID:         runID,
+			Mode:          mode,
+			Completed:     completedChecks,
+			Total:         totalChecks,
+			Percent:       pct,
+			Running:       runningList,
+			LastCompleted: lastCompleted,
+			ElapsedMs:     time.Since(startTime).Milliseconds(),
+		}
+		progressMu.Unlock()
+		onProgress(p)
+	}
+
+	// Initial start event
+	reportProgress("")
+
+	// 1. System group
+	sysGroup := runSystemDiagnostics()
+	result.Groups = append(result.Groups, sysGroup)
+	progressMu.Lock()
+	completedChecks++
+	progressMu.Unlock()
+	reportProgress("Системное окружение")
+
+	// 2. Engine group
+	engGroup := runEngineDiagnostics(providerStatus, activeProfile)
+	result.Groups = append(result.Groups, engGroup)
+	progressMu.Lock()
+	completedChecks++
+	progressMu.Unlock()
+	reportProgress("Состояние ядра")
+
+	// 3. Autostart group
+	autoGroup := runAutostartDiagnostics()
+	result.Groups = append(result.Groups, autoGroup)
+	progressMu.Lock()
+	completedChecks++
+	progressMu.Unlock()
+	reportProgress("Автозапуск в системе")
+
+	// 4. Conflicts group
+	confGroup := runConflictDiagnostics()
+	result.Groups = append(result.Groups, confGroup)
+	progressMu.Lock()
+	completedChecks++
+	progressMu.Unlock()
+	reportProgress("Конфликтующие программы")
+
+	// 5-8. Network & Services groups executed concurrently with live progress tracking
+	netProbes := executeProbeDefinitionsWithProgress(ctx, ce, probeDefs, func(startedName string) {
+		progressMu.Lock()
+		runningMap[startedName] = true
+		progressMu.Unlock()
+		reportProgress("")
+	}, func(completedName string) {
+		progressMu.Lock()
+		delete(runningMap, completedName)
+		completedChecks++
+		progressMu.Unlock()
+		reportProgress(completedName)
+	})
 
 	// Group network probes by service
 	svcGroups := groupProbesByService(netProbes)
 	result.Groups = append(result.Groups, svcGroups...)
 
+	// Final terminal progress event
+	progressMu.Lock()
+	completedChecks = totalChecks
+	runningMap = make(map[string]bool)
+	progressMu.Unlock()
+	reportProgress("Все проверки завершены")
 	// Compute totals and overall status
 	for _, g := range result.Groups {
 		for _, p := range g.Probes {
@@ -421,6 +509,16 @@ func runConflictDiagnostics() DiagnosticGroup {
 }
 
 func executeProbeDefinitions(ctx context.Context, ce *ConnectivityEngine, defs []ProbeDefinition) []ProbeResult {
+	return executeProbeDefinitionsWithProgress(ctx, ce, defs, nil, nil)
+}
+
+func executeProbeDefinitionsWithProgress(
+	ctx context.Context,
+	ce *ConnectivityEngine,
+	defs []ProbeDefinition,
+	onStart func(name string),
+	onDone func(name string),
+) []ProbeResult {
 	results := make([]ProbeResult, len(defs))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 4) // max 4 concurrent network requests to avoid throttling
@@ -428,6 +526,9 @@ func executeProbeDefinitions(ctx context.Context, ce *ConnectivityEngine, defs [
 	for i, def := range defs {
 		if def.IsManualCheck {
 			results[i] = def.Run(ctx, ce)
+			if onDone != nil {
+				onDone(def.Name)
+			}
 			continue
 		}
 
@@ -449,7 +550,14 @@ func executeProbeDefinitions(ctx context.Context, ce *ConnectivityEngine, defs [
 					Error:     "Контекст завершен до начала теста",
 					Timestamp: time.Now(),
 				}
+				if onDone != nil {
+					onDone(d.Name)
+				}
 				return
+			}
+
+			if onStart != nil {
+				onStart(d.Name)
 			}
 
 			probeCtx, cancel := context.WithTimeout(ctx, ce.Timeout)
@@ -469,6 +577,10 @@ func executeProbeDefinitions(ctx context.Context, ce *ConnectivityEngine, defs [
 				res.Name = d.Name
 			}
 			results[idx] = res
+
+			if onDone != nil {
+				onDone(d.Name)
+			}
 		}(i, def)
 	}
 
