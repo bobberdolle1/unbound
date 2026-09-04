@@ -10,6 +10,15 @@ type DiagnosticResult struct {
 	IsError   bool
 }
 
+// TaskRegistrationInfo holds details about the OS auto-start registration
+type TaskRegistrationInfo struct {
+	Exists     bool   `json:"exists"`
+	Executable string `json:"executable"`
+	Arguments  string `json:"arguments"`
+	RawCommand string `json:"rawCommand"`
+	TaskState  string `json:"taskState"`
+}
+
 // Settings represents the application settings shared across platforms
 type Settings struct {
 	AutoStart             bool     `json:"autoStart"`
@@ -25,6 +34,9 @@ type Settings struct {
 	SecureDNS             bool     `json:"secureDns"`
 	FavoriteProfiles      []string `json:"favoriteProfiles"`
 	AutoReconnect         bool     `json:"autoReconnect"`
+	AutoTuneTargets       []string `json:"autoTuneTargets"`
+	DiagnosticsMode       string   `json:"diagnosticsMode"`
+	AutoUpdatePolicy      string   `json:"autoUpdatePolicy"`
 
 	// Internal platform-specific status
 	CurrentStatus providers.Status `json:"-"`

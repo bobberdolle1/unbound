@@ -173,3 +173,117 @@ func TestEnableDisableAutoStartIntegration(t *testing.T) {
 		EnableAutoStart()
 	}
 }
+
+func TestParseTaskXML(t *testing.T) {
+	xmlData := `<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <Actions Context="Author">
+    <Exec>
+      <Command>"C:\Program Files\Unbound\unbound.exe"</Command>
+      <Arguments>--tray</Arguments>
+    </Exec>
+  </Actions>
+</Task>`
+
+	cmd, args, ok := parseTaskXML(xmlData)
+	if !ok {
+		t.Fatal("Expected parseTaskXML to succeed")
+	}
+	if cmd != `"C:\Program Files\Unbound\unbound.exe"` {
+		t.Errorf("Unexpected command: %s", cmd)
+	}
+	if args != "--tray" {
+		t.Errorf("Unexpected args: %s", args)
+	}
+}
+
+func TestParseTaskXMLNoArgs(t *testing.T) {
+	xmlData := `<Task><Actions><Exec><Command>C:\app\unbound.exe</Command></Exec></Actions></Task>`
+	cmd, args, ok := parseTaskXML(xmlData)
+	if !ok {
+		t.Fatal("Expected parseTaskXML to succeed")
+	}
+	if cmd != `C:\app\unbound.exe` {
+		t.Errorf("Unexpected command: %s", cmd)
+	}
+	if args != "" {
+		t.Errorf("Expected empty args, got: %s", args)
+	}
+}
+
+func TestCleanExecutablePath(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{`"C:\Program Files\Unbound\unbound.exe"`, `C:\Program Files\Unbound\unbound.exe`},
+		{`'C:\app\unbound.exe'`, `C:\app\unbound.exe`},
+		{`  C:\app\unbound.exe  `, `C:\app\unbound.exe`},
+	}
+	for _, tc := range tests {
+		cleaned := cleanExecutablePath(tc.input)
+		if !strings.EqualFold(cleaned, tc.expected) {
+			t.Errorf("cleanExecutablePath(%q) = %q; want %q", tc.input, cleaned, tc.expected)
+		}
+	}
+}
+
+func TestParseCommandLine(t *testing.T) {
+	tests := []struct {
+		input    string
+		wantExe  string
+		wantArgs string
+	}{
+		{`"C:\Program Files\App\app.exe" --tray`, `C:\Program Files\App\app.exe`, `--tray`},
+		{`"C:\Program Files\App\app.exe"`, `C:\Program Files\App\app.exe`, ``},
+		{`app.exe --arg1 --arg2`, `app.exe`, `--arg1 --arg2`},
+		{`app.exe`, `app.exe`, ``},
+	}
+	for _, tc := range tests {
+		exe, args := parseCommandLine(tc.input)
+		if exe != tc.wantExe || args != tc.wantArgs {
+			t.Errorf("parseCommandLine(%q) = (%q, %q); want (%q, %q)", tc.input, exe, args, tc.wantExe, tc.wantArgs)
+		}
+	}
+}
+
+func TestDecodeWindowsEncoding(t *testing.T) {
+	// Plain ASCII/UTF-8
+	plain := []byte("<Command>test.exe</Command>")
+	if decoded := decodeWindowsEncoding(plain); decoded != string(plain) {
+		t.Errorf("Failed plain decoding: got %q, want %q", decoded, string(plain))
+	}
+
+	// UTF-16LE with BOM
+	utf16Data := []byte{0xFF, 0xFE, 'a', 0x00, 'b', 0x00, 'c', 0x00}
+	if decoded := decodeWindowsEncoding(utf16Data); decoded != "abc" {
+		t.Errorf("Failed UTF-16LE decoding: got %q, want %q", decoded, "abc")
+	}
+}
+
+func TestSelfHealAutoStartDisabled(t *testing.T) {
+	t.Setenv("APPDATA", t.TempDir())
+	s := getDefaultSettings()
+	s.AutoStart = false
+	if err := SaveSettings(s); err != nil {
+		t.Fatalf("SaveSettings: %v", err)
+	}
+
+	repaired, err := SelfHealAutoStart()
+	if err != nil {
+		t.Fatalf("SelfHealAutoStart error when disabled: %v", err)
+	}
+	if repaired {
+		t.Error("Expected no repair when autostart is disabled")
+	}
+}
+
+func TestQueryAutoStartTaskRegistrationRealTask(t *testing.T) {
+	info, err := QueryAutoStartTaskRegistration()
+	if err != nil {
+		t.Logf("Query returned error (may be fine if task doesn't exist): %v", err)
+		return
+	}
+	t.Logf("Real task registration: Exists=%v Executable=%s Arguments=%s State=%s",
+		info.Exists, info.Executable, info.Arguments, info.TaskState)
+}
