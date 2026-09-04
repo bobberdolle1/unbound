@@ -1,0 +1,11 @@
+# Steam web properties excluded from TLS desync.
+# Evidence: Flowseal/zapret-discord-youtube added steam domains to
+# list-exclude.txt in 1.9.9a (2026-05-28, issue #13900) after TLS desync broke
+# the Steam client, and kept them excluded through 1.10.2. These domains must
+# reach the server unmodified.
+steampowered.com
+steamcommunity.com
+steamusercontent.com
+steamstatic.com
+steam-chat.com
+s.team
