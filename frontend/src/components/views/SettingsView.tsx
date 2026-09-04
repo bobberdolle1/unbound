@@ -18,6 +18,9 @@ export interface AppSettings {
   secureDns: boolean;
   autoReconnect: boolean;
   favoriteProfiles: string[];
+  autoTuneTargets?: string[];
+  diagnosticsMode?: string;
+  autoUpdatePolicy?: string;
 }
 
 interface SettingsViewProps {
@@ -124,6 +127,53 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             }}
             up={false}
           />
+        </div>
+
+        {/* Component Versions & Updates */}
+        <div className="space-y-2 pt-3 border-t border-[var(--ui-border)]">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-[var(--ui-text-muted)] uppercase">Обновление компонентов</span>
+            <button
+              onClick={async () => {
+                try {
+                  const w = window as unknown as { go?: { main?: { App?: { CheckAllUpdates?: () => Promise<{ components?: Array<{ name: string; currentVersion: string; latestVersion: string; status: string }> }> } } } };
+                  const res = await w.go?.main?.App?.CheckAllUpdates?.();
+                  if (res && res.components) {
+                    const msg = res.components.map((c) => `${c.name}: ${c.currentVersion} (${c.status === 'update_available' ? 'Доступно обновление ' + c.latestVersion : 'Актуально'})`).join('\n');
+                    alert('Состояние компонентов:\n\n' + msg);
+                  }
+                } catch (e) {
+                  console.error(e);
+                }
+              }}
+              className="text-[11px] text-emerald-400 hover:underline"
+            >
+              Проверить обновления
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="p-2.5 rounded-xl bg-[var(--ui-surface-elevated)] border border-[var(--ui-border)]">
+              <div className="text-[10px] text-[var(--ui-text-muted)] uppercase font-mono">Приложение</div>
+              <div className="font-semibold text-[var(--ui-text)] mt-0.5">UNBOUND v0.5.0</div>
+              <div className="text-[10px] text-emerald-400 font-mono mt-0.5">● Актуально</div>
+            </div>
+            <div className="p-2.5 rounded-xl bg-[var(--ui-surface-elevated)] border border-[var(--ui-border)]">
+              <div className="text-[10px] text-[var(--ui-text-muted)] uppercase font-mono">Движок</div>
+              <div className="font-semibold text-[var(--ui-text)] mt-0.5">Zapret 2 v1.0.5</div>
+              <div className="text-[10px] text-emerald-400 font-mono mt-0.5">● Актуально</div>
+            </div>
+            <div className="p-2.5 rounded-xl bg-[var(--ui-surface-elevated)] border border-[var(--ui-border)]">
+              <div className="text-[10px] text-[var(--ui-text-muted)] uppercase font-mono">Стратегии</div>
+              <div className="font-semibold text-[var(--ui-text)] mt-0.5">v0.5.0 (2026.09.04)</div>
+              <div className="text-[10px] text-emerald-400 font-mono mt-0.5">● Актуально</div>
+            </div>
+            <div className="p-2.5 rounded-xl bg-[var(--ui-surface-elevated)] border border-[var(--ui-border)]">
+              <div className="text-[10px] text-[var(--ui-text-muted)] uppercase font-mono">Списки обхода</div>
+              <div className="font-semibold text-[var(--ui-text)] mt-0.5">Steam/Discord/YT</div>
+              <div className="text-[10px] text-emerald-400 font-mono mt-0.5">● Синхронизировано</div>
+            </div>
+          </div>
         </div>
 
         {/* System Actions */}
