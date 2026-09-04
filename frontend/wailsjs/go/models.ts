@@ -37,6 +37,7 @@ export namespace engine {
 	export class Settings {
 	    autoStart: boolean;
 	    startMinimized: boolean;
+	    autoStartProfile: boolean;
 	    defaultProfile: string;
 	    startupProfileMode: string;
 	    gameFilter: boolean;
@@ -56,6 +57,7 @@ export namespace engine {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.autoStart = source["autoStart"];
 	        this.startMinimized = source["startMinimized"];
+	        this.autoStartProfile = source["autoStartProfile"];
 	        this.defaultProfile = source["defaultProfile"];
 	        this.startupProfileMode = source["startupProfileMode"];
 	        this.gameFilter = source["gameFilter"];

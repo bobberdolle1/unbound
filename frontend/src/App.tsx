@@ -78,6 +78,7 @@ export default function App() {
   const [settings, setSettings] = useState<{
     autoStart: boolean;
     startMinimized: boolean;
+    autoStartProfile: boolean;
     defaultProfile: string;
     startupProfileMode: string;
     gameFilter: boolean;
@@ -91,6 +92,7 @@ export default function App() {
   }>({
     autoStart: false,
     startMinimized: false,
+    autoStartProfile: false,
     defaultProfile: '',
     startupProfileMode: 'Последний использованный',
     gameFilter: true,
@@ -146,6 +148,7 @@ export default function App() {
       setSettings({
         autoStart: s.autoStart || false,
         startMinimized: s.startMinimized || false,
+        autoStartProfile: s.autoStartProfile || false,
         defaultProfile: s.defaultProfile || '',
         startupProfileMode: normalizeStartupProfileMode(s.startupProfileMode),
         gameFilter: s.gameFilter !== undefined ? s.gameFilter : false,
@@ -386,6 +389,7 @@ export default function App() {
             setSettings={updateSettings}
             theme={theme}
             setThemeState={setThemeState}
+            startupProfiles={engineState.sortedProfiles}
             handleRunDiagnostics={handleRunDiagnostics}
             handleVerifyAssets={handleVerifyAssets}
             isVerifyingAssets={isVerifyingAssets}
