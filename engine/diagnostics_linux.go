@@ -19,19 +19,6 @@ func EnableTCPTimestamps() error {
 	return exec.Command("sysctl", "-w", "net.ipv4.tcp_timestamps=1").Run()
 }
 
-// ClearDiscordCache removes Discord's cache directories.
-//
-// This used to `return nil` even though GetDiscordCacheDirs() already knew the
-// correct Linux paths - the helper existed but nothing on Linux called it.
-func ClearDiscordCache() error {
-	var firstErr error
-	for _, dir := range GetDiscordCacheDirs() {
-		if err := os.RemoveAll(dir); err != nil && !os.IsNotExist(err) && firstErr == nil {
-			firstErr = err
-		}
-	}
-	return firstErr
-}
 
 // RunDiagnostics inspects the parts of the system the Linux engine depends on.
 // It previously returned a single hardcoded "Linux diagnostics active - OK",

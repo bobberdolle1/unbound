@@ -16,16 +16,6 @@ func EnableTCPTimestamps() error {
 	return cmd.Run()
 }
 
-func ClearDiscordCache() error {
-	appData := os.Getenv("APPDATA")
-	discordDir := appData + "\\discord"
-	cacheDirs := []string{"Cache", "Code Cache", "GPUCache"}
-
-	for _, dir := range cacheDirs {
-		os.RemoveAll(discordDir + "\\" + dir)
-	}
-	return nil
-}
 
 func RunDiagnostics() []DiagnosticResult {
 	return []DiagnosticResult{

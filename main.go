@@ -606,8 +606,11 @@ func runControlCenterMenu(debugMode bool) {
 			}
 		case "11":
 			app := NewApp()
-			if err := app.ClearDiscordCache(); err != nil {
+			res, err := app.ClearDiscordCache()
+			if err != nil || (res != nil && res.Status == "FAILED") {
 				fmt.Printf("❌ Ошибка очистки кэша Discord: %v\n", err)
+			} else if res != nil {
+				fmt.Printf("✓ %s\n", res.Message)
 			} else {
 				fmt.Println("✓ Кэш Discord очищен!")
 			}
