@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -47,6 +48,7 @@ type App struct {
 	doctorMu            sync.Mutex
 	doctorCancel        context.CancelFunc
 	doctorRunID         string
+	doctorState         *engine.DoctorRunState
 }
 
 func NewApp() *App {
@@ -110,8 +112,13 @@ func (a *App) startup(ctx context.Context) {
 			a.EnableTCPTimestamps()
 		}
 		if settings.DiscordCacheAutoClean {
-			logger.Info("App", "Cleaning Discord cache")
-			a.ClearDiscordCache()
+			running, _ := engine.IsDiscordRunning()
+			if !running {
+				logger.Info("App", "Background Discord cache auto-clean (Discord not running)")
+				_ = engine.ClearDiscordCache()
+			} else {
+				logger.Info("App", "Skipping background Discord cache auto-clean: Discord process is active")
+			}
 		}
 		if settings.SecureDNS {
 			logger.Info("App", "Enabling secure DNS")
@@ -468,16 +475,24 @@ func (a *App) RunDiagnostics() []engine.DiagnosticResult {
 	return engine.RunDiagnostics()
 }
 
-func (a *App) RunDoctor(mode string) (*engine.DoctorResult, error) {
+// StartDoctor starts the Doctor diagnostics asynchronously in a background goroutine
+// and immediately returns the run metadata (runId, mode, total) so the frontend
+// never displays 0 / ? while waiting for the first probe.
+func (a *App) StartDoctor(mode string) (*engine.DoctorRunStart, error) {
 	logger := engine.GetLogger()
-	logger.Infof("App", "Doctor diagnostics requested (mode=%s)", mode)
+	logger.Infof("App", "StartDoctor requested (mode=%s)", mode)
+
+	if mode != "extended" {
+		mode = "quick"
+	}
 
 	a.doctorMu.Lock()
 	if a.doctorCancel != nil {
-		logger.Info("App", "Cancelling previous active Doctor run")
+		logger.Info("App", "Cancelling previous active Doctor run before starting new one")
 		a.doctorCancel()
 	}
-	runID := fmt.Sprintf("run_%d", time.Now().UnixNano())
+
+	runID := fmt.Sprintf("doc_%d", time.Now().UnixNano())
 	a.doctorRunID = runID
 
 	timeout := 25 * time.Second
@@ -486,37 +501,124 @@ func (a *App) RunDoctor(mode string) (*engine.DoctorResult, error) {
 	}
 	docCtx, cancel := context.WithTimeout(context.Background(), timeout)
 	a.doctorCancel = cancel
+
+	totalChecks := engine.ComputeDoctorTotalChecks(mode)
+	now := time.Now()
+
+	startPayload := &engine.DoctorRunStart{
+		RunID:     runID,
+		Mode:      mode,
+		Total:     totalChecks,
+		StartedAt: now,
+	}
+
+	a.doctorState = &engine.DoctorRunState{
+		RunID:     runID,
+		Mode:      mode,
+		Status:    "running",
+		Total:     totalChecks,
+		StartedAt: now,
+	}
 	a.doctorMu.Unlock()
 
-	defer func() {
-		a.doctorMu.Lock()
-		if a.doctorRunID == runID {
-			a.doctorCancel = nil
+	// Emit initial start event
+	wailsruntime.EventsEmit(a.ctx, "doctor_start", startPayload)
+
+	// Launch background execution
+	go func(targetRunID string, ctx context.Context) {
+		defer func() {
+			a.doctorMu.Lock()
+			if a.doctorRunID == targetRunID {
+				a.doctorCancel = nil
+			}
+			a.doctorMu.Unlock()
+		}()
+
+		activeProfile := a.manager.CurrentProfileName("")
+
+		onProgress := func(p engine.DoctorProgress) {
+			p.RunID = targetRunID
+			a.doctorMu.Lock()
+			if a.doctorState != nil && a.doctorState.RunID == targetRunID {
+				a.doctorState.Completed = p.Completed
+				a.doctorState.Total = p.Total
+				a.doctorState.Percent = p.Percent
+				a.doctorState.Running = p.Running
+				a.doctorState.LastCompleted = p.LastCompleted
+				a.doctorState.ElapsedMs = p.ElapsedMs
+			}
+			a.doctorMu.Unlock()
+			wailsruntime.EventsEmit(a.ctx, "doctor_progress", p)
 		}
-		a.doctorMu.Unlock()
-	}()
 
-	activeProfile := a.manager.CurrentProfileName("")
+		res, err := engine.RunDoctorWithProgress(ctx, mode, activeProfile, a.manager.GetStatus(), onProgress)
 
-	onProgress := func(p engine.DoctorProgress) {
-		p.RunID = runID
-		wailsruntime.EventsEmit(a.ctx, "doctor_progress", p)
-	}
+		a.doctorMu.Lock()
+		defer a.doctorMu.Unlock()
 
-	res, err := engine.RunDoctorWithProgress(docCtx, mode, activeProfile, a.manager.GetStatus(), onProgress)
-	if err != nil {
-		wailsruntime.EventsEmit(a.ctx, "doctor_error", map[string]interface{}{
-			"runId": runID,
-			"error": err.Error(),
+		if a.doctorRunID != targetRunID {
+			// Stale run, ignore completion
+			return
+		}
+
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				if a.doctorState != nil {
+					a.doctorState.Status = "cancelled"
+				}
+				wailsruntime.EventsEmit(a.ctx, "doctor_cancelled", targetRunID)
+				logger.Infof("App", "Doctor run %s was cancelled", targetRunID)
+			} else {
+				if a.doctorState != nil {
+					a.doctorState.Status = "error"
+					a.doctorState.Error = err.Error()
+				}
+				wailsruntime.EventsEmit(a.ctx, "doctor_error", map[string]interface{}{
+					"runId": targetRunID,
+					"error": err.Error(),
+				})
+				logger.Warnf("App", "Doctor run %s ended with error: %v", targetRunID, err)
+			}
+			return
+		}
+
+		if a.doctorState != nil {
+			a.doctorState.Status = "completed"
+			a.doctorState.Result = res
+			a.doctorState.Percent = 100
+		}
+		wailsruntime.EventsEmit(a.ctx, "doctor_complete", map[string]interface{}{
+			"runId":  targetRunID,
+			"result": res,
 		})
-		return nil, err
+		logger.Infof("App", "Doctor run %s completed successfully in %v", targetRunID, res.Duration)
+	}(runID, docCtx)
+
+	return startPayload, nil
+}
+
+// GetDoctorRunState returns the current snapshot of the Doctor background job.
+func (a *App) GetDoctorRunState(runID string) *engine.DoctorRunState {
+	a.doctorMu.Lock()
+	defer a.doctorMu.Unlock()
+
+	if a.doctorState == nil {
+		return nil
+	}
+	if runID != "" && a.doctorState.RunID != runID {
+		return nil
 	}
 
-	wailsruntime.EventsEmit(a.ctx, "doctor_complete", map[string]interface{}{
-		"runId":  runID,
-		"result": res,
-	})
-	return res, nil
+	snap := *a.doctorState
+	return &snap
+}
+
+// RunDoctor provides a blocking synchronous check (for CLI / headless callers).
+func (a *App) RunDoctor(mode string) (*engine.DoctorResult, error) {
+	logger := engine.GetLogger()
+	logger.Infof("App", "RunDoctor (sync) requested (mode=%s)", mode)
+	activeProfile := a.manager.CurrentProfileName("")
+	return engine.RunDoctor(a.ctx, mode, activeProfile, a.manager.GetStatus())
 }
 
 func (a *App) CancelDoctor(runID string) {
@@ -530,10 +632,41 @@ func (a *App) CancelDoctor(runID string) {
 		if runID == "" || runID == a.doctorRunID {
 			a.doctorCancel()
 			a.doctorCancel = nil
+			if a.doctorState != nil {
+				a.doctorState.Status = "cancelled"
+			}
 			wailsruntime.EventsEmit(a.ctx, "doctor_cancelled", runID)
 			logger.Info("App", "Doctor run cancelled successfully")
 		}
 	}
+}
+
+func (a *App) CheckDiscordRunning() (bool, []string) {
+	return engine.IsDiscordRunning()
+}
+
+func (a *App) ClearDiscordCache(closeIfRunning bool) (*engine.DiscordCacheCleanupResult, error) {
+	logger := engine.GetLogger()
+	notifMgr := engine.GetNotificationManager()
+
+	logger.Infof("App", "Clearing Discord cache (closeIfRunning=%v)", closeIfRunning)
+	res := engine.ClearDiscordCacheWithOptions(closeIfRunning)
+
+	switch res.Status {
+	case "SUCCESS":
+		notifMgr.Success("Кэш очищен", res.Message)
+	case "PARTIAL":
+		notifMgr.Warning("Очищено частично", res.Message)
+	case "NO_CACHE_FOUND":
+		notifMgr.Info("Кэш Discord", res.Message)
+	default:
+		notifMgr.Error("Ошибка очистки", res.Message)
+	}
+
+	logger.Infof("App", "Discord cache cleanup finished: status=%s, freed=%d bytes, running=%v, failures=%d",
+		res.Status, res.BytesFreed, res.DiscordRunning, len(res.Failures))
+
+	return res, nil
 }
 
 func (a *App) RunBypassComparison() (*engine.BypassComparisonResult, error) {
@@ -554,8 +687,16 @@ func (a *App) OpenLogsFolder() error {
 	return engine.OpenLogsFolder()
 }
 
+func (a *App) OpenCurrentLogFile() error {
+	return engine.OpenCurrentLogFile()
+}
+
 func (a *App) CheckAllUpdates() (*engine.SystemUpdateOverview, error) {
 	return engine.CheckAllComponents(a.ctx, engine.Version)
+}
+
+func (a *App) GetSystemComponentState() *engine.SystemComponentState {
+	return engine.GetSystemComponentState()
 }
 
 func (a *App) RollbackEngineUpdate() error {
@@ -583,29 +724,6 @@ func (c *appProviderController) Start(ctx context.Context, profile string) error
 
 func (c *appProviderController) Stop() error {
 	return c.app.StopEngine()
-}
-func (a *App) ClearDiscordCache() (*engine.DiscordCacheCleanupResult, error) {
-	logger := engine.GetLogger()
-	notifMgr := engine.GetNotificationManager()
-
-	logger.Info("App", "Clearing Discord cache (structured)")
-	res := engine.ClearDiscordCacheStructured()
-
-	switch res.Status {
-	case "SUCCESS":
-		notifMgr.Success("Кэш очищен", res.Message)
-	case "PARTIAL":
-		notifMgr.Warning("Очищено частично", res.Message)
-	case "NO_CACHE_FOUND":
-		notifMgr.Info("Кэш Discord", res.Message)
-	default:
-		notifMgr.Error("Ошибка очистки", res.Message)
-	}
-
-	logger.Infof("App", "Discord cache cleanup finished: status=%s, freed=%d bytes, running=%v, failures=%d",
-		res.Status, res.BytesFreed, res.DiscordRunning, len(res.Failures))
-
-	return res, nil
 }
 
 func (a *App) EnableTCPTimestamps() error {
@@ -652,11 +770,6 @@ func (a *App) SaveSettings(settings *engine.Settings) error {
 	if settings.EnableTCPTimestamps {
 		if err := engine.EnableTCPTimestamps(); err != nil {
 			wailsruntime.LogErrorf(a.ctx, "Failed to enable TCP Timestamps: %v", err)
-		}
-	}
-	if settings.DiscordCacheAutoClean {
-		if err := engine.ClearDiscordCache(); err != nil {
-			wailsruntime.LogErrorf(a.ctx, "Failed to clear Discord cache: %v", err)
 		}
 	}
 	if err := a.SetSecureDNS(settings.SecureDNS); err != nil {
