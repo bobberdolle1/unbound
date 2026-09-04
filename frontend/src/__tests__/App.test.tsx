@@ -60,7 +60,9 @@ beforeEach(() => {
         LoadCustomScript: vi.fn().mockResolvedValue('-- Lua script'),
         SaveCustomScript: vi.fn().mockResolvedValue(null),
         CheckConflicts: vi.fn().mockResolvedValue([]),
-        KillConflicts: vi.fn().mockResolvedValue(null)
+        KillConflicts: vi.fn().mockResolvedValue(null),
+        GetSystemComponentState: vi.fn().mockResolvedValue({ components: [] }),
+        RunDoctor: vi.fn().mockResolvedValue({ groups: [] }),
       }
     }
   };

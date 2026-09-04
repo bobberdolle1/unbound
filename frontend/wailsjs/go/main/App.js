@@ -30,12 +30,16 @@ export function CheckConflicts() {
   return window['go']['main']['App']['CheckConflicts']();
 }
 
+export function CheckDiscordRunning() {
+  return window['go']['main']['App']['CheckDiscordRunning']();
+}
+
 export function CheckPrivileges() {
   return window['go']['main']['App']['CheckPrivileges']();
 }
 
-export function ClearDiscordCache() {
-  return window['go']['main']['App']['ClearDiscordCache']();
+export function ClearDiscordCache(arg1) {
+  return window['go']['main']['App']['ClearDiscordCache'](arg1);
 }
 
 export function DisableAutoStart() {
@@ -72,6 +76,10 @@ export function GetAutoStartTaskInfo() {
 
 export function GetBypassLists() {
   return window['go']['main']['App']['GetBypassLists']();
+}
+
+export function GetDoctorRunState(arg1) {
+  return window['go']['main']['App']['GetDoctorRunState'](arg1);
 }
 
 export function GetEngineNames() {
@@ -114,6 +122,10 @@ export function GetStructuredLogs() {
   return window['go']['main']['App']['GetStructuredLogs']();
 }
 
+export function GetSystemComponentState() {
+  return window['go']['main']['App']['GetSystemComponentState']();
+}
+
 export function HideWindowToTray() {
   return window['go']['main']['App']['HideWindowToTray']();
 }
@@ -140,6 +152,10 @@ export function LoadCustomScript() {
 
 export function LoadPingHistory() {
   return window['go']['main']['App']['LoadPingHistory']();
+}
+
+export function OpenCurrentLogFile() {
+  return window['go']['main']['App']['OpenCurrentLogFile']();
 }
 
 export function OpenLogsFolder() {
@@ -200,6 +216,10 @@ export function ShowNotification(arg1, arg2) {
 
 export function ShowWindowFromTray() {
   return window['go']['main']['App']['ShowWindowFromTray']();
+}
+
+export function StartDoctor(arg1) {
+  return window['go']['main']['App']['StartDoctor'](arg1);
 }
 
 export function StartEngine(arg1, arg2) {

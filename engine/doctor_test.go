@@ -208,3 +208,16 @@ func TestRunDoctorCancellation(t *testing.T) {
 	_, _ = RunDoctor(ctx, "quick", "", providers.StatusStopped)
 	// Must return quickly without deadlock
 }
+
+func TestComputeDoctorTotalChecks(t *testing.T) {
+	quickTotal := ComputeDoctorTotalChecks("quick")
+	if quickTotal != 16 {
+		t.Errorf("quickTotal = %d; want 16", quickTotal)
+	}
+
+	extendedTotal := ComputeDoctorTotalChecks("extended")
+	if extendedTotal <= quickTotal {
+		t.Errorf("extendedTotal %d <= quickTotal %d", extendedTotal, quickTotal)
+	}
+	t.Logf("Total checks: quick=%d, extended=%d", quickTotal, extendedTotal)
+}

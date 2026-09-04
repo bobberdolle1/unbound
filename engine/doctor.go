@@ -66,6 +66,38 @@ type DoctorProgress struct {
 	ElapsedMs     int64    `json:"elapsedMs"`
 }
 
+// DoctorRunStart is returned immediately when asynchronous Doctor diagnostics are launched.
+type DoctorRunStart struct {
+	RunID     string    `json:"runId"`
+	Mode      string    `json:"mode"`
+	Total     int       `json:"total"`
+	StartedAt time.Time `json:"startedAt"`
+}
+
+// DoctorRunState stores a queryable snapshot of the active or completed Doctor background job.
+type DoctorRunState struct {
+	RunID         string        `json:"runId"`
+	Mode          string        `json:"mode"`
+	Status        string        `json:"status"` // "running", "completed", "cancelled", "error"
+	Completed     int           `json:"completed"`
+	Total         int           `json:"total"`
+	Percent       int           `json:"percent"`
+	Running       []string      `json:"running"`
+	LastCompleted string        `json:"lastCompleted"`
+	StartedAt     time.Time     `json:"startedAt"`
+	ElapsedMs     int64         `json:"elapsedMs"`
+	Result        *DoctorResult `json:"result,omitempty"`
+	Error         string        `json:"error,omitempty"`
+}
+
+// ComputeDoctorTotalChecks calculates the exact total number of diagnostic checks before running.
+func ComputeDoctorTotalChecks(mode string) int {
+	if mode == "extended" {
+		return 4 + len(GetExtendedDiagnosticProbes())
+	}
+	return 4 + len(GetQuickDiagnosticProbes())
+}
+
 type DoctorProgressFn func(progress DoctorProgress)
 
 // RunDoctor preserves backwards compatibility without progress callback.
@@ -795,21 +827,38 @@ func SanitizeReportText(text string) string {
 
 // OpenLogsFolder opens the logs directory in the operating system's native file explorer.
 func OpenLogsFolder() error {
-	configDir, err := GetConfigDir()
-	if err != nil {
-		return err
+	logsDir := GetLogDir()
+	return openNativePath(logsDir)
+}
+
+// OpenCurrentLogFile opens today's active log file directly in the system's default text editor.
+func OpenCurrentLogFile() error {
+	logPath := GetCurrentLogPath()
+	if _, err := os.Stat(logPath); os.IsNotExist(err) {
+		return OpenLogsFolder()
 	}
-	logsDir := filepath.Join(configDir, "logs")
-	_ = os.MkdirAll(logsDir, 0755)
+	return openNativePath(logPath)
+}
+
+func openNativePath(target string) error {
+	cleanTarget := filepath.Clean(target)
+	if _, err := os.Stat(cleanTarget); err != nil {
+		return fmt.Errorf("path does not exist: %w", err)
+	}
 
 	switch runtime.GOOS {
 	case "windows":
-		cmd := exec.Command("explorer.exe", logsDir)
+		cmd := exec.Command("rundll32.exe", "url.dll,FileProtocolHandler", cleanTarget)
 		cmd.SysProcAttr = GetHiddenSysProcAttr()
-		return cmd.Start()
+		if err := cmd.Start(); err != nil {
+			cmdExp := exec.Command("explorer.exe", cleanTarget)
+			cmdExp.SysProcAttr = GetHiddenSysProcAttr()
+			return cmdExp.Start()
+		}
+		return nil
 	case "darwin":
-		return exec.Command("open", logsDir).Start()
+		return exec.Command("open", cleanTarget).Start()
 	default:
-		return exec.Command("xdg-open", logsDir).Start()
+		return exec.Command("xdg-open", cleanTarget).Start()
 	}
 }

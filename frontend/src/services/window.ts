@@ -22,4 +22,14 @@ export const eventBus = {
   onEngineLog: (callback: (msg: string) => void) => EventsOn('engine_log', callback),
   onAutotuneComplete: (callback: (data: { success: boolean; profile?: string; error?: string }) => void) =>
     EventsOn('autotune_complete', callback),
+  onDoctorStart: (callback: (data: { runId: string; mode: string; total: number }) => void) =>
+    EventsOn('doctor_start', callback),
+  onDoctorProgress: (callback: (data: { runId: string; completed: number; total: number; percent: number; running: string[]; lastCompleted: string; elapsedMs: number }) => void) =>
+    EventsOn('doctor_progress', callback),
+  onDoctorComplete: (callback: (data: { runId: string; result: unknown }) => void) =>
+    EventsOn('doctor_complete', callback),
+  onDoctorCancelled: (callback: (runId: string) => void) =>
+    EventsOn('doctor_cancelled', callback),
+  onDoctorError: (callback: (data: { runId: string; error: string }) => void) =>
+    EventsOn('doctor_error', callback),
 };
