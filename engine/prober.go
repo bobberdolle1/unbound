@@ -10,16 +10,6 @@ import (
 	"time"
 )
 
-type ProbeResult struct {
-	URL           string
-	Success       bool
-	Latency       time.Duration
-	CertValid     bool
-	CertIssuer    string
-	Error         string
-	TLSVersion    uint16
-	ConnectionRST bool
-}
 
 func ProbeConnection(ctx context.Context, targetURL string) (ProbeResult, error) {
 	result := ProbeResult{
