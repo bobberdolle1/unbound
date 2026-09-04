@@ -2,10 +2,10 @@
 
 <img src="./build/logo.svg" alt="UNBOUND Logo" width="120" />
 
-# UNBOUND `v0.5.0`
+# UNBOUND `v0.5.1`
 **Локальный настольный оркестратор десинхронизации L3/L4 трафика для macOS, Windows и Linux.**
 
-[![Version](https://img.shields.io/badge/Version-v0.5.0-08090b?style=for-the-badge&logo=rocket)](#)
+[![Version](https://img.shields.io/badge/Version-v0.5.1-08090b?style=for-the-badge&logo=rocket)](#)
 [![Design](https://img.shields.io/badge/Design-Precision_Monochrome-10b981?style=for-the-badge)](#)
 [![Security](https://img.shields.io/badge/Security-SHA256_pinned-10b981?style=for-the-badge&logo=shield)](SECURITY.md)
 [![License](https://img.shields.io/badge/License-GPL--3.0-blue?style=for-the-badge)](LICENSE)
@@ -134,9 +134,9 @@ cd unbound
 cd frontend && npm ci && npm run build && cd ..
 
 # 3. Сборка CLI-версии
-go build -trimpath -ldflags="-s -w -X unbound/engine.Version=0.5.0" -o build/bin/unbound .
+go build -trimpath -ldflags="-s -w -X unbound/engine.Version=0.5.1" -o build/bin/unbound .
 # 4. Сборка Wails GUI
-wails build -clean -ldflags "-X unbound/engine.Version=0.5.0"
+wails build -clean -ldflags "-X unbound/engine.Version=0.5.1"
 ```
 ---
 

@@ -1,21 +1,23 @@
 import { UICheck } from './icons';
 import { cn } from '../lib/cn';
 
-export const UICheckbox = ({ checked, onChange, id, label, desc }: {
+export const UICheckbox = ({ checked, onChange, id, label, desc, disabled }: {
   checked: boolean;
   onChange: () => void;
   id?: string;
   label: string;
   desc: string;
+  disabled?: boolean;
 }) => (
   <div
     id={id}
     role="checkbox"
     aria-checked={checked}
-    tabIndex={0}
+    aria-disabled={disabled}
+    tabIndex={disabled ? -1 : 0}
     className={cn(
-      "flex items-start gap-3.5 p-3 rounded-xl border cursor-pointer transition-all duration-150 app-no-drag group",
-      "hover:border-[var(--ui-border-strong)]"
+      "flex items-start gap-3.5 p-3 rounded-xl border transition-all duration-150 app-no-drag group",
+      disabled ? "opacity-40 cursor-not-allowed pointer-events-none" : "cursor-pointer hover:border-[var(--ui-border-strong)]"
     )}
     style={{
       background: checked
@@ -24,8 +26,9 @@ export const UICheckbox = ({ checked, onChange, id, label, desc }: {
       borderColor: checked ? 'var(--ui-accent)' : 'var(--ui-border)',
       color: 'var(--ui-text)',
     }}
-    onClick={onChange}
+    onClick={disabled ? undefined : onChange}
     onKeyDown={(e) => {
+      if (disabled) return;
       if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onChange(); }
     }}
   >

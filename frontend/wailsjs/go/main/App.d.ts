@@ -11,13 +11,15 @@ export function AutoTune():Promise<string>;
 
 export function CancelAutoTune():Promise<void>;
 
+export function CancelDoctor(arg1:string):Promise<void>;
+
 export function CheckAllUpdates():Promise<engine.SystemUpdateOverview>;
 
 export function CheckConflicts():Promise<Array<string>>;
 
 export function CheckPrivileges():Promise<boolean>;
 
-export function ClearDiscordCache():Promise<void>;
+export function ClearDiscordCache():Promise<engine.DiscordCacheCleanupResult>;
 
 export function DisableAutoStart():Promise<void>;
 
@@ -108,6 +110,8 @@ export function StopAutoReconnect():Promise<void>;
 export function StopEngine():Promise<void>;
 
 export function ToggleFavoriteProfile(arg1:string):Promise<Array<string>>;
+
+export function TriggerTrayUpdate():Promise<void>;
 
 export function UpdateHostlistsNow():Promise<string>;
 

@@ -34,11 +34,25 @@ type App struct {
 	mu                  sync.Mutex
 	closing             bool
 	quitting            bool
+
+	// Tray lifecycle & cache
+	trayCtx             context.Context
+	trayCancel          context.CancelFunc
+	trayUpdateTrigger   chan struct{}
+	lastPingLatency     int64
+	lastPingStatus      string
+	lastPingMu          sync.RWMutex
+
+	// Doctor lifecycle & cancellation
+	doctorMu            sync.Mutex
+	doctorCancel        context.CancelFunc
+	doctorRunID         string
 }
 
 func NewApp() *App {
 	return &App{
-		manager: providers.NewProviderManager(),
+		manager:           providers.NewProviderManager(),
+		trayUpdateTrigger: make(chan struct{}, 1),
 	}
 }
 
@@ -206,7 +220,15 @@ func (a *App) shutdown(ctx context.Context) {
 	autoTuneCancel := a.autoTuneCancel
 	autoReconnectCancel := a.autoReconnectCancel
 	startupCancel := a.startupCancel
+	trayCancel := a.trayCancel
+	doctorCancel := a.doctorCancel
 	a.mu.Unlock()
+	if trayCancel != nil {
+		trayCancel()
+	}
+	if doctorCancel != nil {
+		doctorCancel()
+	}
 	if autoTuneCancel != nil {
 		autoTuneCancel()
 	}
@@ -227,6 +249,34 @@ func (a *App) shutdown(ctx context.Context) {
 	}
 }
 
+func (a *App) TriggerTrayUpdate() {
+	if a.trayUpdateTrigger == nil {
+		return
+	}
+	select {
+	case a.trayUpdateTrigger <- struct{}{}:
+	default:
+	}
+}
+
+func (a *App) updateCachedPing(lat int64, status string) {
+	a.lastPingMu.Lock()
+	a.lastPingLatency = lat
+	a.lastPingStatus = status
+	a.lastPingMu.Unlock()
+	a.TriggerTrayUpdate()
+}
+
+func (a *App) getCachedPingText() string {
+	a.lastPingMu.RLock()
+	defer a.lastPingMu.RUnlock()
+	if a.lastPingStatus == "ok" && a.lastPingLatency > 0 {
+		return fmt.Sprintf("Пинг: %dмс", a.lastPingLatency)
+	} else if a.lastPingStatus == "blocked" {
+		return "Пинг: Заблокировано"
+	}
+	return "Пинг: —"
+}
 func (a *App) GetEngineNames() []string {
 	return a.manager.GetEngineNames()
 }
@@ -421,8 +471,69 @@ func (a *App) RunDiagnostics() []engine.DiagnosticResult {
 func (a *App) RunDoctor(mode string) (*engine.DoctorResult, error) {
 	logger := engine.GetLogger()
 	logger.Infof("App", "Doctor diagnostics requested (mode=%s)", mode)
+
+	a.doctorMu.Lock()
+	if a.doctorCancel != nil {
+		logger.Info("App", "Cancelling previous active Doctor run")
+		a.doctorCancel()
+	}
+	runID := fmt.Sprintf("run_%d", time.Now().UnixNano())
+	a.doctorRunID = runID
+
+	timeout := 25 * time.Second
+	if mode == "extended" {
+		timeout = 50 * time.Second
+	}
+	docCtx, cancel := context.WithTimeout(context.Background(), timeout)
+	a.doctorCancel = cancel
+	a.doctorMu.Unlock()
+
+	defer func() {
+		a.doctorMu.Lock()
+		if a.doctorRunID == runID {
+			a.doctorCancel = nil
+		}
+		a.doctorMu.Unlock()
+	}()
+
 	activeProfile := a.manager.CurrentProfileName("")
-	return engine.RunDoctor(a.ctx, mode, activeProfile, a.manager.GetStatus())
+
+	onProgress := func(p engine.DoctorProgress) {
+		p.RunID = runID
+		wailsruntime.EventsEmit(a.ctx, "doctor_progress", p)
+	}
+
+	res, err := engine.RunDoctorWithProgress(docCtx, mode, activeProfile, a.manager.GetStatus(), onProgress)
+	if err != nil {
+		wailsruntime.EventsEmit(a.ctx, "doctor_error", map[string]interface{}{
+			"runId": runID,
+			"error": err.Error(),
+		})
+		return nil, err
+	}
+
+	wailsruntime.EventsEmit(a.ctx, "doctor_complete", map[string]interface{}{
+		"runId":  runID,
+		"result": res,
+	})
+	return res, nil
+}
+
+func (a *App) CancelDoctor(runID string) {
+	logger := engine.GetLogger()
+	logger.Infof("App", "CancelDoctor called for runId=%s", runID)
+
+	a.doctorMu.Lock()
+	defer a.doctorMu.Unlock()
+
+	if a.doctorCancel != nil {
+		if runID == "" || runID == a.doctorRunID {
+			a.doctorCancel()
+			a.doctorCancel = nil
+			wailsruntime.EventsEmit(a.ctx, "doctor_cancelled", runID)
+			logger.Info("App", "Doctor run cancelled successfully")
+		}
+	}
 }
 
 func (a *App) RunBypassComparison() (*engine.BypassComparisonResult, error) {
@@ -473,19 +584,28 @@ func (c *appProviderController) Start(ctx context.Context, profile string) error
 func (c *appProviderController) Stop() error {
 	return c.app.StopEngine()
 }
-func (a *App) ClearDiscordCache() error {
+func (a *App) ClearDiscordCache() (*engine.DiscordCacheCleanupResult, error) {
 	logger := engine.GetLogger()
 	notifMgr := engine.GetNotificationManager()
 
-	logger.Info("App", "Clearing Discord cache")
-	err := engine.ClearDiscordCache()
-	if err == nil {
-		notifMgr.Success("Очистка", "Кэш Discord успешно очищен")
-	} else {
-		logger.Errorf("App", "Failed to clear Discord cache: %v", err)
-		notifMgr.Error("Ошибка очистки", "Не удалось очистить кэш Discord")
+	logger.Info("App", "Clearing Discord cache (structured)")
+	res := engine.ClearDiscordCacheStructured()
+
+	switch res.Status {
+	case "SUCCESS":
+		notifMgr.Success("Кэш очищен", res.Message)
+	case "PARTIAL":
+		notifMgr.Warning("Очищено частично", res.Message)
+	case "NO_CACHE_FOUND":
+		notifMgr.Info("Кэш Discord", res.Message)
+	default:
+		notifMgr.Error("Ошибка очистки", res.Message)
 	}
-	return err
+
+	logger.Infof("App", "Discord cache cleanup finished: status=%s, freed=%d bytes, running=%v, failures=%d",
+		res.Status, res.BytesFreed, res.DiscordRunning, len(res.Failures))
+
+	return res, nil
 }
 
 func (a *App) EnableTCPTimestamps() error {
@@ -1276,6 +1396,7 @@ type PingRecord struct {
 }
 
 func (a *App) SavePingHistory(latency int64, status string) {
+	a.updateCachedPing(latency, status)
 	path, err := engine.GetConfigDir()
 	if err != nil {
 		return

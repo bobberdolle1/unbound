@@ -34,6 +34,56 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
   const [isLocalRunning, setIsLocalRunning] = useState(false);
   const [copied, setCopied] = useState(false);
   const [expandedProbes, setExpandedProbes] = useState<Record<string, boolean>>({});
+  const [activeRunId, setActiveRunId] = useState<string>('');
+  const [progress, setProgress] = useState<{
+    runId: string;
+    completed: number;
+    total: number;
+    percent: number;
+    running: string[];
+    lastCompleted: string;
+    elapsedMs: number;
+  }>({
+    runId: '',
+    completed: 0,
+    total: 0,
+    percent: 0,
+    running: [],
+    lastCompleted: '',
+    elapsedMs: 0,
+  });
+
+  // Subscribe to real-time Doctor progress events
+  React.useEffect(() => {
+    const w = window as unknown as { runtime?: { EventsOn?: (event: string, cb: (data: unknown) => void) => () => void; EventsOff?: (event: string) => void } };
+    if (!w.runtime?.EventsOn) return;
+
+    const unregProgress = w.runtime.EventsOn('doctor_progress', (data: unknown) => {
+      const p = data as { runId: string; completed: number; total: number; percent: number; running: string[]; lastCompleted: string; elapsedMs: number };
+      if (p) {
+        setProgress(p);
+        if (p.runId) setActiveRunId(p.runId);
+      }
+    });
+
+    const unregComplete = w.runtime.EventsOn('doctor_complete', (data: unknown) => {
+      const d = data as { runId: string; result: engine.DoctorResult };
+      if (d?.result) {
+        setDoctorResult(d.result);
+        setIsLocalRunning(false);
+      }
+    });
+
+    const unregCancelled = w.runtime.EventsOn('doctor_cancelled', () => {
+      setIsLocalRunning(false);
+    });
+
+    return () => {
+      if (unregProgress) unregProgress();
+      if (unregComplete) unregComplete();
+      if (unregCancelled) unregCancelled();
+    };
+  }, []);
 
   // Sync initial prop when it updates
   React.useEffect(() => {
@@ -41,7 +91,6 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
       setDoctorResult(initialDoctorResult);
     }
   }, [initialDoctorResult]);
-
   if (!isOpen) return null;
 
   const running = isRunning || isLocalRunning;
@@ -222,16 +271,71 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
         {/* Content Body */}
         <div className="overflow-y-auto space-y-3 flex-1 pr-1">
           {running ? (
-            <div className="flex flex-col items-center justify-center py-16 gap-3">
-              <UISpinner className="w-8 h-8 animate-spin text-emerald-400" />
-              <span className="text-xs text-[var(--ui-text)] font-medium">
-                {activeTab === 'comparison'
-                  ? 'Выполняется A/B тестирование (замер прямого соединения и профиля)...'
-                  : 'Диагностика проверяет ядро, системный стек и целевые сервисы...'}
-              </span>
-              <span className="text-[11px] text-[var(--ui-text-muted)]">
-                {activeTab === 'comparison' ? 'Исходный профиль будет автоматически восстановлен' : 'Пожалуйста, подождите несколько секунд'}
-              </span>
+            <div className="flex flex-col py-8 px-4 gap-4 bg-[var(--ui-surface-elevated)] border border-[var(--ui-border)] rounded-2xl">
+              <div className="flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2 font-medium text-[var(--ui-text)]">
+                  <UISpinner className="w-4 h-4 animate-spin text-emerald-400" />
+                  <span>
+                    {activeTab === 'comparison'
+                      ? 'Выполняется A/B тестирование соединений...'
+                      : 'Диагностика проверяет окружение и сервисы...'}
+                  </span>
+                </div>
+                <span className="font-mono text-xs font-semibold text-emerald-400">
+                  {progress.percent}% ({progress.completed} / {progress.total || '?'})
+                </span>
+              </div>
+
+              {/* Progress bar */}
+              <div className="w-full bg-black/30 h-2 rounded-full overflow-hidden border border-white/5">
+                <div
+                  className="bg-emerald-500 h-full transition-all duration-300 rounded-full"
+                  style={{ width: `${Math.max(5, Math.min(100, progress.percent))}%` }}
+                />
+              </div>
+
+              {/* Concurrently running probes */}
+              {progress.running && progress.running.length > 0 && (
+                <div className="text-[11px] text-[var(--ui-text-muted)] space-y-1">
+                  <span className="font-medium text-[var(--ui-text)]">Выполняется сейчас:</span>
+                  <div className="flex flex-wrap gap-1.5 mt-1">
+                    {progress.running.map((rName, idx) => (
+                      <span key={idx} className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-300 font-mono text-[10px] border border-emerald-500/20 animate-pulse">
+                        {rName}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Last completed probe */}
+              {progress.lastCompleted && (
+                <div className="text-[11px] text-[var(--ui-text-muted)] flex items-center gap-1.5">
+                  <UICheck className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Завершено: <span className="text-[var(--ui-text)] font-mono">{progress.lastCompleted}</span></span>
+                </div>
+              )}
+
+              {/* Elapsed time and Cancel button */}
+              <div className="flex items-center justify-between pt-2 border-t border-[var(--ui-border)] text-xs">
+                <span className="text-[11px] font-mono text-[var(--ui-text-muted)]">
+                  Прошло: {((progress.elapsedMs || 0) / 1000).toFixed(1)}с
+                </span>
+                <button
+                  onClick={async () => {
+                    try {
+                      await backendService.cancelDoctor(activeRunId);
+                    } catch (err) {
+                      console.error(err);
+                    } finally {
+                      setIsLocalRunning(false);
+                    }
+                  }}
+                  className="btn-ui-secondary text-xs px-3 py-1 text-red-400 hover:text-red-300 border-red-500/30 hover:bg-red-500/10"
+                >
+                  Отменить проверку
+                </button>
+              </div>
             </div>
           ) : activeTab === 'comparison' ? (
             /* A/B Comparison View */

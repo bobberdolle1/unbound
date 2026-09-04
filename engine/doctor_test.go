@@ -161,3 +161,50 @@ func TestRunDoctorQuickExecution(t *testing.T) {
 	t.Logf("Doctor completed in %v, overall status: %s (PASS=%d FAIL=%d WARN=%d INFO=%d)",
 		res.Duration, res.OverallStatus, res.PassCount, res.FailCount, res.WarnCount, res.InfoCount)
 }
+
+func TestRunDoctorWithProgressMonotonic(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var progressEvents []DoctorProgress
+	onProgress := func(p DoctorProgress) {
+		progressEvents = append(progressEvents, p)
+	}
+
+	res, err := RunDoctorWithProgress(ctx, "quick", "Recommended (hostfakesplit)", providers.StatusRunning, onProgress)
+	if err != nil {
+		t.Fatalf("RunDoctorWithProgress failed: %v", err)
+	}
+	if len(progressEvents) == 0 {
+		t.Fatal("Expected progress events, got none")
+	}
+
+	lastCompleted := -1
+	for i, ev := range progressEvents {
+		if ev.Completed < lastCompleted {
+			t.Errorf("Progress not monotonic at event %d: completed %d < last %d", i, ev.Completed, lastCompleted)
+		}
+		lastCompleted = ev.Completed
+		if ev.Percent < 0 || ev.Percent > 100 {
+			t.Errorf("Percent out of bounds at event %d: %d", i, ev.Percent)
+		}
+	}
+
+	lastEv := progressEvents[len(progressEvents)-1]
+	if lastEv.Completed != lastEv.Total {
+		t.Errorf("Final completed %d != total %d", lastEv.Completed, lastEv.Total)
+	}
+	if lastEv.Percent != 100 {
+		t.Errorf("Final percent %d != 100", lastEv.Percent)
+	}
+	t.Logf("Progress test passed: %d events received, final completed=%d/%d in %v",
+		len(progressEvents), lastEv.Completed, lastEv.Total, res.Duration)
+}
+
+func TestRunDoctorCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	_, _ = RunDoctor(ctx, "quick", "", providers.StatusStopped)
+	// Must return quickly without deadlock
+}

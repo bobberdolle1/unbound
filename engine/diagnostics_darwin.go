@@ -4,7 +4,6 @@
 package engine
 
 import (
-	"os"
 	"os/exec"
 	"strings"
 	"unbound/engine/providers"
@@ -17,19 +16,6 @@ func EnableTCPTimestamps() error {
 	return nil
 }
 
-// ClearDiscordCache removes Discord cache directories on macOS.
-func ClearDiscordCache() error {
-	discordDir := GetDiscordCacheDir()
-	if discordDir == "" {
-		return nil
-	}
-
-	cacheDirs := []string{"Cache", "Code Cache", "GPUCache"}
-	for _, dir := range cacheDirs {
-		os.RemoveAll(discordDir + "/" + dir)
-	}
-	return nil
-}
 
 // RunDiagnostics performs macOS-specific system diagnostics.
 func RunDiagnostics() []DiagnosticResult {

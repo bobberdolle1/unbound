@@ -288,6 +288,40 @@ export namespace engine {
 	        this.IsError = source["IsError"];
 	    }
 	}
+	export class DiscordCacheCleanupResult {
+	    installationsFound: string[];
+	    pathsScanned: string[];
+	    pathsRemoved: string[];
+	    filesRemoved: number;
+	    bytesBefore: number;
+	    bytesAfter: number;
+	    bytesFreed: number;
+	    failures: string[];
+	    discordRunning: boolean;
+	    runningProcesses?: string[];
+	    status: string;
+	    message: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DiscordCacheCleanupResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.installationsFound = source["installationsFound"];
+	        this.pathsScanned = source["pathsScanned"];
+	        this.pathsRemoved = source["pathsRemoved"];
+	        this.filesRemoved = source["filesRemoved"];
+	        this.bytesBefore = source["bytesBefore"];
+	        this.bytesAfter = source["bytesAfter"];
+	        this.bytesFreed = source["bytesFreed"];
+	        this.failures = source["failures"];
+	        this.discordRunning = source["discordRunning"];
+	        this.runningProcesses = source["runningProcesses"];
+	        this.status = source["status"];
+	        this.message = source["message"];
+	    }
+	}
 	export class DoctorResult {
 	    overallStatus: string;
 	    mode: string;

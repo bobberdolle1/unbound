@@ -5,6 +5,7 @@ import { AppNavigation } from '../components/shell/AppNavigation';
 import { ConnectionStatus } from '../components/status/ConnectionStatus';
 import { MainControlView } from '../components/views/MainControlView';
 import { ModalHost } from '../components/modals/ModalHost';
+import { SettingsView } from '../components/views/SettingsView';
 import { LogJournalDrawer } from '../components/terminal/LogJournalDrawer';
 import { usePingPolling } from '../hooks/usePingPolling';
 import { windowService } from '../services/window';
@@ -262,6 +263,89 @@ describe('Extracted Components Unit Tests', () => {
 
       unmount();
       vi.useRealTimers();
+    });
+  });
+
+  describe('SettingsView startMinimized regression', () => {
+    it('contains exactly one control for startMinimized and links to autoStart', () => {
+      const mockSettings = {
+        autoStart: true,
+        startMinimized: false,
+        autoStartProfile: false,
+        defaultProfile: '',
+        startupProfileMode: 'Последний использованный',
+        gameFilter: true,
+        autoUpdateEnabled: true,
+        showLogs: true,
+        enableTCPTimestamps: false,
+        discordCacheAutoClean: false,
+        secureDns: false,
+        autoReconnect: true,
+        favoriteProfiles: [],
+      };
+
+      const { container } = render(
+        <SettingsView
+          settings={mockSettings}
+          setSettings={vi.fn()}
+          theme="monolith"
+          setThemeState={vi.fn()}
+          startupProfiles={['Recommended']}
+          handleRunDiagnostics={vi.fn()}
+          handleVerifyAssets={vi.fn()}
+          isVerifyingAssets={false}
+          handleDiagnosticReport={vi.fn()}
+          isGeneratingReport={false}
+          handleUpdateHostlists={vi.fn()}
+          isUpdatingHostlists={false}
+          handleClearCache={vi.fn()}
+          handleKillWinws2={vi.fn()}
+        />
+      );
+
+      const checkboxes = container.querySelectorAll('[role="checkbox"]#startMinimized');
+      expect(checkboxes.length).toBe(1);
+      expect(checkboxes[0].getAttribute('aria-disabled')).toBe('false');
+    });
+
+    it('disables startMinimized when autoStart is false', () => {
+      const mockSettings = {
+        autoStart: false,
+        startMinimized: true,
+        autoStartProfile: false,
+        defaultProfile: '',
+        startupProfileMode: 'Последний использованный',
+        gameFilter: true,
+        autoUpdateEnabled: true,
+        showLogs: true,
+        enableTCPTimestamps: false,
+        discordCacheAutoClean: false,
+        secureDns: false,
+        autoReconnect: true,
+        favoriteProfiles: [],
+      };
+
+      const { container } = render(
+        <SettingsView
+          settings={mockSettings}
+          setSettings={vi.fn()}
+          theme="monolith"
+          setThemeState={vi.fn()}
+          startupProfiles={['Recommended']}
+          handleRunDiagnostics={vi.fn()}
+          handleVerifyAssets={vi.fn()}
+          isVerifyingAssets={false}
+          handleDiagnosticReport={vi.fn()}
+          isGeneratingReport={false}
+          handleUpdateHostlists={vi.fn()}
+          isUpdatingHostlists={false}
+          handleClearCache={vi.fn()}
+          handleKillWinws2={vi.fn()}
+        />
+      );
+      const checkboxes = container.querySelectorAll('[role="checkbox"]#startMinimized');
+      expect(checkboxes.length).toBe(1);
+      expect(checkboxes[0].getAttribute('aria-disabled')).toBe('true');
     });
   });
 });

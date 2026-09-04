@@ -18,6 +18,10 @@ export function CancelAutoTune() {
   return window['go']['main']['App']['CancelAutoTune']();
 }
 
+export function CancelDoctor(arg1) {
+  return window['go']['main']['App']['CancelDoctor'](arg1);
+}
+
 export function CheckAllUpdates() {
   return window['go']['main']['App']['CheckAllUpdates']();
 }
@@ -212,6 +216,10 @@ export function StopEngine() {
 
 export function ToggleFavoriteProfile(arg1) {
   return window['go']['main']['App']['ToggleFavoriteProfile'](arg1);
+}
+
+export function TriggerTrayUpdate() {
+  return window['go']['main']['App']['TriggerTrayUpdate']();
 }
 
 export function UpdateHostlistsNow() {
