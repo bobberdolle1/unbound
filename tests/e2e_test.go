@@ -295,6 +295,9 @@ func TestEngine_ConfigDir(t *testing.T) {
 }
 
 func TestEngine_SettingsRoundTrip(t *testing.T) {
+	// Isolate from the real user config: these tests write settings.json and
+	// historically clobbered the user's actual saved settings.
+	t.Setenv("APPDATA", t.TempDir())
 	// Save settings, read them back, verify.
 	original := &engine.Settings{
 		AutoStart:             false,
@@ -329,6 +332,7 @@ func TestEngine_SettingsRoundTrip(t *testing.T) {
 }
 
 func TestEngine_CustomScriptRoundTrip(t *testing.T) {
+	t.Setenv("APPDATA", t.TempDir())
 	script := "-- test lua\nprint('hello')\n"
 	if err := engine.SaveCustomScript(script); err != nil {
 		t.Fatalf("SaveCustomScript: %v", err)

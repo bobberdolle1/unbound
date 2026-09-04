@@ -6,7 +6,6 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/getlantern/systray"
@@ -110,12 +109,7 @@ func (a *App) onTrayReady() {
 				go a.AutoTune()
 
 			case <-mQuit.ClickedCh:
-				a.manager.Stop()
-				time.Sleep(200 * time.Millisecond)
-				systray.Quit()
-				runtime.Quit(a.ctx)
-				time.Sleep(1 * time.Second)
-				os.Exit(0)
+				a.QuitApp()
 			}
 		}
 	}()
@@ -124,9 +118,17 @@ func (a *App) onTrayReady() {
 func (a *App) onTrayExit() {}
 
 func (a *App) onBeforeClose(ctx context.Context) bool {
-	// When user clicks X, hide to tray instead of quitting
+	a.mu.Lock()
+	quitting := a.quitting
+	a.mu.Unlock()
+	if quitting {
+		// Real quit request (QuitApp binding or tray "Выход"): let Wails run
+		// its OnShutdown teardown instead of vetoing it.
+		return false
+	}
+	// Window close (X / programmatic hide) keeps the app alive in the tray.
 	a.HideWindowToTray()
-	return true // true = prevent default close (keep app running)
+	return true
 }
 
 func (a *App) ShowFromTray() {

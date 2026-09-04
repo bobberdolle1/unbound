@@ -121,6 +121,17 @@ func main() {
 	app.startMinimized = *trayMode
 	app.debugMode = *debugMode
 
+	// Single-instance guard: a second launch (double-click, installer
+	// "run after finish", scheduled task racing a manual start) must never
+	// spawn a competing engine instance. Forward to the first process and
+	// bring its window up instead.
+	singleInstanceID := "unbound-bobberdolle1"
+	if user := os.Getenv("USERNAME"); user != "" {
+		singleInstanceID += "-" + strings.ToLower(user)
+	} else if user := os.Getenv("USER"); user != "" {
+		singleInstanceID += "-" + strings.ToLower(user)
+	}
+
 	err := wails.Run(&options.App{
 		Title:             "UNBOUND",
 		Width:             940,
@@ -130,7 +141,11 @@ func main() {
 		Frameless:         true,
 		DisableResize:     false,
 		HideWindowOnClose: true,
-		OnBeforeClose:     app.onBeforeClose,
+		// The window is never created visible when autostart/boot asked for a
+		// quiet start: --tray sets StartHidden so there is no show-then-hide
+		// flash on the desktop.
+		StartHidden:   app.startMinimized,
+		OnBeforeClose: app.onBeforeClose,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
@@ -141,6 +156,12 @@ func main() {
 			app,
 		},
 		Menu: getAppMenu(app),
+		SingleInstanceLock: &options.SingleInstanceLock{
+			UniqueId: singleInstanceID,
+			OnSecondInstanceLaunch: func(secondInstanceData options.SecondInstanceData) {
+				app.ShowFromTray()
+			},
+		},
 		Windows: &windows.Options{
 			WebviewIsTransparent: false,
 			WindowIsTranslucent:  false,

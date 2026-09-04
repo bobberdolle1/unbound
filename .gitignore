@@ -22,6 +22,7 @@ build/bin/
 /release/
 /.act-artifacts/
 
+frontend/package.json.md5
 # Wails embeds frontend/dist, so `go build` fails on a clean clone unless the
 # directory exists. Keep the placeholder, ignore everything Vite writes there.
 frontend/dist/*
