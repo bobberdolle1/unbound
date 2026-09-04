@@ -69,21 +69,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           onChange={() => setSettings({ ...settings, autoStart: !settings.autoStart })}
         />
 
-        <UICheckbox
-          id="startMinimized"
-          label="Тихий старт"
-          desc="Запускать свёрнутым в системный трей"
-          checked={settings.startMinimized}
-          onChange={() => setSettings({ ...settings, startMinimized: !settings.startMinimized })}
-        />
-
-        <UICheckbox
-          id="startMinimized"
-          label="Тихий старт"
-          desc="Запускать скрыто в системном трее, без окна"
-          checked={settings.startMinimized}
-          onChange={() => setSettings({ ...settings, startMinimized: !settings.startMinimized })}
-        />
+        <div className={`pl-6 -mt-1 transition-opacity ${settings.autoStart ? '' : 'opacity-40 pointer-events-none'}`}>
+          <UICheckbox
+            id="startMinimized"
+            label="Тихий старт"
+            desc="При автозапуске Windows запускать UNBOUND скрыто в системном трее"
+            checked={settings.startMinimized}
+            onChange={() => setSettings({ ...settings, startMinimized: !settings.startMinimized })}
+            disabled={!settings.autoStart}
+          />
+        </div>
 
         <UICheckbox
           id="autoStartProfile"
