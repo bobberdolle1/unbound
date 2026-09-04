@@ -6,6 +6,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/getlantern/systray"
@@ -21,7 +22,112 @@ func getAppMenu(a *App) *menu.Menu {
 //go:embed build/windows/icon.ico
 var iconData []byte
 
+type trayStateSnapshot struct {
+	status     providers.Status
+	profile    string
+	pingText   string
+	autoTuning bool
+}
+
+type trayController struct {
+	mu           sync.Mutex
+	lastSnapshot trayStateSnapshot
+	mStatus      *systray.MenuItem
+	mPing        *systray.MenuItem
+	mShow        *systray.MenuItem
+	mConnect     *systray.MenuItem
+	mDisconnect  *systray.MenuItem
+	mAutoTune    *systray.MenuItem
+	mQuit        *systray.MenuItem
+	initialized  bool
+}
+
+func (tc *trayController) sync(current trayStateSnapshot) {
+	tc.mu.Lock()
+	defer tc.mu.Unlock()
+
+	if !tc.initialized {
+		return
+	}
+
+	prev := tc.lastSnapshot
+
+	// 1. If nothing changed, make ZERO calls to Win32 systray to prevent menu message loop contention.
+	if prev.status == current.status &&
+		prev.profile == current.profile &&
+		prev.pingText == current.pingText &&
+		prev.autoTuning == current.autoTuning {
+		return
+	}
+
+	// 2. Status & action transitions (Enable/Disable only; no Hide/Show structural mutations)
+	if prev.status != current.status || prev.profile != current.profile || prev.autoTuning != current.autoTuning {
+		var statusTitle string
+		switch {
+		case current.autoTuning:
+			statusTitle = "Статус: Автоподбор..."
+			tc.mConnect.Disable()
+			tc.mDisconnect.Disable()
+			tc.mAutoTune.Disable()
+		case current.status == providers.StatusRunning:
+			if current.profile != "" {
+				statusTitle = fmt.Sprintf("Статус: Подключено (%s)", current.profile)
+			} else {
+				statusTitle = "Статус: Подключено"
+			}
+			tc.mConnect.Disable()
+			tc.mDisconnect.Enable()
+			tc.mAutoTune.Disable()
+		case current.status == providers.StatusStarting:
+			statusTitle = "Статус: Подключение..."
+			tc.mConnect.Disable()
+			tc.mDisconnect.Disable()
+			tc.mAutoTune.Disable()
+		case current.status == providers.StatusError:
+			statusTitle = "Статус: Ошибка"
+			tc.mConnect.Enable()
+			tc.mDisconnect.Disable()
+			tc.mAutoTune.Enable()
+		default:
+			statusTitle = "Статус: Отключено"
+			tc.mConnect.Enable()
+			tc.mDisconnect.Disable()
+			tc.mAutoTune.Enable()
+		}
+
+		tc.mStatus.SetTitle(statusTitle)
+	}
+
+	// 3. Ping item update
+	if prev.pingText != current.pingText {
+		tc.mPing.SetTitle(current.pingText)
+	}
+
+	tc.lastSnapshot = current
+}
+
+func (a *App) getTraySnapshot() trayStateSnapshot {
+	status := a.manager.GetStatus()
+	profile := a.manager.CurrentProfileName("")
+	pingText := a.getCachedPingText()
+
+	a.mu.Lock()
+	autoTuning := a.autoTuneCancel != nil
+	a.mu.Unlock()
+
+	return trayStateSnapshot{
+		status:     status,
+		profile:    profile,
+		pingText:   pingText,
+		autoTuning: autoTuning,
+	}
+}
+
 func (a *App) setupTray() {
+	a.mu.Lock()
+	a.trayCtx, a.trayCancel = context.WithCancel(context.Background())
+	a.mu.Unlock()
+
 	go systray.Run(a.onTrayReady, a.onTrayExit)
 }
 
@@ -30,61 +136,54 @@ func (a *App) onTrayReady() {
 	systray.SetTitle("UNBOUND")
 	systray.SetTooltip("UNBOUND — обход DPI")
 
-	mStatus := systray.AddMenuItem("Статус: Отключено", "Текущий статус двигателя")
-	mStatus.Disable()
+	tc := &trayController{
+		mStatus:     systray.AddMenuItem("Статус: Отключено", "Текущий статус двигателя"),
+		mPing:       systray.AddMenuItem("Пинг: —", "Задержка до целевых сервисов"),
+		mShow:       systray.AddMenuItem("Развернуть Unbound", "Показать окно приложения"),
+		mConnect:    systray.AddMenuItem("Подключить", "Запустить обход DPI"),
+		mDisconnect: systray.AddMenuItem("Отключить", "Остановить обход DPI"),
+		mAutoTune:   systray.AddMenuItem("Автоподбор", "Запустить автоматический подбор профиля"),
+		mQuit:       systray.AddMenuItem("Выход", "Остановить двигатель и выйти из приложения"),
+		initialized: true,
+	}
 
-	mPing := systray.AddMenuItem("Пинг: —", "Задержка до целевых сервисов")
-	mPing.Disable()
+	tc.mStatus.Disable()
+	tc.mPing.Disable()
+	tc.mDisconnect.Disable()
 
 	systray.AddSeparator()
 
-	mShow := systray.AddMenuItem("Развернуть Unbound", "Показать окно приложения")
-	mConnect := systray.AddMenuItem("Подключить", "Запустить обход DPI")
-	mDisconnect := systray.AddMenuItem("Отключить", "Остановить обход DPI")
-	mDisconnect.Hide()
-	mAutoTune := systray.AddMenuItem("Автоподбор", "Запустить автоматический подбор профиля")
+	// Initial sync
+	tc.sync(a.getTraySnapshot())
 
-	systray.AddSeparator()
-	mQuit := systray.AddMenuItem("Выход", "Остановить двигатель и выйти из приложения")
-
-	// Обновление статуса и пинга в трее
+	// Periodic & event-driven update worker
 	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+
 		for {
-			status := a.manager.GetStatus()
-			if status == providers.StatusRunning {
-				mStatus.SetTitle("Статус: Подключено")
-				mConnect.Hide()
-				mDisconnect.Show()
-				mAutoTune.Disable()
-				ping := a.GetLivePing()
-				lat, _ := ping["latency"].(int64)
-				pingSt, _ := ping["status"].(string)
-				if pingSt == "ok" && lat > 0 {
-					mPing.SetTitle(fmt.Sprintf("Пинг: %dмс", lat))
-				} else if pingSt == "blocked" {
-					mPing.SetTitle("Пинг: Заблокировано")
-				} else {
-					mPing.SetTitle("Пинг: —")
-				}
-			} else {
-				mStatus.SetTitle("Статус: Отключено")
-				mConnect.Show()
-				mDisconnect.Hide()
-				mAutoTune.Enable()
-				mPing.SetTitle("Пинг: —")
+			select {
+			case <-a.trayCtx.Done():
+				return
+			case <-a.trayUpdateTrigger:
+				tc.sync(a.getTraySnapshot())
+			case <-ticker.C:
+				tc.sync(a.getTraySnapshot())
 			}
-			time.Sleep(2 * time.Second)
 		}
 	}()
 
+	// Click event worker
 	go func() {
 		for {
 			select {
-			case <-mShow.ClickedCh:
-				runtime.WindowUnminimise(a.ctx)
-				runtime.WindowShow(a.ctx)
+			case <-a.trayCtx.Done():
+				return
 
-			case <-mConnect.ClickedCh:
+			case <-tc.mShow.ClickedCh:
+				a.ShowFromTray()
+
+			case <-tc.mConnect.ClickedCh:
 				engines := a.manager.GetEngineNames()
 				if len(engines) == 0 {
 					continue
@@ -100,38 +199,50 @@ func (a *App) onTrayReady() {
 						profile = profiles[0]
 					}
 				}
-				a.StartEngine(engines[0], profile)
+				_ = a.StartEngine(engines[0], profile)
+				a.TriggerTrayUpdate()
 
-			case <-mDisconnect.ClickedCh:
-				a.StopEngine()
+			case <-tc.mDisconnect.ClickedCh:
+				_ = a.StopEngine()
+				a.TriggerTrayUpdate()
 
-			case <-mAutoTune.ClickedCh:
-				go a.AutoTune()
+			case <-tc.mAutoTune.ClickedCh:
+				go func() {
+					a.TriggerTrayUpdate()
+					_ = a.AutoTune()
+					a.TriggerTrayUpdate()
+				}()
 
-			case <-mQuit.ClickedCh:
+			case <-tc.mQuit.ClickedCh:
 				a.QuitApp()
 			}
 		}
 	}()
 }
 
-func (a *App) onTrayExit() {}
+func (a *App) onTrayExit() {
+	a.mu.Lock()
+	cancel := a.trayCancel
+	a.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
 
 func (a *App) onBeforeClose(ctx context.Context) bool {
 	a.mu.Lock()
-	quitting := a.quitting
+	isQuitting := a.quitting || a.closing
 	a.mu.Unlock()
-	if quitting {
-		// Real quit request (QuitApp binding or tray "Выход"): let Wails run
-		// its OnShutdown teardown instead of vetoing it.
+
+	if isQuitting {
 		return false
 	}
-	// Window close (X / programmatic hide) keeps the app alive in the tray.
+
 	a.HideWindowToTray()
 	return true
 }
 
 func (a *App) ShowFromTray() {
-	runtime.WindowUnminimise(a.ctx)
 	runtime.WindowShow(a.ctx)
+	runtime.WindowUnminimise(a.ctx)
 }
