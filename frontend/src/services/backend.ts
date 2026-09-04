@@ -30,9 +30,14 @@ export const backendService = {
   killConflicts: () => WailsApp.KillConflicts(),
   checkPrivileges: () => WailsApp.CheckPrivileges(),
   runDiagnostics: () => WailsApp.RunDiagnostics(),
+  runDoctor: (mode: string) => WailsApp.RunDoctor(mode),
+  runBypassComparison: () => WailsApp.RunBypassComparison(),
   verifyEngineAssets: () => WailsApp.VerifyEngineAssets(),
-  generateDiagnosticReport: () => WailsApp.GenerateDiagnosticReport(),
-
+  generateDiagnosticReport: (res?: engine.DoctorResult) => res ? WailsApp.GenerateDoctorReport(res) : WailsApp.GenerateDiagnosticReport(),
+  openLogsFolder: () => WailsApp.OpenLogsFolder(),
+  checkAllUpdates: () => WailsApp.CheckAllUpdates(),
+  rollbackEngineUpdate: () => WailsApp.RollbackEngineUpdate(),
+  getAutoStartTaskInfo: () => WailsApp.GetAutoStartTaskInfo(),
   // Logs & Tools
   getLogs: () => WailsApp.GetLogs(),
   exportLogs: (content: string) => WailsApp.ExportLogs(content),
