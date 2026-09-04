@@ -6,21 +6,21 @@
 #
 # Provenance
 # ----------
-#   engine/core_bin/windows/*                 Zapret 2 v1.0.3 Windows x86_64 bundle
-#   engine/core_bin/linux/{amd64,arm64}/*     Zapret 2 v1.0.3 Linux release bundle
+#   engine/core_bin/windows/*                 Zapret 2 v1.0.5 Windows x86_64 bundle
+#   engine/core_bin/linux/{amd64,arm64}/*     Zapret 2 v1.0.5 Linux release bundle
 #   engine/core_bin/windows/goodbyedpi.exe    https://github.com/ValdikSS/GoodbyeDPI
 #   engine/core_bin/*.bin                     fake-packet payloads from Zapret releases
 #   engine/lua_scripts/zapret-{lib,antidpi,auto,obfs,pcap,tests}.lua
-#                                               Zapret 2 v1.0.3; other Lua files are local
+#                                               Zapret 2 v1.0.5; other Lua files are local
 #   engine/windivert.filter/*                 local WinDivert filter presets
 #
 # Zapret 2 snapshot
 # -----------------
-#   Tag:          v1.0.3
-#   Commit:       b78b52c4cd7f843da3ff0848a3430afbd401bdf2
-#   Release URL:  https://github.com/bol-van/zapret2/releases/tag/v1.0.3
-#   Source asset: zapret2-v1.0.3.zip
-#   Asset SHA256: 734fbea360aa863cd5c724f8b941116aaa250434d699b1ce99769e5f632a7a77
+#   Tag:          v1.0.5
+#   Commit:       0b8182d24a887059a628d7266577c4ba8e9b8f2d
+#   Release URL:  https://github.com/bol-van/zapret2/releases/tag/v1.0.5
+#   Source asset: zapret2-v1.0.5.zip
+#   Asset SHA256: d73a4c57dad0f20f473aa62ed950505f0737154c3d9ab8fca717e75f1a21fa69
 #
 # Windows binaries, Linux binaries and all six standard Lua files are copied
 # from that one verified release archive. Never update them independently.
@@ -29,8 +29,6 @@ e4d572e6bf6de04c648744cb7271644cb40fd6c79d718e911716d734cbb53841  engine/core_bi
 f86d488593a65132c10e7e5b5e02f32ff8e0862988b30bebc6a671c5380f3976  engine/core_bin/2.bin
 d6d63c53bc0e1d97e913a43fc4db34f6558bb807228bf6100e3b6863f0720404  engine/core_bin/3.bin
 936c2bee4cfb80aa3c426b2dcbcc834b3fbcd1adb17172959dc569c73a14275c  engine/core_bin/4.bin
-2f43f4251be4d72dd56c91bf6cce475d379eb9ba6c4dda2be3022ea633d5e807  engine/core_bin/WinDivert32.sys
-8da085332782708d8767bcace5327a6ec7283c17cfb85e40b03cd2323a90ddc2  engine/core_bin/WinDivert64.sys
 441524a76f52597a0e5c816d25ed1adfd93e5c34cc56c56e0dc00533929d1761  engine/core_bin/darwin/tpws
 1f892e567bdd3dfc23e8dc86933b258a67262cb66cbf16bcc3cfa704db604ba0  engine/core_bin/dht_find_node.bin
 b57f6584eb58689ccf81702b44103fa53ea31a5dba00be9c95b4059bad602e77  engine/core_bin/dht_get_peers.bin
@@ -55,12 +53,12 @@ fc3d6b7ebfcc2c2ffa348737fac7ffaeb951d541806a5efdb518330b856dab8e  engine/core_bi
 0e42538d33e0e66aee52395529719492719efd7520febe715fec3743f4bc0991  engine/core_bin/fake_tls_vimeo_com.bin
 472eda2fdc3f2ddda7614377eccb1cd0c6a650dd375c05257506658995470b51  engine/core_bin/http_fake_MS.bin
 f77d1cdaff02b6311d4276eeb8479830ab777d8fce4a4b116135c7768f3a284a  engine/core_bin/http_iana_org.bin
-411b368c73761d22b55e830234dce33d720ba1192aba5ae14142f401e9d7a31f  engine/core_bin/linux/amd64/ip2net
-4f5ee6f67e69af497b4fd679d173686557a9b8e6052962eafff4408c6b592ee1  engine/core_bin/linux/amd64/mdig
-abdaa47a5edd2a2aef6401bd5824b5356643c6db45055c251ee31682fbb60a3d  engine/core_bin/linux/amd64/nfqws2
-dd222bc6acb4a99cc448a272e53c1ffc91e8e2e32239d5b2274d4e16c7a308f5  engine/core_bin/linux/arm64/ip2net
-d2b42594ad80f09cf27370e0aaa9900a52fc23b72267283cd6344193a348edd4  engine/core_bin/linux/arm64/mdig
-27cde1e9568abb04640c1550b7f771d36de73f4305aa76a2628162abb5434105  engine/core_bin/linux/arm64/nfqws2
+f67f2bc5c4a6ba905baab01be1f9ea07c289620300caeabb646a7ea190fb5c77  engine/core_bin/linux/amd64/ip2net
+2ba9d89a3facaafa4b48989daa07153b8081e9c63fb7f1db37059047029e8760  engine/core_bin/linux/amd64/mdig
+0145465409170fe4beeb160ec7acae526e5b1c0a6b2a1d3df197c5e10c21de1d  engine/core_bin/linux/amd64/nfqws2
+abf3bd07946b7a2f1ce7a5a770b845a64b02773150ab88a749f82aea06e70b9e  engine/core_bin/linux/arm64/ip2net
+d1cad907ddf31297bd0ee41d33db7505007f6cc2de15ec00571033fd00ca2525  engine/core_bin/linux/arm64/mdig
+23267ff6d8fb3a68fdd91cf9bbd9616701e797a8ba832d77b3cfef91bcace3e4  engine/core_bin/linux/arm64/nfqws2
 70e5fe06407335247f07a1e45e9ef8cd2f844dbd78a6d74973908f4f233a698f  engine/core_bin/mts_ch.bin
 f4589c57749f956bb30538197a521d7005f8b0a8723b4707e72405e51ddac50a  engine/core_bin/quic_1.bin
 e4d572e6bf6de04c648744cb7271644cb40fd6c79d718e911716d734cbb53841  engine/core_bin/quic_2.bin
@@ -111,19 +109,21 @@ d6d63c53bc0e1d97e913a43fc4db34f6558bb807228bf6100e3b6863f0720404  engine/core_bi
 b930e34be4a0f7fe388d4cb9886838f9a7b68fd62d3461629885e4cefcfe3805  engine/core_bin/tls_clienthello_vk_com_kyber.bin
 936c2bee4cfb80aa3c426b2dcbcc834b3fbcd1adb17172959dc569c73a14275c  engine/core_bin/tls_clienthello_www_google_com.bin
 e5938780152169f720383f80eabb309e9477369b83b5ec40cc137c397f862cde  engine/core_bin/tls_clienthello_www_google_com_2.bin
-06c3f201b815a5798816e8c15b925b28f3c38e5aba31efedec10af9e598ce723  engine/core_bin/windows/WinDivert.dll
-8da085332782708d8767bcace5327a6ec7283c17cfb85e40b03cd2323a90ddc2  engine/core_bin/windows/WinDivert64.sys
+2f43f4251be4d72dd56c91bf6cce475d379eb9ba6c4dda2be3022ea633d5e807  engine/core_bin/WinDivert32.sys
+8da085332782708d8767bcace5327a6ec7283c17cfb85e40b03cd2323a90ddc2  engine/core_bin/WinDivert64.sys
 103104a52e5293ce418944725df19e2bf81ad9269b9a120d71d39028e821499b  engine/core_bin/windows/cygwin1.dll
 8d412b094bb9c137ff25ba9a794d1122ecc84bb776debff6c249723a13cc31cd  engine/core_bin/windows/goodbyedpi.exe
-ec905c7a573f0a93400958c409603ad42254e6af60089bf1768b86bbb1653155  engine/core_bin/windows/ip2net.exe
-92190ba86cad082492360e0cc4e751bb95ca9b51ae9073a356c2130012bb83ef  engine/core_bin/windows/killall.exe
-0cca25287b666f904320b671142023df55a8a32815896765be4cd1b6f01400cd  engine/core_bin/windows/mdig.exe
+8b151f34a6013749e2dfc7faeb62a2faaae100d4b906c65e6e9aae2d2a94c12c  engine/core_bin/windows/ip2net.exe
+22d8274b786859ffabef19dde2d0e9c536ad2f938005fdce92909fde3b5ca693  engine/core_bin/windows/killall.exe
+20a7358a2bab5b3989a8c7d5ae6836958d0a2d5291c6672b91b072dcc1732d33  engine/core_bin/windows/mdig.exe
 f4589c57749f956bb30538197a521d7005f8b0a8723b4707e72405e51ddac50a  engine/core_bin/windows/quic_initial_www_google_com.bin
 9cd5469309780ca56c0bd97266524a48c7ee529d02c3179cfecb20b260a59641  engine/core_bin/windows/stun.bin
 eefeaf09dde8d69b1f176212541f63c68b314a33a335eced99a8a29f17254da8  engine/core_bin/windows/tls_clienthello_4pda_to.bin
 4ee0870abe0a0128600b0095189987ba1d210dae8bf963bc725aff49cf922624  engine/core_bin/windows/tls_clienthello_max_ru.bin
 936c2bee4cfb80aa3c426b2dcbcc834b3fbcd1adb17172959dc569c73a14275c  engine/core_bin/windows/tls_clienthello_www_google_com.bin
-31d3188d63757d89a22a16ee397f9bffae5e6150e86f00160ab9c50d3a107d4d  engine/core_bin/windows/winws2.exe
+16abd6a029e65557c6a309bea7b13bf81fff4e193567582e1cddbf6719f323e0  engine/core_bin/windows/WinDivert.dll
+8da085332782708d8767bcace5327a6ec7283c17cfb85e40b03cd2323a90ddc2  engine/core_bin/windows/WinDivert64.sys
+a25355939cbe7f643c8e746c41b38d367600813898385415245b09b565d84c96  engine/core_bin/windows/winws2.exe
 0af3b37b9912fbee78663711e93e090a33665759b684199ac4d0c9d9dbc468df  engine/core_bin/wireguard_initiation.bin
 8cfa32a791b31f89270f0ad2bed8db04c1ec1f97a66044f120037530610f807b  engine/core_bin/wireguard_response.bin
 ce77a3a35b5cf614f950d8871f7d1e1d76e08afad0a416bd4471724684c47f01  engine/core_bin/ya_ch.bin
@@ -134,25 +134,25 @@ ce77a3a35b5cf614f950d8871f7d1e1d76e08afad0a416bd4471724684c47f01  engine/core_bi
 2e26071c5b9feeade1f531eab06e477786ae3ae8be3db5ff553ae01b11af8a6f  engine/lua_scripts/custom_funcs.lua
 f051337a7d682f3f07bd10a5d6bf37bdba74c4703cf8874a8cf81b477143c937  engine/lua_scripts/init_vars.lua
 4fb077b3bf936ec3fb43a7ff8ebc574fd75985def1c536f81eba0bc71d5722f2  engine/lua_scripts/zapret-16kb.lua
-9ef64f894d920e2ceea05707899f67b206d5009ba762eb5265f409264b34214c  engine/lua_scripts/zapret-antidpi.lua
-aacfde0c95c3058f8e95f5d7d244398bdc03ebf846a8f17322129fb543366a3d  engine/lua_scripts/zapret-auto.lua
-2740b1bc0e728c4283846df94783844082eabd503ce1f86e3429159e1b4e8de3  engine/lua_scripts/zapret-lib.lua
+31c9dd75b0bd55e98e5306293f2be81e9d2ecadcbbf9157394ff37dcff7dc85a  engine/lua_scripts/zapret-antidpi.lua
+c2028f544134b0dec33f054ac54fe4f2315d969ba034601456f72017fd5f8528  engine/lua_scripts/zapret-auto.lua
+b67a470f23b00a8d6e732c4e5135a39b224511e0b71809d5f4616adf62674980  engine/lua_scripts/zapret-lib.lua
 761f96844bc4fd0d4a41596609a411fc84f61ad1574f4218358a3ee6e8de4772  engine/lua_scripts/zapret-multishake.lua
 e9581bfbca846630ada78193641d834e25abc11337ba85467d642c2d8c6fa47f  engine/lua_scripts/zapret-obfs.lua
 6866c37c92fbc62075accf94228da48af618c7f416edc682eba99b2196e05f45  engine/lua_scripts/zapret-pcap.lua
-1d13e191cae02d9ed314ba41a91d2079965d07c16f80e08f1c9bf7c6e0e24100  engine/lua_scripts/zapret-tests.lua
+82664cb50a751a531b63dce094ac03de5045b16b489e726ff32a9a1034811459  engine/lua_scripts/zapret-tests.lua
 74c32c05b3098fd71ba28338b710ac9a23b2cdbdffd040597f235f43f54faf2d  engine/lua_scripts/zapret-wgobfs.lua
 4b66d6121955182157deed47f463f5af84b747cee1e5b46c5aa47bbae4b6e6f3  engine/windivert.filter/windivert.all.txt
-9c2e85966bbc7990ef07b1ab5aba28e783afca3945be29b876b5bc92cd7370f5  engine/windivert.filter/windivert.discord_media+amazon.txt
-e3b050473564ac3805bcf1eb84e24a146cea58295c09c7029e137fafe1057a2b  engine/windivert.filter/windivert.discord_media+stun+sites.txt
-a8033c453ceaeeb2bc36e1fdfba7cf54265026cfc58555457f30df9539124fca  engine/windivert.filter/windivert.discord_media+stun.txt
 a775d133e5ad0704c277fa72a2973db0826e5b4228ee3f70aeba752f2a47559e  engine/windivert.filter/windivert.discord_media.txt
+9c2e85966bbc7990ef07b1ab5aba28e783afca3945be29b876b5bc92cd7370f5  engine/windivert.filter/windivert.discord_media+amazon.txt
+a8033c453ceaeeb2bc36e1fdfba7cf54265026cfc58555457f30df9539124fca  engine/windivert.filter/windivert.discord_media+stun.txt
+e3b050473564ac3805bcf1eb84e24a146cea58295c09c7029e137fafe1057a2b  engine/windivert.filter/windivert.discord_media+stun+sites.txt
 850d263b269c644659d89f282986d80ac64e2b8305a22836cbb3595dff9c01da  engine/windivert.filter/windivert.sites+stun.txt
 0eb870f5ec37fb1465227f4336ef9f82b81066a303864fc4a1bf3716e5fa70c5  engine/windivert.filter/windivert.stun.txt
 6e2b64951040ba3e6a563fd023fa38bfea2f9fcd90d6bbf6100643c0b6f1ea3a  engine/windivert.filter/windivert.wireguard.txt
 e4a5899e1a26311fddf3ef6a1c79e35ead66f6dda8c639d6d5a605f33e497f28  engine/windivert.filter/windivert_part.cloudflare_tcp_80_443_AS13335_v4_remote.txt
 b69885f4de3107ae132764a9732cef518c263d731e3c69f0d7b0dce50ffa571f  engine/windivert.filter/windivert_part.discord_bidirectional.txt
-ec101b4ac40f487b93fa80074fe2192ceaf773a6891cf940d8bdd9ab603304b0  engine/windivert.filter/windivert_part.discord_media.txt
+2f2deaf49ed68eb684258497134181753188f2b475161deb244488a53872b7c5  engine/windivert.filter/windivert_part.discord_media.txt
 b96f81fcfff8020f53b3b32d8b46a952e64afd036732548cf931809cfcd591d4  engine/windivert.filter/windivert_part.games_udp_bidirectional.txt
 868837959aa2244e803c92da63c90e305dd4fa89923f99cecf65485d6eadebd6  engine/windivert.filter/windivert_part.google_tcp_80_443_AS15169_v4_remote.txt
 02958a2e6dd5061a710144f41899e7a23b041aa9f21d6b4ddf6a2d9e2908f7f8  engine/windivert.filter/windivert_part.mts_tcp_80_443_AS8359_v4_remote.txt
