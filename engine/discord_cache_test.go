@@ -115,3 +115,39 @@ func TestClearDiscordCacheNoCacheFound(t *testing.T) {
 		t.Errorf("Unexpected message: %s", res.Message)
 	}
 }
+
+func TestIsPathWithinSafeDiscordBoundary(t *testing.T) {
+	tempAppdata := filepath.Clean(t.TempDir())
+	roots := map[string]string{
+		"Discord Stable": filepath.Join(tempAppdata, "discord"),
+		"Discord PTB":    filepath.Join(tempAppdata, "discordptb"),
+		"Discord Canary": filepath.Join(tempAppdata, "discordcanary"),
+	}
+
+	// Allowed paths
+	for _, sub := range safeCacheSubdirs {
+		validPath := filepath.Join(roots["Discord Stable"], sub)
+		if !isPathWithinSafeDiscordBoundary(validPath, roots) {
+			t.Errorf("Expected valid path to pass: %s", validPath)
+		}
+	}
+
+	// Forbidden paths
+	forbidden := []string{
+		filepath.Join(roots["Discord Stable"], "Local Storage"),
+		filepath.Join(roots["Discord Stable"], "Session Storage"),
+		filepath.Join(roots["Discord Stable"], "IndexedDB"),
+		filepath.Join(roots["Discord Stable"], "settings.json"),
+		filepath.Join(tempAppdata, "Microsoft", "Internet Explorer", "Quick Launch", "User Pinned", "TaskBar"),
+		roots["Discord Stable"], // Root itself
+		tempAppdata,             // AppData root
+		"",
+		"C:\\Windows\\System32",
+	}
+
+	for _, p := range forbidden {
+		if isPathWithinSafeDiscordBoundary(p, roots) {
+			t.Errorf("CRITICAL: Safety boundary permitted forbidden path: %s", p)
+		}
+	}
+}

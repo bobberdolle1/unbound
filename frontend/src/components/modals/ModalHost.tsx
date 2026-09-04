@@ -2,8 +2,8 @@ import React from 'react';
 import { ConflictModal } from './ConflictModal';
 import { PrivilegesModal } from './PrivilegesModal';
 import { DiagnosticsModal } from './DiagnosticsModal';
+import { DiscordConfirmModal } from './DiscordConfirmModal';
 import { LuaEditorModal } from './LuaEditorModal';
-
 interface ModalHostProps {
   // Conflict Overlay
   conflictWarning: string[];
@@ -22,6 +22,11 @@ interface ModalHostProps {
   doctorResult?: any;
   onRunMode?: (mode: string) => void;
   onCloseDiagnosticsModal: () => void;
+  // Discord Clean Modal
+  isDiscordCleanModalOpen?: boolean;
+  discordRunningProcs?: string[];
+  onCancelDiscordClean?: () => void;
+  onConfirmDiscordClean?: () => void;
   // LUA Editor Modal
   isLuaOpen: boolean;
   onCloseLuaModal: () => void;
@@ -84,6 +89,13 @@ export const ModalHost: React.FC<ModalHostProps> = (props) => {
         luaCode={props.luaCode}
         setLuaCode={props.setLuaCode}
         onSave={props.onSaveLua}
+      />
+
+      <DiscordConfirmModal
+        isOpen={Boolean(props.isDiscordCleanModalOpen)}
+        runningProcesses={props.discordRunningProcs || []}
+        onCancel={props.onCancelDiscordClean || (() => {})}
+        onConfirm={props.onConfirmDiscordClean || (() => {})}
       />
     </>
   );
