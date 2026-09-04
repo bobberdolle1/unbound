@@ -105,6 +105,13 @@ func (a *App) startup(ctx context.Context) {
 		}
 	}
 
+	// Self-heal autostart registration if executable path changed (e.g. portable app unpacked in a new folder)
+	if healed, healErr := engine.SelfHealAutoStart(); healErr != nil {
+		logger.Warnf("Startup", "Autostart self-healing check: %v", healErr)
+	} else if healed {
+		logger.Info("Startup", "Autostart registration was automatically repaired to current executable")
+	}
+
 	// Register OS-specific providers
 	registerOSProviders(a, assets)
 
@@ -411,6 +418,61 @@ func (a *App) RunDiagnostics() []engine.DiagnosticResult {
 	return engine.RunDiagnostics()
 }
 
+func (a *App) RunDoctor(mode string) (*engine.DoctorResult, error) {
+	logger := engine.GetLogger()
+	logger.Infof("App", "Doctor diagnostics requested (mode=%s)", mode)
+	activeProfile := a.manager.CurrentProfileName("")
+	return engine.RunDoctor(a.ctx, mode, activeProfile, a.manager.GetStatus())
+}
+
+func (a *App) RunBypassComparison() (*engine.BypassComparisonResult, error) {
+	logger := engine.GetLogger()
+	logger.Info("App", "A/B bypass comparison requested")
+	ctrl := &appProviderController{app: a}
+	return engine.RunBypassComparison(a.ctx, ctrl, engine.GetQuickDiagnosticProbes())
+}
+
+func (a *App) GenerateDoctorReport(result *engine.DoctorResult) string {
+	if result == nil {
+		return ""
+	}
+	return result.FormatMarkdownReport()
+}
+
+func (a *App) OpenLogsFolder() error {
+	return engine.OpenLogsFolder()
+}
+
+func (a *App) CheckAllUpdates() (*engine.SystemUpdateOverview, error) {
+	return engine.CheckAllComponents(a.ctx, engine.Version)
+}
+
+func (a *App) RollbackEngineUpdate() error {
+	ctrl := &appProviderController{app: a}
+	return engine.RollbackEngine(ctrl)
+}
+
+func (a *App) GetAutoStartTaskInfo() (*engine.TaskRegistrationInfo, error) {
+	return engine.QueryAutoStartTaskRegistration()
+}
+
+type appProviderController struct {
+	app *App
+}
+func (c *appProviderController) CurrentProfile() string {
+	return c.app.manager.CurrentProfileName("")
+}
+func (c *appProviderController) GetStatus() providers.Status {
+	return c.app.manager.GetStatus()
+}
+
+func (c *appProviderController) Start(ctx context.Context, profile string) error {
+	return c.app.StartEngine("", profile)
+}
+
+func (c *appProviderController) Stop() error {
+	return c.app.StopEngine()
+}
 func (a *App) ClearDiscordCache() error {
 	logger := engine.GetLogger()
 	notifMgr := engine.GetNotificationManager()

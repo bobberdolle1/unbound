@@ -68,6 +68,7 @@ export default function App() {
   const [isDiagOpen, setIsDiagOpen] = useState<boolean>(false);
   const [diagResults, setDiagResults] = useState<WailsEngine.DiagnosticResult[]>([]);
   const [isDiagRunning, setIsDiagRunning] = useState<boolean>(false);
+  const [doctorResult, setDoctorResult] = useState<WailsEngine.DoctorResult | null>(null);
 
   // Operations States
   const [isVerifyingAssets, setIsVerifyingAssets] = useState<boolean>(false);
@@ -244,14 +245,36 @@ export default function App() {
     }
   };
 
-  const handleRunDiagnostics = async () => {
+  const handleRunDiagnostics = async (mode: string = 'quick') => {
     setIsDiagRunning(true);
     setIsDiagOpen(true);
     try {
-      const results = await backendService.runDiagnostics();
-      setDiagResults(Array.isArray(results) ? results : []);
+      const dRes = await backendService.runDoctor(mode);
+      setDoctorResult(dRes);
+      const flatResults: WailsEngine.DiagnosticResult[] = [];
+      if (dRes && dRes.groups) {
+        dRes.groups.forEach((g) => {
+          g.probes.forEach((p) => {
+            flatResults.push(
+              new WailsEngine.DiagnosticResult({
+                Component: p.name || p.target,
+                Status: p.status,
+                Details: p.details || p.error || '',
+                IsError: p.status === 'FAIL',
+              })
+            );
+          });
+        });
+      }
+      setDiagResults(flatResults);
     } catch (err) {
-      console.error(err);
+      console.error('Doctor error:', err);
+      try {
+        const results = await backendService.runDiagnostics();
+        setDiagResults(Array.isArray(results) ? results : []);
+      } catch (fallbackErr) {
+        console.error('Fallback diagnostics error:', fallbackErr);
+      }
     } finally {
       setIsDiagRunning(false);
     }
@@ -428,6 +451,8 @@ export default function App() {
         isDiagRunning={isDiagRunning}
         diagResults={diagResults}
         onCloseDiagnosticsModal={() => setIsDiagOpen(false)}
+        doctorResult={doctorResult}
+        onRunMode={handleRunDiagnostics}
         isLuaOpen={luaState.isLuaOpen}
         onCloseLuaModal={() => luaActions.setIsLuaOpen(false)}
         luaTab={luaState.luaTab}
