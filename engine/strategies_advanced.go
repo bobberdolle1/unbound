@@ -341,3 +341,53 @@ func GetAdvancedProfiles(luaDir string) []Profile {
 		},
 	}
 }
+
+// GetGamesSteamProfiles returns the opt-in game-traffic profile. Unlike the
+// catalog profiles it deliberately desyncs Valve/Steam IP ranges — but only
+// by IP (ipset gating), never the Steam web TLS domains.
+//
+// Structure mirrors the Flowseal "Game Filter" (service.bat :game_switch_status,
+// enabled strategies 1.10.x): any-protocol multisplit on TCP and fake on UDP,
+// restricted to ipset destinations with a short packet cutoff so long-lived
+// game streams are not rewritten mid-session. Discord voice and QUIC blocks
+// are carried over unchanged from the standard profiles.
+func GetGamesSteamProfiles() []Profile {
+	listsDir, _ := GetListsDir()
+	windivertDir, _ := GetWinDivertFilterDir()
+
+	return []Profile{
+		{
+			Name: "Games & Steam (Game Filter)",
+			Args: []string{
+				"--wf-tcp-out=80,443,1024-65535",
+				"--wf-udp-out=443,19294-19344,27000-27100,50000-50100",
+				"--wf-raw-part=@" + filepath.ToSlash(filepath.Join(windivertDir, "windivert_part.discord_media.txt")),
+				"--wf-raw-part=@" + filepath.ToSlash(filepath.Join(windivertDir, "windivert_part.stun.txt")),
+				"--wf-raw-part=@" + filepath.ToSlash(filepath.Join(windivertDir, "windivert_part.wireguard.txt")),
+				"--filter-l7=discord,stun",
+				"--payload=stun,discord_ip_discovery",
+				"--lua-desync=fake:blob=fake_default_udp:repeats=6",
+				"--new",
+				"--filter-udp=443",
+				"--ipset=" + filepath.ToSlash(filepath.Join(listsDir, "ipset-all.txt")),
+				"--ipset-exclude=" + filepath.ToSlash(filepath.Join(listsDir, "ipset-exclude.txt")),
+				"--payload=quic_initial",
+				"--lua-desync=fake:blob=quic_google:repeats=11",
+				"--new",
+				"--filter-tcp=1024-65535",
+				"--ipset=" + filepath.ToSlash(filepath.Join(listsDir, "ipset-all.txt")),
+				"--ipset-exclude=" + filepath.ToSlash(filepath.Join(listsDir, "ipset-exclude.txt")),
+				"--out-range=-d3",
+				"--payload=all",
+				"--lua-desync=multisplit:pos=1:seqovl=652:seqovl_pattern=tls_google",
+				"--new",
+				"--filter-udp=27000-27100,50000-50100",
+				"--ipset=" + filepath.ToSlash(filepath.Join(listsDir, "ipset-all.txt")),
+				"--ipset-exclude=" + filepath.ToSlash(filepath.Join(listsDir, "ipset-exclude.txt")),
+				"--out-range=-d2",
+				"--payload=all",
+				"--lua-desync=fake:blob=fake_default_udp:repeats=10",
+			},
+		},
+	}
+}

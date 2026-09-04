@@ -39,21 +39,21 @@ generate() {
 #
 # Provenance
 # ----------
-#   engine/core_bin/windows/*                 Zapret 2 v1.0.3 Windows x86_64 bundle
-#   engine/core_bin/linux/{amd64,arm64}/*     Zapret 2 v1.0.3 Linux release bundle
+#   engine/core_bin/windows/*                 Zapret 2 v1.0.5 Windows x86_64 bundle
+#   engine/core_bin/linux/{amd64,arm64}/*     Zapret 2 v1.0.5 Linux release bundle
 #   engine/core_bin/windows/goodbyedpi.exe    https://github.com/ValdikSS/GoodbyeDPI
 #   engine/core_bin/*.bin                     fake-packet payloads from Zapret releases
 #   engine/lua_scripts/zapret-{lib,antidpi,auto,obfs,pcap,tests}.lua
-#                                               Zapret 2 v1.0.3; other Lua files are local
+#                                               Zapret 2 v1.0.5; other Lua files are local
 #   engine/windivert.filter/*                 local WinDivert filter presets
 #
 # Zapret 2 snapshot
 # -----------------
-#   Tag:          v1.0.3
-#   Commit:       b78b52c4cd7f843da3ff0848a3430afbd401bdf2
-#   Release URL:  https://github.com/bol-van/zapret2/releases/tag/v1.0.3
-#   Source asset: zapret2-v1.0.3.zip
-#   Asset SHA256: 734fbea360aa863cd5c724f8b941116aaa250434d699b1ce99769e5f632a7a77
+#   Tag:          v1.0.5
+#   Commit:       0b8182d24a887059a628d7266577c4ba8e9b8f2d
+#   Release URL:  https://github.com/bol-van/zapret2/releases/tag/v1.0.5
+#   Source asset: zapret2-v1.0.5.zip
+#   Asset SHA256: d73a4c57dad0f20f473aa62ed950505f0737154c3d9ab8fca717e75f1a21fa69
 #
 # Windows binaries, Linux binaries and all six standard Lua files are copied
 # from that one verified release archive. Never update them independently.
@@ -64,7 +64,11 @@ HEADER
             # git ls-files keeps the manifest to tracked files, so a developer's
             # local scratch files never end up in it.
             git ls-files "$dir" | sort | while IFS= read -r f; do
-                [ -f "$f" ] && sha256sum "$f"
+                # Git-Bash/BusyBox sha256sum defaults to binary mode and
+                # writes "hash *path", which verifyEmbeddedAssets would read
+                # as a path starting with "*". Normalize to the two-space
+                # text-mode separator everywhere.
+                [ -f "$f" ] && sha256sum "$f" | sed -e 's/ \*/  /'
             done
         done
     } > "$MANIFEST"

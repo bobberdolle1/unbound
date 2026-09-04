@@ -6,6 +6,7 @@ package providers
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -39,6 +40,8 @@ type Zapret2WindowsProvider struct {
 	cmd                  *exec.Cmd
 	mu                   sync.Mutex
 	logMu                sync.Mutex
+	startStopMu          sync.Mutex
+	killedManually       bool
 	binPath              string
 	luaDir               string
 	listDir              string
@@ -142,10 +145,12 @@ func (e *Zapret2WindowsProvider) getProfileArgsLocked(profileName string) ([]str
 	absLuaLib, _ := filepath.Abs(filepath.Join(e.luaDir, "zapret-lib.lua"))
 	absLuaAntiDpi, _ := filepath.Abs(filepath.Join(e.luaDir, "zapret-antidpi.lua"))
 	absInitVars, _ := filepath.Abs(filepath.Join(e.luaDir, "init_vars.lua"))
+	absCustomFuncs, _ := filepath.Abs(filepath.Join(e.luaDir, "custom_funcs.lua"))
 
 	luaLib := filepath.ToSlash(absLuaLib)
 	luaAntiDpi := filepath.ToSlash(absLuaAntiDpi)
 	initVars := filepath.ToSlash(absInitVars)
+	customFuncs := filepath.ToSlash(absCustomFuncs)
 
 	// ZAPRET 2 ARCHITECTURE (2026):
 	// 1. --wf-l3 is MANDATORY (ipv4,ipv6)
@@ -172,6 +177,10 @@ func (e *Zapret2WindowsProvider) getProfileArgsLocked(profileName string) ([]str
 	args = append(args, "--lua-init=@"+luaLib)
 	args = append(args, "--lua-init=@"+luaAntiDpi)
 	args = append(args, "--lua-init=@"+initVars)
+	// custom_funcs.lua defines extra --lua-desync functions shipped with the
+	// app (e.g. tls_multisplit_sni used by the "Alternative 3" profile); it
+	// was previously never loaded, leaving that profile dead at runtime.
+	args = append(args, "--lua-init=@"+customFuncs)
 
 	if e.debugMode {
 		args = append(args, "--debug=1")
@@ -196,47 +205,67 @@ func (e *Zapret2WindowsProvider) getProfileArgsLocked(profileName string) ([]str
 }
 
 func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	// Serialize full start/stop cycles. Concurrency safety: e.mu guards the
+	// state fields, but it is dropped while SyncHostlists performs network
+	// I/O below — without startStopMu two concurrent Starts could both pass
+	// the "already running" check and spawn two winws2.exe processes.
+	e.startStopMu.Lock()
+	defer e.startStopMu.Unlock()
 
+	e.mu.Lock()
 	hasPriv, err := e.CheckPrivileges()
 	if err != nil || !hasPriv {
+		e.mu.Unlock()
 		return fmt.Errorf("administrator privileges required")
 	}
 
 	if e.status == StatusRunning && e.currentProfile == profileName {
+		e.mu.Unlock()
 		return nil
 	}
 
 	if e.status == StatusRunning {
 		e.mu.Unlock()
-		e.Stop()
+		e.stopLocked()
 		e.mu.Lock()
 	}
 
 	args, err := e.getProfileArgsLocked(profileName)
 	if err != nil {
+		e.mu.Unlock()
 		return err
 	}
+	e.mu.Unlock()
 
-	// Sync hostlist files from remote sources with fallback
+	// Sync hostlist files from remote sources with fallback. Runs outside
+	// e.mu so Stop()/GetStatus() are never blocked behind network timeouts.
 	if err := SyncHostlists(); err != nil {
 		e.addLog(fmt.Sprintf("Предупреждение синхронизации списков: %v", err))
 	}
 
-	e.engineReady = make(chan bool, 1)
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.killedManually = false
+
+	// State may have changed while the lock was released.
+	if e.status == StatusRunning {
+		return fmt.Errorf("another start already completed while this one was in progress")
+	}
+
 	e.status = StatusStarting
 	winwsPath := filepath.Join(e.binPath, "winws2.exe")
 
-	// Log full command for debugging
-	cmdLine := winwsPath + " " + strings.Join(args, " ")
-	e.addLog(fmt.Sprintf("[CMD] %s", cmdLine))
-	WriteLog(fmt.Sprintf("Starting winws2 with profile '%s': %s", profileName, cmdLine))
-
+	// Refuse to execute anything that does not match the pinned checksum.
 	if err := verifyFileSHA256(winwsPath, e.expectedEngineSHA256); err != nil {
 		e.status = StatusError
 		return fmt.Errorf("refusing to execute unverified winws2: %w", err)
 	}
+
+	// Log full command for debugging
+	cmdLine := winwsPath + " " + strings.Join(args, " ")
+	e.addLog(fmt.Sprintf("[CMD] %s", cmdLine))
+	e.addLog("[VER] " + engineVersion(winwsPath))
+	WriteLog(fmt.Sprintf("Starting winws2 with profile '%s': %s", profileName, cmdLine))
 
 	e.cmd = exec.Command(winwsPath, args...)
 	e.cmd.Dir = e.binPath
@@ -250,6 +279,8 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 		return err
 	}
 	startedCmd := e.cmd
+	e.addLog(fmt.Sprintf("[PID] %d", startedCmd.Process.Pid))
+	WriteLog(fmt.Sprintf("winws2 started, PID %d", startedCmd.Process.Pid))
 
 	var wg sync.WaitGroup
 
@@ -269,11 +300,27 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 	e.currentProfile = profileName
 
 	go func(cmd *exec.Cmd) {
-		_ = cmd.Wait()
+		waitErr := cmd.Wait()
 		wg.Wait()
 		e.mu.Lock()
 		defer e.mu.Unlock()
 		if e.cmd == cmd && e.currentProfile == profileName {
+			exitCode := 0
+			reason := "exited normally"
+			if waitErr != nil {
+				exitCode = -1
+				reason = waitErr.Error()
+				var exitErr *exec.ExitError
+				if errors.As(waitErr, &exitErr) {
+					exitCode = exitErr.ExitCode()
+				}
+			}
+			if e.killedManually {
+				e.addLog(fmt.Sprintf("[EXIT] PID %d stopped by user (code %d)", cmd.Process.Pid, exitCode))
+			} else {
+				e.addLog(fmt.Sprintf("[EXIT] PID %d terminated unexpectedly (code %d, %s)", cmd.Process.Pid, exitCode, reason))
+				WriteLog(fmt.Sprintf("winws2 PID %d terminated unexpectedly: code %d, %s", cmd.Process.Pid, exitCode, reason))
+			}
 			e.cmd = nil
 			e.currentProfile = ""
 			e.status = StatusStopped
@@ -284,6 +331,20 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 	}(startedCmd)
 
 	return nil
+}
+
+// engineVersion runs `winws2.exe --version` and returns its one-line
+// identification (format: "github version <tag> (<sha>) lua_compat_ver <N>")
+// for the diagnostics journal. Failures degrade to a placeholder — version
+// reporting must never block or fail the engine start.
+func engineVersion(winwsPath string) string {
+	cmd := exec.Command(winwsPath, "--version")
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "unknown (version probe failed)"
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func (e *Zapret2WindowsProvider) streamLogs(reader io.Reader, source string) {
@@ -325,10 +386,22 @@ func (e *Zapret2WindowsProvider) WaitReady(timeout time.Duration) bool {
 }
 
 func (e *Zapret2WindowsProvider) Stop() error {
+	e.startStopMu.Lock()
+	defer e.startStopMu.Unlock()
+	return e.stopLocked()
+}
+
+// stopLocked performs the actual termination. Callers must already hold
+// startStopMu (Stop) or be inside Start, which holds it for the whole
+// start/stop cycle. killedManually tells the Wait goroutine whether the exit
+// was user-requested (taskkill produces a non-zero exit code that would
+// otherwise read as a crash).
+func (e *Zapret2WindowsProvider) stopLocked() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
 	if e.cmd != nil && e.cmd.Process != nil {
+		e.killedManually = true
 		runHidden := func(name string, args ...string) {
 			cmd := exec.Command(name, args...)
 			cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}

@@ -33,6 +33,7 @@ type App struct {
 	profileChange       bool
 	mu                  sync.Mutex
 	closing             bool
+	quitting            bool
 }
 
 func NewApp() *App {
@@ -111,9 +112,10 @@ func (a *App) startup(ctx context.Context) {
 	engines := a.manager.GetEngineNames()
 	logger.Infof("App", "Registered engines: %v", engines)
 	wailsruntime.EventsEmit(ctx, "engines_changed", engines)
-	// Auto-recovery: use the selected native profile, the last successful
-	// profile, or run AutoTune explicitly.
-	if settings != nil && settings.AutoStart {
+	// Auto-start profile: activate the user-selected strategy on every launch
+	// (boot or manual). This is independent of settings.AutoStart, which only
+	// registers the OS-level launch.
+	if settings != nil && settings.AutoStartProfile {
 		startupCtx, cancelStartup := context.WithCancel(ctx)
 		a.mu.Lock()
 		a.startupCancel = cancelStartup
@@ -184,7 +186,7 @@ func (a *App) startup(ctx context.Context) {
 	a.setupTray()
 
 	if a.startMinimized {
-		wailsruntime.WindowMinimise(ctx)
+		logger.Info("App", "Starting hidden to tray (--tray); window stays hidden until restored")
 	}
 
 	logger.Info("App", "UNBOUND initialized successfully")
@@ -478,7 +480,31 @@ func (a *App) SaveSettings(settings *engine.Settings) error {
 	if err := a.SetSecureDNS(settings.SecureDNS); err != nil {
 		wailsruntime.LogErrorf(a.ctx, "Failed to set secure DNS: %v", err)
 	}
-	return engine.SaveSettings(settings)
+	return persistSettings(settings)
+}
+
+// persistSettings writes settings and refreshes the OS autostart registration
+// only when autostart-relevant fields actually changed. Rewriting the
+// Windows scheduled task on every save required elevation, churned the task
+// and broke settings saves from non-elevated contexts.
+func persistSettings(next *engine.Settings) error {
+	prev, _ := engine.GetSettings()
+	if err := engine.SaveSettings(next); err != nil {
+		return err
+	}
+	if prev != nil && prev.AutoStart == next.AutoStart && prev.StartMinimized == next.StartMinimized {
+		return nil
+	}
+	if err := engine.ApplyAutoStartSetting(next.AutoStart); err != nil {
+		return err
+	}
+	logger := engine.GetLogger()
+	if next.AutoStart {
+		logger.Info("App", "OS autostart registration refreshed")
+	} else {
+		logger.Info("App", "OS autostart registration removed")
+	}
+	return nil
 }
 
 func (a *App) AutoTune() string {
@@ -731,17 +757,25 @@ func (a *App) IsAutoStartEnabled() bool {
 }
 
 // QuitApp stops the engine and terminates the application process cleanly.
+//
+// The actual teardown lives in App.shutdown (wails OnShutdown): it waits for
+// autotune/reconnect/startup goroutines, stops the engine and removes the
+// per-process runtime directory. onBeforeClose lets the quit through only
+// when a.quitting is set — otherwise runtime.Quit is vetoed and the window
+// just hides to tray. The 5s failsafe guarantees process death even if the
+// webview teardown wedges.
 func (a *App) QuitApp() {
-	a.mu.Lock()
-	a.closing = true
-	a.mu.Unlock()
 	logger := engine.GetLogger()
 	logger.Info("App", "QuitApp requested by user")
-	_ = a.manager.Stop()
-	time.Sleep(200 * time.Millisecond)
+	a.mu.Lock()
+	a.quitting = true
+	a.closing = true
+	a.mu.Unlock()
+	time.AfterFunc(5*time.Second, func() {
+		logger.Warn("App", "graceful shutdown timed out, forcing exit")
+		os.Exit(0)
+	})
 	wailsruntime.Quit(a.ctx)
-	time.Sleep(500 * time.Millisecond)
-	os.Exit(0)
 }
 
 func (a *App) CheckPrivileges() bool {

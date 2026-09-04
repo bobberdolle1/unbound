@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type Profile struct {
@@ -234,4 +235,89 @@ func GetProfiles(luaDir string) []Profile {
 			},
 		},
 	}
+}
+
+// steamSafeArgs injects Steam exclusions into a profile's --new-separated
+// sections and returns the new arg slice.
+//
+// Rationale (Flowseal/zapret-discord-youtube, 1.9.9a→1.10.2): applying TLS
+// desync to Steam web breaks the Steam client, so their distributions exclude
+// Steam domains from every strategy since May 2026. Unbound's generic
+// sections have the same effect through two paths:
+//  1. TCP sections without a hostlist (catch-all "--ipset-exclude only")
+//     match Steam web TLS because nothing filters it out;
+//  2. TCP/QUIC sections gated by ipset-all.txt match Valve-operated ranges.
+//
+// For every section whose effective filter is TCP we append
+// --hostlist-exclude=steam-web-exclude.txt; every section carrying --ipset=
+// additionally gets --ipset-exclude=ipset-steam-exclude.txt (Valve ranges).
+// Filter declarations persist across --new, so a section without its own
+// --filter-tcp/--filter-udp inherits the previous section's mode.
+func steamSafeArgs(args []string, listsDir string) []string {
+	hostExclude := "--hostlist-exclude=" + filepath.ToSlash(filepath.Join(listsDir, "steam-web-exclude.txt"))
+	ipExclude := "--ipset-exclude=" + filepath.ToSlash(filepath.Join(listsDir, "ipset-steam-exclude.txt"))
+
+	out := make([]string, 0, len(args)+8)
+	tcpMode := false
+	sectionStart := 0
+	flushSection := func() {
+		if len(out) == sectionStart {
+			return // trailing "--new" with no section body
+		}
+		section := out[sectionStart:]
+		declaresTCP := false
+		declaresUDP := false
+		hasHostExclude := false
+		hasSteamIPExclude := false
+		for _, arg := range section {
+			switch {
+			case strings.HasPrefix(arg, "--filter-tcp="):
+				declaresTCP = true
+			case strings.HasPrefix(arg, "--filter-udp="):
+				declaresUDP = true
+			case strings.HasPrefix(arg, "--hostlist-exclude="):
+				hasHostExclude = true
+			case arg == ipExclude:
+				hasSteamIPExclude = true
+			}
+		}
+		if declaresTCP {
+			tcpMode = true
+		} else if declaresUDP {
+			tcpMode = false
+		}
+		// Appends go to `out` itself, never to the `section` view: assigning
+		// the section slice back to out would shift the slice origin and
+		// silently drop every argument before sectionStart.
+		if tcpMode && !hasHostExclude {
+			out = append(out, hostExclude)
+		}
+		if hasIPList(section) && !hasSteamIPExclude {
+			out = append(out, ipExclude)
+		}
+	}
+
+	for _, arg := range args {
+		if arg == "--new" {
+			flushSection()
+			out = append(out, arg)
+			sectionStart = len(out)
+		} else {
+			out = append(out, arg)
+		}
+	}
+	flushSection()
+	return out
+}
+
+// hasIPList reports whether the section selects destinations by IP
+// (--ipset= file). Static --ipset-ip= lists are not considered: profiles do
+// not use them today.
+func hasIPList(section []string) bool {
+	for _, arg := range section {
+		if strings.HasPrefix(arg, "--ipset=") {
+			return true
+		}
+	}
+	return false
 }

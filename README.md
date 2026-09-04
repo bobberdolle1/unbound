@@ -2,10 +2,10 @@
 
 <img src="./build/logo.svg" alt="UNBOUND Logo" width="120" />
 
-# UNBOUND `v0.3.2`
+# UNBOUND `v0.4.0`
 **Локальный настольный оркестратор десинхронизации L3/L4 трафика для macOS, Windows и Linux.**
 
-[![Version](https://img.shields.io/badge/Version-v0.3.2-08090b?style=for-the-badge&logo=rocket)](#)
+[![Version](https://img.shields.io/badge/Version-v0.4.0-08090b?style=for-the-badge&logo=rocket)](#)
 [![Design](https://img.shields.io/badge/Design-Precision_Monochrome-10b981?style=for-the-badge)](#)
 [![Security](https://img.shields.io/badge/Security-SHA256_pinned-10b981?style=for-the-badge&logo=shield)](SECURITY.md)
 [![License](https://img.shields.io/badge/License-GPL--3.0-blue?style=for-the-badge)](LICENSE)
@@ -27,6 +27,19 @@
   - **`Monolith`**: Минималистичный монохромный обсидиан (`#08090b`).
   - **`Paper`**: Тёплая студийная светлая тема (`#f5f4f0`).
   - **`Graphite`**: Металлическая серо-стальная тема (`#121417`) со стальными рамками.
+
+---
+
+## ⚙️ Ключевые возможности
+
+- **Актуальный движок**: bundled **Zapret 2 v1.0.5** (`winws2.exe` / `nfqws2`) с Lua-стратегиями; на macOS — `tpws` через `pf`-якорь.
+- **Профили**: 11 каталоговых стратегий (Recommended, Alternatives, Advanced) + **«Games & Steam (Game Filter)»** для игрового трафика и Steam + редактируемый **Custom Profile** (Lua).
+- **Steam-совместимость**: Steam-домены и сети Valve защищены от десинхронизации, которая ломала клиент; игровой трафик обрабатывается opt-in профилем.
+- **Автовключение профиля**: выбранный профиль («Последний использованный», «Автоподбор» или конкретный) включается при старте приложения — независимо от автозапуска ОС.
+- **Тихий старт и трей**: при автозапуске вместе с Windows окно не показывается вообще; управление и статус — из трея.
+- **AutoTune и AutoReconnect**: автоматический подбор и мониторинг работоспособности с переключением профиля при блокировке.
+- **Single instance**: повторный запуск приложения подхватывается первым процессом.
+- **Целостность**: все бинарные активы проверяются по `ENGINE_ASSETS.sha256` (SHA256) перед запуском.
 
 <div align="center">
   <p><em>Скриншоты интерфейса будут добавлены после завершения платформа-валидации. / Runtime screenshots will be added after platform validation.</em></p>
@@ -118,9 +131,9 @@ cd unbound
 cd frontend && npm ci && npm run build && cd ..
 
 # 3. Сборка CLI-версии
-go build -trimpath -ldflags="-s -w -X unbound/engine.Version=0.3.2" -o build/bin/unbound .
+go build -trimpath -ldflags="-s -w -X unbound/engine.Version=0.4.0" -o build/bin/unbound .
 # 4. Сборка Wails GUI
-wails build -clean -ldflags "-X unbound/engine.Version=0.3.2"
+wails build -clean -ldflags "-X unbound/engine.Version=0.4.0"
 
 ---
 

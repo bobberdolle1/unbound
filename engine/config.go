@@ -104,21 +104,35 @@ func loadSettings() (*Settings, error) {
 		}
 		return getDefaultSettings(), err
 	}
+	var raw map[string]json.RawMessage
+	_ = json.Unmarshal(data, &raw)
 	var settings Settings
 	if err := json.Unmarshal(data, &settings); err != nil {
 		return getDefaultSettings(), err
+	}
+	// Legacy migration: settings written before autoStartProfile existed tied
+	// the "Автозапуск" checkbox to both OS registration and profile startup.
+	// Users who relied on that keep it; fresh installs start inert.
+	if _, present := raw["autoStartProfile"]; !present && settings.AutoStart {
+		settings.AutoStartProfile = true
 	}
 	return &settings, nil
 }
 
 func SaveSettings(settings *Settings) error {
 	settingsMu.Lock()
-	err := writeSettings(settings)
-	settingsMu.Unlock()
-	if err != nil {
-		return err
-	}
-	return applyAutoStartSetting(settings.AutoStart)
+	defer settingsMu.Unlock()
+	return writeSettings(settings)
+}
+
+// ApplyAutoStartSetting registers or removes the OS-level autostart entry
+// (scheduled task on Windows, launchd/xdg equivalents elsewhere). It is the
+// exported seam used by the app layer; engine.SaveSettings deliberately
+// stays pure persistence so that saving unrelated fields never rewrites the
+// OS autostart registration — which on Windows means deleting and recreating
+// a scheduled task and therefore requires elevation.
+func ApplyAutoStartSetting(enable bool) error {
+	return applyAutoStartSetting(enable)
 }
 
 func SaveLastProfile(profileName string) error {
@@ -148,6 +162,7 @@ func getDefaultSettings() *Settings {
 	return &Settings{
 		AutoStart:          false,
 		StartMinimized:     false,
+		AutoStartProfile:   false,
 		DefaultProfile:     "",
 		StartupProfileMode: "Последний использованный",
 		GameFilter:         true,

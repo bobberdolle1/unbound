@@ -44,6 +44,7 @@ type Target struct {
 var testTargets = []Target{
 	{Name: "YouTube", URL: "https://www.youtube.com", Priority: 30},
 	{Name: "Discord", URL: "https://discord.com", Priority: 30},
+	{Name: "Steam", URL: "https://store.steampowered.com", Priority: 20},
 	{Name: "Instagram", URL: "https://www.instagram.com", Priority: 20},
 	{Name: "Twitter/X", URL: "https://twitter.com", Priority: 15},
 	{Name: "Facebook", URL: "https://www.facebook.com", Priority: 15},
@@ -76,11 +77,25 @@ func DefaultAutoTuneOptions() AutoTuneOptions {
 }
 
 // RegisterWindowsProfileCatalog installs the canonical winws2 strategies.
+// Every catalog profile passes through steamSafeArgs so Steam web and
+// Valve-operated ranges stay out of the generic desync sections; opt-in
+// game/Steam coverage ships as its own profile (GetGamesSteamProfile) whose
+// args are used verbatim — its whole purpose is desyncing that traffic.
 func RegisterWindowsProfileCatalog(registrar interface{ RegisterProfile(string, []string) }, luaDir string) []Profile {
+	listsDir, _ := GetListsDir()
 	catalog := append(GetProfiles(luaDir), GetAdvancedProfiles(luaDir)...)
-	profiles := make([]Profile, 0, len(catalog))
-	registered := make(map[string]struct{}, len(catalog))
+	profiles := make([]Profile, 0, len(catalog)+1)
+	registered := make(map[string]struct{}, len(catalog)+1)
 	for _, profile := range catalog {
+		if _, exists := registered[profile.Name]; exists {
+			continue
+		}
+		args := steamSafeArgs(profile.Args, listsDir)
+		registrar.RegisterProfile(profile.Name, args)
+		registered[profile.Name] = struct{}{}
+		profiles = append(profiles, Profile{Name: profile.Name, Args: args})
+	}
+	for _, profile := range GetGamesSteamProfiles() {
 		if _, exists := registered[profile.Name]; exists {
 			continue
 		}

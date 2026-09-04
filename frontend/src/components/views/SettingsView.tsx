@@ -7,6 +7,7 @@ import { QuitApp } from '../../../wailsjs/go/main/App';
 export interface AppSettings {
   autoStart: boolean;
   startMinimized: boolean;
+  autoStartProfile: boolean;
   defaultProfile: string;
   startupProfileMode: string;
   gameFilter: boolean;
@@ -24,6 +25,7 @@ interface SettingsViewProps {
   setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
   theme: string;
   setThemeState: (theme: string) => void;
+  startupProfiles: string[];
   handleRunDiagnostics: () => void;
   handleVerifyAssets: () => void;
   isVerifyingAssets: boolean;
@@ -40,6 +42,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   setSettings,
   theme,
   setThemeState,
+  startupProfiles,
   handleRunDiagnostics,
   handleVerifyAssets,
   isVerifyingAssets,
@@ -72,12 +75,30 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         />
 
         <UICheckbox
-          id="showLogs"
-          label="Показать журнал"
-          desc="Показать панель логов внизу"
-          checked={settings.showLogs}
-          onChange={() => setSettings({ ...settings, showLogs: !settings.showLogs })}
+          id="startMinimized"
+          label="Тихий старт"
+          desc="Запускать скрыто в системном трее, без окна"
+          checked={settings.startMinimized}
+          onChange={() => setSettings({ ...settings, startMinimized: !settings.startMinimized })}
         />
+
+        <UICheckbox
+          id="autoStartProfile"
+          label="Автовключение профиля"
+          desc="При запуске Unbound автоматически включать выбранный профиль"
+          checked={settings.autoStartProfile}
+          onChange={() => setSettings({ ...settings, autoStartProfile: !settings.autoStartProfile })}
+        />
+
+        <div className={`flex flex-col gap-1.5 ${settings.autoStartProfile ? '' : 'opacity-50 pointer-events-none'}`}>
+          <span className="text-xs font-semibold text-[var(--ui-text-muted)]">Профиль для автовключения</span>
+          <UISelect
+            value={settings.startupProfileMode}
+            options={['Последний использованный', 'Автоподбор', ...startupProfiles]}
+            onChange={(val: string) => setSettings({ ...settings, startupProfileMode: val })}
+            up={false}
+          />
+        </div>
 
         {/* Theme Selector */}
         <div className="flex flex-col gap-1.5 pt-2 border-t border-[var(--ui-border)]">

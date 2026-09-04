@@ -22,7 +22,11 @@ var defaultHostlistSources = []HostlistSource{
 	{
 		Name:      "YouTube",
 		RemoteURL: "https://raw.githubusercontent.com/bol-van/zapret/master/ipset/youtube.txt",
-		Filename:  "youtube_domain.txt",
+		// Filename is the file the winws2 profiles actually consume via
+		// --hostlist=. Older releases wrote *_domain.txt files into the
+		// config root that no profile ever read, so the "update lists"
+		// action silently did nothing for the engine.
+		Filename: "youtube.txt",
 		FallbackDomains: `googlevideo.com
 youtube.com
 youtu.be
@@ -32,7 +36,7 @@ ggpht.com`,
 	{
 		Name:      "Discord",
 		RemoteURL: "https://raw.githubusercontent.com/bol-van/zapret/master/ipset/discord.txt",
-		Filename:  "discord_domain.txt",
+		Filename:  "discord.txt",
 		FallbackDomains: `discord.com
 discord.gg
 discordapp.net
@@ -40,14 +44,18 @@ discordapp.com`,
 	},
 }
 
+// SyncHostlists refreshes the hostlist files the engine profiles load. Each
+// file is rebuilt as the union of the upstream list, the built-in fallback
+// and the user's current content, so manual edits made in the bypass-lists
+// editor survive a sync.
 func SyncHostlists() error {
 	userConfigDir, err := os.UserConfigDir()
 	if err != nil {
 		return fmt.Errorf("failed to get user config directory: %w", err)
 	}
-	configPath := filepath.Join(userConfigDir, "Unbound")
-	if err := os.MkdirAll(configPath, 0755); err != nil {
-		return fmt.Errorf("failed to create config directory: %w", err)
+	listsDir := filepath.Join(userConfigDir, "Unbound", "lists")
+	if err := os.MkdirAll(listsDir, 0755); err != nil {
+		return fmt.Errorf("failed to create lists directory: %w", err)
 	}
 
 	client := &http.Client{
@@ -56,13 +64,14 @@ func SyncHostlists() error {
 
 	for _, source := range defaultHostlistSources {
 		domains := fetchAndMergeDomains(client, source)
-		targetPath := filepath.Join(configPath, source.Filename)
-
+		if existing, err := os.ReadFile(filepath.Join(listsDir, source.Filename)); err == nil {
+			domains = mergeUnique(domains, parseDomainList(string(existing)))
+		}
+		targetPath := filepath.Join(listsDir, source.Filename)
 		content := strings.Join(domains, "\n") + "\n"
 		if err := os.WriteFile(targetPath, []byte(content), 0644); err != nil {
 			return fmt.Errorf("failed to write %s: %w", source.Filename, err)
 		}
-
 		WriteLog(fmt.Sprintf("[HOSTLIST] %s synced: %d domains", source.Name, len(domains)))
 	}
 
@@ -131,4 +140,24 @@ func parseDomainList(content string) []string {
 	}
 
 	return domains
+}
+
+// mergeUnique returns the deduplicated union of base and extra, preserving
+// the order of base first, then the new entries of extra in their order.
+func mergeUnique(base, extra []string) []string {
+	seen := make(map[string]bool, len(base)+len(extra))
+	out := make([]string, 0, len(base)+len(extra))
+	for _, d := range base {
+		if !seen[d] {
+			seen[d] = true
+			out = append(out, d)
+		}
+	}
+	for _, d := range extra {
+		if !seen[d] {
+			seen[d] = true
+			out = append(out, d)
+		}
+	}
+	return out
 }

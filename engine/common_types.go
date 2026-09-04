@@ -14,6 +14,7 @@ type DiagnosticResult struct {
 type Settings struct {
 	AutoStart             bool     `json:"autoStart"`
 	StartMinimized        bool     `json:"startMinimized"`
+	AutoStartProfile      bool     `json:"autoStartProfile"`
 	DefaultProfile        string   `json:"defaultProfile"`
 	StartupProfileMode    string   `json:"startupProfileMode"`
 	GameFilter            bool     `json:"gameFilter"`
