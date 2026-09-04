@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 // DiscordCacheCleanupResult provides a complete, honest audit of the cache clearing operation.
@@ -43,9 +44,142 @@ func ClearDiscordCache() error {
 	return nil
 }
 
-// ClearDiscordCacheStructured inspects all installed Discord flavors (Stable, PTB, Canary),
-// calculates cache sizes before and after, detects running processes, and cleans only safe cache folders.
+// IsDiscordRunning returns whether any Discord client processes are currently active.
+func IsDiscordRunning() (bool, []string) {
+	return checkRunningDiscordProcesses()
+}
+
+// CloseDiscordProcesses safely terminates running Discord instances (Stable, PTB, Canary).
+// Uses exact process image matching to avoid collateral process termination.
+func CloseDiscordProcesses(timeout time.Duration) error {
+	logger := GetLogger()
+	running, procs := checkRunningDiscordProcesses()
+	if !running || len(procs) == 0 {
+		return nil
+	}
+
+	logger.Infof("Cache", "[CACHE] Discord processes detected: %v", procs)
+	if timeout <= 0 {
+		timeout = 3 * time.Second
+	}
+
+	if runtime.GOOS == "windows" {
+		candidates := []string{"Discord.exe", "DiscordPTB.exe", "DiscordCanary.exe"}
+		// 1. Attempt graceful close first
+		for _, c := range candidates {
+			cmd := exec.Command("taskkill.exe", "/IM", c)
+			cmd.SysProcAttr = GetHiddenSysProcAttr()
+			_ = cmd.Run()
+		}
+
+		// Wait up to 1.5 seconds for graceful shutdown
+		deadline := time.Now().Add(1500 * time.Millisecond)
+		for time.Now().Before(deadline) {
+			stillRunning, _ := checkRunningDiscordProcesses()
+			if !stillRunning {
+				logger.Info("Cache", "[CACHE] Discord closed gracefully")
+				time.Sleep(500 * time.Millisecond) // settle handle release
+				return nil
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+
+		// 2. Force termination if still alive
+		logger.Warn("Cache", "[CACHE] graceful shutdown timed out, force terminating Discord process tree")
+		for _, c := range candidates {
+			cmd := exec.Command("taskkill.exe", "/F", "/T", "/IM", c)
+			cmd.SysProcAttr = GetHiddenSysProcAttr()
+			_ = cmd.Run()
+		}
+	} else {
+		// Unix: kill -TERM then kill -KILL
+		pkillCmd := exec.Command("pkill", "-x", "discord")
+		_ = pkillCmd.Run()
+		time.Sleep(1 * time.Second)
+		if stillRunning, _ := checkRunningDiscordProcesses(); stillRunning {
+			_ = exec.Command("pkill", "-9", "-x", "discord").Run()
+		}
+	}
+
+	time.Sleep(800 * time.Millisecond) // allow OS file handles to release
+	stillRunning, remaining := checkRunningDiscordProcesses()
+	if stillRunning {
+		return fmt.Errorf("some Discord processes could not be terminated: %v", remaining)
+	}
+	logger.Info("Cache", "[CACHE] all Discord processes stopped successfully")
+	return nil
+}
+
+// isPathWithinSafeDiscordBoundary validates that the candidate deletion path strictly
+// resides inside an authorized Discord user data root and matches a permitted cache directory.
+func isPathWithinSafeDiscordBoundary(candidatePath string, knownRoots map[string]string) bool {
+	if candidatePath == "" {
+		return false
+	}
+
+	cleanPath := filepath.Clean(candidatePath)
+	absPath, err := filepath.Abs(cleanPath)
+	if err != nil {
+		return false
+	}
+
+	base := filepath.Base(absPath)
+	parent := filepath.Clean(filepath.Dir(absPath))
+
+	// Verify base is strictly in safe cache allowlist
+	isAllowedBase := false
+	for _, safe := range safeCacheSubdirs {
+		if strings.EqualFold(base, safe) {
+			isAllowedBase = true
+			break
+		}
+	}
+	if !isAllowedBase {
+		return false
+	}
+
+	// Verify parent is strictly one of the known Discord root directories
+	isAllowedParent := false
+	for _, root := range knownRoots {
+		cleanRoot := filepath.Clean(root)
+		absRoot, err := filepath.Abs(cleanRoot)
+		if err == nil && strings.EqualFold(parent, absRoot) {
+			isAllowedParent = true
+			break
+		}
+	}
+	if !isAllowedParent {
+		return false
+	}
+
+	// Never delete root, root parent, or drive root
+	if absPath == parent || filepath.Dir(parent) == parent {
+		return false
+	}
+
+	// Verify directory is not an external reparse point / junction leading outside Discord root
+	if lstat, err := os.Lstat(absPath); err == nil {
+		if lstat.Mode()&os.ModeSymlink != 0 {
+			// Target is a symlink: evaluate destination
+			evalTarget, err := filepath.EvalSymlinks(absPath)
+			if err != nil || !strings.HasPrefix(strings.ToLower(evalTarget), strings.ToLower(parent)) {
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
+// ClearDiscordCacheStructured cleans Discord cache without closing processes.
 func ClearDiscordCacheStructured() *DiscordCacheCleanupResult {
+	return ClearDiscordCacheWithOptions(false)
+}
+
+// ClearDiscordCacheWithOptions executes Discord cache cleanup, optionally terminating
+// Discord processes upon user consent to ensure complete, unlocked deletion.
+func ClearDiscordCacheWithOptions(closeIfRunning bool) *DiscordCacheCleanupResult {
+	logger := GetLogger()
 	result := &DiscordCacheCleanupResult{
 		InstallationsFound: make([]string, 0, 3),
 		PathsScanned:       make([]string, 0, 15),
@@ -57,6 +191,17 @@ func ClearDiscordCacheStructured() *DiscordCacheCleanupResult {
 	running, procs := checkRunningDiscordProcesses()
 	result.DiscordRunning = running
 	result.RunningProcesses = procs
+
+	if running && closeIfRunning {
+		logger.Info("Cache", "[CACHE] user requested Discord termination for full cache cleanup")
+		if err := CloseDiscordProcesses(3 * time.Second); err != nil {
+			logger.Warnf("Cache", "[CACHE] close Discord warning: %v", err)
+		}
+		// Re-check running state
+		runningAfter, procsAfter := checkRunningDiscordProcesses()
+		result.DiscordRunning = runningAfter
+		result.RunningProcesses = procsAfter
+	}
 
 	// 2. Discover Discord installation roots
 	roots := getDiscordInstallationRoots()
@@ -91,10 +236,18 @@ func ClearDiscordCacheStructured() *DiscordCacheCleanupResult {
 	}
 	result.BytesBefore = totalBefore
 
-	// 4. Perform safe removal
+	// 4. Perform safe removal with strict filesystem boundary checks
 	for _, dir := range existingCacheDirs {
+		if !isPathWithinSafeDiscordBoundary(dir, roots) {
+			logger.Errorf("Cache", "[CACHE][SECURITY] rejected unsafe deletion target: %s", dir)
+			result.Failures = append(result.Failures, fmt.Sprintf("%s: rejected by safety boundary", filepath.Base(dir)))
+			continue
+		}
+
+		logger.Infof("Cache", "[CACHE] removing safe cache directory: %s", dir)
 		err := os.RemoveAll(dir)
 		if err != nil {
+			logger.Warnf("Cache", "[CACHE] remove failed for %s: %v", dir, err)
 			result.Failures = append(result.Failures, fmt.Sprintf("%s: %v", filepath.Base(filepath.Dir(dir))+"/"+filepath.Base(dir), err))
 		} else {
 			result.PathsRemoved = append(result.PathsRemoved, dir)

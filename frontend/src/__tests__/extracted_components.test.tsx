@@ -29,6 +29,11 @@ vi.mock('../services/window', () => ({
     onAutotuneLog: vi.fn(),
     onEngineLog: vi.fn(),
     onAutotuneComplete: vi.fn(),
+    onDoctorStart: vi.fn().mockReturnValue(() => {}),
+    onDoctorProgress: vi.fn().mockReturnValue(() => {}),
+    onDoctorComplete: vi.fn().mockReturnValue(() => {}),
+    onDoctorCancelled: vi.fn().mockReturnValue(() => {}),
+    onDoctorError: vi.fn().mockReturnValue(() => {}),
   },
 }));
 
@@ -39,6 +44,7 @@ vi.mock('../services/backend', () => ({
     loadPingHistory: vi.fn().mockResolvedValue([{ lat: 20 }, { lat: 24 }]),
     exportLogs: vi.fn().mockResolvedValue(true),
     killConflicts: vi.fn().mockResolvedValue(undefined),
+    getSystemComponentState: vi.fn().mockResolvedValue({ components: [] }),
   },
 }));
 

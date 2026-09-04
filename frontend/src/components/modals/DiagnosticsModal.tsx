@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { cn } from '../../lib/cn';
 import { UITerminal, UISpinner, UIX, UICheck, UIZap } from '../icons';
 import { backendService } from '../../services/backend';
+import { eventBus } from '../../services/window';
 import { engine } from '../../../wailsjs/go/models';
 
 interface LegacyDiagnosticResult {
@@ -35,6 +36,8 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
   const [copied, setCopied] = useState(false);
   const [expandedProbes, setExpandedProbes] = useState<Record<string, boolean>>({});
   const [activeRunId, setActiveRunId] = useState<string>('');
+  const [doctorError, setDoctorError] = useState<string | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
   const [progress, setProgress] = useState<{
     runId: string;
     completed: number;
@@ -46,42 +49,93 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
   }>({
     runId: '',
     completed: 0,
-    total: 0,
+    total: 16, // Default Quick check total so ? is never displayed
     percent: 0,
     running: [],
     lastCompleted: '',
     elapsedMs: 0,
   });
 
-  // Subscribe to real-time Doctor progress events
+  // Smooth elapsed timer
   React.useEffect(() => {
-    const w = window as unknown as { runtime?: { EventsOn?: (event: string, cb: (data: unknown) => void) => () => void; EventsOff?: (event: string) => void } };
-    if (!w.runtime?.EventsOn) return;
+    let timerId: number | undefined;
+    if (isLocalRunning || isRunning) {
+      setElapsedSeconds(0);
+      timerId = window.setInterval(() => {
+        setElapsedSeconds((prev) => +(prev + 0.2).toFixed(1));
+      }, 200);
+    }
+    return () => {
+      window.clearInterval(timerId);
+    };
+  }, [isLocalRunning, isRunning]);
 
-    const unregProgress = w.runtime.EventsOn('doctor_progress', (data: unknown) => {
-      const p = data as { runId: string; completed: number; total: number; percent: number; running: string[]; lastCompleted: string; elapsedMs: number };
-      if (p) {
-        setProgress(p);
-        if (p.runId) setActiveRunId(p.runId);
-      }
-    });
+  // Subscribe to real-time Doctor progress events via robust Wails eventBus
+  React.useEffect(() => {
+    if (!eventBus?.onDoctorStart) return;
 
-    const unregComplete = w.runtime.EventsOn('doctor_complete', (data: unknown) => {
-      const d = data as { runId: string; result: engine.DoctorResult };
-      if (d?.result) {
-        setDoctorResult(d.result);
+    let unsubStart: (() => void) | undefined;
+    let unsubProgress: (() => void) | undefined;
+    let unsubComplete: (() => void) | undefined;
+    let unsubCancelled: (() => void) | undefined;
+    let unsubError: (() => void) | undefined;
+
+    try {
+      unsubStart = eventBus.onDoctorStart((data: unknown) => {
+        const s = data as { runId: string; mode: string; total: number };
+        if (s) {
+          setActiveRunId(s.runId);
+          setProgress({
+            runId: s.runId,
+            completed: 0,
+            total: s.total || 16,
+            percent: 0,
+            running: [],
+            lastCompleted: '',
+            elapsedMs: 0,
+          });
+          setIsLocalRunning(true);
+          setDoctorError(null);
+          setDoctorResult(null);
+        }
+      });
+
+      unsubProgress = eventBus.onDoctorProgress((data: unknown) => {
+        const p = data as { runId: string; completed: number; total: number; percent: number; running: string[]; lastCompleted: string; elapsedMs: number };
+        if (p) {
+          setProgress(p);
+          if (p.runId) setActiveRunId(p.runId);
+        }
+      });
+
+      unsubComplete = eventBus.onDoctorComplete((data: unknown) => {
+        const d = data as { runId: string; result: engine.DoctorResult };
+        if (d?.result) {
+          setDoctorResult(d.result);
+          setIsLocalRunning(false);
+          setDoctorError(null);
+        }
+      });
+
+      unsubCancelled = eventBus.onDoctorCancelled(() => {
         setIsLocalRunning(false);
-      }
-    });
+      });
 
-    const unregCancelled = w.runtime.EventsOn('doctor_cancelled', () => {
-      setIsLocalRunning(false);
-    });
+      unsubError = eventBus.onDoctorError((data: unknown) => {
+        const errObj = data as { runId: string; error: string };
+        setIsLocalRunning(false);
+        setDoctorError(errObj?.error || 'Произошла ошибка диагностики');
+      });
+    } catch {
+      // Fallback in environments without full Wails runtime
+    }
 
     return () => {
-      if (unregProgress) unregProgress();
-      if (unregComplete) unregComplete();
-      if (unregCancelled) unregCancelled();
+      unsubStart?.();
+      unsubProgress?.();
+      unsubComplete?.();
+      unsubCancelled?.();
+      unsubError?.();
     };
   }, []);
 
@@ -110,18 +164,28 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
         }
       }
     } else {
-      if (onRunMode) {
-        onRunMode(tab);
-      } else {
-        setIsLocalRunning(true);
-        try {
-          const res = await backendService.runDoctor(tab);
-          setDoctorResult(res);
-        } catch (err) {
-          console.error('Doctor run error:', err);
-        } finally {
-          setIsLocalRunning(false);
+      onRunMode?.(tab);
+      setIsLocalRunning(true);
+      setDoctorError(null);
+      setDoctorResult(null);
+      try {
+        const startInfo = await backendService.startDoctor(tab);
+        if (startInfo) {
+          setActiveRunId(startInfo.runId);
+          setProgress({
+            runId: startInfo.runId,
+            completed: 0,
+            total: startInfo.total || (tab === 'extended' ? 24 : 16),
+            percent: 0,
+            running: [],
+            lastCompleted: '',
+            elapsedMs: 0,
+          });
         }
+      } catch (err) {
+        console.error('StartDoctor error:', err);
+        setIsLocalRunning(false);
+        setDoctorError(String(err));
       }
     }
   };
@@ -316,11 +380,17 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
                 </div>
               )}
 
-              {/* Elapsed time and Cancel button */}
               <div className="flex items-center justify-between pt-2 border-t border-[var(--ui-border)] text-xs">
-                <span className="text-[11px] font-mono text-[var(--ui-text-muted)]">
-                  Прошло: {((progress.elapsedMs || 0) / 1000).toFixed(1)}с
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-mono text-[var(--ui-text-muted)]">
+                    Прошло: {elapsedSeconds > 0 ? elapsedSeconds : ((progress.elapsedMs || 0) / 1000).toFixed(1)}с
+                  </span>
+                  {elapsedSeconds > 10 && (
+                    <span className="text-[10px] text-amber-400">
+                      (проверка выполняется дольше обычного)
+                    </span>
+                  )}
+                </div>
                 <button
                   onClick={async () => {
                     try {
@@ -334,6 +404,25 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
                   className="btn-ui-secondary text-xs px-3 py-1 text-red-400 hover:text-red-300 border-red-500/30 hover:bg-red-500/10"
                 >
                   Отменить проверку
+                </button>
+              </div>
+            </div>
+          ) : doctorError ? (
+            /* Doctor Error View */
+            <div className="p-4 border border-red-500/30 rounded-2xl bg-red-500/10 text-xs space-y-3">
+              <div className="font-semibold text-red-400 flex items-center gap-2">
+                <UIX className="w-4 h-4" />
+                <span>Ошибка выполнения диагностики</span>
+              </div>
+              <p className="text-[11px] text-[var(--ui-text)] font-mono bg-black/30 p-2.5 rounded-xl border border-red-500/20">
+                {doctorError}
+              </p>
+              <div className="flex items-center gap-2 pt-1">
+                <button onClick={() => handleTabChange(activeTab)} className="btn-ui-primary text-xs px-3 py-1.5">
+                  Повторить проверку
+                </button>
+                <button onClick={handleOpenLogs} className="btn-ui-secondary text-xs px-3 py-1.5">
+                  Открыть логи
                 </button>
               </div>
             </div>

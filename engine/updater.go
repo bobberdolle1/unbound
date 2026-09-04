@@ -26,8 +26,64 @@ const (
 	Zapret2GitHubAPIURL = "https://api.github.com/repos/bol-van/zapret2/releases/latest"
 	HTTPTimeout         = 10 * time.Second
 	BundledEngineVersion = "1.0.5"
-	StrategiesVersion   = "2026.09.04"
 )
+
+// ComponentLocalState represents the locally installed version and status of a component without network access.
+type ComponentLocalState struct {
+	Component      ComponentType `json:"component"`
+	Name           string        `json:"name"`
+	CurrentVersion string        `json:"currentVersion"`
+	Status         string        `json:"status"`
+	StatusLabel    string        `json:"statusLabel"`
+}
+
+// SystemComponentState holds all local component versions available offline.
+type SystemComponentState struct {
+	Components []ComponentLocalState `json:"components"`
+}
+
+// GetSystemComponentState returns the local, non-network component versions.
+func GetSystemComponentState() *SystemComponentState {
+	hostlistVer := "Синхронизировано"
+	if listsDir, err := GetListsDir(); err == nil {
+		if ytStat, err := os.Stat(filepath.Join(listsDir, "youtube.txt")); err == nil {
+			hostlistVer = ytStat.ModTime().Format("2006-01-02 15:04")
+		}
+	}
+
+	return &SystemComponentState{
+		Components: []ComponentLocalState{
+			{
+				Component:      ComponentApp,
+				Name:           "Приложение UNBOUND",
+				CurrentVersion: "v" + normalizeVersion(Version),
+				Status:         "installed",
+				StatusLabel:    "Установлено",
+			},
+			{
+				Component:      ComponentEngine,
+				Name:           "Движок Zapret 2",
+				CurrentVersion: "v" + BundledEngineVersion,
+				Status:         "installed",
+				StatusLabel:    "Установлено",
+			},
+			{
+				Component:      ComponentStrategies,
+				Name:           "Каталог стратегий",
+				CurrentVersion: StrategiesVersion,
+				Status:         "installed",
+				StatusLabel:    "Установлено",
+			},
+			{
+				Component:      ComponentHostlists,
+				Name:           "Списки обхода",
+				CurrentVersion: hostlistVer,
+				Status:         "synced",
+				StatusLabel:    "Синхронизировано",
+			},
+		},
+	}
+}
 
 type ComponentType string
 

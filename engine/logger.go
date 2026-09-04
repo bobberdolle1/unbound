@@ -61,6 +61,26 @@ func GetLogger() *Logger {
 	return globalLogger
 }
 
+// GetLogDir returns the canonical directory where persistent runtime logs are written.
+func GetLogDir() string {
+	configDir, err := GetConfigDir()
+	if err == nil && configDir != "" {
+		persistentDir := filepath.Join(configDir, "logs")
+		if err := os.MkdirAll(persistentDir, 0755); err == nil {
+			return persistentDir
+		}
+	}
+	fallbackDir := filepath.Join(os.TempDir(), "unbound_logs")
+	_ = os.MkdirAll(fallbackDir, 0755)
+	return fallbackDir
+}
+
+// GetCurrentLogPath returns the absolute path to today's active log file.
+func GetCurrentLogPath() string {
+	logDir := GetLogDir()
+	return filepath.Join(logDir, fmt.Sprintf("unbound_%s.log", time.Now().Format("2006-01-02")))
+}
+
 // NewLogger creates a new logger instance
 func NewLogger(maxEntries int, minLevel LogLevel) *Logger {
 	logger := &Logger{
@@ -69,15 +89,11 @@ func NewLogger(maxEntries int, minLevel LogLevel) *Logger {
 		minLevel:   minLevel,
 	}
 
-	// Try to create log file
-	logDir := filepath.Join(os.TempDir(), "unbound_logs")
-	os.MkdirAll(logDir, 0755)
-
-	logPath := filepath.Join(logDir, fmt.Sprintf("unbound_%s.log", time.Now().Format("2006-01-02")))
+	// Persistent log path in %APPDATA%/Unbound/logs (fallback to temp if unavailable)
+	logPath := GetCurrentLogPath()
 	if file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644); err == nil {
 		logger.logFile = file
 	}
-
 	return logger
 }
 

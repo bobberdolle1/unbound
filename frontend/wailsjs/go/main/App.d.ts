@@ -17,9 +17,11 @@ export function CheckAllUpdates():Promise<engine.SystemUpdateOverview>;
 
 export function CheckConflicts():Promise<Array<string>>;
 
+export function CheckDiscordRunning():Promise<boolean|Array<string>>;
+
 export function CheckPrivileges():Promise<boolean>;
 
-export function ClearDiscordCache():Promise<engine.DiscordCacheCleanupResult>;
+export function ClearDiscordCache(arg1:boolean):Promise<engine.DiscordCacheCleanupResult>;
 
 export function DisableAutoStart():Promise<void>;
 
@@ -38,6 +40,8 @@ export function GetAppVersion():Promise<string>;
 export function GetAutoStartTaskInfo():Promise<engine.TaskRegistrationInfo>;
 
 export function GetBypassLists():Promise<Array<string>>;
+
+export function GetDoctorRunState(arg1:string):Promise<engine.DoctorRunState>;
 
 export function GetEngineNames():Promise<Array<string>>;
 
@@ -59,6 +63,8 @@ export function GetStatusInfo():Promise<Record<string, any>>;
 
 export function GetStructuredLogs():Promise<Array<string>>;
 
+export function GetSystemComponentState():Promise<engine.SystemComponentState>;
+
 export function HideWindowToTray():Promise<void>;
 
 export function IsAutoStartEnabled():Promise<boolean>;
@@ -72,6 +78,8 @@ export function KillWinws2():Promise<void>;
 export function LoadCustomScript():Promise<string>;
 
 export function LoadPingHistory():Promise<Array<main.PingRecord>>;
+
+export function OpenCurrentLogFile():Promise<void>;
 
 export function OpenLogsFolder():Promise<void>;
 
@@ -102,6 +110,8 @@ export function ShowFromTray():Promise<void>;
 export function ShowNotification(arg1:string,arg2:string):Promise<void>;
 
 export function ShowWindowFromTray():Promise<void>;
+
+export function StartDoctor(arg1:string):Promise<engine.DoctorRunStart>;
 
 export function StartEngine(arg1:string,arg2:string):Promise<void>;
 

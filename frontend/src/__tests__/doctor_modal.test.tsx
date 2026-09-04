@@ -1,8 +1,9 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { DiagnosticsModal } from '../components/modals/DiagnosticsModal';
+import { DiscordConfirmModal } from '../components/modals/DiscordConfirmModal';
 import { engine } from '../../wailsjs/go/models';
-
+import { backendService } from '../services/backend';
 describe('Doctor & Diagnostics Modal Tests', () => {
   const mockDoctorResult = new engine.DoctorResult({
     overallStatus: 'HEALTHY',
@@ -56,6 +57,17 @@ describe('Doctor & Diagnostics Modal Tests', () => {
       }),
     ],
     manualItems: ['Discord voice call test'],
+  });
+  beforeEach(() => {
+    (window as unknown as { runtime: unknown }).runtime = {
+      EventsOnMultiple: vi.fn().mockReturnValue(() => {}),
+    };
+    vi.spyOn(backendService, 'startDoctor').mockResolvedValue({
+      runId: 'test_run',
+      mode: 'extended',
+      total: 24,
+      startedAt: '2026-09-04T12:00:00Z',
+    } as unknown as engine.DoctorRunStart);
   });
 
   it('renders overall health banner and group names', () => {
@@ -124,5 +136,32 @@ describe('Doctor & Diagnostics Modal Tests', () => {
 
     expect(screen.getByText(/Рекомендуемый чек-лист ручной приёмки/i)).toBeDefined();
     expect(screen.getByText(/Discord voice call test/i)).toBeDefined();
+  });
+
+  describe('DiscordConfirmModal', () => {
+    it('renders warning and handles confirm and cancel callbacks', () => {
+      const onCancel = vi.fn();
+      const onConfirm = vi.fn();
+
+      render(
+        <DiscordConfirmModal
+          isOpen={true}
+          runningProcesses={['Discord.exe']}
+          onCancel={onCancel}
+          onConfirm={onConfirm}
+        />
+      );
+
+      expect(screen.getByText(/Очистить кэш Discord\?/i)).toBeDefined();
+      expect(screen.getByText(/Discord\.exe/i)).toBeDefined();
+
+      const cancelBtn = screen.getByText('Отмена');
+      fireEvent.click(cancelBtn);
+      expect(onCancel).toHaveBeenCalledTimes(1);
+
+      const confirmBtn = screen.getByText('Закрыть и очистить');
+      fireEvent.click(confirmBtn);
+      expect(onConfirm).toHaveBeenCalledTimes(1);
+    });
   });
 });

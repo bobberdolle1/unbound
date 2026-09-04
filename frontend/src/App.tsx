@@ -69,6 +69,8 @@ export default function App() {
   const [diagResults, setDiagResults] = useState<WailsEngine.DiagnosticResult[]>([]);
   const [isDiagRunning, setIsDiagRunning] = useState<boolean>(false);
   const [doctorResult, setDoctorResult] = useState<WailsEngine.DoctorResult | null>(null);
+  const [isDiscordCleanModalOpen, setIsDiscordCleanModalOpen] = useState(false);
+  const [discordRunningProcs, setDiscordRunningProcs] = useState<string[]>([]);
 
   // Operations States
   const [isVerifyingAssets, setIsVerifyingAssets] = useState<boolean>(false);
@@ -282,10 +284,32 @@ export default function App() {
 
   const handleClearCache = async () => {
     try {
-      await backendService.clearDiscordCache();
-      windowService.showNotification('Кэш очищен', 'Кэш Discord успешно очищен.');
+      const runningCheck = await backendService.checkDiscordRunning();
+      const isRunning = Array.isArray(runningCheck) ? Boolean(runningCheck[0]) : Boolean(runningCheck);
+      const procs = Array.isArray(runningCheck) && Array.isArray(runningCheck[1]) ? (runningCheck[1] as string[]) : [];
+      if (isRunning) {
+        setDiscordRunningProcs(procs);
+        setIsDiscordCleanModalOpen(true);
+        return;
+      }
+      await executeDiscordClean(false);
     } catch (err) {
-      console.error(err);
+      console.error('Check discord running error:', err);
+      await executeDiscordClean(false);
+    }
+  };
+
+  const executeDiscordClean = async (closeIfRunning: boolean) => {
+    setIsDiscordCleanModalOpen(false);
+    try {
+      const res = await backendService.clearDiscordCache(closeIfRunning);
+      if (res && res.message) {
+        const title = res.status === 'SUCCESS' ? 'Кэш очищен' : (res.status === 'PARTIAL' ? 'Очищено частично' : 'Кэш Discord');
+        windowService.showNotification(title, res.message);
+      }
+    } catch (err) {
+      console.error('Clear discord cache error:', err);
+      windowService.showNotification('Ошибка очистки', 'Не удалось очистить кэш Discord: ' + String(err));
     }
   };
 
@@ -453,6 +477,10 @@ export default function App() {
         onCloseDiagnosticsModal={() => setIsDiagOpen(false)}
         doctorResult={doctorResult}
         onRunMode={handleRunDiagnostics}
+        isDiscordCleanModalOpen={isDiscordCleanModalOpen}
+        discordRunningProcs={discordRunningProcs}
+        onCancelDiscordClean={() => setIsDiscordCleanModalOpen(false)}
+        onConfirmDiscordClean={() => executeDiscordClean(true)}
         isLuaOpen={luaState.isLuaOpen}
         onCloseLuaModal={() => luaActions.setIsLuaOpen(false)}
         luaTab={luaState.luaTab}
