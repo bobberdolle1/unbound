@@ -85,7 +85,7 @@ sequenceDiagram
     participant D as DPI Провайдера
     participant S as Целевой Сервер
 
-    B->>U: TCP-соединение; UDP (где поддерживается)
+    B->>U: TCP-соединение, UDP (где поддерживается)
     Note over U: WinDivert / NFQUEUE либо pf redirect в локальный tpws
     U->>D: Десинхронизация начальных пакетов по выбранному профилю
     Note over D: DPI пропускает изменённый трафик
