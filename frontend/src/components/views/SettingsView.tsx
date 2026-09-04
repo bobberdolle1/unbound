@@ -3,7 +3,9 @@ import { UICheckbox } from '../UICheckbox';
 import { UISelect } from '../UISelect';
 import { UIGear, UIShield, UITerminal, UIX } from '../icons';
 import { QuitApp } from '../../../wailsjs/go/main/App';
-
+import { backendService } from '../../services/backend';
+import { engine } from '../../../wailsjs/go/models';
+import { cn } from '../../lib/cn';
 export interface AppSettings {
   autoStart: boolean;
   startMinimized: boolean;
@@ -56,6 +58,74 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   handleClearCache,
   handleKillWinws2,
 }) => {
+  const [componentStates, setComponentStates] = React.useState<engine.ComponentLocalState[]>([
+    new engine.ComponentLocalState({
+      component: 'app',
+      name: 'Приложение UNBOUND',
+      currentVersion: '...',
+      status: 'installed',
+      statusLabel: 'Установлено',
+    }),
+    new engine.ComponentLocalState({
+      component: 'engine',
+      name: 'Движок Zapret 2',
+      currentVersion: '...',
+      status: 'installed',
+      statusLabel: 'Установлено',
+    }),
+    new engine.ComponentLocalState({
+      component: 'strategies',
+      name: 'Каталог стратегий',
+      currentVersion: '...',
+      status: 'installed',
+      statusLabel: 'Установлено',
+    }),
+    new engine.ComponentLocalState({
+      component: 'hostlists',
+      name: 'Списки обхода',
+      currentVersion: '...',
+      status: 'synced',
+      statusLabel: 'Синхронизировано',
+    }),
+  ]);
+  const [onlineUpdates, setOnlineUpdates] = React.useState<Record<string, engine.ComponentUpdateStatus> | null>(null);
+  const [isCheckingUpdates, setIsCheckingUpdates] = React.useState(false);
+  const [checkError, setCheckError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (backendService?.getSystemComponentState) {
+      backendService.getSystemComponentState()
+        .then((state) => {
+          if (state && Array.isArray(state.components) && state.components.length > 0) {
+            setComponentStates(state.components);
+          }
+        })
+        .catch((err) => {
+          console.error('Failed to get local component versions:', err);
+        });
+    }
+  }, []);
+
+  const handleCheckUpdates = async () => {
+    setIsCheckingUpdates(true);
+    setCheckError(null);
+    try {
+      const res = await backendService.checkAllUpdates();
+      if (res && Array.isArray(res.components)) {
+        const updateMap: Record<string, engine.ComponentUpdateStatus> = {};
+        res.components.forEach((c) => {
+          updateMap[c.component] = c;
+        });
+        setOnlineUpdates(updateMap);
+      }
+    } catch (err) {
+      console.error('Failed to check updates:', err);
+      setCheckError('Ошибка сети или доступа к GitHub API');
+    } finally {
+      setIsCheckingUpdates(false);
+    }
+  };
+
   return (
     <div className="flex-1 flex flex-col gap-4">
       <div className="bg-[var(--ui-surface-elevated)] border border-[var(--ui-border)] rounded-[var(--ui-radius)] p-4 space-y-4">
@@ -129,48 +199,51 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-[var(--ui-text-muted)] uppercase">Обновление компонентов</span>
             <button
-              onClick={async () => {
-                try {
-                  const w = window as unknown as { go?: { main?: { App?: { CheckAllUpdates?: () => Promise<{ components?: Array<{ name: string; currentVersion: string; latestVersion: string; status: string }> }> } } } };
-                  const res = await w.go?.main?.App?.CheckAllUpdates?.();
-                  if (res && res.components) {
-                    const msg = res.components.map((c) => `${c.name}: ${c.currentVersion} (${c.status === 'update_available' ? 'Доступно обновление ' + c.latestVersion : 'Актуально'})`).join('\n');
-                    alert('Состояние компонентов:\n\n' + msg);
-                  }
-                } catch (e) {
-                  console.error(e);
-                }
-              }}
-              className="text-[11px] text-emerald-400 hover:underline"
+              onClick={handleCheckUpdates}
+              disabled={isCheckingUpdates}
+              className="text-[11px] text-emerald-400 hover:underline disabled:opacity-50"
             >
-              Проверить обновления
+              {isCheckingUpdates ? 'Проверка...' : 'Проверить обновления'}
             </button>
           </div>
 
           <div className="grid grid-cols-2 gap-2 text-xs">
-            <div className="p-2.5 rounded-xl bg-[var(--ui-surface-elevated)] border border-[var(--ui-border)]">
-              <div className="text-[10px] text-[var(--ui-text-muted)] uppercase font-mono">Приложение</div>
-              <div className="font-semibold text-[var(--ui-text)] mt-0.5">UNBOUND v0.5.0</div>
-              <div className="text-[10px] text-emerald-400 font-mono mt-0.5">● Актуально</div>
-            </div>
-            <div className="p-2.5 rounded-xl bg-[var(--ui-surface-elevated)] border border-[var(--ui-border)]">
-              <div className="text-[10px] text-[var(--ui-text-muted)] uppercase font-mono">Движок</div>
-              <div className="font-semibold text-[var(--ui-text)] mt-0.5">Zapret 2 v1.0.5</div>
-              <div className="text-[10px] text-emerald-400 font-mono mt-0.5">● Актуально</div>
-            </div>
-            <div className="p-2.5 rounded-xl bg-[var(--ui-surface-elevated)] border border-[var(--ui-border)]">
-              <div className="text-[10px] text-[var(--ui-text-muted)] uppercase font-mono">Стратегии</div>
-              <div className="font-semibold text-[var(--ui-text)] mt-0.5">v0.5.0 (2026.09.04)</div>
-              <div className="text-[10px] text-emerald-400 font-mono mt-0.5">● Актуально</div>
-            </div>
-            <div className="p-2.5 rounded-xl bg-[var(--ui-surface-elevated)] border border-[var(--ui-border)]">
-              <div className="text-[10px] text-[var(--ui-text-muted)] uppercase font-mono">Списки обхода</div>
-              <div className="font-semibold text-[var(--ui-text)] mt-0.5">Steam/Discord/YT</div>
-              <div className="text-[10px] text-emerald-400 font-mono mt-0.5">● Синхронизировано</div>
-            </div>
+            {componentStates.map((comp) => {
+              const online = onlineUpdates ? onlineUpdates[comp.component] : null;
+              let statusText = `● ${comp.statusLabel}`;
+              let statusClass = 'text-[var(--ui-text-muted)]';
+
+              if (isCheckingUpdates) {
+                statusText = 'Проверка...';
+                statusClass = 'text-blue-400 animate-pulse';
+              } else if (checkError) {
+                statusText = '! Не проверено';
+                statusClass = 'text-amber-400';
+              } else if (online) {
+                if (online.updateAvailable) {
+                  statusText = `● Доступно ${online.latestVersion}`;
+                  statusClass = 'text-emerald-400 font-semibold';
+                } else if (online.status === 'check_failed') {
+                  statusText = '! Ошибка проверки';
+                  statusClass = 'text-amber-400';
+                } else {
+                  statusText = '● Актуально';
+                  statusClass = 'text-emerald-400';
+                }
+              }
+
+              return (
+                <div key={comp.component} className="p-2.5 rounded-xl bg-[var(--ui-surface-elevated)] border border-[var(--ui-border)]">
+                  <div className="text-[10px] text-[var(--ui-text-muted)] uppercase font-mono">{comp.name}</div>
+                  <div className="font-semibold text-[var(--ui-text)] mt-0.5">{comp.currentVersion}</div>
+                  <div className={cn('text-[10px] font-mono mt-0.5', statusClass)}>
+                    {statusText}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
-
         {/* System Actions */}
         <div className="space-y-2 pt-3 border-t border-[var(--ui-border)]">
           <span className="text-xs font-semibold text-[var(--ui-text-muted)] uppercase">Системные действия</span>
@@ -204,6 +277,34 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <button onClick={handleKillWinws2} className="btn-ui-secondary text-xs">
               <UIX className="w-3.5 h-3.5" />
               <span>Остановить движок</span>
+            </button>
+
+            <button
+              onClick={async () => {
+                try {
+                  await backendService.openLogsFolder();
+                } catch (err) {
+                  console.error('Failed to open logs folder:', err);
+                }
+              }}
+              className="btn-ui-secondary text-xs"
+            >
+              <UITerminal className="w-3.5 h-3.5" />
+              <span>Папка логов</span>
+            </button>
+
+            <button
+              onClick={async () => {
+                try {
+                  await backendService.openCurrentLogFile();
+                } catch (err) {
+                  console.error('Failed to open current log:', err);
+                }
+              }}
+              className="btn-ui-secondary text-xs"
+            >
+              <UITerminal className="w-3.5 h-3.5" />
+              <span>Текущий лог</span>
             </button>
           </div>
 

@@ -183,6 +183,26 @@ export namespace engine {
 		}
 	}
 	
+	export class ComponentLocalState {
+	    component: string;
+	    name: string;
+	    currentVersion: string;
+	    status: string;
+	    statusLabel: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ComponentLocalState(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.component = source["component"];
+	        this.name = source["name"];
+	        this.currentVersion = source["currentVersion"];
+	        this.status = source["status"];
+	        this.statusLabel = source["statusLabel"];
+	    }
+	}
 	export class ComponentUpdateStatus {
 	    component: string;
 	    name: string;
@@ -383,6 +403,96 @@ export namespace engine {
 		    return a;
 		}
 	}
+	export class DoctorRunStart {
+	    runId: string;
+	    mode: string;
+	    total: number;
+	    // Go type: time
+	    startedAt: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new DoctorRunStart(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.runId = source["runId"];
+	        this.mode = source["mode"];
+	        this.total = source["total"];
+	        this.startedAt = this.convertValues(source["startedAt"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class DoctorRunState {
+	    runId: string;
+	    mode: string;
+	    status: string;
+	    completed: number;
+	    total: number;
+	    percent: number;
+	    running: string[];
+	    lastCompleted: string;
+	    // Go type: time
+	    startedAt: any;
+	    elapsedMs: number;
+	    result?: DoctorResult;
+	    error?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DoctorRunState(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.runId = source["runId"];
+	        this.mode = source["mode"];
+	        this.status = source["status"];
+	        this.completed = source["completed"];
+	        this.total = source["total"];
+	        this.percent = source["percent"];
+	        this.running = source["running"];
+	        this.lastCompleted = source["lastCompleted"];
+	        this.startedAt = this.convertValues(source["startedAt"], null);
+	        this.elapsedMs = source["elapsedMs"];
+	        this.result = this.convertValues(source["result"], DoctorResult);
+	        this.error = source["error"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	
 	export class Settings {
 	    autoStart: boolean;
@@ -425,6 +535,36 @@ export namespace engine {
 	        this.diagnosticsMode = source["diagnosticsMode"];
 	        this.autoUpdatePolicy = source["autoUpdatePolicy"];
 	    }
+	}
+	export class SystemComponentState {
+	    components: ComponentLocalState[];
+	
+	    static createFrom(source: any = {}) {
+	        return new SystemComponentState(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.components = this.convertValues(source["components"], ComponentLocalState);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class SystemUpdateOverview {
 	    // Go type: time

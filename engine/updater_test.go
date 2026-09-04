@@ -380,3 +380,34 @@ func TestCheckAllComponentsReturnsOverview(t *testing.T) {
 		compMap[ComponentApp].CurrentVersion, compMap[ComponentEngine].CurrentVersion,
 		compMap[ComponentStrategies].CurrentVersion, compMap[ComponentHostlists].CurrentVersion)
 }
+
+func TestGetSystemComponentStateOffline(t *testing.T) {
+	state := GetSystemComponentState()
+	if state == nil {
+		t.Fatal("GetSystemComponentState() returned nil")
+	}
+	if len(state.Components) != 4 {
+		t.Fatalf("Expected 4 components, got %d", len(state.Components))
+	}
+
+	compMap := make(map[ComponentType]ComponentLocalState)
+	for _, c := range state.Components {
+		compMap[c.Component] = c
+		if c.StatusLabel == "" {
+			t.Errorf("Component %s has empty StatusLabel", c.Component)
+		}
+	}
+
+	if compMap[ComponentApp].CurrentVersion != "v0.5.2" {
+		t.Errorf("App version = %s; want v0.5.2", compMap[ComponentApp].CurrentVersion)
+	}
+	if compMap[ComponentEngine].CurrentVersion != "v1.0.5" {
+		t.Errorf("Engine version = %s; want v1.0.5", compMap[ComponentEngine].CurrentVersion)
+	}
+	if compMap[ComponentStrategies].CurrentVersion != "2026.09.04" {
+		t.Errorf("Strategies version = %s; want 2026.09.04", compMap[ComponentStrategies].CurrentVersion)
+	}
+	if compMap[ComponentHostlists].Status != "synced" {
+		t.Errorf("Hostlists status = %s; want synced", compMap[ComponentHostlists].Status)
+	}
+}
