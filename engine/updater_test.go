@@ -3,6 +3,7 @@ package engine
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
@@ -286,4 +287,96 @@ func TestBackupAndRestore(t *testing.T) {
 	}
 
 	t.Log("Backup and restore mechanism working correctly")
+}
+
+func TestVerifyFileSHA256RealFile(t *testing.T) {
+	tempDir := t.TempDir()
+	filePath := filepath.Join(tempDir, "test.bin")
+	data := []byte("hello world sha256 test")
+	if err := os.WriteFile(filePath, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	h := sha256.Sum256(data)
+	expectedHex := hex.EncodeToString(h[:])
+
+	// Valid match
+	if err := VerifyFileSHA256(filePath, expectedHex); err != nil {
+		t.Errorf("Expected valid SHA256, got error: %v", err)
+	}
+
+	// Case insensitive match
+	if err := VerifyFileSHA256(filePath, strings.ToUpper(expectedHex)); err != nil {
+		t.Errorf("Expected case-insensitive match, got error: %v", err)
+	}
+
+	// Mismatch
+	if err := VerifyFileSHA256(filePath, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"); err == nil {
+		t.Error("Expected SHA256 mismatch error, got nil")
+	}
+}
+
+func TestUnpackZipArchiveZipSlip(t *testing.T) {
+	tempDir := t.TempDir()
+	zipPath := filepath.Join(tempDir, "malicious.zip")
+
+	// Create zip with relative traversal path
+	buf := new(bytes.Buffer)
+	zw := zip.NewWriter(buf)
+	f, err := zw.Create("../../../evil.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.Write([]byte("malicious"))
+	_ = zw.Close()
+
+	if err := os.WriteFile(zipPath, buf.Bytes(), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	extractDir := filepath.Join(tempDir, "dest")
+	err = UnpackZipArchive(zipPath, extractDir)
+	if err == nil {
+		t.Error("Expected UnpackZipArchive to reject Zip Slip file, got nil")
+	}
+}
+
+func TestValidateStagedEngineMissingBinary(t *testing.T) {
+	emptyDir := t.TempDir()
+	err := ValidateStagedEngine(emptyDir)
+	if err == nil {
+		t.Error("Expected ValidateStagedEngine to fail on empty directory, got nil")
+	}
+}
+
+func TestCheckAllComponentsReturnsOverview(t *testing.T) {
+	overview, err := CheckAllComponents(context.Background(), "0.5.0")
+	if err != nil {
+		t.Fatalf("CheckAllComponents failed: %v", err)
+	}
+	if len(overview.Components) != 4 {
+		t.Fatalf("Expected 4 components, got %d", len(overview.Components))
+	}
+
+	compMap := make(map[ComponentType]ComponentUpdateStatus)
+	for _, c := range overview.Components {
+		compMap[c.Component] = c
+	}
+
+	if _, ok := compMap[ComponentApp]; !ok {
+		t.Error("Missing ComponentApp")
+	}
+	if _, ok := compMap[ComponentEngine]; !ok {
+		t.Error("Missing ComponentEngine")
+	}
+	if _, ok := compMap[ComponentStrategies]; !ok {
+		t.Error("Missing ComponentStrategies")
+	}
+	if _, ok := compMap[ComponentHostlists]; !ok {
+		t.Error("Missing ComponentHostlists")
+	}
+
+	t.Logf("Components checked: App=%s Engine=%s Strategies=%s Hostlists=%s",
+		compMap[ComponentApp].CurrentVersion, compMap[ComponentEngine].CurrentVersion,
+		compMap[ComponentStrategies].CurrentVersion, compMap[ComponentHostlists].CurrentVersion)
 }

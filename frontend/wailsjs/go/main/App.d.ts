@@ -11,6 +11,8 @@ export function AutoTune():Promise<string>;
 
 export function CancelAutoTune():Promise<void>;
 
+export function CheckAllUpdates():Promise<engine.SystemUpdateOverview>;
+
 export function CheckConflicts():Promise<Array<string>>;
 
 export function CheckPrivileges():Promise<boolean>;
@@ -27,7 +29,11 @@ export function ExportLogs(arg1:string):Promise<boolean>;
 
 export function GenerateDiagnosticReport():Promise<string>;
 
+export function GenerateDoctorReport(arg1:engine.DoctorResult):Promise<string>;
+
 export function GetAppVersion():Promise<string>;
+
+export function GetAutoStartTaskInfo():Promise<engine.TaskRegistrationInfo>;
 
 export function GetBypassLists():Promise<Array<string>>;
 
@@ -65,11 +71,19 @@ export function LoadCustomScript():Promise<string>;
 
 export function LoadPingHistory():Promise<Array<main.PingRecord>>;
 
+export function OpenLogsFolder():Promise<void>;
+
 export function QuitApp():Promise<void>;
 
 export function ReadBypassList(arg1:string):Promise<string>;
 
+export function RollbackEngineUpdate():Promise<void>;
+
+export function RunBypassComparison():Promise<engine.BypassComparisonResult>;
+
 export function RunDiagnostics():Promise<Array<engine.DiagnosticResult>>;
+
+export function RunDoctor(arg1:string):Promise<engine.DoctorResult>;
 
 export function SaveBypassList(arg1:string,arg2:string):Promise<void>;
 

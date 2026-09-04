@@ -19,8 +19,9 @@ interface ModalHostProps {
   isDiagOpen: boolean;
   isDiagRunning: boolean;
   diagResults: any[];
+  doctorResult?: any;
+  onRunMode?: (mode: string) => void;
   onCloseDiagnosticsModal: () => void;
-
   // LUA Editor Modal
   isLuaOpen: boolean;
   onCloseLuaModal: () => void;
@@ -60,6 +61,8 @@ export const ModalHost: React.FC<ModalHostProps> = (props) => {
         isOpen={props.isDiagOpen}
         isRunning={props.isDiagRunning}
         results={props.diagResults}
+        doctorResult={props.doctorResult}
+        onRunMode={props.onRunMode}
         onClose={props.onCloseDiagnosticsModal}
       />
 

@@ -154,3 +154,46 @@ func IsAutoStartEnabled() (bool, error) {
 	logger.Debug("Startup", "Auto-start is enabled (plist exists and loaded)")
 	return true, nil
 }
+
+func QueryAutoStartTaskRegistration() (*TaskRegistrationInfo, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+	plistPath := filepath.Join(homeDir, "Library", "LaunchAgents", MacOSPlistFilename)
+	if _, err := os.Stat(plistPath); os.IsNotExist(err) {
+		return &TaskRegistrationInfo{Exists: false}, nil
+	}
+	data, err := os.ReadFile(plistPath)
+	if err != nil {
+		return nil, err
+	}
+	return &TaskRegistrationInfo{
+		Exists:     true,
+		RawCommand: string(data),
+		TaskState:  "Loaded",
+	}, nil
+}
+
+func SelfHealAutoStart() (bool, error) {
+	settings, err := GetSettings()
+	if err != nil || !settings.AutoStart {
+		return false, nil
+	}
+	info, err := QueryAutoStartTaskRegistration()
+	if err != nil {
+		return false, err
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return false, err
+	}
+	absExe, _ := filepath.Abs(exe)
+	if !info.Exists || !strings.Contains(info.RawCommand, absExe) {
+		if err := EnableAutoStart(); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	return false, nil
+}

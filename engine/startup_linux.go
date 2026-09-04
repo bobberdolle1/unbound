@@ -5,6 +5,7 @@ package engine
 import (
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Autostart on Linux uses an XDG autostart entry, the mechanism every major
@@ -85,4 +86,54 @@ func IsAutoStartEnabled() (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+func QueryAutoStartTaskRegistration() (*TaskRegistrationInfo, error) {
+	path, err := autostartPath()
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return &TaskRegistrationInfo{Exists: false}, nil
+		}
+		return nil, err
+	}
+	content := string(data)
+	var execLine string
+	for _, line := range strings.Split(content, "\n") {
+		if strings.HasPrefix(line, "Exec=") {
+			execLine = strings.TrimPrefix(line, "Exec=")
+			break
+		}
+	}
+	return &TaskRegistrationInfo{
+		Exists:     true,
+		Executable: execLine,
+		TaskState:  "Enabled",
+	}, nil
+}
+
+func SelfHealAutoStart() (bool, error) {
+	settings, err := GetSettings()
+	if err != nil || !settings.AutoStart {
+		return false, nil
+	}
+	info, err := QueryAutoStartTaskRegistration()
+	if err != nil {
+		return false, err
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return false, err
+	}
+	absExe, _ := filepath.Abs(exe)
+	if !info.Exists || !strings.Contains(info.Executable, absExe) {
+		if err := EnableAutoStart(); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	return false, nil
 }

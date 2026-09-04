@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,15 +13,19 @@ import (
 )
 
 type AutoTuneResult struct {
-	ProfileName       string
-	Success           bool
-	Score             int
-	Latency           time.Duration
-	Results           map[string]TargetStatus
-	Baseline          map[string]TargetStatus
-	RecoveredTargets  int
-	RegressedTargets  int
-	BaselineAvailable int
+	ProfileName        string
+	Success            bool
+	Score              int
+	Latency            time.Duration
+	Results            map[string]TargetStatus
+	Baseline           map[string]TargetStatus
+	RecoveredTargets   int
+	RegressedTargets   int
+	BaselineAvailable  int
+	Aggressiveness     int
+	Explanation        string
+	AlternativeProfile string
+	FailedTargets      []string
 }
 
 type TargetStatus struct {
@@ -36,21 +41,65 @@ type Target struct {
 	Name     string
 	URL      string
 	Priority int
+	Category string // "youtube", "discord", "steam", "general"
 }
-
 // testTargets model the HTTPS services that the bundled profiles are meant to
 // restore. UDP/QUIC and Discord voice are intentionally not claimed here: the
 // current shared prober performs a verified IPv4 TLS handshake.
 var testTargets = []Target{
-	{Name: "YouTube", URL: "https://www.youtube.com", Priority: 30},
-	{Name: "Discord", URL: "https://discord.com", Priority: 30},
-	{Name: "Steam", URL: "https://store.steampowered.com", Priority: 20},
-	{Name: "Instagram", URL: "https://www.instagram.com", Priority: 20},
-	{Name: "Twitter/X", URL: "https://twitter.com", Priority: 15},
-	{Name: "Facebook", URL: "https://www.facebook.com", Priority: 15},
-	{Name: "RuTracker", URL: "https://rutracker.org", Priority: 15},
-	{Name: "NordVPN", URL: "https://nordvpn.com", Priority: 10},
-	{Name: "Proton", URL: "https://proton.me", Priority: 10},
+	{Name: "YouTube", URL: "https://www.youtube.com", Priority: 30, Category: "youtube"},
+	{Name: "Discord", URL: "https://discord.com", Priority: 30, Category: "discord"},
+	{Name: "Steam", URL: "https://store.steampowered.com", Priority: 20, Category: "steam"},
+	{Name: "Instagram", URL: "https://www.instagram.com", Priority: 20, Category: "general"},
+	{Name: "Twitter/X", URL: "https://twitter.com", Priority: 15, Category: "general"},
+	{Name: "Facebook", URL: "https://www.facebook.com", Priority: 15, Category: "general"},
+	{Name: "RuTracker", URL: "https://rutracker.org", Priority: 15, Category: "general"},
+	{Name: "NordVPN", URL: "https://nordvpn.com", Priority: 10, Category: "general"},
+	{Name: "Proton", URL: "https://proton.me", Priority: 10, Category: "general"},
+}
+
+// FilterTargets returns the subset of targets matching selected categories.
+func FilterTargets(categories []string) []Target {
+	if len(categories) == 0 {
+		return append([]Target(nil), testTargets...)
+	}
+	catMap := make(map[string]bool, len(categories))
+	for _, c := range categories {
+		catMap[strings.ToLower(strings.TrimSpace(c))] = true
+	}
+	var filtered []Target
+	for _, t := range testTargets {
+		if catMap[t.Category] {
+			filtered = append(filtered, t)
+		}
+	}
+	if len(filtered) == 0 {
+		return append([]Target(nil), testTargets...)
+	}
+	return filtered
+}
+
+// ProfileAggressiveness ranks strategy aggressiveness (1 = least aggressive / most specific).
+func ProfileAggressiveness(name string) int {
+	n := strings.ToLower(name)
+	switch {
+	case strings.Contains(n, "hostfakesplit") || strings.Contains(n, "recommended"):
+		return 1
+	case strings.Contains(n, "alternative 1") || (strings.Contains(n, "multisplit") && !strings.Contains(n, "sni") && !strings.Contains(n, "fake")):
+		return 2
+	case strings.Contains(n, "alternative 2") || (strings.Contains(n, "fake tls") && !strings.Contains(n, "multisplit")):
+		return 3
+	case strings.Contains(n, "alternative 3") || strings.Contains(n, "multisplit sni"):
+		return 4
+	case strings.Contains(n, "universal") || strings.Contains(n, "all-in-one"):
+		return 5
+	case strings.Contains(n, "alternative 4"):
+		return 6
+	case strings.Contains(n, "game") || strings.Contains(n, "steam"):
+		return 7
+	default:
+		return 8
+	}
 }
 
 type AutoTuneProgressFn func(step, total int, profile string, okCount, totalTargets int, msg string)
@@ -63,12 +112,12 @@ type AutoTuneOptions struct {
 	StabilizationDelay time.Duration
 	CleanupDelay       time.Duration
 	MinimumOK          int
+	AllowPartial       bool
 }
-
 func DefaultAutoTuneOptions() AutoTuneOptions {
 	return AutoTuneOptions{
 		Targets:            append([]Target(nil), testTargets...),
-		Probe:              ProbeConnection,
+		Probe:              defaultAutoTuneProbe,
 		ProbeTimeout:       5 * time.Second,
 		StabilizationDelay: 2 * time.Second,
 		CleanupDelay:       1500 * time.Millisecond,
@@ -144,7 +193,7 @@ func RunAutoTuneV3(ctx context.Context, provider providers.BypassProvider, profi
 		return nil, fmt.Errorf("no AutoTune targets configured")
 	}
 	if options.Probe == nil {
-		options.Probe = ProbeConnection
+		options.Probe = defaultAutoTuneProbe
 	}
 	if options.ProbeTimeout <= 0 {
 		options.ProbeTimeout = 5 * time.Second
@@ -182,6 +231,8 @@ func RunAutoTuneV3(ctx context.Context, provider providers.BypassProvider, profi
 	logger.Infof("AutoTune", "Baseline: %d/%d targets available", baselineAvailable, len(options.Targets))
 
 	var bestResult *AutoTuneResult
+	var runnerUp *AutoTuneResult
+	var bestPartial *AutoTuneResult
 	for index, profile := range profiles {
 		step := index + 1
 		if err := ctx.Err(); err != nil {
@@ -233,16 +284,37 @@ func RunAutoTuneV3(ctx context.Context, provider providers.BypassProvider, profi
 		if progressFn != nil {
 			progressFn(step, len(profiles), profile.Name, okCount, len(options.Targets), fmt.Sprintf("%s: %d/%d OK, +%d восстановлено, -%d регрессий (счёт %d)", profile.Name, okCount, len(options.Targets), result.RecoveredTargets, result.RegressedTargets, result.Score))
 		}
-		if result.Success && betterAutoTuneResult(result, bestResult) {
-			bestResult = result
+		if result.Success {
+			if bestResult == nil || betterAutoTuneResult(result, bestResult) {
+				runnerUp = bestResult
+				bestResult = result
+			} else if runnerUp == nil || betterAutoTuneResult(result, runnerUp) {
+				runnerUp = result
+			}
+		} else if result.RegressedTargets == 0 {
+			if bestPartial == nil || result.Score > bestPartial.Score {
+				bestPartial = result
+			}
 		}
 	}
 
 	if bestResult == nil {
+		if options.AllowPartial && bestPartial != nil {
+			bestPartial.BaselineAvailable = baselineAvailable
+			bestPartial.Explanation = fmt.Sprintf("Ни один профиль не восстановил все проверки без регрессий. Лучший частичный профиль: «%s» (%d/%d доступно)",
+				bestPartial.ProfileName, countStatusesOK(bestPartial.Results), len(options.Targets))
+			logger.Warnf("AutoTune", "No full winner; best partial: %s (score=%d)", bestPartial.ProfileName, bestPartial.Score)
+			return bestPartial, nil
+		}
 		logger.Error("AutoTune", "No profile improved connectivity without regressions")
 		notifMgr.Error("AutoTune не удался", "Рабочий профиль не найден; подробности сохранены в журнале")
 		return nil, fmt.Errorf("no profile improved connectivity without regressions")
 	}
+	if runnerUp != nil && runnerUp.ProfileName != bestResult.ProfileName {
+		bestResult.AlternativeProfile = runnerUp.ProfileName
+	}
+	bestResult.Explanation = fmt.Sprintf("Все проверки пройдены (%d/%d). Выбран профиль с наименьшей агрессивностью.",
+		countStatusesOK(bestResult.Results), len(options.Targets))
 
 	bestResult.BaselineAvailable = baselineAvailable
 	logger.Infof("AutoTune", "Winner: %s (score=%d, recovered=%d, latency=%dms)", bestResult.ProfileName, bestResult.Score, bestResult.RecoveredTargets, bestResult.Latency.Milliseconds())
@@ -313,11 +385,15 @@ func scoreAutoTuneProfile(profileName string, statuses, baseline map[string]Targ
 			if status.Latency < 150*time.Millisecond {
 				result.Score += 5
 			}
-		} else if base.OK {
-			result.RegressedTargets++
-			result.Score -= target.Priority * 3
+		} else {
+			result.FailedTargets = append(result.FailedTargets, target.Name)
+			if base.OK {
+				result.RegressedTargets++
+				result.Score -= target.Priority * 3
+			}
 		}
 	}
+	result.Aggressiveness = ProfileAggressiveness(profileName)
 	if okCount > 0 {
 		result.Latency = totalLatency / time.Duration(okCount)
 	}
@@ -327,9 +403,17 @@ func scoreAutoTuneProfile(profileName string, statuses, baseline map[string]Targ
 }
 
 func betterAutoTuneResult(candidate, current *AutoTuneResult) bool {
-	if current == nil || candidate.Score != current.Score {
-		return current == nil || candidate.Score > current.Score
+	if current == nil {
+		return true
 	}
+	if candidate.Score != current.Score {
+		return candidate.Score > current.Score
+	}
+	// Tie breaker 1: prefer LESS aggressive profile
+	if candidate.Aggressiveness != current.Aggressiveness {
+		return candidate.Aggressiveness < current.Aggressiveness
+	}
+	// Tie breaker 2: lower latency
 	return candidate.Latency < current.Latency
 }
 
@@ -355,4 +439,12 @@ func waitAutoTune(ctx context.Context, delay time.Duration) error {
 	case <-timer.C:
 		return nil
 	}
+}
+
+func defaultAutoTuneProbe(ctx context.Context, targetURL string) (ProbeResult, error) {
+	ce := NewConnectivityEngine(DefaultProbeTimeout)
+	res := ce.ExecuteWithRetry(ctx, 2, func(probeCtx context.Context) ProbeResult {
+		return ce.ProbeTLS(probeCtx, targetURL)
+	})
+	return res, nil
 }

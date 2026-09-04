@@ -18,6 +18,10 @@ export function CancelAutoTune() {
   return window['go']['main']['App']['CancelAutoTune']();
 }
 
+export function CheckAllUpdates() {
+  return window['go']['main']['App']['CheckAllUpdates']();
+}
+
 export function CheckConflicts() {
   return window['go']['main']['App']['CheckConflicts']();
 }
@@ -50,8 +54,16 @@ export function GenerateDiagnosticReport() {
   return window['go']['main']['App']['GenerateDiagnosticReport']();
 }
 
+export function GenerateDoctorReport(arg1) {
+  return window['go']['main']['App']['GenerateDoctorReport'](arg1);
+}
+
 export function GetAppVersion() {
   return window['go']['main']['App']['GetAppVersion']();
+}
+
+export function GetAutoStartTaskInfo() {
+  return window['go']['main']['App']['GetAutoStartTaskInfo']();
 }
 
 export function GetBypassLists() {
@@ -126,6 +138,10 @@ export function LoadPingHistory() {
   return window['go']['main']['App']['LoadPingHistory']();
 }
 
+export function OpenLogsFolder() {
+  return window['go']['main']['App']['OpenLogsFolder']();
+}
+
 export function QuitApp() {
   return window['go']['main']['App']['QuitApp']();
 }
@@ -134,8 +150,20 @@ export function ReadBypassList(arg1) {
   return window['go']['main']['App']['ReadBypassList'](arg1);
 }
 
+export function RollbackEngineUpdate() {
+  return window['go']['main']['App']['RollbackEngineUpdate']();
+}
+
+export function RunBypassComparison() {
+  return window['go']['main']['App']['RunBypassComparison']();
+}
+
 export function RunDiagnostics() {
   return window['go']['main']['App']['RunDiagnostics']();
+}
+
+export function RunDoctor(arg1) {
+  return window['go']['main']['App']['RunDoctor'](arg1);
 }
 
 export function SaveBypassList(arg1, arg2) {

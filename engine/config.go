@@ -116,6 +116,15 @@ func loadSettings() (*Settings, error) {
 	if _, present := raw["autoStartProfile"]; !present && settings.AutoStart {
 		settings.AutoStartProfile = true
 	}
+	if len(settings.AutoTuneTargets) == 0 {
+		settings.AutoTuneTargets = []string{"youtube", "discord", "steam", "general"}
+	}
+	if settings.DiagnosticsMode == "" {
+		settings.DiagnosticsMode = "quick"
+	}
+	if settings.AutoUpdatePolicy == "" {
+		settings.AutoUpdatePolicy = "check_only"
+	}
 	return &settings, nil
 }
 
@@ -168,5 +177,8 @@ func getDefaultSettings() *Settings {
 		GameFilter:         true,
 		AutoUpdateEnabled:  true,
 		ShowLogs:           true,
+		AutoTuneTargets:    []string{"youtube", "discord", "steam", "general"},
+		DiagnosticsMode:    "quick",
+		AutoUpdatePolicy:   "check_only",
 	}
 }
