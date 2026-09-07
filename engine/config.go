@@ -27,7 +27,33 @@ const (
 `
 )
 
+var (
+	testConfigDir string
+	testConfigMu  sync.RWMutex
+)
+
+// SetConfigDirForTest overrides the config directory during tests.
+func SetConfigDirForTest(dir string) func() {
+	testConfigMu.Lock()
+	old := testConfigDir
+	testConfigDir = dir
+	testConfigMu.Unlock()
+	return func() {
+		testConfigMu.Lock()
+		testConfigDir = old
+		testConfigMu.Unlock()
+	}
+}
+
 func GetConfigDir() (string, error) {
+	testConfigMu.RLock()
+	if testConfigDir != "" {
+		dir := testConfigDir
+		testConfigMu.RUnlock()
+		return dir, nil
+	}
+	testConfigMu.RUnlock()
+
 	userConfigDir, err := os.UserConfigDir()
 	if err != nil {
 		return "", err

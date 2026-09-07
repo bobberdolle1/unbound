@@ -156,3 +156,24 @@ func (m *ProviderManager) GetStatusInfo() map[string]interface{} {
 		"uptime_seconds": uptimeSec,
 	}
 }
+
+// RegisterProfile dynamically registers a strategy into an engine provider.
+func (m *ProviderManager) RegisterProfile(engineName, profileName string, args []string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if p, ok := m.providers[engineName]; ok {
+		if r, ok := p.(interface{ RegisterProfile(string, []string) }); ok {
+			r.RegisterProfile(profileName, args)
+		}
+	} else if m.activeProvider != nil {
+		if r, ok := m.activeProvider.(interface{ RegisterProfile(string, []string) }); ok {
+			r.RegisterProfile(profileName, args)
+		}
+	} else {
+		for _, p := range m.providers {
+			if r, ok := p.(interface{ RegisterProfile(string, []string) }); ok {
+				r.RegisterProfile(profileName, args)
+			}
+		}
+	}
+}

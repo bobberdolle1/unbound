@@ -201,6 +201,26 @@ func RegisterWindowsProfileCatalog(registrar interface{ RegisterProfile(string, 
 		registered[adaptiveProfile.Name] = struct{}{}
 		profiles = append(profiles, adaptiveProfile)
 	}
+
+	// AutoHostlist (Dynamic Detection) profile
+	autoHostlistProf := GetAutoHostlistProfile(listsDir)
+	if _, exists := registered[autoHostlistProf.Name]; !exists {
+		registrar.RegisterProfile(autoHostlistProf.Name, autoHostlistProf.Args)
+		registered[autoHostlistProf.Name] = struct{}{}
+		profiles = append(profiles, autoHostlistProf)
+	}
+
+	// Saved discovered profiles from Strategy Lab
+	if discovered, err := LoadDiscoveredProfiles(); err == nil {
+		for _, dp := range discovered {
+			if _, exists := registered[dp.Name]; !exists && len(dp.Args) > 0 {
+				safeArgs := steamSafeArgs(dp.Args, listsDir)
+				registrar.RegisterProfile(dp.Name, safeArgs)
+				registered[dp.Name] = struct{}{}
+				profiles = append(profiles, Profile{Name: dp.Name, Args: safeArgs})
+			}
+		}
+	}
 	return profiles
 }
 
