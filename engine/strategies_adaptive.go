@@ -3,6 +3,7 @@ package engine
 import (
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -142,5 +143,69 @@ func GetAdaptiveProfile(luaDir, listsDir string) Profile {
 	return Profile{
 		Name: "Adaptive (Experimental)",
 		Args: safeArgs,
+	}
+}
+
+var (
+	lastObservedHost   string
+	lastObservedHostMu sync.Mutex
+)
+
+var adaptiveStrategyNames = map[int]string{
+	1: "HostFakeSplit (midsld)",
+	2: "MultiSplit (midsld)",
+	3: "Fake TLS",
+	4: "MultiDisorder (final)",
+}
+
+// ParseAdaptiveLogEvent inspects winws2 stdout/stderr stream lines and feeds real events into AdaptiveStateTracker.
+func ParseAdaptiveLogEvent(logLine string) {
+	if logLine == "" {
+		return
+	}
+
+	// 1. Host tracking: e.g. "automate: host record key 'autostate.circular.youtube.com'"
+	if idx := strings.Index(logLine, "host record key 'autostate.circular."); idx != -1 {
+		part := logLine[idx+len("host record key 'autostate.circular."):]
+		end := strings.Index(part, "'")
+		if end != -1 {
+			host := strings.TrimSpace(part[:end])
+			if host != "" {
+				lastObservedHostMu.Lock()
+				lastObservedHost = host
+				lastObservedHostMu.Unlock()
+			}
+		}
+	}
+
+	lastObservedHostMu.Lock()
+	currentHost := lastObservedHost
+	lastObservedHostMu.Unlock()
+
+	// 2. Circular rotation: e.g. "circular: rotate strategy to 2"
+	if idx := strings.Index(logLine, "circular: rotate strategy to "); idx != -1 {
+		part := strings.TrimSpace(logLine[idx+len("circular: rotate strategy to "):])
+		if len(part) > 0 {
+			stratNum := int(part[0] - '0')
+			if stratNum >= 1 && stratNum <= 4 {
+				name := adaptiveStrategyNames[stratNum]
+				host := currentHost
+				if host == "" {
+					host = "active target"
+				}
+				GetAdaptiveStateTracker().RecordFailure(host, stratNum, name)
+				GetLogger().Infof("Adaptive", "[ADAPTIVE] circular rotated strategy to #%d (%s) for %s", stratNum, name, host)
+			}
+		}
+	}
+
+	// 3. Success detection: e.g. "automate: success detected"
+	if strings.Contains(logLine, "automate: success detected") {
+		host := currentHost
+		if host == "" {
+			host = "active target"
+		}
+		GetAdaptiveStateTracker().RecordSuccess(host, 1, adaptiveStrategyNames[1])
+		GetLogger().Infof("Adaptive", "[ADAPTIVE] host %s success detected, failure counter reset", host)
 	}
 }

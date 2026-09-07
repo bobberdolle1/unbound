@@ -2,11 +2,10 @@ package engine
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -67,16 +66,6 @@ type StrategyLabProgress struct {
 
 type StrategyLabProgressFn func(p StrategyLabProgress)
 
-// CandidateRunner abstracts the execution of a candidate strategy.
-type CandidateRunner interface {
-	RunCandidate(ctx context.Context, args []string, probeFn func() ProbeResult) ProbeResult
-}
-
-// DefaultCandidateRunner is the default production candidate runner using temporary isolated winws2.
-type DefaultCandidateRunner struct {
-	pc ProviderController
-}
-
 // RunStrategyLab executes the strategy discovery session with isolation and safety guarantees.
 func RunStrategyLab(
 	ctx context.Context,
@@ -84,8 +73,30 @@ func RunStrategyLab(
 	cfg StrategyLabTargetConfig,
 	onProgress StrategyLabProgressFn,
 ) (*StrategyLabReport, error) {
+	runner, err := NewDefaultCandidateRunner()
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize candidate runner: %w", err)
+	}
+	return RunStrategyLabWithRunner(ctx, pc, runner, cfg, onProgress)
+}
+
+// RunStrategyLabWithRunner executes strategy discovery with an explicit CandidateRunner (for testing/mocking).
+func RunStrategyLabWithRunner(
+	ctx context.Context,
+	pc ProviderController,
+	runner CandidateRunner,
+	cfg StrategyLabTargetConfig,
+	onProgress StrategyLabProgressFn,
+) (*StrategyLabReport, error) {
 	if cfg.TargetHost == "" {
 		return nil, errors.New("target host is required for Strategy Lab")
+	}
+	if runner == nil {
+		var err error
+		runner, err = NewDefaultCandidateRunner()
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize candidate runner: %w", err)
+		}
 	}
 
 	logger := GetLogger()
@@ -166,18 +177,27 @@ func RunStrategyLab(
 
 	// 3. Step 2: Build Isolated WinDivert Raw Filter
 	var ports []int
-	if strings.EqualFold(cfg.Protocol, "HTTP") {
+	protoStr := "tcp"
+	switch strings.ToUpper(strings.TrimSpace(cfg.Protocol)) {
+	case "HTTP":
 		ports = []int{80}
-	} else {
+		protoStr = "tcp"
+	case "QUIC":
 		ports = []int{443}
+		protoStr = "udp"
+	case "ANY":
+		ports = []int{80, 443}
+		protoStr = "both"
+	default: // TLS1.3, TLS1.2, etc.
+		ports = []int{443}
+		protoStr = "tcp"
 	}
 
 	filterConfig := TargetFilterConfig{
 		TargetHost: cfg.TargetHost,
 		Ports:      ports,
-		Protocol:   "tcp",
+		Protocol:   protoStr,
 	}
-
 	rawFilter, targetIPs, err := BuildIsolatedWinDivertFilter(ctx, filterConfig)
 	if err != nil {
 		logger.Errorf("Lab", "[LAB] failed to build isolated raw filter: %v", err)
@@ -228,9 +248,26 @@ func RunStrategyLab(
 
 		logger.Infof("Lab", "[LAB] testing candidate [%d/%d]: %s", idx+1, len(candidates), cand.Name)
 
-		// Evaluate candidate with 3 repeated probes for stability
-		res := testSingleCandidate(ctx, ce, cand, targetURL)
+		// 1. Launch temporary isolated winws2 process with strict raw filter
+		proc, err := runner.StartCandidate(ctx, cand, rawFilter)
+		if err != nil {
+			logger.Warnf("Lab", "[LAB] candidate %s failed to start: %v", cand.Name, err)
+			report.TestedCandidates++
+			report.WorkingCandidates = append(report.WorkingCandidates, CandidateTestResult{
+				Candidate:     cand,
+				Status:        StatusFail,
+				TotalAttempts: 3,
+				Error:         fmt.Sprintf("START_FAILED: %v", err),
+			})
+			continue
+		}
+
+		// 2. Perform protocol-specific probes while candidate process is active
+		res := testCandidateWithProcess(ctx, ce, cand, targetURL, cfg.Protocol, baselineReachable)
 		report.TestedCandidates++
+
+		// 3. Stop candidate process and release WinDivert handles
+		_ = proc.Stop()
 
 		if res.Status == StatusPass {
 			logger.Infof("Lab", "[LAB] candidate %s PASSED (%d/%d, avg latency=%v)",
@@ -243,7 +280,6 @@ func RunStrategyLab(
 	}
 
 	// 6. Step 5: Rank Working Candidates
-	// Priority: 1. PassCount / TotalAttempts (Reliability)
 	//           2. Aggressiveness (Lower is better)
 	//           3. AvgLatency (Lower is better)
 	if len(report.WorkingCandidates) > 0 {
@@ -265,8 +301,20 @@ func RunStrategyLab(
 		logger.Infof("Lab", "[LAB] best discovered candidate: %s (score=%d, aggressiveness=%s)",
 			best.Candidate.Name, best.Score, best.Candidate.Aggressiveness)
 
-		// 7. Step 6: Full Service Validation on Winner
-		report.ServiceVerified = validateCandidateAgainstService(ctx, ce, cfg.ServicePreset)
+		// 7. Step 6: Full Service Validation on Winner WHILE WINNER PROCESS IS ACTIVE!
+		if cfg.ServicePreset != "" && !strings.EqualFold(cfg.ServicePreset, "Custom") {
+			logger.Infof("Lab", "[LAB] launching winner %s for service validation (%s)", best.Candidate.Name, cfg.ServicePreset)
+			winnerProc, err := runner.StartCandidate(ctx, best.Candidate, rawFilter)
+			if err == nil {
+				report.ServiceVerified = validateCandidateAgainstService(ctx, ce, cfg.ServicePreset)
+				_ = winnerProc.Stop()
+			} else {
+				logger.Warnf("Lab", "[LAB] failed to start winner for service validation: %v", err)
+				report.ServiceVerified = false
+			}
+		} else {
+			report.ServiceVerified = true
+		}
 	}
 
 	report.Duration = time.Since(startTime)
@@ -276,11 +324,13 @@ func RunStrategyLab(
 	return report, nil
 }
 
-func testSingleCandidate(
+func testCandidateWithProcess(
 	ctx context.Context,
 	ce *ConnectivityEngine,
 	cand StrategyCandidate,
 	targetURL string,
+	protocol string,
+	baselineReachable bool,
 ) CandidateTestResult {
 	const attempts = 3
 	passCount := 0
@@ -291,7 +341,24 @@ func testSingleCandidate(
 		if ctx.Err() != nil {
 			break
 		}
-		probeRes := ce.ProbeHTTP(ctx, targetURL, http.StatusOK, http.StatusNoContent, http.StatusMovedPermanently, http.StatusFound)
+		var probeRes ProbeResult
+		switch strings.ToUpper(strings.TrimSpace(protocol)) {
+		case "TLS1.2":
+			probeRes = ce.ProbeTLSVersion(ctx, targetURL, tls.VersionTLS12)
+		case "TLS1.3":
+			probeRes = ce.ProbeTLSVersion(ctx, targetURL, tls.VersionTLS13)
+		case "HTTP":
+			probeRes = ce.ProbeHTTP(ctx, targetURL, http.StatusOK, http.StatusNoContent, http.StatusMovedPermanently, http.StatusFound)
+		case "QUIC":
+			cleanHost := extractHost(targetURL)
+			if cleanHost == "" {
+				cleanHost = targetURL
+			}
+			probeRes = ce.ProbeUDPPreflight(ctx, cleanHost+":443")
+		default:
+			probeRes = ce.ProbeHTTP(ctx, targetURL, http.StatusOK, http.StatusNoContent, http.StatusMovedPermanently, http.StatusFound)
+		}
+
 		if probeRes.Status == StatusPass {
 			passCount++
 			totalLatency += probeRes.Latency
@@ -321,6 +388,13 @@ func testSingleCandidate(
 		score += 10
 	}
 
+	details := fmt.Sprintf("%d/%d успешно, латентность: %v", passCount, attempts, avgLat.Round(time.Millisecond))
+	if !baselineReachable && passCount >= 2 {
+		details += " (⭐ Обход успешен!)"
+	} else if baselineReachable && passCount >= 2 {
+		details += " (Цель доступна)"
+	}
+
 	return CandidateTestResult{
 		Candidate:     cand,
 		Status:        status,
@@ -328,7 +402,7 @@ func testSingleCandidate(
 		TotalAttempts: attempts,
 		AvgLatency:    avgLat,
 		Score:         score,
-		Details:       fmt.Sprintf("%d/%d успешно, латентность: %v", passCount, attempts, avgLat.Round(time.Millisecond)),
+		Details:       details,
 		Error:         lastErr,
 	}
 }
@@ -352,25 +426,3 @@ func validateCandidateAgainstService(ctx context.Context, ce *ConnectivityEngine
 	}
 }
 
-// SaveDiscoveredProfile saves a working strategy discovered in Strategy Lab as a custom profile.
-func SaveDiscoveredProfile(name string, candidate StrategyCandidate, targetHost string) error {
-	configDir, err := GetConfigDir()
-	if err != nil {
-		return err
-	}
-
-	cleanName := strings.TrimSpace(name)
-	if cleanName == "" {
-		cleanName = fmt.Sprintf("Discovered (%s)", candidate.Name)
-	}
-
-	customScriptPath := filepath.Join(configDir, "custom_profile.lua")
-	content := fmt.Sprintf("-- Discovered Profile: %s\n-- Target: %s\n-- Protocol: %s\n-- Source: %s\n-- Aggressiveness: %s\n-- Created: %s\n\n",
-		cleanName, targetHost, candidate.Protocol, candidate.Source, candidate.Aggressiveness.String(), time.Now().Format("2006-01-02 15:04:05"))
-
-	for _, arg := range candidate.Zapret2Args {
-		content += fmt.Sprintf("-- Arg: %s\n", arg)
-	}
-
-	return os.WriteFile(customScriptPath, []byte(content), 0644)
-}

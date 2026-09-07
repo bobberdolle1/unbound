@@ -398,8 +398,9 @@ func TestGetSystemComponentStateOffline(t *testing.T) {
 		}
 	}
 
-	if compMap[ComponentApp].CurrentVersion != "v0.5.2" {
-		t.Errorf("App version = %s; want v0.5.2", compMap[ComponentApp].CurrentVersion)
+	expectedAppVer := "v" + normalizeVersion(Version)
+	if compMap[ComponentApp].CurrentVersion != expectedAppVer {
+		t.Errorf("App version = %s; want %s", compMap[ComponentApp].CurrentVersion, expectedAppVer)
 	}
 	if compMap[ComponentEngine].CurrentVersion != "v1.0.5" {
 		t.Errorf("Engine version = %s; want v1.0.5", compMap[ComponentEngine].CurrentVersion)

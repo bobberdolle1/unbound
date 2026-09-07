@@ -64,3 +64,32 @@ func TestAdaptiveStateTracker(t *testing.T) {
 		t.Errorf("Expected 0 states after reset, got %d", len(states))
 	}
 }
+
+func TestParseAdaptiveLogEventRealStream(t *testing.T) {
+	tracker := GetAdaptiveStateTracker()
+	tracker.ResetState()
+
+	// 1. Host key line from winws2 output
+	ParseAdaptiveLogEvent("DLOG: automate: host record key 'autostate.circular.discord.com'")
+
+	// 2. Rotation line
+	ParseAdaptiveLogEvent("DLOG: circular: rotate strategy to 2")
+
+	states := tracker.GetHostStates()
+	if len(states) != 1 {
+		t.Fatalf("Expected 1 host state, got %d", len(states))
+	}
+	if states[0].Host != "discord.com" {
+		t.Errorf("Host = %s; want discord.com", states[0].Host)
+	}
+	if states[0].StrategyIndex != 2 || states[0].StrategyName != "MultiSplit (midsld)" {
+		t.Errorf("Strategy = (%d, %s); want (2, MultiSplit (midsld))", states[0].StrategyIndex, states[0].StrategyName)
+	}
+
+	// 3. Success line
+	ParseAdaptiveLogEvent("DLOG: automate: success detected")
+	states = tracker.GetHostStates()
+	if states[0].FailureCount != 0 {
+		t.Errorf("Expected failure count 0 after success, got %d", states[0].FailureCount)
+	}
+}

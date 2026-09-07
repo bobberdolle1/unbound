@@ -391,3 +391,35 @@ func GetGamesSteamProfiles() []Profile {
 		},
 	}
 }
+
+// GetAutoHostlistProfile constructs the canonical winws2 profile utilizing --hostlist-auto feedback.
+func GetAutoHostlistProfile(listsDir string) Profile {
+	autoFile := filepath.ToSlash(filepath.Join(listsDir, "autodetect.txt"))
+
+	args := []string{
+		// Scoped capture on port 80,443 with sequence cutoff for failure/success feedback
+		"--wf-tcp=80,443",
+		"--filter-tcp=80,443",
+		"--in-range=-s4096",
+		"--hostlist-auto=" + autoFile,
+		"--hostlist-auto-fail-threshold=3",
+		"--hostlist-auto-fail-time=60",
+		"--hostlist-auto-retrans-threshold=3",
+		"--hostlist-auto-retrans-reset=1",
+		"--hostlist-auto-incoming-maxseq=4096",
+		"--payload=tls_client_hello",
+		"--lua-desync=hostfakesplit:midhost=midsld:repeats=2",
+		"--new",
+		"--filter-tcp=80,443",
+		"--in-range=-s4096",
+		"--hostlist-auto=" + autoFile,
+		"--payload=http_req",
+		"--lua-desync=multisplit:pos=midsld",
+	}
+
+	safeArgs := steamSafeArgs(args, listsDir)
+	return Profile{
+		Name: "AutoHostlist (Dynamic Detection)",
+		Args: safeArgs,
+	}
+}

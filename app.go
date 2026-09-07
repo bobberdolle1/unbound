@@ -685,7 +685,17 @@ func (a *App) RunStrategyLab(targetHost, servicePreset, protocol string, customA
 }
 
 func (a *App) SaveDiscoveredProfile(name string, candidate engine.StrategyCandidate, targetHost string) error {
-	return engine.SaveDiscoveredProfile(name, candidate, targetHost)
+	err := engine.SaveDiscoveredProfile(name, candidate, targetHost)
+	if err != nil {
+		return err
+	}
+	cleanName := strings.TrimSpace(name)
+	if cleanName == "" {
+		cleanName = fmt.Sprintf("Discovered - %s", candidate.Name)
+	}
+	a.manager.RegisterProfile("", cleanName, candidate.Zapret2Args)
+	wailsruntime.EventsEmit(a.ctx, "engines_changed", a.manager.GetEngineNames())
+	return nil
 }
 
 // AutoHostlist APIs

@@ -50,9 +50,10 @@ func registerOSProviders(a *App, assets *engine.AssetPaths) {
 		runtime.EventsEmit(a.ctx, "status_changed", status)
 	})
 
-	// Register log callback for real-time logs
+	// Register log callback for real-time logs and adaptive circular events
 	zapretProvider.SetLogCallback(func(log string) {
 		runtime.EventsEmit(a.ctx, "engine_log", log)
+		engine.ParseAdaptiveLogEvent(log)
 	})
 
 	engine.RegisterWindowsProfileCatalog(zapretProvider, assets.LuaDir)
