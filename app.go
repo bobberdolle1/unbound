@@ -693,7 +693,17 @@ func (a *App) SaveDiscoveredProfile(name string, candidate engine.StrategyCandid
 	if cleanName == "" {
 		cleanName = fmt.Sprintf("Discovered - %s", candidate.Name)
 	}
-	a.manager.RegisterProfile("", cleanName, candidate.Zapret2Args)
+
+	listsDir, _ := engine.GetListsDir()
+	tempProf := engine.DiscoveredProfile{
+		Name:          cleanName,
+		Target:        targetHost,
+		Protocol:      candidate.Protocol,
+		CandidateArgs: candidate.Zapret2Args,
+	}
+	effectiveArgs := engine.BuildDiscoveredProfileRuntimeArgs(tempProf, listsDir)
+
+	a.manager.RegisterProfile("", cleanName, effectiveArgs)
 	wailsruntime.EventsEmit(a.ctx, "engines_changed", a.manager.GetEngineNames())
 	return nil
 }
