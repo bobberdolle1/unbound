@@ -45,6 +45,10 @@ func checkTCPTimestamps() DiagnosticResult {
 	return DiagnosticResult{"TCP Stack", "Warning", "Timestamps disabled.", true}
 }
 
+func checkTCPTimestampsBool() bool {
+	return checkTCPTimestamps().Status == "OK"
+}
+
 func checkConflictingProcesses() DiagnosticResult {
 	conflicts := []string{
 		"goodbyedpi.exe", "winws.exe", "nfqws.exe",

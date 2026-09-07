@@ -26,6 +26,9 @@ type AutoTuneResult struct {
 	Explanation        string
 	AlternativeProfile string
 	FailedTargets      []string
+	SkippedProfiles    map[string]string
+	RequirementsMet    bool
+	CapabilityWarnings []string
 }
 
 type TargetStatus struct {
@@ -97,8 +100,45 @@ func ProfileAggressiveness(name string) int {
 		return 6
 	case strings.Contains(n, "game") || strings.Contains(n, "steam"):
 		return 7
+	case strings.Contains(n, "adaptive"):
+		return 9
 	default:
 		return 8
+	}
+}
+
+// GetProfileRequirements returns the system and stack capabilities required or recommended by a profile.
+func GetProfileRequirements(profileName string) StrategyRequirements {
+	n := strings.ToLower(profileName)
+	switch {
+	case strings.Contains(n, "wssize"):
+		return StrategyRequirements{
+			TCPTimestamps: TimestampsRecommended,
+		}
+	case strings.Contains(n, "syndata"):
+		return StrategyRequirements{
+			TCPTimestamps: TimestampsRequired,
+		}
+	case strings.Contains(n, "adaptive"):
+		return StrategyRequirements{
+			TCPTimestamps: TimestampsNone,
+			InboundTCP:    true,
+			LuaModules:    []string{"zapret-auto.lua"},
+		}
+	case strings.Contains(n, "universal"):
+		return StrategyRequirements{
+			TCPTimestamps: TimestampsNone,
+			InboundUDP:    true,
+		}
+	case strings.Contains(n, "alternative 3") || strings.Contains(n, "multisplit sni"):
+		return StrategyRequirements{
+			TCPTimestamps: TimestampsNone,
+			LuaModules:    []string{"custom_funcs.lua"},
+		}
+	default:
+		return StrategyRequirements{
+			TCPTimestamps: TimestampsNone,
+		}
 	}
 }
 
@@ -113,6 +153,7 @@ type AutoTuneOptions struct {
 	CleanupDelay       time.Duration
 	MinimumOK          int
 	AllowPartial       bool
+	TCPTimestampsActive *bool
 }
 func DefaultAutoTuneOptions() AutoTuneOptions {
 	return AutoTuneOptions{
@@ -151,6 +192,14 @@ func RegisterWindowsProfileCatalog(registrar interface{ RegisterProfile(string, 
 		registrar.RegisterProfile(profile.Name, profile.Args)
 		registered[profile.Name] = struct{}{}
 		profiles = append(profiles, profile)
+	}
+
+	// Adaptive (Experimental) circular profile
+	adaptiveProfile := GetAdaptiveProfile(luaDir, listsDir)
+	if _, exists := registered[adaptiveProfile.Name]; !exists {
+		registrar.RegisterProfile(adaptiveProfile.Name, adaptiveProfile.Args)
+		registered[adaptiveProfile.Name] = struct{}{}
+		profiles = append(profiles, adaptiveProfile)
 	}
 	return profiles
 }
@@ -233,8 +282,25 @@ func RunAutoTuneV3(ctx context.Context, provider providers.BypassProvider, profi
 	var bestResult *AutoTuneResult
 	var runnerUp *AutoTuneResult
 	var bestPartial *AutoTuneResult
+	skippedProfiles := make(map[string]string)
+	timestampsActive := true
+	if options.TCPTimestampsActive != nil {
+		timestampsActive = *options.TCPTimestampsActive
+	} else if runtime.GOOS == "windows" {
+		timestampsActive = checkTCPTimestampsBool()
+	}
+
 	for index, profile := range profiles {
 		step := index + 1
+		req := GetProfileRequirements(profile.Name)
+		if req.TCPTimestamps == TimestampsRequired && !timestampsActive {
+			skippedProfiles[profile.Name] = "Requires TCP timestamps enabled in Windows TCP stack"
+			logger.Infof("AutoTune", "Skipping profile %s: requires TCP timestamps", profile.Name)
+			if progressFn != nil {
+				progressFn(step, len(profiles), profile.Name, 0, len(options.Targets), fmt.Sprintf("Пропуск [%d/%d]: %s (требуются TCP timestamps)", step, len(profiles), profile.Name))
+			}
+			continue
+		}
 		if err := ctx.Err(); err != nil {
 			notifMgr.Warning("AutoTune", "Процесс отменён")
 			return nil, err
@@ -296,6 +362,10 @@ func RunAutoTuneV3(ctx context.Context, provider providers.BypassProvider, profi
 				bestPartial = result
 			}
 		}
+		if req.TCPTimestamps == TimestampsRecommended && !timestampsActive {
+			result.Score -= 5
+			result.CapabilityWarnings = append(result.CapabilityWarnings, "TCP timestamps are disabled; strategy may be less effective")
+		}
 	}
 
 	if bestResult == nil {
@@ -316,6 +386,8 @@ func RunAutoTuneV3(ctx context.Context, provider providers.BypassProvider, profi
 	bestResult.Explanation = fmt.Sprintf("Все проверки пройдены (%d/%d). Выбран профиль с наименьшей агрессивностью.",
 		countStatusesOK(bestResult.Results), len(options.Targets))
 
+	bestResult.SkippedProfiles = skippedProfiles
+	bestResult.RequirementsMet = true
 	bestResult.BaselineAvailable = baselineAvailable
 	logger.Infof("AutoTune", "Winner: %s (score=%d, recovered=%d, latency=%dms)", bestResult.ProfileName, bestResult.Score, bestResult.RecoveredTargets, bestResult.Latency.Milliseconds())
 	notifMgr.Success("AutoTune завершён", fmt.Sprintf("Лучший профиль: %s", bestResult.ProfileName))
