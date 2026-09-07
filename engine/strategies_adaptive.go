@@ -40,8 +40,70 @@ func GetAdaptiveStateTracker() *AdaptiveStateTracker {
 	return globalAdaptiveTracker
 }
 
-// RecordSuccess updates the host record when a connection successfully transmits past sequence thresholds.
+// RecordInit registers initial baseline tracking for a host on strategy #1.
+func (t *AdaptiveStateTracker) RecordInit(host string, strategyIndex int, strategyName string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if _, exists := t.states[host]; !exists {
+		t.states[host] = &AdaptiveHostState{
+			Host:          host,
+			StrategyIndex: strategyIndex,
+			StrategyName:  strategyName,
+			Confidence:    "medium",
+			LastSuccess:   time.Now(),
+		}
+	}
+}
+
+// RecordSuccess updates the host record on successful transmission past sequence thresholds.
+// Keeps the currently working strategy intact (does NOT reset to #1).
 func (t *AdaptiveStateTracker) RecordSuccess(host string, strategyIndex int, strategyName string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	state, ok := t.states[host]
+	if !ok {
+		state = &AdaptiveHostState{
+			Host:          host,
+			StrategyIndex: strategyIndex,
+			StrategyName:  strategyName,
+			Confidence:    "medium",
+		}
+		t.states[host] = state
+	}
+
+	state.LastSuccess = time.Now()
+	state.FailureCount = 0
+	if strategyIndex > 0 && strategyName != "" {
+		state.StrategyIndex = strategyIndex
+		state.StrategyName = strategyName
+	}
+	state.Confidence = "high"
+}
+
+// RecordRotation records that circular orchestration shifted to a new strategy after failure threshold.
+func (t *AdaptiveStateTracker) RecordRotation(host string, newStrategyIndex int, newStrategyName string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	state, ok := t.states[host]
+	if !ok {
+		state = &AdaptiveHostState{
+			Host: host,
+		}
+		t.states[host] = state
+	}
+
+	state.LastFailure = time.Now()
+	state.FailureCount = 0
+	state.StrategyIndex = newStrategyIndex
+	state.StrategyName = newStrategyName
+	state.Confidence = "medium"
+}
+
+// RecordFailure increments failure counter and notes degradation.
+func (t *AdaptiveStateTracker) RecordFailure(host string, strategyIndex int, strategyName string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -56,37 +118,12 @@ func (t *AdaptiveStateTracker) RecordSuccess(host string, strategyIndex int, str
 		t.states[host] = state
 	}
 
-	state.LastSuccess = time.Now()
-	state.FailureCount = 0
-
-	// Boost confidence after repeated success
-	if state.Confidence == "low" {
-		state.Confidence = "medium"
-	} else if state.Confidence == "medium" {
-		state.Confidence = "high"
-	}
-}
-
-// RecordFailure increments failure counter and notes degradation.
-func (t *AdaptiveStateTracker) RecordFailure(host string, newStrategyIndex int, newStrategyName string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	state, ok := t.states[host]
-	if !ok {
-		state = &AdaptiveHostState{
-			Host:          host,
-			StrategyIndex: newStrategyIndex,
-			StrategyName:  newStrategyName,
-			Confidence:    "low",
-		}
-		t.states[host] = state
-	}
-
 	state.LastFailure = time.Now()
 	state.FailureCount++
-	state.StrategyIndex = newStrategyIndex
-	state.StrategyName = newStrategyName
+	if strategyIndex > 0 && strategyName != "" {
+		state.StrategyIndex = strategyIndex
+		state.StrategyName = strategyName
+	}
 	state.Confidence = "low"
 }
 
@@ -113,10 +150,12 @@ func (t *AdaptiveStateTracker) ResetState() {
 	t.states = make(map[string]*AdaptiveHostState)
 	GetLogger().Info("Adaptive", "[ADAPTIVE] per-host adaptive state reset")
 }
+
 // GetAdaptiveProfile generates the command-line arguments for the Adaptive (Experimental) profile.
-// Uses bundled zapret-auto.lua with circular orchestration and scoped inbound capture.
+// Uses bundled zapret-auto.lua with circular orchestration, event bridge, and directional capture.
 func GetAdaptiveProfile(luaDir, listsDir string) Profile {
-	autoLua := filepath.Join(luaDir, "zapret-auto.lua")
+	autoLua := filepath.ToSlash(filepath.Join(luaDir, "zapret-auto.lua"))
+	eventsLua := filepath.ToSlash(filepath.Join(luaDir, "unbound_adaptive_events.lua"))
 
 	// 4-stage circular orchestration chain:
 	// Strategy 1: HostFakeSplit (midsld)
@@ -124,11 +163,13 @@ func GetAdaptiveProfile(luaDir, listsDir string) Profile {
 	// Strategy 3: Fake TLS
 	// Strategy 4: MultiDisorder (final)
 	args := []string{
-		// Scoped capture: inbound TCP only on 80,443 within initial 4KB sequence for RST/redirect detection
-		"--wf-tcp=80,443",
+		// Directional capture: inbound and outbound TCP on 80,443 within initial 4KB sequence for RST/redirect detection
+		"--wf-tcp-in=80,443",
+		"--wf-tcp-out=80,443",
 		"--filter-tcp=80,443",
 		"--in-range=-s4096",
 		"--lua-init=@" + autoLua,
+		"--lua-init=@" + eventsLua,
 		"--payload=tls_client_hello",
 		"--lua-desync=circular:fails=3:time=60",
 		"--lua-desync=hostfakesplit:midhost=midsld:repeats=2:strategy=1",
@@ -146,11 +187,6 @@ func GetAdaptiveProfile(luaDir, listsDir string) Profile {
 	}
 }
 
-var (
-	lastObservedHost   string
-	lastObservedHostMu sync.Mutex
-)
-
 var adaptiveStrategyNames = map[int]string{
 	1: "HostFakeSplit (midsld)",
 	2: "MultiSplit (midsld)",
@@ -164,48 +200,57 @@ func ParseAdaptiveLogEvent(logLine string) {
 		return
 	}
 
-	// 1. Host tracking: e.g. "automate: host record key 'autostate.circular.youtube.com'"
-	if idx := strings.Index(logLine, "host record key 'autostate.circular."); idx != -1 {
-		part := logLine[idx+len("host record key 'autostate.circular."):]
-		end := strings.Index(part, "'")
-		if end != -1 {
-			host := strings.TrimSpace(part[:end])
-			if host != "" {
-				lastObservedHostMu.Lock()
-				lastObservedHost = host
-				lastObservedHostMu.Unlock()
+	// Priority 1: Structured Machine-Readable UNBOUND Event Bridge
+	// Format: [UNBOUND_EVENT] adaptive host=<host> event=<init|rotate|success|failure> strategy=<N>
+	if idx := strings.Index(logLine, "[UNBOUND_EVENT] adaptive"); idx != -1 {
+		part := strings.TrimSpace(logLine[idx+len("[UNBOUND_EVENT] adaptive"):])
+		fields := strings.Fields(part)
+		kv := make(map[string]string)
+		for _, f := range fields {
+			if eq := strings.Index(f, "="); eq != -1 {
+				kv[f[:eq]] = f[eq+1:]
 			}
 		}
+
+		host := kv["host"]
+		if host == "" || host == "unknown" {
+			return
+		}
+		event := kv["event"]
+		stratNum := 1
+		if s, ok := kv["strategy"]; ok && len(s) > 0 {
+			if n := int(s[0] - '0'); n >= 1 && n <= 4 {
+				stratNum = n
+			}
+		}
+		stratName := adaptiveStrategyNames[stratNum]
+
+		tracker := GetAdaptiveStateTracker()
+		switch event {
+		case "init":
+			tracker.RecordInit(host, stratNum, stratName)
+		case "rotate":
+			tracker.RecordRotation(host, stratNum, stratName)
+			GetLogger().Infof("Adaptive", "[ADAPTIVE] circular rotated strategy to #%d (%s) for %s", stratNum, stratName, host)
+		case "success":
+			tracker.RecordSuccess(host, stratNum, stratName)
+			GetLogger().Infof("Adaptive", "[ADAPTIVE] host %s success confirmed on strategy #%d (%s)", host, stratNum, stratName)
+		case "failure":
+			tracker.RecordFailure(host, stratNum, stratName)
+			GetLogger().Infof("Adaptive", "[ADAPTIVE] host %s failure detected on strategy #%d (%s)", host, stratNum, stratName)
+		}
+		return
 	}
 
-	lastObservedHostMu.Lock()
-	currentHost := lastObservedHost
-	lastObservedHostMu.Unlock()
-
-	// 2. Circular rotation: e.g. "circular: rotate strategy to 2"
+	// Priority 2: Fallback Scraper for legacy or manual --debug=1 upstream logs
 	if idx := strings.Index(logLine, "circular: rotate strategy to "); idx != -1 {
 		part := strings.TrimSpace(logLine[idx+len("circular: rotate strategy to "):])
 		if len(part) > 0 {
 			stratNum := int(part[0] - '0')
 			if stratNum >= 1 && stratNum <= 4 {
 				name := adaptiveStrategyNames[stratNum]
-				host := currentHost
-				if host == "" {
-					host = "active target"
-				}
-				GetAdaptiveStateTracker().RecordFailure(host, stratNum, name)
-				GetLogger().Infof("Adaptive", "[ADAPTIVE] circular rotated strategy to #%d (%s) for %s", stratNum, name, host)
+				GetAdaptiveStateTracker().RecordRotation("active target", stratNum, name)
 			}
 		}
-	}
-
-	// 3. Success detection: e.g. "automate: success detected"
-	if strings.Contains(logLine, "automate: success detected") {
-		host := currentHost
-		if host == "" {
-			host = "active target"
-		}
-		GetAdaptiveStateTracker().RecordSuccess(host, 1, adaptiveStrategyNames[1])
-		GetLogger().Infof("Adaptive", "[ADAPTIVE] host %s success detected, failure counter reset", host)
 	}
 }

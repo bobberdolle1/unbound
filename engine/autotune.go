@@ -213,11 +213,11 @@ func RegisterWindowsProfileCatalog(registrar interface{ RegisterProfile(string, 
 	// Saved discovered profiles from Strategy Lab
 	if discovered, err := LoadDiscoveredProfiles(); err == nil {
 		for _, dp := range discovered {
-			if _, exists := registered[dp.Name]; !exists && len(dp.Args) > 0 {
-				safeArgs := steamSafeArgs(dp.Args, listsDir)
-				registrar.RegisterProfile(dp.Name, safeArgs)
+			if _, exists := registered[dp.Name]; !exists && (len(dp.Args) > 0 || len(dp.CandidateArgs) > 0) {
+				effectiveArgs := BuildDiscoveredProfileRuntimeArgs(dp, listsDir)
+				registrar.RegisterProfile(dp.Name, effectiveArgs)
 				registered[dp.Name] = struct{}{}
-				profiles = append(profiles, Profile{Name: dp.Name, Args: safeArgs})
+				profiles = append(profiles, Profile{Name: dp.Name, Args: effectiveArgs})
 			}
 		}
 	}

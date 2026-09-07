@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"sort"
 	"strings"
@@ -203,12 +204,16 @@ func RunStrategyLabWithRunner(
 		logger.Errorf("Lab", "[LAB] failed to build isolated raw filter: %v", err)
 		return nil, fmt.Errorf("failed to build isolated target filter: %w", err)
 	}
+	if len(targetIPs) > 0 {
+		ce.PinHost(cfg.TargetHost, targetIPs[0])
+		defer ce.UnpinHost(cfg.TargetHost)
+	}
 
 	for _, ip := range targetIPs {
 		report.TargetIPs = append(report.TargetIPs, ip.String())
 	}
-	logger.Infof("Lab", "[LAB] isolated raw filter constructed for %d IPs: %s", len(targetIPs), rawFilter)
-
+	logger.Infof("Lab", "[LAB] isolated raw filter constructed for %d IPs (pinned to %s): %s",
+		len(targetIPs), targetIPs[0], rawFilter)
 	// 4. Step 3: Load Candidates
 	var candidates []StrategyCandidate
 	if len(cfg.CustomCandidateArgs) > 0 {
@@ -303,8 +308,26 @@ func RunStrategyLabWithRunner(
 
 		// 7. Step 6: Full Service Validation on Winner WHILE WINNER PROCESS IS ACTIVE!
 		if cfg.ServicePreset != "" && !strings.EqualFold(cfg.ServicePreset, "Custom") {
+			logger.Infof("Lab", "[LAB] preparing combined service validation filter for %s", cfg.ServicePreset)
+			endpoints := GetServiceValidationEndpoints(cfg.ServicePreset)
+			var combinedIPs []net.IP
+			for _, ep := range endpoints {
+				if epIPs, err := net.DefaultResolver.LookupIP(ctx, "ip", ep); err == nil && len(epIPs) > 0 {
+					ce.PinHost(ep, epIPs[0])
+					defer ce.UnpinHost(ep)
+					combinedIPs = append(combinedIPs, epIPs...)
+				}
+			}
+			serviceRawFilter := rawFilter
+			if len(combinedIPs) > 0 {
+				if f, err := GenerateWinDivertFilterForIPs(combinedIPs, ports, protoStr); err == nil {
+					serviceRawFilter = f
+				}
+			}
+
 			logger.Infof("Lab", "[LAB] launching winner %s for service validation (%s)", best.Candidate.Name, cfg.ServicePreset)
-			winnerProc, err := runner.StartCandidate(ctx, best.Candidate, rawFilter)
+			ce.ResetConnectionPool()
+			winnerProc, err := runner.StartCandidate(ctx, best.Candidate, serviceRawFilter)
 			if err == nil {
 				report.ServiceVerified = validateCandidateAgainstService(ctx, ce, cfg.ServicePreset)
 				_ = winnerProc.Stop()
@@ -312,11 +335,11 @@ func RunStrategyLabWithRunner(
 				logger.Warnf("Lab", "[LAB] failed to start winner for service validation: %v", err)
 				report.ServiceVerified = false
 			}
+			ce.ResetConnectionPool()
 		} else {
 			report.ServiceVerified = true
 		}
 	}
-
 	report.Duration = time.Since(startTime)
 	logger.Infof("Lab", "[LAB] discovery completed in %v: %d working candidates found",
 		report.Duration, len(report.WorkingCandidates))
@@ -341,6 +364,7 @@ func testCandidateWithProcess(
 		if ctx.Err() != nil {
 			break
 		}
+		ce.ResetConnectionPool()
 		var probeRes ProbeResult
 		switch strings.ToUpper(strings.TrimSpace(protocol)) {
 		case "TLS1.2":
@@ -354,11 +378,11 @@ func testCandidateWithProcess(
 			if cleanHost == "" {
 				cleanHost = targetURL
 			}
-			probeRes = ce.ProbeUDPPreflight(ctx, cleanHost+":443")
+			probeRes = ce.ProbeQUIC(ctx, cleanHost+":443")
 		default:
 			probeRes = ce.ProbeHTTP(ctx, targetURL, http.StatusOK, http.StatusNoContent, http.StatusMovedPermanently, http.StatusFound)
 		}
-
+		ce.ResetConnectionPool()
 		if probeRes.Status == StatusPass {
 			passCount++
 			totalLatency += probeRes.Latency
@@ -423,6 +447,20 @@ func validateCandidateAgainstService(ctx context.Context, ce *ConnectivityEngine
 		return r1.Status == StatusPass && r2.Status == StatusPass
 	default:
 		return true
+	}
+}
+
+// GetServiceValidationEndpoints returns all hostnames requiring interception during service validation.
+func GetServiceValidationEndpoints(servicePreset string) []string {
+	switch strings.ToLower(strings.TrimSpace(servicePreset)) {
+	case "youtube":
+		return []string{"www.youtube.com", "i.ytimg.com"}
+	case "discord":
+		return []string{"discord.com", "gateway.discord.gg"}
+	case "steam":
+		return []string{"store.steampowered.com", "api.steampowered.com"}
+	default:
+		return nil
 	}
 }
 

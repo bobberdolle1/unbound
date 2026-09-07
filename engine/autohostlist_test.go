@@ -129,6 +129,9 @@ func TestGetAutoHostlistProfileArgs(t *testing.T) {
 	hasFailThreshold := false
 	hasRetransThreshold := false
 	hasMaxSeq := false
+	hasTcpIn := false
+	hasTcpOut := false
+	hasGenericTcp := false
 
 	for _, arg := range prof.Args {
 		if strings.HasPrefix(arg, "--hostlist-auto=") {
@@ -143,6 +146,15 @@ func TestGetAutoHostlistProfileArgs(t *testing.T) {
 		if arg == "--hostlist-auto-incoming-maxseq=4096" {
 			hasMaxSeq = true
 		}
+		if arg == "--wf-tcp-in=80,443" {
+			hasTcpIn = true
+		}
+		if arg == "--wf-tcp-out=80,443" {
+			hasTcpOut = true
+		}
+		if arg == "--wf-tcp=80,443" {
+			hasGenericTcp = true
+		}
 	}
 
 	if !hasHostlistAuto {
@@ -156,6 +168,61 @@ func TestGetAutoHostlistProfileArgs(t *testing.T) {
 	}
 	if !hasMaxSeq {
 		t.Errorf("Missing --hostlist-auto-incoming-maxseq=4096 in args: %v", prof.Args)
+	}
+	if !hasTcpIn || !hasTcpOut {
+		t.Errorf("Missing directional --wf-tcp-in/out in args: %v", prof.Args)
+	}
+	if hasGenericTcp {
+		t.Errorf("FATAL: Ambiguous --wf-tcp flag present in args: %v", prof.Args)
+	}
+}
+
+func TestAutoHostlistConcurrentAppendNoDataLoss(t *testing.T) {
+	tempLists := t.TempDir()
+	mgr := NewAutoHostlistManager(tempLists)
+
+	// 1. Initial manual add
+	if err := mgr.AddDomain("initial.com", "user"); err != nil {
+		t.Fatalf("AddDomain failed: %v", err)
+	}
+
+	// 2. Simulate winws2 external append directly to autodetect.txt
+	listFile := filepath.Join(tempLists, "autodetect.txt")
+	f, err := os.OpenFile(listFile, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		t.Fatalf("Failed to open autodetect.txt for append: %v", err)
+	}
+	_, _ = f.WriteString("winws2-detected.com\n")
+	f.Close()
+
+	// 3. Perform another mutation through manager without explicit manual sync
+	if err := mgr.AddDomain("subsequent.com", "user"); err != nil {
+		t.Fatalf("Subsequent AddDomain failed: %v", err)
+	}
+
+	// 4. Invariant: winws2-detected.com MUST NOT be overwritten or lost!
+	entries := mgr.GetEntries()
+	foundWinws := false
+	foundInitial := false
+	foundSubsequent := false
+
+	for _, e := range entries {
+		if e.Domain == "winws2-detected.com" {
+			foundWinws = true
+		}
+		if e.Domain == "initial.com" {
+			foundInitial = true
+		}
+		if e.Domain == "subsequent.com" {
+			foundSubsequent = true
+		}
+	}
+
+	if !foundWinws {
+		t.Error("CRITICAL DATA LOSS REGRESSION: winws2-detected.com was overwritten and lost!")
+	}
+	if !foundInitial || !foundSubsequent {
+		t.Errorf("Missing user added domains: initial=%v, subsequent=%v", foundInitial, foundSubsequent)
 	}
 }
 

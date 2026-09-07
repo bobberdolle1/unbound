@@ -397,8 +397,9 @@ func GetAutoHostlistProfile(listsDir string) Profile {
 	autoFile := filepath.ToSlash(filepath.Join(listsDir, "autodetect.txt"))
 
 	args := []string{
-		// Scoped capture on port 80,443 with sequence cutoff for failure/success feedback
-		"--wf-tcp=80,443",
+		// Directional capture on port 80,443 with sequence cutoff for failure/success feedback
+		"--wf-tcp-in=80,443",
+		"--wf-tcp-out=80,443",
 		"--filter-tcp=80,443",
 		"--in-range=-s4096",
 		"--hostlist-auto=" + autoFile,
