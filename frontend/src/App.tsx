@@ -71,6 +71,7 @@ export default function App() {
   const [doctorResult, setDoctorResult] = useState<WailsEngine.DoctorResult | null>(null);
   const [isDiscordCleanModalOpen, setIsDiscordCleanModalOpen] = useState(false);
   const [discordRunningProcs, setDiscordRunningProcs] = useState<string[]>([]);
+  const [isStrategyLabOpen, setIsStrategyLabOpen] = useState(false);
 
   // Operations States
   const [isVerifyingAssets, setIsVerifyingAssets] = useState<boolean>(false);
@@ -415,6 +416,7 @@ export default function App() {
             favoriteProfiles={engineState.favoriteProfiles}
             isConnected={isConnected}
             openLuaEditor={luaActions.openLuaEditor}
+            openStrategyLab={() => setIsStrategyLabOpen(true)}
           />
         )}
 
@@ -481,6 +483,17 @@ export default function App() {
         discordRunningProcs={discordRunningProcs}
         onCancelDiscordClean={() => setIsDiscordCleanModalOpen(false)}
         onConfirmDiscordClean={() => executeDiscordClean(true)}
+        isStrategyLabOpen={isStrategyLabOpen}
+        onCloseStrategyLab={() => setIsStrategyLabOpen(false)}
+        onSaveDiscoveredProfileSuccess={(name) => {
+          engineActions.setSelectedProfile(name);
+          addToast({
+            id: Date.now(),
+            type: 'success',
+            title: 'Профиль сохранён',
+            message: `Стратегия сохранена как «${name}»`,
+          });
+        }}
         isLuaOpen={luaState.isLuaOpen}
         onCloseLuaModal={() => luaActions.setIsLuaOpen(false)}
         luaTab={luaState.luaTab}

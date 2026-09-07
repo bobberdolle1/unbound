@@ -32,4 +32,6 @@ export const eventBus = {
     EventsOn('doctor_cancelled', callback),
   onDoctorError: (callback: (data: { runId: string; error: string }) => void) =>
     EventsOn('doctor_error', callback),
+  onStrategyLabProgress: (callback: (data: unknown) => void) =>
+    EventsOn('strategy_lab_progress', callback),
 };

@@ -3,6 +3,8 @@
 import {engine} from '../models';
 import {main} from '../models';
 
+export function AddAutoHostlistDomain(arg1:string,arg2:string):Promise<void>;
+
 export function AddDefenderExclusion():Promise<void>;
 
 export function AutoReconnectMonitor():Promise<void>;
@@ -21,6 +23,8 @@ export function CheckDiscordRunning():Promise<boolean|Array<string>>;
 
 export function CheckPrivileges():Promise<boolean>;
 
+export function ClearAutoHostlist():Promise<void>;
+
 export function ClearDiscordCache(arg1:boolean):Promise<engine.DiscordCacheCleanupResult>;
 
 export function DisableAutoStart():Promise<void>;
@@ -35,7 +39,11 @@ export function GenerateDiagnosticReport():Promise<string>;
 
 export function GenerateDoctorReport(arg1:engine.DoctorResult):Promise<string>;
 
+export function GetAdaptiveHostStates():Promise<Array<engine.AdaptiveHostState>>;
+
 export function GetAppVersion():Promise<string>;
+
+export function GetAutoHostlistEntries():Promise<Array<engine.AutoHostlistEntry>>;
 
 export function GetAutoStartTaskInfo():Promise<engine.TaskRegistrationInfo>;
 
@@ -83,9 +91,15 @@ export function OpenCurrentLogFile():Promise<void>;
 
 export function OpenLogsFolder():Promise<void>;
 
+export function PromoteAutoHostlistDomain(arg1:string,arg2:string):Promise<void>;
+
 export function QuitApp():Promise<void>;
 
 export function ReadBypassList(arg1:string):Promise<string>;
+
+export function RemoveAutoHostlistDomain(arg1:string):Promise<void>;
+
+export function ResetAdaptiveHostState():Promise<void>;
 
 export function RollbackEngineUpdate():Promise<void>;
 
@@ -95,9 +109,13 @@ export function RunDiagnostics():Promise<Array<engine.DiagnosticResult>>;
 
 export function RunDoctor(arg1:string):Promise<engine.DoctorResult>;
 
+export function RunStrategyLab(arg1:string,arg2:string,arg3:string,arg4:Array<string>):Promise<engine.StrategyLabReport>;
+
 export function SaveBypassList(arg1:string,arg2:string):Promise<void>;
 
 export function SaveCustomScript(arg1:string):Promise<void>;
+
+export function SaveDiscoveredProfile(arg1:string,arg2:engine.StrategyCandidate,arg3:string):Promise<void>;
 
 export function SavePingHistory(arg1:number,arg2:string):Promise<void>;
 

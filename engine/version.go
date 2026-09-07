@@ -14,7 +14,7 @@ package engine
 //
 // Keep the default in step with the newest CHANGELOG entry so plain
 // `go build` and `wails build` still report something truthful.
-var Version = "0.5.2"
+var Version = "0.6.0"
 
 // StrategiesVersion is the single source of truth for the strategy catalog schema/version.
 const StrategiesVersion = "2026.09.04"

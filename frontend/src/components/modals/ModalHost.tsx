@@ -4,6 +4,8 @@ import { PrivilegesModal } from './PrivilegesModal';
 import { DiagnosticsModal } from './DiagnosticsModal';
 import { DiscordConfirmModal } from './DiscordConfirmModal';
 import { LuaEditorModal } from './LuaEditorModal';
+import { StrategyLabModal } from './StrategyLabModal';
+
 interface ModalHostProps {
   // Conflict Overlay
   conflictWarning: string[];
@@ -27,6 +29,10 @@ interface ModalHostProps {
   discordRunningProcs?: string[];
   onCancelDiscordClean?: () => void;
   onConfirmDiscordClean?: () => void;
+  // Strategy Lab Modal
+  isStrategyLabOpen?: boolean;
+  onCloseStrategyLab?: () => void;
+  onSaveDiscoveredProfileSuccess?: (name: string) => void;
   // LUA Editor Modal
   isLuaOpen: boolean;
   onCloseLuaModal: () => void;
@@ -96,6 +102,12 @@ export const ModalHost: React.FC<ModalHostProps> = (props) => {
         runningProcesses={props.discordRunningProcs || []}
         onCancel={props.onCancelDiscordClean || (() => {})}
         onConfirm={props.onConfirmDiscordClean || (() => {})}
+      />
+
+      <StrategyLabModal
+        isOpen={Boolean(props.isStrategyLabOpen)}
+        onClose={props.onCloseStrategyLab || (() => {})}
+        onSaveProfileSuccess={props.onSaveDiscoveredProfileSuccess}
       />
     </>
   );
