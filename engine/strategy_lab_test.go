@@ -2,9 +2,9 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -125,11 +125,10 @@ func TestRunStrategyLabBaselineReachableEarlyExit(t *testing.T) {
 	}
 }
 
-func TestSaveDiscoveredProfile(t *testing.T) {
-	tempDir := t.TempDir()
-	t.Setenv("APPDATA", tempDir)
-	t.Setenv("HOME", tempDir)
-	t.Setenv("XDG_CONFIG_HOME", tempDir)
+func TestSaveDiscoveredProfileJSON(t *testing.T) {
+	tempFile := filepath.Join(t.TempDir(), "discovered_profiles.json")
+	cleanup := SetDiscoveredProfilesPathForTest(tempFile)
+	defer cleanup()
 
 	cand := StrategyCandidate{
 		ID:             "cand_test",
@@ -145,17 +144,105 @@ func TestSaveDiscoveredProfile(t *testing.T) {
 		t.Fatalf("SaveDiscoveredProfile failed: %v", err)
 	}
 
-	configDir, _ := GetConfigDir()
-	savedFile := filepath.Join(configDir, "custom_profile.lua")
-	data, err := os.ReadFile(savedFile)
+	profs, err := LoadDiscoveredProfiles()
 	if err != nil {
-		t.Fatalf("Failed to read saved custom profile: %v", err)
+		t.Fatalf("LoadDiscoveredProfiles failed: %v", err)
 	}
-	content := string(data)
-	if !strings.Contains(content, "My Discovered Profile") || !strings.Contains(content, "example.com") {
-		t.Errorf("Missing metadata in custom profile: %s", content)
+	if len(profs) != 1 {
+		t.Fatalf("Expected 1 profile, got %d", len(profs))
 	}
-	if !strings.Contains(content, "--lua-desync=multisplit:pos=midsld") {
-		t.Errorf("Missing arguments in custom profile: %s", content)
+	if profs[0].Name != "My Discovered Profile" {
+		t.Errorf("Name = %s; want My Discovered Profile", profs[0].Name)
+	}
+	if profs[0].Target != "example.com" {
+		t.Errorf("Target = %s; want example.com", profs[0].Target)
+	}
+}
+
+func TestStrategyLabRunnerFilterInvariant(t *testing.T) {
+	runner := &DefaultCandidateRunner{
+		assets: &AssetPaths{},
+	}
+	cand := StrategyCandidate{
+		Name:        "Test",
+		Zapret2Args: []string{"--lua-desync=fake"},
+	}
+	_, err := runner.StartCandidate(context.Background(), cand, "")
+	if err == nil {
+		t.Fatal("Expected error when starting candidate with empty raw filter, got nil")
+	}
+	if !strings.Contains(err.Error(), "rawFilter cannot be empty") {
+		t.Errorf("Expected rawFilter invariant error, got: %v", err)
+	}
+}
+
+type recordingCandidateRunner struct {
+	startedCandidates []string
+	stoppedCandidates []string
+	activeCount       int
+	maxConcurrent     int
+}
+
+type dummyProcess struct {
+	name   string
+	runner *recordingCandidateRunner
+}
+
+func (d *dummyProcess) PID() int           { return 12345 }
+func (d *dummyProcess) Argv() []string     { return []string{"--dummy"} }
+func (d *dummyProcess) Stop() error {
+	d.runner.stoppedCandidates = append(d.runner.stoppedCandidates, d.name)
+	d.runner.activeCount--
+	return nil
+}
+
+func (r *recordingCandidateRunner) StartCandidate(ctx context.Context, cand StrategyCandidate, rawFilter string) (CandidateProcess, error) {
+	if rawFilter == "" {
+		return nil, errors.New("rawFilter invariant violation")
+	}
+	r.startedCandidates = append(r.startedCandidates, cand.Name)
+	r.activeCount++
+	if r.activeCount > r.maxConcurrent {
+		r.maxConcurrent = r.activeCount
+	}
+	return &dummyProcess{name: cand.Name, runner: r}, nil
+}
+
+func TestStrategyLabExecutionWithRunner(t *testing.T) {
+	mock := &mockProviderController{
+		profile: "Recommended (hostfakesplit)",
+		status:  providers.StatusRunning,
+	}
+
+	runner := &recordingCandidateRunner{}
+	cfg := StrategyLabTargetConfig{
+		TargetHost:            "127.0.0.1",
+		Protocol:              "HTTP",
+		ForceProbeIfReachable: true,
+		CustomCandidateArgs:   []string{"--filter-tcp=80", "--lua-desync=fake"},
+	}
+
+	report, err := RunStrategyLabWithRunner(context.Background(), mock, runner, cfg, nil)
+	if err != nil {
+		t.Fatalf("RunStrategyLabWithRunner failed: %v", err)
+	}
+
+	if report == nil {
+		t.Fatal("Expected report, got nil")
+	}
+
+	// Invariant: At no point should multiple candidate winws2 processes run concurrently
+	if runner.maxConcurrent > 1 {
+		t.Errorf("Isolation violation: maxConcurrent processes was %d, want <= 1", runner.maxConcurrent)
+	}
+
+	// Invariant: Every started candidate process must have been stopped
+	if len(runner.startedCandidates) != len(runner.stoppedCandidates) {
+		t.Errorf("Leaked processes: started %d, stopped %d", len(runner.startedCandidates), len(runner.stoppedCandidates))
+	}
+
+	// Invariant: Baseline profile must be restored
+	if mock.profile != "Recommended (hostfakesplit)" || mock.status != providers.StatusRunning {
+		t.Errorf("Baseline profile not restored: %s (%v)", mock.profile, mock.status)
 	}
 }

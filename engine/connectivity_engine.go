@@ -293,6 +293,68 @@ func (e *ConnectivityEngine) ProbeTLS(ctx context.Context, targetURL string) Pro
 	res.Details = fmt.Sprintf("TLS %s (%s), Issuer: %s", tlsVersionToString(state.Version), proto, res.CertIssuer)
 	return res
 }
+// ProbeTLSVersion performs a TLS handshake forcing an exact TLS version.
+func (e *ConnectivityEngine) ProbeTLSVersion(ctx context.Context, targetURL string, version uint16) ProbeResult {
+	cleanHost := extractHost(targetURL)
+	if cleanHost == "" {
+		cleanHost = targetURL
+	}
+	hostPort := cleanHost
+	if !strings.Contains(hostPort, ":") {
+		hostPort = hostPort + ":443"
+	}
+
+	start := time.Now()
+	d := net.Dialer{Timeout: e.Timeout}
+	rawConn, err := d.DialContext(ctx, "tcp", hostPort)
+
+	res := ProbeResult{
+		ID:        fmt.Sprintf("tls_%s_%s", cleanHost, tlsVersionToString(version)),
+		Service:   "Network",
+		Category:  "TLS",
+		Name:      fmt.Sprintf("TLS %s (%s)", tlsVersionToString(version), cleanHost),
+		Target:    targetURL,
+		Transport: "TLS",
+		Timestamp: start,
+		URL:       targetURL,
+		Attempts:  1,
+	}
+
+	if err != nil {
+		res.Latency = time.Since(start)
+		res.Status = StatusFail
+		res.Stage, res.Class = ClassifyError(err)
+		res.Error = err.Error()
+		return res
+	}
+	defer rawConn.Close()
+
+	tlsConfig := &tls.Config{
+		ServerName:         cleanHost,
+		MinVersion:         version,
+		MaxVersion:         version,
+		InsecureSkipVerify: false,
+	}
+
+	tlsConn := tls.Client(rawConn, tlsConfig)
+	if err := tlsConn.HandshakeContext(ctx); err != nil {
+		res.Latency = time.Since(start)
+		res.Status = StatusFail
+		res.Stage = StageTLS
+		res.Class = FailTLS
+		res.Error = err.Error()
+		return res
+	}
+
+	res.Latency = time.Since(start)
+	state := tlsConn.ConnectionState()
+	res.TLSVersion = state.Version
+	res.CertValid = len(state.VerifiedChains) > 0
+	res.Status = StatusPass
+	res.Success = true
+	res.Details = fmt.Sprintf("TLS %s Handshake OK (Cipher: 0x%04x)", tlsVersionToString(state.Version), state.CipherSuite)
+	return res
+}
 
 // ProbeHTTP issues an HTTP request and validates the response status code and body stream.
 func (e *ConnectivityEngine) ProbeHTTP(ctx context.Context, targetURL string, expectedStatuses ...int) ProbeResult {
