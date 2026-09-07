@@ -111,3 +111,38 @@ func TestFilterTargets(t *testing.T) {
 		t.Errorf("Expected 3 targets, got %d", len(three))
 	}
 }
+
+func TestAutoTuneV3SkipsProfilesRequiringMissingTCPTimestamps(t *testing.T) {
+	provider := &fakeAutoTuneProvider{}
+	targets := []Target{
+		{Name: "test", URL: "https://test.local", Priority: 30},
+	}
+	probe := func(_ context.Context, targetURL string) (ProbeResult, error) {
+		return ProbeResult{URL: targetURL, Success: true, CertValid: true, Latency: 20 * time.Millisecond}, nil
+	}
+	timestampsDisabled := false
+	options := AutoTuneOptions{
+		Targets:             targets,
+		Probe:               probe,
+		ProbeTimeout:        time.Second,
+		MinimumOK:           1,
+		TCPTimestampsActive: &timestampsDisabled,
+	}
+
+	profiles := []Profile{
+		{Name: "Normal (hostfakesplit)", Args: []string{"--lua-desync=hostfakesplit"}},
+		{Name: "Syndata Profile", Args: []string{"--lua-desync=syndata"}},
+	}
+
+	result, err := RunAutoTuneV3(context.Background(), provider, profiles, nil, options)
+	if err != nil {
+		t.Fatalf("RunAutoTuneV3 failed: %v", err)
+	}
+
+	if result.ProfileName != "Normal (hostfakesplit)" {
+		t.Errorf("Winner = %s; want Normal", result.ProfileName)
+	}
+	if _, skipped := result.SkippedProfiles["Syndata Profile"]; !skipped {
+		t.Errorf("Expected Syndata Profile to be skipped due to missing TCP timestamps: %+v", result.SkippedProfiles)
+	}
+}

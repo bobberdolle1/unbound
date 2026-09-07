@@ -1,5 +1,49 @@
 export namespace engine {
 	
+	export class AdaptiveHostState {
+	    host: string;
+	    strategyName: string;
+	    strategyIndex: number;
+	    confidence: string;
+	    failureCount: number;
+	    // Go type: time
+	    lastSuccess: any;
+	    // Go type: time
+	    lastFailure?: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new AdaptiveHostState(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.host = source["host"];
+	        this.strategyName = source["strategyName"];
+	        this.strategyIndex = source["strategyIndex"];
+	        this.confidence = source["confidence"];
+	        this.failureCount = source["failureCount"];
+	        this.lastSuccess = this.convertValues(source["lastSuccess"], null);
+	        this.lastFailure = this.convertValues(source["lastFailure"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class AssetVerificationResult {
 	    totalFiles: number;
 	    verified: boolean;
@@ -15,6 +59,48 @@ export namespace engine {
 	        this.verified = source["verified"];
 	        this.error = source["error"];
 	    }
+	}
+	export class AutoHostlistEntry {
+	    domain: string;
+	    // Go type: time
+	    firstDetected: any;
+	    // Go type: time
+	    lastDetected: any;
+	    reason: string;
+	    hitCount: number;
+	    promoted: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new AutoHostlistEntry(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.domain = source["domain"];
+	        this.firstDetected = this.convertValues(source["firstDetected"], null);
+	        this.lastDetected = this.convertValues(source["lastDetected"], null);
+	        this.reason = source["reason"];
+	        this.hitCount = source["hitCount"];
+	        this.promoted = source["promoted"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class ProbeResult {
 	    id: string;
@@ -162,6 +248,124 @@ export namespace engine {
 	        this.blockedCount = source["blockedCount"];
 	        this.brokenCount = source["brokenCount"];
 	        this.overallSummary = source["overallSummary"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class StrategyRequirements {
+	    tcpTimestamps: string;
+	    inboundTcp: boolean;
+	    inboundUdp: boolean;
+	    quic: boolean;
+	    ipv6: boolean;
+	    luaModules?: string[];
+	    engineMinVersion?: string;
+	    fakePayloads?: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new StrategyRequirements(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.tcpTimestamps = source["tcpTimestamps"];
+	        this.inboundTcp = source["inboundTcp"];
+	        this.inboundUdp = source["inboundUdp"];
+	        this.quic = source["quic"];
+	        this.ipv6 = source["ipv6"];
+	        this.luaModules = source["luaModules"];
+	        this.engineMinVersion = source["engineMinVersion"];
+	        this.fakePayloads = source["fakePayloads"];
+	    }
+	}
+	export class StrategyCandidate {
+	    id: string;
+	    name: string;
+	    protocol: string;
+	    zapret2Args: string[];
+	    requiredLuaFunctions?: string[];
+	    requirements: StrategyRequirements;
+	    aggressiveness: number;
+	    source: string;
+	    experimental: boolean;
+	    expectedTrafficScope: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new StrategyCandidate(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.protocol = source["protocol"];
+	        this.zapret2Args = source["zapret2Args"];
+	        this.requiredLuaFunctions = source["requiredLuaFunctions"];
+	        this.requirements = this.convertValues(source["requirements"], StrategyRequirements);
+	        this.aggressiveness = source["aggressiveness"];
+	        this.source = source["source"];
+	        this.experimental = source["experimental"];
+	        this.expectedTrafficScope = source["expectedTrafficScope"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class CandidateTestResult {
+	    candidate: StrategyCandidate;
+	    status: string;
+	    passCount: number;
+	    totalAttempts: number;
+	    avgLatency: number;
+	    score: number;
+	    details: string;
+	    error?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new CandidateTestResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.candidate = this.convertValues(source["candidate"], StrategyCandidate);
+	        this.status = source["status"];
+	        this.passCount = source["passCount"];
+	        this.totalAttempts = source["totalAttempts"];
+	        this.avgLatency = source["avgLatency"];
+	        this.score = source["score"];
+	        this.details = source["details"];
+	        this.error = source["error"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -536,6 +740,63 @@ export namespace engine {
 	        this.autoUpdatePolicy = source["autoUpdatePolicy"];
 	    }
 	}
+	
+	export class StrategyLabReport {
+	    runId: string;
+	    targetHost: string;
+	    targetIps: string[];
+	    protocol: string;
+	    baselineReachable: boolean;
+	    baselineStatus: ProbeResult;
+	    totalCandidates: number;
+	    testedCandidates: number;
+	    workingCandidates: CandidateTestResult[];
+	    bestCandidate?: CandidateTestResult;
+	    serviceVerified: boolean;
+	    duration: number;
+	    // Go type: time
+	    timestamp: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new StrategyLabReport(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.runId = source["runId"];
+	        this.targetHost = source["targetHost"];
+	        this.targetIps = source["targetIps"];
+	        this.protocol = source["protocol"];
+	        this.baselineReachable = source["baselineReachable"];
+	        this.baselineStatus = this.convertValues(source["baselineStatus"], ProbeResult);
+	        this.totalCandidates = source["totalCandidates"];
+	        this.testedCandidates = source["testedCandidates"];
+	        this.workingCandidates = this.convertValues(source["workingCandidates"], CandidateTestResult);
+	        this.bestCandidate = this.convertValues(source["bestCandidate"], CandidateTestResult);
+	        this.serviceVerified = source["serviceVerified"];
+	        this.duration = source["duration"];
+	        this.timestamp = this.convertValues(source["timestamp"], null);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
 	export class SystemComponentState {
 	    components: ComponentLocalState[];
 	

@@ -669,6 +669,55 @@ func (a *App) ClearDiscordCache(closeIfRunning bool) (*engine.DiscordCacheCleanu
 	return res, nil
 }
 
+// Strategy Lab & Intelligence APIs
+func (a *App) RunStrategyLab(targetHost, servicePreset, protocol string, customArgs []string) (*engine.StrategyLabReport, error) {
+	cfg := engine.StrategyLabTargetConfig{
+		TargetHost:          targetHost,
+		ServicePreset:       servicePreset,
+		Protocol:            protocol,
+		CustomCandidateArgs: customArgs,
+	}
+	ctrl := &appProviderController{app: a}
+	onProgress := func(p engine.StrategyLabProgress) {
+		wailsruntime.EventsEmit(a.ctx, "strategy_lab_progress", p)
+	}
+	return engine.RunStrategyLab(a.ctx, ctrl, cfg, onProgress)
+}
+
+func (a *App) SaveDiscoveredProfile(name string, candidate engine.StrategyCandidate, targetHost string) error {
+	return engine.SaveDiscoveredProfile(name, candidate, targetHost)
+}
+
+// AutoHostlist APIs
+func (a *App) GetAutoHostlistEntries() []engine.AutoHostlistEntry {
+	return engine.GetAutoHostlistManager().GetEntries()
+}
+
+func (a *App) AddAutoHostlistDomain(domain, reason string) error {
+	return engine.GetAutoHostlistManager().AddDomain(domain, reason)
+}
+
+func (a *App) RemoveAutoHostlistDomain(domain string) error {
+	return engine.GetAutoHostlistManager().RemoveDomain(domain)
+}
+
+func (a *App) ClearAutoHostlist() error {
+	return engine.GetAutoHostlistManager().ClearDynamicList()
+}
+
+func (a *App) PromoteAutoHostlistDomain(domain, targetList string) error {
+	return engine.GetAutoHostlistManager().PromoteDomain(domain, targetList)
+}
+
+// Adaptive state APIs
+func (a *App) GetAdaptiveHostStates() []engine.AdaptiveHostState {
+	return engine.GetAdaptiveStateTracker().GetHostStates()
+}
+
+func (a *App) ResetAdaptiveHostState() {
+	engine.GetAdaptiveStateTracker().ResetState()
+}
+
 func (a *App) RunBypassComparison() (*engine.BypassComparisonResult, error) {
 	logger := engine.GetLogger()
 	logger.Info("App", "A/B bypass comparison requested")

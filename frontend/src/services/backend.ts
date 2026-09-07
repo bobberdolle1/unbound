@@ -35,6 +35,22 @@ export const backendService = {
   getDoctorRunState: (runId: string) => WailsApp.GetDoctorRunState(runId),
   cancelDoctor: (runId: string) => WailsApp.CancelDoctor(runId),
   runBypassComparison: () => WailsApp.RunBypassComparison(),
+  // Strategy Lab APIs
+  runStrategyLab: (targetHost: string, servicePreset: string, protocol: string, customArgs: string[]) =>
+    WailsApp.RunStrategyLab(targetHost, servicePreset, protocol, customArgs),
+  saveDiscoveredProfile: (name: string, candidate: engine.StrategyCandidate, targetHost: string) =>
+    WailsApp.SaveDiscoveredProfile(name, candidate, targetHost),
+
+  // AutoHostlist APIs
+  getAutoHostlistEntries: () => WailsApp.GetAutoHostlistEntries(),
+  addAutoHostlistDomain: (domain: string, reason: string) => WailsApp.AddAutoHostlistDomain(domain, reason),
+  removeAutoHostlistDomain: (domain: string) => WailsApp.RemoveAutoHostlistDomain(domain),
+  clearAutoHostlist: () => WailsApp.ClearAutoHostlist(),
+  promoteAutoHostlistDomain: (domain: string, targetList: string) => WailsApp.PromoteAutoHostlistDomain(domain, targetList),
+
+  // Adaptive State APIs
+  getAdaptiveHostStates: () => WailsApp.GetAdaptiveHostStates(),
+  resetAdaptiveHostState: () => WailsApp.ResetAdaptiveHostState(),
   verifyEngineAssets: () => WailsApp.VerifyEngineAssets(),
   generateDiagnosticReport: (res?: engine.DoctorResult) => res ? WailsApp.GenerateDoctorReport(res) : WailsApp.GenerateDiagnosticReport(),
   openLogsFolder: () => WailsApp.OpenLogsFolder(),

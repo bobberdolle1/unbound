@@ -19,6 +19,10 @@ func EnableTCPTimestamps() error {
 	return exec.Command("sysctl", "-w", "net.ipv4.tcp_timestamps=1").Run()
 }
 
+func checkTCPTimestampsBool() bool {
+	return true
+}
+
 
 // RunDiagnostics inspects the parts of the system the Linux engine depends on.
 // It previously returned a single hardcoded "Linux diagnostics active - OK",
