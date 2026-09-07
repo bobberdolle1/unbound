@@ -246,3 +246,109 @@ func TestStrategyLabExecutionWithRunner(t *testing.T) {
 		t.Errorf("Baseline profile not restored: %s (%v)", mock.profile, mock.status)
 	}
 }
+
+func TestSanitizeCandidateArgs(t *testing.T) {
+	validArgs := []string{
+		"--payload=tls_client_hello",
+		"--lua-desync=hostfakesplit:midhost=midsld:repeats=2",
+		"--filter-tcp=443",
+	}
+	sanitized, err := SanitizeCandidateArgs(validArgs)
+	if err != nil {
+		t.Fatalf("Expected valid args to pass, got error: %v", err)
+	}
+	if len(sanitized) != 3 {
+		t.Errorf("Expected 3 sanitized args, got %d", len(sanitized))
+	}
+
+	forbiddenCases := [][]string{
+		{"--wf-raw=true"},
+		{"--wf-tcp-out=443"},
+		{"--daemon"},
+		{"--pidfile=test.pid"},
+		{"--lua-init=malicious.lua"},
+		{"--intercept=0"},
+	}
+
+	for _, forbidden := range forbiddenCases {
+		_, err := SanitizeCandidateArgs(forbidden)
+		if err == nil {
+			t.Errorf("Expected forbidden arg %v to be rejected, but it passed", forbidden)
+		}
+	}
+}
+
+func TestGetServiceValidationEndpoints(t *testing.T) {
+	yt := GetServiceValidationEndpoints("youtube")
+	if len(yt) != 2 || yt[0] != "www.youtube.com" || yt[1] != "i.ytimg.com" {
+		t.Errorf("Unexpected youtube endpoints: %v", yt)
+	}
+
+	dc := GetServiceValidationEndpoints("discord")
+	if len(dc) != 2 || dc[0] != "discord.com" || dc[1] != "gateway.discord.gg" {
+		t.Errorf("Unexpected discord endpoints: %v", dc)
+	}
+
+	steam := GetServiceValidationEndpoints("steam")
+	if len(steam) != 2 || steam[0] != "store.steampowered.com" || steam[1] != "api.steampowered.com" {
+		t.Errorf("Unexpected steam endpoints: %v", steam)
+	}
+
+	unknown := GetServiceValidationEndpoints("nonexistent")
+	if unknown != nil {
+		t.Errorf("Expected nil for unknown service, got: %v", unknown)
+	}
+}
+
+func TestBuildDiscoveredProfileRuntimeArgs(t *testing.T) {
+	tempLists := t.TempDir()
+
+	// 1. TLS profile
+	tlsProf := DiscoveredProfile{
+		Name:          "Test TLS",
+		Target:        "https://youtube.com/watch?v=123",
+		Protocol:      "TLS1.3",
+		CandidateArgs: []string{"--lua-desync=hostfakesplit:midhost=midsld:repeats=2"},
+	}
+	tlsArgs := BuildDiscoveredProfileRuntimeArgs(tlsProf, tempLists)
+	joinedTLS := strings.Join(tlsArgs, " ")
+
+	if !strings.Contains(joinedTLS, "--filter-tcp=443") {
+		t.Errorf("Missing default --filter-tcp=443 in args: %v", tlsArgs)
+	}
+	if !strings.Contains(joinedTLS, "--hostlist-domains=youtube.com") {
+		t.Errorf("Missing scoped --hostlist-domains=youtube.com in args: %v", tlsArgs)
+	}
+	if !strings.Contains(joinedTLS, "steam-web-exclude.txt") {
+		t.Errorf("Missing steam exclusions in args: %v", tlsArgs)
+	}
+
+	// 2. HTTP profile
+	httpProf := DiscoveredProfile{
+		Name:          "Test HTTP",
+		Target:        "rutracker.org",
+		Protocol:      "HTTP",
+		CandidateArgs: []string{"--lua-desync=multisplit:pos=midsld"},
+	}
+	httpArgs := BuildDiscoveredProfileRuntimeArgs(httpProf, tempLists)
+	joinedHTTP := strings.Join(httpArgs, " ")
+	if !strings.Contains(joinedHTTP, "--filter-tcp=80") {
+		t.Errorf("Missing --filter-tcp=80 for HTTP protocol in args: %v", httpArgs)
+	}
+	if !strings.Contains(joinedHTTP, "--hostlist-domains=rutracker.org") {
+		t.Errorf("Missing scoped --hostlist-domains=rutracker.org in args: %v", httpArgs)
+	}
+
+	// 3. QUIC profile
+	quicProf := DiscoveredProfile{
+		Name:          "Test QUIC",
+		Target:        "youtube.com",
+		Protocol:      "QUIC",
+		CandidateArgs: []string{"--lua-desync=fake:repeats=2"},
+	}
+	quicArgs := BuildDiscoveredProfileRuntimeArgs(quicProf, tempLists)
+	joinedQUIC := strings.Join(quicArgs, " ")
+	if !strings.Contains(joinedQUIC, "--filter-udp=443") {
+		t.Errorf("Missing --filter-udp=443 for QUIC protocol in args: %v", quicArgs)
+	}
+}
