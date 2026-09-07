@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -159,5 +160,84 @@ func TestProbeSummaryString(t *testing.T) {
 	sFail := pFail.SummaryString()
 	if !strings.Contains(sFail, "✕") || !strings.Contains(sFail, "FAIL") {
 		t.Errorf("Unexpected fail summary: %s", sFail)
+	}
+}
+
+func TestConnectivityEnginePinHost(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("pinned-ok"))
+	}))
+	defer ts.Close()
+
+	parts := strings.Split(ts.URL, ":")
+	port := parts[len(parts)-1]
+
+	ce := NewConnectivityEngine(2 * time.Second)
+
+	fictionalHost := "unbound-test-domain-not-in-dns.invalid"
+	ce.PinHost(fictionalHost, net.ParseIP("127.0.0.1"))
+	defer ce.UnpinHost(fictionalHost)
+
+	res := ce.ProbeHTTP(context.Background(), "http://"+fictionalHost+":"+port+"/", http.StatusOK)
+	if res.Status != StatusPass {
+		t.Fatalf("Expected pinned request to pass, got: %s (err: %s)", res.Status, res.Error)
+	}
+
+	ce.ResetPinnedHosts()
+	ce.ResetConnectionPool()
+}
+
+func TestProbeQUICHonestSemantics(t *testing.T) {
+	// 1. Test against responsive mock QUIC UDP server
+	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Failed to bind UDP: %v", err)
+	}
+	defer pc.Close()
+
+	serverAddr := pc.LocalAddr().String()
+
+	go func() {
+		buf := make([]byte, 2048)
+		n, addr, err := pc.ReadFrom(buf)
+		if err != nil {
+			return
+		}
+		// Verify incoming packet is at least 1200 bytes as required by RFC 9000
+		if n >= 1200 && buf[0] == 0xc0 {
+			// Send a valid mock QUIC response
+			resp := make([]byte, 1200)
+			resp[0] = 0xc0 // Long Header Initial
+			resp[1] = 0x00
+			resp[2] = 0x00
+			resp[3] = 0x01
+			_, _ = pc.WriteTo(resp, addr)
+		}
+	}()
+
+	ce := NewConnectivityEngine(500 * time.Millisecond)
+	passRes := ce.ProbeQUIC(context.Background(), serverAddr)
+	if passRes.Status != StatusPass {
+		t.Errorf("Expected QUIC probe to PASS on responsive server, got %s (err: %s)", passRes.Status, passRes.Error)
+	}
+	if !strings.Contains(passRes.Details, "verified") {
+		t.Errorf("Expected verified details, got: %s", passRes.Details)
+	}
+
+	// 2. Test timeout on silent UDP port (no server reply)
+	silentPc, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Failed to bind silent UDP: %v", err)
+	}
+	silentAddr := silentPc.LocalAddr().String()
+	silentPc.Close() // closed immediately so it drops/silences packets
+
+	failRes := ce.ProbeQUIC(context.Background(), silentAddr)
+	if failRes.Status != StatusFail {
+		t.Errorf("Expected QUIC probe to FAIL on silent server, got %s", failRes.Status)
+	}
+	if !strings.Contains(failRes.Error, "QUIC handshake response timeout") {
+		t.Errorf("Expected timeout error message, got: %s", failRes.Error)
 	}
 }
