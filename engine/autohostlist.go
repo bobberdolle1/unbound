@@ -152,7 +152,7 @@ func (m *AutoHostlistManager) AddDomain(domain, reason string) error {
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
+	m.syncFromDiskLocked()
 	now := time.Now()
 	entry, exists := m.entries[clean]
 	if !exists {
@@ -182,7 +182,7 @@ func (m *AutoHostlistManager) RemoveDomain(domain string) error {
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
+	m.syncFromDiskLocked()
 	if _, exists := m.entries[clean]; !exists {
 		return nil
 	}
@@ -243,13 +243,13 @@ func (m *AutoHostlistManager) PromoteDomain(domain, targetListFilename string) e
 
 	// 2. Mark promoted in metadata and remove from autodetect.txt
 	m.mu.Lock()
+	m.syncFromDiskLocked()
 	if entry, exists := m.entries[clean]; exists {
 		entry.Promoted = true
 	}
 	delete(m.entries, clean)
 	_ = m.saveAtomicLocked()
 	m.mu.Unlock()
-
 	GetLogger().Infof("AutoHostlist", "[AUTOHOSTLIST] promoted domain %s to %s", clean, targetListFilename)
 	return nil
 }
@@ -258,20 +258,22 @@ func (m *AutoHostlistManager) PromoteDomain(domain, targetListFilename string) e
 func (m *AutoHostlistManager) SyncFromDisk() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.syncFromDiskLocked()
+	_ = m.saveMetaLocked()
+}
 
+func (m *AutoHostlistManager) syncFromDiskLocked() {
 	data, err := os.ReadFile(m.listPath)
 	if err != nil {
 		return
 	}
 
 	now := time.Now()
-	diskDomains := make(map[string]bool)
 	for _, line := range strings.Split(string(data), "\n") {
 		clean := strings.ToLower(strings.TrimSpace(line))
-		if clean == "" || strings.HasPrefix(clean, "#") {
+		if clean == "" || strings.HasPrefix(clean, "#") || IsExcludedDomain(clean) {
 			continue
 		}
-		diskDomains[clean] = true
 		if _, exists := m.entries[clean]; !exists {
 			m.entries[clean] = &AutoHostlistEntry{
 				Domain:        clean,
@@ -282,9 +284,6 @@ func (m *AutoHostlistManager) SyncFromDisk() {
 			}
 		}
 	}
-
-	// Save metadata if new domains appeared
-	_ = m.saveMetaLocked()
 }
 
 func (m *AutoHostlistManager) load() error {
@@ -312,24 +311,26 @@ func (m *AutoHostlistManager) saveAtomicLocked() error {
 	}
 
 	var writeErr error
-	for range 5 {
+	for attempt := range 6 {
 		if writeErr = os.WriteFile(tmpList, []byte(listContent), 0644); writeErr == nil {
 			break
 		}
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(time.Duration(25*(1<<attempt)) * time.Millisecond)
 	}
 	if writeErr != nil {
+		_ = os.Remove(tmpList)
 		return writeErr
 	}
 
 	var renameErr error
-	for range 5 {
+	for attempt := range 6 {
 		if renameErr = os.Rename(tmpList, m.listPath); renameErr == nil {
 			break
 		}
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(time.Duration(25*(1<<attempt)) * time.Millisecond)
 	}
 	if renameErr != nil {
+		_ = os.Remove(tmpList)
 		return renameErr
 	}
 
