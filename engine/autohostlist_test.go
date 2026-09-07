@@ -117,3 +117,54 @@ func TestAutoHostlistManagerLifecycle(t *testing.T) {
 		t.Errorf("Expected 0 entries after clear, got %d", len(mgr.GetEntries()))
 	}
 }
+
+func TestGetAutoHostlistProfileArgs(t *testing.T) {
+	tempDir := t.TempDir()
+	prof := GetAutoHostlistProfile(tempDir)
+	if prof.Name != "AutoHostlist (Dynamic Detection)" {
+		t.Errorf("Profile name = %s; want AutoHostlist (Dynamic Detection)", prof.Name)
+	}
+
+	hasHostlistAuto := false
+	hasFailThreshold := false
+	hasRetransThreshold := false
+	hasMaxSeq := false
+
+	for _, arg := range prof.Args {
+		if strings.HasPrefix(arg, "--hostlist-auto=") {
+			hasHostlistAuto = true
+		}
+		if arg == "--hostlist-auto-fail-threshold=3" {
+			hasFailThreshold = true
+		}
+		if arg == "--hostlist-auto-retrans-threshold=3" {
+			hasRetransThreshold = true
+		}
+		if arg == "--hostlist-auto-incoming-maxseq=4096" {
+			hasMaxSeq = true
+		}
+	}
+
+	if !hasHostlistAuto {
+		t.Errorf("Missing --hostlist-auto in args: %v", prof.Args)
+	}
+	if !hasFailThreshold {
+		t.Errorf("Missing --hostlist-auto-fail-threshold=3 in args: %v", prof.Args)
+	}
+	if !hasRetransThreshold {
+		t.Errorf("Missing --hostlist-auto-retrans-threshold=3 in args: %v", prof.Args)
+	}
+	if !hasMaxSeq {
+		t.Errorf("Missing --hostlist-auto-incoming-maxseq=4096 in args: %v", prof.Args)
+	}
+}
+
+func TestGetAutoHostlistPathCanonical(t *testing.T) {
+	path, err := GetAutoHostlistPath()
+	if err != nil {
+		t.Fatalf("GetAutoHostlistPath failed: %v", err)
+	}
+	if !strings.HasSuffix(filepath.ToSlash(path), "/lists/autodetect.txt") {
+		t.Errorf("Path does not end in /lists/autodetect.txt: %s", path)
+	}
+}

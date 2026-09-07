@@ -45,11 +45,38 @@ func GetAutoHostlistManager() *AutoHostlistManager {
 	return globalAutoHostlist
 }
 
-// NewAutoHostlistManager initializes manager instance with paths.
+// GetAutoHostlistPath returns the single canonical path to autodetect.txt in lists directory.
+// Migrates any legacy autodetect.txt from configDir to listsDir if old file exists.
+func GetAutoHostlistPath() (string, error) {
+	listsDir, err := GetListsDir()
+	if err != nil {
+		return "", err
+	}
+	canonicalPath := filepath.Join(listsDir, "autodetect.txt")
+
+	// Check legacy location in configDir and migrate if needed
+	if configDir, err := GetConfigDir(); err == nil && configDir != "" {
+		legacyPath := filepath.Join(configDir, "autodetect.txt")
+		if _, err := os.Stat(canonicalPath); os.IsNotExist(err) {
+			if _, lErr := os.Stat(legacyPath); lErr == nil {
+				if data, rErr := os.ReadFile(legacyPath); rErr == nil {
+					_ = os.WriteFile(canonicalPath, data, 0644)
+					_ = os.Remove(legacyPath)
+					GetLogger().Infof("AutoHostlist", "[AUTOHOSTLIST] migrated legacy autodetect.txt from %s to %s", legacyPath, canonicalPath)
+				}
+			}
+		}
+	}
+
+	return canonicalPath, nil
+}
+
+// NewAutoHostlistManager initializes manager instance with canonical paths.
 func NewAutoHostlistManager(listsDir string) *AutoHostlistManager {
+	listPath := filepath.Join(listsDir, "autodetect.txt")
 	mgr := &AutoHostlistManager{
 		listsDir: listsDir,
-		listPath: filepath.Join(listsDir, "autodetect.txt"),
+		listPath: listPath,
 		metaPath: filepath.Join(listsDir, "autodetect_meta.json"),
 		entries:  make(map[string]*AutoHostlistEntry),
 	}
@@ -272,7 +299,6 @@ func (m *AutoHostlistManager) load() error {
 }
 
 func (m *AutoHostlistManager) saveAtomicLocked() error {
-	// Write autodetect.txt
 	var domains []string
 	for d := range m.entries {
 		domains = append(domains, d)
@@ -284,10 +310,28 @@ func (m *AutoHostlistManager) saveAtomicLocked() error {
 	if len(domains) > 0 {
 		listContent += "\n"
 	}
-	if err := os.WriteFile(tmpList, []byte(listContent), 0644); err != nil {
-		return err
+
+	var writeErr error
+	for range 5 {
+		if writeErr = os.WriteFile(tmpList, []byte(listContent), 0644); writeErr == nil {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
-	_ = os.Rename(tmpList, m.listPath)
+	if writeErr != nil {
+		return writeErr
+	}
+
+	var renameErr error
+	for range 5 {
+		if renameErr = os.Rename(tmpList, m.listPath); renameErr == nil {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if renameErr != nil {
+		return renameErr
+	}
 
 	return m.saveMetaLocked()
 }
