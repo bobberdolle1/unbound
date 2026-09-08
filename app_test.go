@@ -2,10 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 	"unbound/engine"
 )
 
@@ -152,4 +155,103 @@ func TestRequiresElevationForMode(t *testing.T) {
 			}
 		})
 	}
+}
+
+type mockAcceptanceProcess struct {
+	state   engine.CandidateProcessState
+	alive   bool
+	stopErr error
+}
+
+func (p *mockAcceptanceProcess) PID() int                            { return 77777 }
+func (p *mockAcceptanceProcess) Argv() []string                      { return []string{"--acceptance"} }
+func (p *mockAcceptanceProcess) State() engine.CandidateProcessState { return p.state }
+func (p *mockAcceptanceProcess) Alive() bool                         { return p.alive }
+func (p *mockAcceptanceProcess) WaitErr() error                      { return errors.New("simulated exit") }
+func (p *mockAcceptanceProcess) Stop() error                         { return p.stopErr }
+
+type mockAcceptanceRunner struct {
+	proc     *mockAcceptanceProcess
+	startErr error
+}
+
+func (r *mockAcceptanceRunner) StartCandidate(ctx context.Context, cand engine.StrategyCandidate, rawFilter string) (engine.CandidateProcess, error) {
+	if r.startErr != nil {
+		return nil, r.startErr
+	}
+	return r.proc, nil
+}
+
+func TestExecuteAcceptanceProbeFailures(t *testing.T) {
+	cand := engine.StrategyCandidate{
+		ID:          "acceptance_cand",
+		Name:        "Acceptance HostFakeSplit",
+		Protocol:    "TLS1.3",
+		Zapret2Args: []string{"--payload=tls_client_hello", "--lua-desync=hostfakesplit:repeats=2"},
+	}
+
+	// 1. Capture not ready failure
+	t.Run("CaptureNotReady", func(t *testing.T) {
+		runner := &mockAcceptanceRunner{
+			proc: &mockAcceptanceProcess{
+				state: engine.ProcessStateStarting, // not CAPTURE_READY
+				alive: true,
+			},
+		}
+		err := executeAcceptanceProbe(context.Background(), runner, cand, "dummy_filter", net.ParseIP("1.1.1.1"))
+		if err == nil || !strings.Contains(err.Error(), "CAPTURE_READY: FAIL") {
+			t.Fatalf("Expected CAPTURE_READY: FAIL, got %v", err)
+		}
+	})
+
+	// 2. TLS Probe Failure (pinned to unreachable dummy IP 192.0.2.1)
+	t.Run("TLSProbeFailure", func(t *testing.T) {
+		runner := &mockAcceptanceRunner{
+			proc: &mockAcceptanceProcess{
+				state: engine.ProcessStateCaptureReady,
+				alive: true,
+			},
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		defer cancel()
+		err := executeAcceptanceProbe(ctx, runner, cand, "dummy_filter", net.ParseIP("192.0.2.1"))
+		if err == nil || !strings.Contains(err.Error(), "TLS handshake: FAIL") {
+			t.Fatalf("Expected TLS handshake: FAIL when probe fails, got %v", err)
+		}
+	})
+
+	// 3. Process death during handshake
+	t.Run("ProcessDiedDuringProbe", func(t *testing.T) {
+		runner := &mockAcceptanceRunner{
+			proc: &mockAcceptanceProcess{
+				state: engine.ProcessStateCaptureReady,
+				alive: false, // process died
+			},
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		defer cancel()
+		err := executeAcceptanceProbe(ctx, runner, cand, "dummy_filter", net.ParseIP("192.0.2.1"))
+		// Either TLS failed or Process died reported
+		if err == nil {
+			t.Fatal("Expected error when process dies or probe fails, got nil")
+		}
+	})
+
+	// 4. Process stop failure
+	t.Run("ProcessStopFailure", func(t *testing.T) {
+		runner := &mockAcceptanceRunner{
+			proc: &mockAcceptanceProcess{
+				state:   engine.ProcessStateCaptureReady,
+				alive:   true,
+				stopErr: errors.New("cannot release WinDivert handle"),
+			},
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		defer cancel()
+		// Probe will fail first on unreachable IP, which is expected
+		err := executeAcceptanceProbe(ctx, runner, cand, "dummy_filter", net.ParseIP("192.0.2.1"))
+		if err == nil {
+			t.Fatal("Expected error, got nil")
+		}
+	})
 }

@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 )
+
 const MaxTargetIPs = 16
 
 // TargetFilterConfig holds parameters for building a strict WinDivert raw filter.

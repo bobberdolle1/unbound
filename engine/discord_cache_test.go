@@ -37,8 +37,8 @@ func TestComputeDirSize(t *testing.T) {
 	f1 := filepath.Join(tempDir, "file1.txt")
 	f2 := filepath.Join(sub, "file2.txt")
 
-	_ = os.WriteFile(f1, []byte("12345"), 0644)       // 5 bytes
-	_ = os.WriteFile(f2, []byte("1234567890"), 0644)  // 10 bytes
+	_ = os.WriteFile(f1, []byte("12345"), 0644)      // 5 bytes
+	_ = os.WriteFile(f2, []byte("1234567890"), 0644) // 10 bytes
 
 	bytes, files := computeDirSize(tempDir)
 	if bytes != 15 {

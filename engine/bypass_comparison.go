@@ -14,10 +14,10 @@ import (
 type BypassVerdict string
 
 const (
-	VerdictFixedByProfile    BypassVerdict = "FIXED_BY_PROFILE"    // Baseline FAIL, Profile PASS (Bypass works!)
-	VerdictReachableDirectly BypassVerdict = "REACHABLE_DIRECTLY"  // Baseline PASS, Profile PASS (Direct access works)
+	VerdictFixedByProfile    BypassVerdict = "FIXED_BY_PROFILE"   // Baseline FAIL, Profile PASS (Bypass works!)
+	VerdictReachableDirectly BypassVerdict = "REACHABLE_DIRECTLY" // Baseline PASS, Profile PASS (Direct access works)
 	VerdictStillBlocked      BypassVerdict = "STILL_BLOCKED"      // Baseline FAIL, Profile FAIL (Strategy did not unblock)
-	VerdictBrokenByProfile   BypassVerdict = "BROKEN_BY_PROFILE"   // Baseline PASS, Profile FAIL (Desync broke previously working service!)
+	VerdictBrokenByProfile   BypassVerdict = "BROKEN_BY_PROFILE"  // Baseline PASS, Profile FAIL (Desync broke previously working service!)
 	VerdictInconclusive      BypassVerdict = "INCONCLUSIVE"
 )
 

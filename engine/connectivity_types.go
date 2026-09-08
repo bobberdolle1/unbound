@@ -56,12 +56,12 @@ const (
 // ProbeResult represents the comprehensive result of a connectivity, system, or service probe.
 type ProbeResult struct {
 	ID            string        `json:"id"`
-	Service       string        `json:"service"`       // e.g. "YouTube", "Discord", "Steam", "Network", "System", "Engine", "Autostart"
-	Category      string        `json:"category"`      // e.g. "Web", "API", "CDN", "Gateway", "DNS", "Integrity", "Conflicts"
-	Name          string        `json:"name"`          // Human readable display name
-	Target        string        `json:"target"`        // URL, host, or resource descriptor
-	Transport     string        `json:"transport"`     // "HTTPS", "TCP/TLS", "WebSocket", "UDP", "Local", "DNS"
-	Status        ProbeStatus   `json:"status"`        // PASS, FAIL, WARNING, NOT_VERIFIED, INFO
+	Service       string        `json:"service"`   // e.g. "YouTube", "Discord", "Steam", "Network", "System", "Engine", "Autostart"
+	Category      string        `json:"category"`  // e.g. "Web", "API", "CDN", "Gateway", "DNS", "Integrity", "Conflicts"
+	Name          string        `json:"name"`      // Human readable display name
+	Target        string        `json:"target"`    // URL, host, or resource descriptor
+	Transport     string        `json:"transport"` // "HTTPS", "TCP/TLS", "WebSocket", "UDP", "Local", "DNS"
+	Status        ProbeStatus   `json:"status"`    // PASS, FAIL, WARNING, NOT_VERIFIED, INFO
 	Latency       time.Duration `json:"latency"`
 	Stage         FailureStage  `json:"stage,omitempty"`
 	Class         FailureClass  `json:"class,omitempty"`

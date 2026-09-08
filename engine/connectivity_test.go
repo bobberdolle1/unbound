@@ -212,11 +212,11 @@ func generateTestCertificate(t *testing.T) tls.Certificate {
 		Subject: pkix.Name{
 			Organization: []string{"UNBOUND Test"},
 		},
-		NotBefore: time.Now().Add(-time.Hour),
-		NotAfter:  time.Now().Add(time.Hour),
-		KeyUsage:  x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		NotBefore:   time.Now().Add(-time.Hour),
+		NotAfter:    time.Now().Add(time.Hour),
+		KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		DNSNames:  []string{"localhost", "127.0.0.1"},
+		DNSNames:    []string{"localhost", "127.0.0.1"},
 		IPAddresses: []net.IP{net.ParseIP("127.0.0.1")},
 	}
 

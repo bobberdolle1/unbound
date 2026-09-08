@@ -46,6 +46,7 @@ type Target struct {
 	Priority int
 	Category string // "youtube", "discord", "steam", "general"
 }
+
 // testTargets model the HTTPS services that the bundled profiles are meant to
 // restore. UDP/QUIC and Discord voice are intentionally not claimed here: the
 // current shared prober performs a verified IPv4 TLS handshake.
@@ -146,15 +147,16 @@ type AutoTuneProgressFn func(step, total int, profile string, okCount, totalTarg
 type AutoTuneProbe func(context.Context, string) (ProbeResult, error)
 
 type AutoTuneOptions struct {
-	Targets            []Target
-	Probe              AutoTuneProbe
-	ProbeTimeout       time.Duration
-	StabilizationDelay time.Duration
-	CleanupDelay       time.Duration
-	MinimumOK          int
-	AllowPartial       bool
+	Targets             []Target
+	Probe               AutoTuneProbe
+	ProbeTimeout        time.Duration
+	StabilizationDelay  time.Duration
+	CleanupDelay        time.Duration
+	MinimumOK           int
+	AllowPartial        bool
 	TCPTimestampsActive *bool
 }
+
 func DefaultAutoTuneOptions() AutoTuneOptions {
 	return AutoTuneOptions{
 		Targets:            append([]Target(nil), testTargets...),

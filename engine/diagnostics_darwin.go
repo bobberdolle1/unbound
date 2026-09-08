@@ -20,7 +20,6 @@ func checkTCPTimestampsBool() bool {
 	return true
 }
 
-
 // RunDiagnostics performs macOS-specific system diagnostics.
 func RunDiagnostics() []DiagnosticResult {
 	return []DiagnosticResult{
