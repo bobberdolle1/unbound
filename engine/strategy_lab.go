@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -47,24 +46,27 @@ const (
 
 // StrategyLabReport contains the comprehensive findings of the discovery session.
 type StrategyLabReport struct {
-	RunID             string                `json:"runId"`
-	TargetHost        string                `json:"targetHost"`
-	TargetIPs         []string              `json:"targetIps"`
-	Protocol          string                `json:"protocol"`
-	BaselineReachable bool                  `json:"baselineReachable"`
-	BaselineStatus    ProbeResult           `json:"baselineStatus"`
-	TotalCandidates   int                   `json:"totalCandidates"`
-	TestedCandidates  int                   `json:"testedCandidates"`
-	WorkingCandidates []CandidateTestResult `json:"workingCandidates"`
-	BestCandidate     *CandidateTestResult  `json:"bestCandidate,omitempty"`
-	ValidationStatus  ValidationStatus      `json:"validationStatus"`
-	ServiceVerified   bool                  `json:"serviceVerified"` // Kept for UI backwards compatibility (true if VERIFIED)
-	Duration          time.Duration         `json:"duration"`
-	Timestamp         time.Time             `json:"timestamp"`
+	RunID                 string                `json:"runId"`
+	TargetHost            string                `json:"targetHost"`
+	Protocol              string                `json:"protocol"`
+	BaselineReachable     bool                  `json:"baselineReachable"`
+	BaselineStatus        ProbeResult           `json:"baselineStatus"`
+	BaselineProtocolLabel string                `json:"baselineProtocolLabel"`
+	WorkingCandidates     []CandidateTestResult `json:"workingCandidates"`
+	TestedCandidates      int                   `json:"testedCandidates"`
+	TotalCandidates       int                   `json:"totalCandidates"`
+	BestCandidate         *CandidateTestResult  `json:"bestCandidate,omitempty"`
+	ValidationStatus      ValidationStatus      `json:"validationStatus"`
+	ValidationDetails     string                `json:"validationDetails,omitempty"`
+	ServiceVerified       bool                  `json:"serviceVerified"` // Kept for UI backwards compatibility (true if VERIFIED)
+	Duration              time.Duration         `json:"duration"`
+	Timestamp             time.Time             `json:"timestamp"`
+	TargetIPs             []string              `json:"targetIps,omitempty"`
 }
-// StrategyLabProgress streams live execution progress to the frontend.
+
+// StrategyLabProgress reports real-time iteration metrics to the frontend UI.
 type StrategyLabProgress struct {
-	RunID                string `json:"runId"`
+	RunID                 string `json:"runId"`
 	TargetHost           string `json:"targetHost"`
 	CurrentCandidateIndex int    `json:"currentCandidateIndex"`
 	TotalCandidates      int    `json:"totalCandidates"`
@@ -101,6 +103,9 @@ func RunStrategyLabWithRunner(
 ) (*StrategyLabReport, error) {
 	if cfg.TargetHost == "" {
 		return nil, errors.New("target host is required for Strategy Lab")
+	}
+	if !IsValidProtocol(cfg.Protocol) {
+		return nil, fmt.Errorf("invalid or unsupported protocol %q for Strategy Lab (allowed: HTTP, TLS1.2, TLS1.3, QUIC, ANY)", cfg.Protocol)
 	}
 	if runner == nil {
 		var err error
@@ -156,32 +161,39 @@ func RunStrategyLabWithRunner(
 		_ = pc.Stop()
 		time.Sleep(300 * time.Millisecond)
 	}
-
 	targetURL := cfg.TargetHost
-	if !strings.HasPrefix(targetURL, "http://") && !strings.HasPrefix(targetURL, "https://") {
-		if strings.EqualFold(cfg.Protocol, "HTTP") {
-			targetURL = "http://" + targetURL
-		} else {
-			targetURL = "https://" + targetURL
-		}
+	protoUpper := strings.ToUpper(strings.TrimSpace(cfg.Protocol))
+	baselineLabel := fmt.Sprintf("Baseline %s", protoUpper)
+	switch protoUpper {
+	case "TLS1.3":
+		baselineLabel = "Baseline TLS 1.3"
+	case "TLS1.2":
+		baselineLabel = "Baseline TLS 1.2"
+	case "QUIC":
+		baselineLabel = "Baseline QUIC"
+	case "HTTP":
+		baselineLabel = "Baseline HTTP"
+	case "ANY":
+		baselineLabel = "Baseline Multi-Protocol"
 	}
 
-	baseResult := ce.ProbeHTTP(ctx, targetURL, http.StatusOK, http.StatusNoContent, http.StatusMovedPermanently, http.StatusFound)
+	baseResult := ProbeStrategyLabBaseline(ctx, ce, targetURL, cfg.Protocol)
 	baselineReachable := baseResult.Status == StatusPass
-	logger.Infof("Lab", "[LAB] baseline check for %s: %s (latency=%v)", targetURL, baseResult.Status, baseResult.Latency)
+	logger.Infof("Lab", "[LAB] %s check for %s: %s (latency=%v)", baselineLabel, targetURL, baseResult.Status, baseResult.Latency)
 
 	report := &StrategyLabReport{
-		RunID:             runID,
-		TargetHost:        cfg.TargetHost,
-		Protocol:          cfg.Protocol,
-		BaselineReachable: baselineReachable,
-		BaselineStatus:    baseResult,
-		Timestamp:         startTime,
-		WorkingCandidates: make([]CandidateTestResult, 0),
+		RunID:                 runID,
+		TargetHost:            cfg.TargetHost,
+		Protocol:              cfg.Protocol,
+		BaselineReachable:     baselineReachable,
+		BaselineStatus:        baseResult,
+		BaselineProtocolLabel: baselineLabel,
+		Timestamp:             startTime,
+		WorkingCandidates:     make([]CandidateTestResult, 0),
 	}
 
 	if baselineReachable && !cfg.ForceProbeIfReachable {
-		logger.Info("Lab", "[LAB] target is already reachable without bypass, discovery completed early")
+		logger.Infof("Lab", "[LAB] target is already reachable via %s without bypass, discovery completed early", protoUpper)
 		report.Duration = time.Since(startTime)
 		return report, nil
 	}
@@ -241,6 +253,7 @@ func RunStrategyLabWithRunner(
 	report.TotalCandidates = len(candidates)
 
 	// 5. Step 4: Iterate and Test Candidates with Isolation
+	assets, _ := ExtractAssets()
 	for idx, cand := range candidates {
 		if ctx.Err() != nil {
 			logger.Warnf("Lab", "[LAB] strategy discovery cancelled by user: %v", ctx.Err())
@@ -250,15 +263,29 @@ func RunStrategyLabWithRunner(
 		pct := (idx * 100) / len(candidates)
 		if onProgress != nil {
 			onProgress(StrategyLabProgress{
-				RunID:                runID,
-				TargetHost:           cfg.TargetHost,
+				RunID:                 runID,
+				TargetHost:            cfg.TargetHost,
 				CurrentCandidateIndex: idx + 1,
-				TotalCandidates:      len(candidates),
-				CurrentCandidateName: cand.Name,
-				BaselineStatus:       string(baseResult.Status),
-				Percent:              pct,
-				ElapsedMs:            time.Since(startTime).Milliseconds(),
+				TotalCandidates:       len(candidates),
+				CurrentCandidateName:  cand.Name,
+				BaselineStatus:        string(baseResult.Status),
+				Percent:               pct,
+				ElapsedMs:             time.Since(startTime).Milliseconds(),
 			})
+		}
+
+		// Capability check before launch
+		if ok, reason := CheckCandidateCapabilities(cand, assets); !ok {
+			logger.Infof("Lab", "[LAB] skipping candidate [%d/%d] %s: %s", idx+1, len(candidates), cand.Name, reason)
+			report.TestedCandidates++
+			report.WorkingCandidates = append(report.WorkingCandidates, CandidateTestResult{
+				Candidate:     cand,
+				Status:        StatusFail,
+				TotalAttempts: 0,
+				Error:         reason,
+				Details:       reason,
+			})
+			continue
 		}
 
 		logger.Infof("Lab", "[LAB] testing candidate [%d/%d]: %s", idx+1, len(candidates), cand.Name)
@@ -277,8 +304,22 @@ func RunStrategyLabWithRunner(
 			continue
 		}
 
+		// Invariant: probe MUST NOT begin unless process reached CaptureReady or DryRunValidated
+		if proc.State() != ProcessStateCaptureReady && proc.State() != ProcessStateDryRunValidated {
+			_ = proc.Stop()
+			logger.Warnf("Lab", "[LAB] candidate %s in invalid state %v: capture not ready", cand.Name, proc.State())
+			report.TestedCandidates++
+			report.WorkingCandidates = append(report.WorkingCandidates, CandidateTestResult{
+				Candidate:     cand,
+				Status:        StatusFail,
+				TotalAttempts: 3,
+				Error:         fmt.Sprintf("CAPTURE_NOT_READY: process state %v", proc.State()),
+			})
+			continue
+		}
+
 		// 2. Perform protocol-specific probes while candidate process is active
-		res := testCandidateWithProcess(ctx, ce, cand, targetURL, cfg.Protocol, baselineReachable)
+		res := testCandidateWithProcess(ctx, ce, proc, cand, targetURL, cfg.Protocol, baselineReachable)
 		report.TestedCandidates++
 
 		// 3. Stop candidate process and release WinDivert handles
@@ -289,8 +330,8 @@ func RunStrategyLabWithRunner(
 				cand.Name, res.PassCount, res.TotalAttempts, res.AvgLatency)
 			report.WorkingCandidates = append(report.WorkingCandidates, res)
 		} else {
-			logger.Debugf("Lab", "[LAB] candidate %s failed (%d/%d)",
-				cand.Name, res.PassCount, res.TotalAttempts)
+			logger.Debugf("Lab", "[LAB] candidate %s failed (%d/%d): %s",
+				cand.Name, res.PassCount, res.TotalAttempts, res.Error)
 		}
 	}
 
@@ -317,71 +358,74 @@ func RunStrategyLabWithRunner(
 			best.Candidate.Name, best.Score, best.Candidate.Aggressiveness)
 
 		// 7. Step 6: Full Service Validation on Winner WHILE WINNER PROCESS IS ACTIVE!
-		if cfg.ServicePreset != "" && !strings.EqualFold(cfg.ServicePreset, "Custom") {
-			logger.Infof("Lab", "[LAB] preparing combined service validation filter for %s", cfg.ServicePreset)
-			endpoints := GetServiceValidationEndpoints(cfg.ServicePreset)
-			var combinedIPs []net.IP
-			endpointsResolved := true
-			for _, ep := range endpoints {
-				epIPs, err := net.DefaultResolver.LookupIP(ctx, "ip", ep)
-				if err != nil || len(epIPs) == 0 {
-					logger.Warnf("Lab", "[LAB] fail-closed: failed to resolve service endpoint %s: %v", ep, err)
-					endpointsResolved = false
-					break
-				}
-				ce.PinHost(ep, epIPs[0])
-				defer ce.UnpinHost(ep)
-				combinedIPs = append(combinedIPs, epIPs...)
-			}
-
-			if !endpointsResolved {
-				logger.Warnf("Lab", "[LAB] service validation aborted: one or more required endpoints failed resolution")
-				report.ValidationStatus = ValidationStatusPartial
-				report.ServiceVerified = false
-			} else {
-				serviceRawFilter := rawFilter
-				if len(combinedIPs) > 0 {
-					if f, err := GenerateWinDivertFilterForIPs(combinedIPs, ports, protoStr); err == nil {
-						serviceRawFilter = f
-					}
-				}
-
-				logger.Infof("Lab", "[LAB] launching winner %s for service validation (%s) with filter: %s",
-					best.Candidate.Name, cfg.ServicePreset, serviceRawFilter)
-				ce.ResetConnectionPool()
-				winnerProc, err := runner.StartCandidate(ctx, best.Candidate, serviceRawFilter)
-				if err == nil {
-					verified := validateCandidateAgainstService(ctx, ce, cfg.ServicePreset, cfg.Protocol)
-					if verified {
-						report.ValidationStatus = ValidationStatusVerified
-						report.ServiceVerified = true
-					} else {
-						report.ValidationStatus = ValidationStatusFailed
-						report.ServiceVerified = false
-					}
-					_ = winnerProc.Stop()
-				} else {
-					logger.Warnf("Lab", "[LAB] failed to start winner for service validation: %v", err)
-					report.ValidationStatus = ValidationStatusFailed
-					report.ServiceVerified = false
-				}
-				ce.ResetConnectionPool()
-			}
+		// 7. Step 6: Full Service/Target Validation on Winner WHILE WINNER PROCESS IS ACTIVE!
+		var validationEndpoints []string
+		isCustom := cfg.ServicePreset == "" || strings.EqualFold(cfg.ServicePreset, "Custom")
+		if !isCustom {
+			validationEndpoints = GetServiceValidationEndpoints(cfg.ServicePreset)
 		} else {
-			// Custom target validation
-			if strings.EqualFold(cfg.Protocol, "QUIC") {
-				quicRes := ce.ProbeQUIC(ctx, cfg.TargetHost)
-				if quicRes.Status == StatusPass {
-					report.ValidationStatus = ValidationStatusVerified
-					report.ServiceVerified = true
-				} else {
-					report.ValidationStatus = ValidationStatusFailed
-					report.ServiceVerified = false
-				}
-			} else {
-				report.ValidationStatus = ValidationStatusVerified
-				report.ServiceVerified = true
+			cleanTarget := extractHost(cfg.TargetHost)
+			if cleanTarget == "" {
+				cleanTarget = cfg.TargetHost
 			}
+			validationEndpoints = []string{cleanTarget}
+		}
+
+		logger.Infof("Lab", "[LAB] preparing validation filter for %s (endpoints: %v)", cfg.ServicePreset, validationEndpoints)
+		var combinedIPs []net.IP
+		endpointsResolved := true
+		for _, ep := range validationEndpoints {
+			if ep == "" {
+				continue
+			}
+			epIPs, err := net.DefaultResolver.LookupIP(ctx, "ip", ep)
+			if err != nil || len(epIPs) == 0 {
+				logger.Warnf("Lab", "[LAB] fail-closed: failed to resolve validation endpoint %s: %v", ep, err)
+				endpointsResolved = false
+				break
+			}
+			ce.PinHost(ep, epIPs[0])
+			defer ce.UnpinHost(ep)
+			combinedIPs = append(combinedIPs, epIPs...)
+		}
+
+		if !endpointsResolved {
+			logger.Warnf("Lab", "[LAB] service validation aborted: one or more required endpoints failed resolution")
+			report.ValidationStatus = ValidationStatusPartial
+			report.ValidationDetails = "Validation aborted: required validation endpoint failed DNS resolution"
+			report.ServiceVerified = false
+		} else {
+			serviceRawFilter := rawFilter
+			if len(combinedIPs) > 0 {
+				if f, err := GenerateWinDivertFilterForIPs(combinedIPs, ports, protoStr); err == nil {
+					serviceRawFilter = f
+				}
+			}
+
+			logger.Infof("Lab", "[LAB] launching winner %s for validation with filter: %s",
+				best.Candidate.Name, serviceRawFilter)
+			ce.ResetConnectionPool()
+			winnerProc, err := runner.StartCandidate(ctx, best.Candidate, serviceRawFilter)
+			if err == nil && winnerProc != nil {
+				valResult := validateCandidateAgainstService(ctx, ce, cfg.ServicePreset, cfg.Protocol, cfg.TargetHost)
+				if !winnerProc.Alive() {
+					logger.Warnf("Lab", "[LAB] winner process exited prematurely during validation")
+					report.ValidationStatus = ValidationStatusFailed
+					report.ValidationDetails = "Winner process terminated unexpectedly during validation"
+					report.ServiceVerified = false
+				} else {
+					report.ValidationStatus = valResult.Status
+					report.ValidationDetails = valResult.Details
+					report.ServiceVerified = (valResult.Status == ValidationStatusVerified)
+				}
+				_ = winnerProc.Stop()
+			} else {
+				logger.Warnf("Lab", "[LAB] failed to start winner for validation: %v", err)
+				report.ValidationStatus = ValidationStatusFailed
+				report.ValidationDetails = fmt.Sprintf("Failed to launch winner process for validation: %v", err)
+				report.ServiceVerified = false
+			}
+			ce.ResetConnectionPool()
 		}
 	}
 	report.Duration = time.Since(startTime)
@@ -394,6 +438,7 @@ func RunStrategyLabWithRunner(
 func testCandidateWithProcess(
 	ctx context.Context,
 	ce *ConnectivityEngine,
+	proc CandidateProcess,
 	cand StrategyCandidate,
 	targetURL string,
 	protocol string,
@@ -404,29 +449,38 @@ func testCandidateWithProcess(
 	var totalLatency time.Duration
 	var lastErr string
 
-	for range attempts {
+	for i := range attempts {
 		if ctx.Err() != nil {
 			break
 		}
-		ce.ResetConnectionPool()
-		var probeRes ProbeResult
-		switch strings.ToUpper(strings.TrimSpace(protocol)) {
-		case "TLS1.2":
-			probeRes = ce.ProbeTLSVersion(ctx, targetURL, tls.VersionTLS12)
-		case "TLS1.3":
-			probeRes = ce.ProbeTLSVersion(ctx, targetURL, tls.VersionTLS13)
-		case "HTTP":
-			probeRes = ce.ProbeHTTP(ctx, targetURL, http.StatusOK, http.StatusNoContent, http.StatusMovedPermanently, http.StatusFound)
-		case "QUIC":
-			cleanHost := extractHost(targetURL)
-			if cleanHost == "" {
-				cleanHost = targetURL
+
+		// Process liveness check before attempt
+		if proc != nil && !proc.Alive() {
+			waitErr := proc.WaitErr()
+			return CandidateTestResult{
+				Candidate:     cand,
+				Status:        StatusFail,
+				TotalAttempts: attempts,
+				Error:         fmt.Sprintf("ENGINE_EXITED: candidate process terminated unexpectedly before attempt %d (err: %v)", i+1, waitErr),
+				Details:       "ENGINE_EXITED: process crashed or terminated prematurely",
 			}
-			probeRes = ce.ProbeQUIC(ctx, cleanHost+":443")
-		default:
-			probeRes = ce.ProbeHTTP(ctx, targetURL, http.StatusOK, http.StatusNoContent, http.StatusMovedPermanently, http.StatusFound)
 		}
+
+		probeRes := ProbeTargetProtocol(ctx, ce, targetURL, protocol)
 		ce.ResetConnectionPool()
+
+		// Process liveness check after attempt
+		if proc != nil && !proc.Alive() {
+			waitErr := proc.WaitErr()
+			return CandidateTestResult{
+				Candidate:     cand,
+				Status:        StatusFail,
+				TotalAttempts: attempts,
+				Error:         fmt.Sprintf("ENGINE_EXITED: candidate process terminated during attempt %d (err: %v)", i+1, waitErr),
+				Details:       "ENGINE_EXITED: process crashed during network probe",
+			}
+		}
+
 		if probeRes.Status == StatusPass {
 			passCount++
 			totalLatency += probeRes.Latency
@@ -474,36 +528,123 @@ func testCandidateWithProcess(
 		Error:         lastErr,
 	}
 }
-func validateCandidateAgainstService(ctx context.Context, ce *ConnectivityEngine, servicePreset, protocol string) bool {
+// ServiceValidationResult contains structured outcomes of the final winner verification.
+type ServiceValidationResult struct {
+	Status   ValidationStatus `json:"status"`
+	Protocol string           `json:"protocol"`
+	Details  string           `json:"details"`
+	Probes   []ProbeResult    `json:"probes"`
+}
+
+func validateCandidateAgainstService(
+	ctx context.Context,
+	ce *ConnectivityEngine,
+	servicePreset string,
+	protocol string,
+	targetHost string,
+) ServiceValidationResult {
 	preset := strings.ToLower(strings.TrimSpace(servicePreset))
-	isQUIC := strings.EqualFold(strings.TrimSpace(protocol), "QUIC")
+	proto := strings.ToUpper(strings.TrimSpace(protocol))
+	isQUIC := proto == "QUIC"
+
+	res := ServiceValidationResult{
+		Protocol: proto,
+		Probes:   make([]ProbeResult, 0),
+	}
 
 	switch preset {
 	case "youtube":
 		if isQUIC {
 			r1 := ce.ProbeQUIC(ctx, "www.youtube.com:443")
-			r2 := ce.ProbeHTTP(ctx, "https://www.youtube.com/generate_204", http.StatusNoContent, http.StatusOK)
-			return r1.Status == StatusPass && r2.Status == StatusPass
+			res.Probes = append(res.Probes, r1)
+			if r1.Status != StatusPass {
+				res.Status = ValidationStatusFailed
+				res.Details = fmt.Sprintf("YouTube QUIC handshake failed: %s", r1.Error)
+				return res
+			}
+
+			r2 := ce.ProbeHTTP3(ctx, "https://www.youtube.com/generate_204")
+			res.Probes = append(res.Probes, r2)
+			if r2.Status == StatusPass {
+				res.Status = ValidationStatusVerified
+				res.Details = "YouTube QUIC transport handshake and HTTP/3 application verified"
+				return res
+			}
+
+			res.Status = ValidationStatusPartial
+			res.Details = fmt.Sprintf("YouTube QUIC transport handshake verified, HTTP/3 application partial (%s)", r2.Error)
+			return res
 		}
+
 		r1 := ce.ProbeHTTP(ctx, "https://www.youtube.com/generate_204", http.StatusNoContent, http.StatusOK)
 		r2 := ce.ProbeHTTP(ctx, "https://i.ytimg.com/generate_204", http.StatusNoContent, http.StatusOK)
-		return r1.Status == StatusPass && r2.Status == StatusPass
+		res.Probes = append(res.Probes, r1, r2)
+		if r1.Status == StatusPass && r2.Status == StatusPass {
+			res.Status = ValidationStatusVerified
+			res.Details = "YouTube Web and CDN video streaming endpoints verified"
+		} else {
+			res.Status = ValidationStatusFailed
+			res.Details = "YouTube endpoint validation failed"
+		}
+		return res
+
 	case "discord":
 		if isQUIC {
-			return false // Discord gateway/API does not use QUIC on 443
+			res.Status = ValidationStatusPartial
+			res.Details = "QUIC transport bypass works for target. Discord Gateway & Web API operate over TCP/TLS and are not available over QUIC."
+			return res
 		}
+
 		r1 := ce.ProbeHTTP(ctx, "https://discord.com/api/v10/gateway", http.StatusOK)
-		r2 := ce.ProbeDiscordGateway(ctx)
-		return r1.Status == StatusPass && r2.Status == StatusPass
+		r2, wsStatus := ce.ProbeDiscordGatewayWithTarget(ctx, "gateway.discord.gg:443")
+		res.Probes = append(res.Probes, r1, r2)
+
+		if r1.Status == StatusPass && wsStatus.WebSocketUpgradeVerified && wsStatus.Opcode10Verified {
+			res.Status = ValidationStatusVerified
+			res.Details = fmt.Sprintf("Discord Web API and Gateway WebSocket Verified (Opcode 10 Hello, Heartbeat: %dms)", wsStatus.HeartbeatInterval)
+		} else if r1.Status == StatusPass && wsStatus.WebSocketUpgradeVerified {
+			res.Status = ValidationStatusPartial
+			res.Details = "Discord Web API and WS 101 upgrade OK, but Gateway Opcode 10 Hello unverified"
+		} else {
+			res.Status = ValidationStatusFailed
+			res.Details = fmt.Sprintf("Discord Gateway verification failed: %s", r2.Error)
+		}
+		return res
+
 	case "steam":
 		if isQUIC {
-			return false // Steam store/API does not use QUIC on 443
+			res.Status = ValidationStatusPartial
+			res.Details = "QUIC transport bypass works for target. Steam Store and Web API operate over TCP/TLS and are not available over QUIC."
+			return res
 		}
+
 		r1 := ce.ProbeHTTP(ctx, "https://store.steampowered.com/", http.StatusOK)
 		r2 := ce.ProbeHTTP(ctx, "https://api.steampowered.com/ISteamWebAPIUtil/GetServerInfo/v1/", http.StatusOK)
-		return r1.Status == StatusPass && r2.Status == StatusPass
-	default:
-		return true
+		res.Probes = append(res.Probes, r1, r2)
+		if r1.Status == StatusPass && r2.Status == StatusPass {
+			res.Status = ValidationStatusVerified
+			res.Details = "Steam Store and Web API endpoints verified"
+		} else {
+			res.Status = ValidationStatusFailed
+			res.Details = "Steam store/API endpoint validation failed"
+		}
+		return res
+
+	default: // Custom target validation
+		target := targetHost
+		if strings.TrimSpace(target) == "" {
+			target = servicePreset
+		}
+		customProbe := ProbeTargetProtocol(ctx, ce, target, protocol)
+		res.Probes = append(res.Probes, customProbe)
+		if customProbe.Status == StatusPass {
+			res.Status = ValidationStatusVerified
+			res.Details = fmt.Sprintf("Custom target %s verified for %s", target, protocol)
+		} else {
+			res.Status = ValidationStatusFailed
+			res.Details = fmt.Sprintf("Custom target %s verification failed: %s", target, customProbe.Error)
+		}
+		return res
 	}
 }
 
