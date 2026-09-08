@@ -392,24 +392,35 @@ export const StrategyLabModal: React.FC<StrategyLabModalProps> = ({
             )}
 
             {/* Table of all tested candidates */}
-            {report.workingCandidates.length > 0 && (
+            {((report.candidateResults && report.candidateResults.length > 0) || (report.workingCandidates && report.workingCandidates.length > 0)) && (
               <div className="border border-[var(--ui-border)] rounded-xl overflow-hidden">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-[var(--ui-surface-elevated)] border-b border-[var(--ui-border)] text-[11px] text-[var(--ui-text-muted)]">
                       <th className="p-2.5">Кандидат</th>
                       <th className="p-2.5 text-center">Агрессивность</th>
-                      <th className="p-2.5 text-center">Успешно</th>
+                      <th className="p-2.5 text-center">Результат</th>
                       <th className="p-2.5 text-right">Латентность</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[var(--ui-border)]">
-                    {report.workingCandidates.map((c, idx) => (
+                    {(report.candidateResults && report.candidateResults.length > 0 ? report.candidateResults : report.workingCandidates).map((c, idx) => (
                       <tr key={idx} className="hover:bg-white/[0.015] transition-colors">
-                        <td className="p-2.5 font-medium text-[var(--ui-text)]">{c.candidate.name}</td>
+                        <td className="p-2.5 font-medium text-[var(--ui-text)]">
+                          <div>{c.candidate.name}</div>
+                          {c.error && <div className="text-[10px] text-red-400 font-mono truncate max-w-[280px]">{c.error}</div>}
+                        </td>
                         <td className="p-2.5 text-center">{renderAggressivenessBadge(c.candidate.aggressiveness)}</td>
-                        <td className="p-2.5 text-center font-mono text-emerald-400">{c.passCount}/{c.totalAttempts}</td>
-                        <td className="p-2.5 text-right font-mono text-[var(--ui-text-muted)]">{Math.round(c.avgLatency / 1000000)}мс</td>
+                        <td className="p-2.5 text-center font-mono">
+                          {c.status === 'PASS' ? (
+                            <span className="text-emerald-400">{c.passCount}/{c.totalAttempts || 3}</span>
+                          ) : (
+                            <span className="text-red-400">{c.status}</span>
+                          )}
+                        </td>
+                        <td className="p-2.5 text-right font-mono text-[var(--ui-text-muted)]">
+                          {c.avgLatency ? `${Math.round(c.avgLatency / 1000000)}мс` : '—'}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

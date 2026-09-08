@@ -59,6 +59,7 @@ type StrategyCandidate struct {
 	ID                   string                 `json:"id"`
 	Name                 string                 `json:"name"`
 	Protocol             string                 `json:"protocol"` // "HTTP", "TLS1.2", "TLS1.3", "QUIC", "ANY"
+	TestedProtocol       string                 `json:"testedProtocol,omitempty"`
 	Zapret2Args          []string               `json:"zapret2Args"`
 	RequiredLuaFunctions []string               `json:"requiredLuaFunctions,omitempty"`
 	Requirements         StrategyRequirements   `json:"requirements"`
@@ -89,24 +90,48 @@ func IsValidProtocol(protocol string) bool {
 }
 
 // CheckCandidateCapabilities evaluates whether system environment supports candidate requirements.
+var knownLuaFunctions = map[string]bool{
+	"hostfakesplit": true,
+	"multisplit":    true,
+	"fakedsplit":    true,
+	"fake":          true,
+	"circular":      true,
+	"ip_fragment":   true,
+}
+
+// CheckCandidateCapabilities evaluates whether system environment supports candidate requirements.
 func CheckCandidateCapabilities(cand StrategyCandidate, assets *AssetPaths) (bool, string) {
 	req := cand.Requirements
 
-	// 1. TCP Timestamps requirement
+	// 1. TCP Timestamps requirement — real system stack check
 	if req.TCPTimestamps == TimestampsRequired {
-		if runtime.GOOS != "windows" && runtime.GOOS != "linux" {
-			return false, "SKIPPED_UNSUPPORTED: TCP timestamps required but not supported on platform"
+		if !checkTCPTimestampsBool() {
+			return false, "SKIPPED_UNSUPPORTED: Requires TCP timestamps enabled in OS TCP stack"
 		}
 	}
 
-	// 2. QUIC requirements
-	if req.QUIC {
+	// 2. Inbound and QUIC requirements
+	if req.InboundTCP || req.InboundUDP || req.QUIC {
 		if runtime.GOOS != "windows" && runtime.GOOS != "linux" {
-			return false, "SKIPPED_UNSUPPORTED: QUIC interception requires Windows WinDivert or Linux NFQUEUE"
+			return false, "SKIPPED_UNSUPPORTED: Packet interception requires Windows WinDivert or Linux NFQUEUE"
 		}
 	}
 
-	// 3. Fake payload files
+	// 3. Engine minimum version requirement
+	if req.EngineMinVersion != "" {
+		if compareVersions(BundledEngineVersion, normalizeVersion(req.EngineMinVersion)) < 0 {
+			return false, fmt.Sprintf("SKIPPED_UNSUPPORTED: Requires engine version >= %s (bundled: %s)", req.EngineMinVersion, BundledEngineVersion)
+		}
+	}
+
+	// 4. Required Lua functions
+	for _, fn := range cand.RequiredLuaFunctions {
+		if !knownLuaFunctions[strings.ToLower(strings.TrimSpace(fn))] {
+			return false, fmt.Sprintf("SKIPPED_UNSUPPORTED: Required Lua function %q not supported in bundled engine", fn)
+		}
+	}
+
+	// 5. Fake payload files
 	if len(req.FakePayloads) > 0 && assets != nil {
 		for _, fp := range req.FakePayloads {
 			target := filepath.Join(assets.ListDir, fp)
@@ -116,7 +141,7 @@ func CheckCandidateCapabilities(cand StrategyCandidate, assets *AssetPaths) (boo
 		}
 	}
 
-	// 4. Lua modules
+	// 6. Lua modules
 	if len(req.LuaModules) > 0 && assets != nil {
 		for _, mod := range req.LuaModules {
 			target := filepath.Join(assets.LuaDir, mod)

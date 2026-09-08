@@ -50,14 +50,33 @@ type CandidateRunner interface {
 	StartCandidate(ctx context.Context, cand StrategyCandidate, rawFilter string) (CandidateProcess, error)
 }
 
+// safeBuffer is a thread-safe bytes.Buffer wrapper preventing concurrent read/write data races.
+type safeBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *safeBuffer) Write(p []byte) (n int, err error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *safeBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
 // OSZapretCandidateProcess wraps an active exec.Cmd process with asynchronous state tracking.
 type OSZapretCandidateProcess struct {
 	cmd       *exec.Cmd
 	pid       int
 	argv      []string
-	stderrBuf *bytes.Buffer
-	stdoutBuf *bytes.Buffer
-	waitDone  chan error
+	stderrBuf *safeBuffer
+	stdoutBuf *safeBuffer
+	done      chan struct{}
+	waitErr   error
 	stopped   bool
 	state     CandidateProcessState
 	mu        sync.Mutex
@@ -75,12 +94,13 @@ func (p *OSZapretCandidateProcess) State() CandidateProcessState {
 
 func (p *OSZapretCandidateProcess) Alive() bool {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.stopped {
+	stopped := p.stopped
+	p.mu.Unlock()
+	if stopped {
 		return false
 	}
 	select {
-	case <-p.waitDone:
+	case <-p.done:
 		return false
 	default:
 		return true
@@ -90,14 +110,8 @@ func (p *OSZapretCandidateProcess) Alive() bool {
 func (p *OSZapretCandidateProcess) WaitErr() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	select {
-	case err := <-p.waitDone:
-		return err
-	default:
-		return nil
-	}
+	return p.waitErr
 }
-
 func (p *OSZapretCandidateProcess) Argv() []string {
 	return p.argv
 }
@@ -127,13 +141,11 @@ func (p *OSZapretCandidateProcess) Stop() error {
 		_ = p.cmd.Process.Kill()
 	}
 
-	// Bounded wait for background waiter to release handles
 	select {
-	case <-p.waitDone:
+	case <-p.done:
 	case <-time.After(2 * time.Second):
 		logger.Warnf("Lab", "[LAB] candidate process (PID=%d) stop timeout, forcing release", p.pid)
 	}
-
 	// Driver handle unhook delay
 	time.Sleep(100 * time.Millisecond)
 	logger.Infof("Lab", "[LAB] temporary candidate process (PID=%d) stopped and handles released", p.pid)
@@ -264,8 +276,8 @@ func (r *DefaultCandidateRunner) StartCandidate(ctx context.Context, cand Strate
 
 	logger.Infof("Lab", "[LAB] launching candidate %q with raw filter: %s", cand.Name, cleanFilter)
 
-	stderrBuf := new(bytes.Buffer)
-	stdoutBuf := new(bytes.Buffer)
+	stderrBuf := &safeBuffer{}
+	stdoutBuf := &safeBuffer{}
 	cmd := exec.Command(binPath, fullArgv...)
 	cmd.SysProcAttr = GetHiddenSysProcAttr()
 	cmd.Stderr = stderrBuf
@@ -277,22 +289,24 @@ func (r *DefaultCandidateRunner) StartCandidate(ctx context.Context, cand Strate
 	}
 
 	pid := cmd.Process.Pid
-	waitDone := make(chan error, 1)
-	go func() {
-		err := cmd.Wait()
-		waitDone <- err
-		close(waitDone)
-	}()
-
+	done := make(chan struct{})
 	proc := &OSZapretCandidateProcess{
 		cmd:       cmd,
 		pid:       pid,
 		argv:      fullArgv,
 		stderrBuf: stderrBuf,
 		stdoutBuf: stdoutBuf,
-		waitDone:  waitDone,
+		done:      done,
 		state:     ProcessStateStarting,
 	}
+
+	go func() {
+		err := cmd.Wait()
+		proc.mu.Lock()
+		proc.waitErr = err
+		proc.mu.Unlock()
+		close(done)
+	}()
 	// Detect if candidate is explicitly invoked in dry-run mode
 	isDryRun := false
 	for _, a := range fullArgv {
@@ -315,12 +329,13 @@ func (r *DefaultCandidateRunner) StartCandidate(ctx context.Context, cand Strate
 
 	for {
 		select {
-		case err := <-waitDone:
+		case <-done:
 			proc.mu.Lock()
 			exitCode := -1
 			if cmd.ProcessState != nil {
 				exitCode = cmd.ProcessState.ExitCode()
 			}
+			err := proc.waitErr
 			errMsg := strings.TrimSpace(stderrBuf.String())
 			if errMsg == "" {
 				errMsg = strings.TrimSpace(stdoutBuf.String())
@@ -340,34 +355,33 @@ func (r *DefaultCandidateRunner) StartCandidate(ctx context.Context, cand Strate
 			return nil, fmt.Errorf("candidate process exited immediately (code %d): %s", exitCode, errMsg)
 
 		case <-ticker.C:
-			proc.mu.Lock()
 			combinedOut := strings.ToLower(stdoutBuf.String() + "\n" + stderrBuf.String())
-			// Stable upstream marker from nfqws.c:912: DLOG_CONDUP("windivert initialized. capture is started.\n")
-			if strings.Contains(combinedOut, "windivert initialized") ||
-				strings.Contains(combinedOut, "capture is started") {
+			// Exact upstream marker from nfq2/nfqws.c:912: DLOG_CONDUP("windivert initialized. capture is started.\n")
+			if strings.Contains(combinedOut, "windivert initialized. capture is started.") {
+				proc.mu.Lock()
 				proc.state = ProcessStateCaptureReady
 				proc.mu.Unlock()
 				logger.Infof("Lab", "[LAB] candidate %q signaled CAPTURE_READY (PID=%d)", cand.Name, pid)
 				return proc, nil
 			}
-			proc.mu.Unlock()
 
 		case <-readyTimer.C:
-			proc.mu.Lock()
 			combinedOut := strings.ToLower(stdoutBuf.String() + "\n" + stderrBuf.String())
-			if strings.Contains(combinedOut, "windivert initialized") ||
-				strings.Contains(combinedOut, "capture is started") {
+			if strings.Contains(combinedOut, "windivert initialized. capture is started.") {
+				proc.mu.Lock()
 				proc.state = ProcessStateCaptureReady
 				proc.mu.Unlock()
 				return proc, nil
 			}
 
 			if isDryRun || r.mode == RunnerModeDryRun {
+				proc.mu.Lock()
 				proc.state = ProcessStateDryRunValidated
 				proc.mu.Unlock()
 				return proc, nil
 			}
 
+			proc.mu.Lock()
 			proc.state = ProcessStateRunning
 			proc.mu.Unlock()
 

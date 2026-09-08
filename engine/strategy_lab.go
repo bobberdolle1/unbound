@@ -52,6 +52,7 @@ type StrategyLabReport struct {
 	BaselineReachable     bool                  `json:"baselineReachable"`
 	BaselineStatus        ProbeResult           `json:"baselineStatus"`
 	BaselineProtocolLabel string                `json:"baselineProtocolLabel"`
+	CandidateResults      []CandidateTestResult `json:"candidateResults"`
 	WorkingCandidates     []CandidateTestResult `json:"workingCandidates"`
 	TestedCandidates      int                   `json:"testedCandidates"`
 	TotalCandidates       int                   `json:"totalCandidates"`
@@ -162,6 +163,13 @@ func RunStrategyLabWithRunner(
 		time.Sleep(300 * time.Millisecond)
 	}
 	targetURL := cfg.TargetHost
+	if !strings.HasPrefix(targetURL, "http://") && !strings.HasPrefix(targetURL, "https://") {
+		if strings.EqualFold(cfg.Protocol, "HTTP") {
+			targetURL = "http://" + targetURL
+		} else {
+			targetURL = "https://" + targetURL
+		}
+	}
 	protoUpper := strings.ToUpper(strings.TrimSpace(cfg.Protocol))
 	baselineLabel := fmt.Sprintf("Baseline %s", protoUpper)
 	switch protoUpper {
@@ -189,6 +197,7 @@ func RunStrategyLabWithRunner(
 		BaselineStatus:        baseResult,
 		BaselineProtocolLabel: baselineLabel,
 		Timestamp:             startTime,
+		CandidateResults:      make([]CandidateTestResult, 0),
 		WorkingCandidates:     make([]CandidateTestResult, 0),
 	}
 
@@ -278,7 +287,7 @@ func RunStrategyLabWithRunner(
 		if ok, reason := CheckCandidateCapabilities(cand, assets); !ok {
 			logger.Infof("Lab", "[LAB] skipping candidate [%d/%d] %s: %s", idx+1, len(candidates), cand.Name, reason)
 			report.TestedCandidates++
-			report.WorkingCandidates = append(report.WorkingCandidates, CandidateTestResult{
+			report.CandidateResults = append(report.CandidateResults, CandidateTestResult{
 				Candidate:     cand,
 				Status:        StatusFail,
 				TotalAttempts: 0,
@@ -295,11 +304,12 @@ func RunStrategyLabWithRunner(
 		if err != nil {
 			logger.Warnf("Lab", "[LAB] candidate %s failed to start: %v", cand.Name, err)
 			report.TestedCandidates++
-			report.WorkingCandidates = append(report.WorkingCandidates, CandidateTestResult{
+			report.CandidateResults = append(report.CandidateResults, CandidateTestResult{
 				Candidate:     cand,
 				Status:        StatusFail,
 				TotalAttempts: 3,
 				Error:         fmt.Sprintf("START_FAILED: %v", err),
+				Details:       "Failed to spawn candidate process",
 			})
 			continue
 		}
@@ -309,11 +319,12 @@ func RunStrategyLabWithRunner(
 			_ = proc.Stop()
 			logger.Warnf("Lab", "[LAB] candidate %s in invalid state %v: capture not ready", cand.Name, proc.State())
 			report.TestedCandidates++
-			report.WorkingCandidates = append(report.WorkingCandidates, CandidateTestResult{
+			report.CandidateResults = append(report.CandidateResults, CandidateTestResult{
 				Candidate:     cand,
 				Status:        StatusFail,
 				TotalAttempts: 3,
 				Error:         fmt.Sprintf("CAPTURE_NOT_READY: process state %v", proc.State()),
+				Details:       "Candidate failed to reach CAPTURE_READY",
 			})
 			continue
 		}
@@ -321,11 +332,12 @@ func RunStrategyLabWithRunner(
 		// 2. Perform protocol-specific probes while candidate process is active
 		res := testCandidateWithProcess(ctx, ce, proc, cand, targetURL, cfg.Protocol, baselineReachable)
 		report.TestedCandidates++
+		report.CandidateResults = append(report.CandidateResults, res)
 
 		// 3. Stop candidate process and release WinDivert handles
 		_ = proc.Stop()
 
-		if res.Status == StatusPass {
+		if res.Status == StatusPass && res.PassCount >= 2 {
 			logger.Infof("Lab", "[LAB] candidate %s PASSED (%d/%d, avg latency=%v)",
 				cand.Name, res.PassCount, res.TotalAttempts, res.AvgLatency)
 			report.WorkingCandidates = append(report.WorkingCandidates, res)
@@ -336,8 +348,6 @@ func RunStrategyLabWithRunner(
 	}
 
 	// 6. Step 5: Rank Working Candidates
-	//           2. Aggressiveness (Lower is better)
-	//           3. AvgLatency (Lower is better)
 	if len(report.WorkingCandidates) > 0 {
 		sort.Slice(report.WorkingCandidates, func(i, j int) bool {
 			ci := report.WorkingCandidates[i]
@@ -353,6 +363,7 @@ func RunStrategyLabWithRunner(
 		})
 
 		best := report.WorkingCandidates[0]
+		best.Candidate.TestedProtocol = cfg.Protocol
 		report.BestCandidate = &best
 		logger.Infof("Lab", "[LAB] best discovered candidate: %s (score=%d, aggressiveness=%s)",
 			best.Candidate.Name, best.Score, best.Candidate.Aggressiveness)
@@ -396,37 +407,52 @@ func RunStrategyLabWithRunner(
 			report.ServiceVerified = false
 		} else {
 			serviceRawFilter := rawFilter
+			filterGenErr := false
 			if len(combinedIPs) > 0 {
-				if f, err := GenerateWinDivertFilterForIPs(combinedIPs, ports, protoStr); err == nil {
+				f, err := GenerateWinDivertFilterForIPs(combinedIPs, ports, protoStr)
+				if err != nil {
+					logger.Errorf("Lab", "[LAB] fail-closed: failed to generate combined service validation filter: %v", err)
+					report.ValidationStatus = ValidationStatusFailed
+					report.ValidationDetails = fmt.Sprintf("Validation filter generation failed: %v", err)
+					report.ServiceVerified = false
+					filterGenErr = true
+				} else {
 					serviceRawFilter = f
 				}
 			}
 
-			logger.Infof("Lab", "[LAB] launching winner %s for validation with filter: %s",
-				best.Candidate.Name, serviceRawFilter)
-			ce.ResetConnectionPool()
-			winnerProc, err := runner.StartCandidate(ctx, best.Candidate, serviceRawFilter)
-			if err == nil && winnerProc != nil {
-				valResult := validateCandidateAgainstService(ctx, ce, cfg.ServicePreset, cfg.Protocol, cfg.TargetHost)
-				if !winnerProc.Alive() {
-					logger.Warnf("Lab", "[LAB] winner process exited prematurely during validation")
-					report.ValidationStatus = ValidationStatusFailed
-					report.ValidationDetails = "Winner process terminated unexpectedly during validation"
-					report.ServiceVerified = false
+			if !filterGenErr {
+				logger.Infof("Lab", "[LAB] launching winner %s for validation with filter: %s",
+					best.Candidate.Name, serviceRawFilter)
+				ce.ResetConnectionPool()
+				winnerProc, err := runner.StartCandidate(ctx, best.Candidate, serviceRawFilter)
+				if err == nil && winnerProc != nil {
+					valResult := validateCandidateAgainstService(ctx, ce, cfg.ServicePreset, cfg.Protocol, cfg.TargetHost)
+					if !winnerProc.Alive() {
+						logger.Warnf("Lab", "[LAB] winner process exited prematurely during validation")
+						report.ValidationStatus = ValidationStatusFailed
+						report.ValidationDetails = "Winner process terminated unexpectedly during validation"
+						report.ServiceVerified = false
+					} else {
+						report.ValidationStatus = valResult.Status
+						report.ValidationDetails = valResult.Details
+						report.ServiceVerified = (valResult.Status == ValidationStatusVerified)
+					}
+					_ = winnerProc.Stop()
 				} else {
-					report.ValidationStatus = valResult.Status
-					report.ValidationDetails = valResult.Details
-					report.ServiceVerified = (valResult.Status == ValidationStatusVerified)
+					logger.Warnf("Lab", "[LAB] failed to start winner for validation: %v", err)
+					report.ValidationStatus = ValidationStatusFailed
+					report.ValidationDetails = fmt.Sprintf("Failed to launch winner process for validation: %v", err)
+					report.ServiceVerified = false
 				}
-				_ = winnerProc.Stop()
-			} else {
-				logger.Warnf("Lab", "[LAB] failed to start winner for validation: %v", err)
-				report.ValidationStatus = ValidationStatusFailed
-				report.ValidationDetails = fmt.Sprintf("Failed to launch winner process for validation: %v", err)
-				report.ServiceVerified = false
+				ce.ResetConnectionPool()
 			}
-			ce.ResetConnectionPool()
 		}
+	} else {
+		report.BestCandidate = nil
+		report.ValidationStatus = ValidationStatusNotVerified
+		report.ValidationDetails = "No working candidates discovered"
+		report.ServiceVerified = false
 	}
 	report.Duration = time.Since(startTime)
 	logger.Infof("Lab", "[LAB] discovery completed in %v: %d working candidates found",

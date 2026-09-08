@@ -300,6 +300,7 @@ export namespace engine {
 	    id: string;
 	    name: string;
 	    protocol: string;
+	    testedProtocol?: string;
 	    zapret2Args: string[];
 	    requiredLuaFunctions?: string[];
 	    requirements: StrategyRequirements;
@@ -317,6 +318,7 @@ export namespace engine {
 	        this.id = source["id"];
 	        this.name = source["name"];
 	        this.protocol = source["protocol"];
+	        this.testedProtocol = source["testedProtocol"];
 	        this.zapret2Args = source["zapret2Args"];
 	        this.requiredLuaFunctions = source["requiredLuaFunctions"];
 	        this.requirements = this.convertValues(source["requirements"], StrategyRequirements);
@@ -750,6 +752,7 @@ export namespace engine {
 	    baselineReachable: boolean;
 	    baselineStatus: ProbeResult;
 	    baselineProtocolLabel: string;
+	    candidateResults: CandidateTestResult[];
 	    workingCandidates: CandidateTestResult[];
 	    testedCandidates: number;
 	    totalCandidates: number;
@@ -774,6 +777,7 @@ export namespace engine {
 	        this.baselineReachable = source["baselineReachable"];
 	        this.baselineStatus = this.convertValues(source["baselineStatus"], ProbeResult);
 	        this.baselineProtocolLabel = source["baselineProtocolLabel"];
+	        this.candidateResults = this.convertValues(source["candidateResults"], CandidateTestResult);
 	        this.workingCandidates = this.convertValues(source["workingCandidates"], CandidateTestResult);
 	        this.testedCandidates = source["testedCandidates"];
 	        this.totalCandidates = source["totalCandidates"];

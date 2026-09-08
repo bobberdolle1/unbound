@@ -897,14 +897,20 @@ func (e *ConnectivityEngine) ProbeHTTP3(ctx context.Context, targetURL string) P
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 
 	res.HTTPStatus = resp.StatusCode
-	if resp.StatusCode >= 200 && resp.StatusCode < 400 {
+	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusNoContent {
 		res.Status = StatusPass
 		res.Success = true
 		res.Details = fmt.Sprintf("HTTP/3 GET OK (%d %s) in %v", resp.StatusCode, resp.Status, res.Latency.Round(time.Millisecond))
-	} else {
+	} else if resp.StatusCode >= 200 && resp.StatusCode < 400 {
 		res.Status = StatusPass
 		res.Success = true
-		res.Details = fmt.Sprintf("HTTP/3 Response %d in %v", resp.StatusCode, res.Latency.Round(time.Millisecond))
+		res.Details = fmt.Sprintf("HTTP/3 Response %d (%s) in %v", resp.StatusCode, resp.Status, res.Latency.Round(time.Millisecond))
+	} else {
+		res.Status = StatusFail
+		res.Stage = StageHTTP
+		res.Class = FailHTTPStatus
+		res.Error = fmt.Sprintf("HTTP/3 unexpected application status code: %d", resp.StatusCode)
+		res.Details = fmt.Sprintf("HTTP/3 Status %d (expected 200/204)", resp.StatusCode)
 	}
 	return res
 }
@@ -921,7 +927,7 @@ func ProbeTargetProtocol(ctx context.Context, ce *ConnectivityEngine, targetURL,
 	case "HTTP":
 		httpURL := targetURL
 		if !strings.HasPrefix(httpURL, "http://") {
-			httpURL = "http://" + cleanHost
+			httpURL = "http://" + targetURL
 		}
 		return ce.ProbeHTTP(ctx, httpURL, http.StatusOK, http.StatusNoContent, http.StatusMovedPermanently, http.StatusFound)
 	case "TLS1.2":
