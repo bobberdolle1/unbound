@@ -1,10 +1,10 @@
-# UNBOUND v0.6.6 — Elevated WinDivert Driver Acceptance Script
+# UNBOUND v0.6.7 — Elevated WinDivert Driver Acceptance Script
 # Run this script in an Administrator PowerShell prompt on Windows.
 
 $ErrorActionPreference = "Stop"
 
 Write-Host "==================================================" -ForegroundColor Cyan
-Write-Host " UNBOUND v0.6.6 — Windows WinDivert Driver Acceptance" -ForegroundColor Cyan
+Write-Host " UNBOUND v0.6.7 — Windows WinDivert Driver Acceptance" -ForegroundColor Cyan
 Write-Host "==================================================" -ForegroundColor Cyan
 
 # 1. Verify Administrator elevation
@@ -25,13 +25,32 @@ if (-not (Test-Path $bin)) {
 }
 
 Write-Host "Executing WinDivert kernel driver acceptance: $bin --acceptance-test" -ForegroundColor Yellow
-$p = Start-Process -FilePath $bin -ArgumentList "--acceptance-test" -NoNewWindow -PassThru -Wait
 
-if ($p.ExitCode -ne 0) {
-    Write-Error "WinDivert kernel driver acceptance failed with exit code $($p.ExitCode)"
-    exit $p.ExitCode
+$psi = New-Object System.Diagnostics.ProcessStartInfo
+$psi.FileName = $bin
+$psi.Arguments = "--acceptance-test"
+$psi.WorkingDirectory = $PSScriptRoot
+$psi.UseShellExecute = $false
+$psi.RedirectStandardOutput = $true
+$psi.RedirectStandardError = $true
+$psi.CreateNoWindow = $true
+
+$proc = [System.Diagnostics.Process]::Start($psi)
+while (-not $proc.StandardOutput.EndOfStream) {
+    $line = $proc.StandardOutput.ReadLine()
+    Write-Host $line
+}
+$stderr = $proc.StandardError.ReadToEnd()
+$proc.WaitForExit()
+
+if (-not [string]::IsNullOrWhiteSpace($stderr)) {
+    Write-Warning "Standard error: $stderr"
 }
 
+if ($proc.ExitCode -ne 0) {
+    Write-Error "WinDivert kernel driver acceptance failed with exit code $($proc.ExitCode)"
+    exit $proc.ExitCode
+}
 Write-Host "==================================================" -ForegroundColor Green
 Write-Host " KERNEL_RUNTIME_VERIFIED: WinDivert Acceptance PASSED" -ForegroundColor Green
 Write-Host "==================================================" -ForegroundColor Green

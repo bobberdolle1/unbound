@@ -168,7 +168,12 @@ func (p *mockAcceptanceProcess) Argv() []string                      { return []
 func (p *mockAcceptanceProcess) State() engine.CandidateProcessState { return p.state }
 func (p *mockAcceptanceProcess) Alive() bool                         { return p.alive }
 func (p *mockAcceptanceProcess) WaitErr() error                      { return errors.New("simulated exit") }
-func (p *mockAcceptanceProcess) Stop() error                         { return p.stopErr }
+func (p *mockAcceptanceProcess) Stop() error {
+	if p.stopErr == nil {
+		p.alive = false
+	}
+	return p.stopErr
+}
 
 type mockAcceptanceRunner struct {
 	proc     *mockAcceptanceProcess
@@ -204,7 +209,7 @@ func TestExecuteAcceptanceProbeFailures(t *testing.T) {
 		}
 	})
 
-	// 2. TLS Probe Failure (pinned to unreachable dummy IP 192.0.2.1)
+	// 2. TLS Probe Failure (pinned to local IP without port 443 listener)
 	t.Run("TLSProbeFailure", func(t *testing.T) {
 		runner := &mockAcceptanceRunner{
 			proc: &mockAcceptanceProcess{
@@ -212,9 +217,9 @@ func TestExecuteAcceptanceProbeFailures(t *testing.T) {
 				alive: true,
 			},
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 		defer cancel()
-		err := executeAcceptanceProbe(ctx, runner, cand, "dummy_filter", net.ParseIP("192.0.2.1"))
+		err := executeAcceptanceProbe(ctx, runner, cand, "dummy_filter", net.ParseIP("127.0.0.1"))
 		if err == nil || !strings.Contains(err.Error(), "TLS handshake: FAIL") {
 			t.Fatalf("Expected TLS handshake: FAIL when probe fails, got %v", err)
 		}

@@ -9,11 +9,15 @@ if %errorLevel% neq 0 (
 )
 
 cd /d "%~dp0"
-if exist "%~dp0unbound.exe" (
+if exist "%~dp0Unbound.exe" (
+    "%~dp0Unbound.exe" --cli --profile alt2
+) else if exist "%~dp0unbound.exe" (
     "%~dp0unbound.exe" --cli --profile alt2
-) else if exist "%~dp0..\unbound.exe" (
-    "%~dp0..\unbound.exe" --cli --profile alt2
+) else if exist "%~dp0..\Unbound.exe" (
+    "%~dp0..\Unbound.exe" --cli --profile alt2
+) else if exist "%~dp0..\..\build\bin\Unbound.exe" (
+    "%~dp0..\..\build\bin\Unbound.exe" --cli --profile alt2
 ) else (
-    echo [!] Ошибка: unbound.exe не найден!
+    echo [!] Ошибка: Unbound.exe не найден!
     pause
 )
