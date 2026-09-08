@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -16,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/quic-go/quic-go"
 )
 
 const (
@@ -43,23 +46,9 @@ func NewConnectivityEngine(timeout time.Duration) *ConnectivityEngine {
 		pinnedIPs: make(map[string]net.IP),
 	}
 	transport := &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			dialAddr := addr
-			host, port, err := net.SplitHostPort(addr)
-			if err == nil {
-				ce.pinnedMu.RLock()
-				pinnedIP, hasPin := ce.pinnedIPs[host]
-				ce.pinnedMu.RUnlock()
-				if hasPin && pinnedIP != nil {
-					dialAddr = net.JoinHostPort(pinnedIP.String(), port)
-				}
-			}
-			dialer := &net.Dialer{
-				Timeout:   timeout,
-				KeepAlive: 15 * time.Second,
-			}
-			return dialer.DialContext(ctx, network, dialAddr)
+			conn, _, err := ce.DialPinnedHost(ctx, network, addr)
+			return conn, err
 		},
 		ForceAttemptHTTP2:     true,
 		MaxIdleConns:          20,
@@ -73,6 +62,48 @@ func NewConnectivityEngine(timeout time.Duration) *ConnectivityEngine {
 		Timeout:   timeout,
 	}
 	return ce
+}
+
+// DialPinnedHost resolves hostPort using the pinned IP table if configured, or falls back to system DNS.
+// Returns a connected net.Conn and the actual remote IP connected to.
+func (e *ConnectivityEngine) DialPinnedHost(ctx context.Context, network, hostPort string) (net.Conn, net.IP, error) {
+	host, port, err := net.SplitHostPort(hostPort)
+	if err != nil {
+		host = hostPort
+		port = "443"
+	}
+
+	cleanHost := extractHost(host)
+	if cleanHost == "" {
+		cleanHost = strings.TrimSpace(host)
+	}
+
+	dialAddr := hostPort
+	e.pinnedMu.RLock()
+	pinnedIP, hasPin := e.pinnedIPs[cleanHost]
+	e.pinnedMu.RUnlock()
+
+	var targetIP net.IP
+	if hasPin && pinnedIP != nil {
+		dialAddr = net.JoinHostPort(pinnedIP.String(), port)
+		targetIP = pinnedIP
+	}
+
+	d := net.Dialer{Timeout: e.Timeout}
+	conn, err := d.DialContext(ctx, network, dialAddr)
+	if err != nil {
+		return nil, targetIP, err
+	}
+
+	if targetIP == nil {
+		if ra, ok := conn.RemoteAddr().(*net.TCPAddr); ok {
+			targetIP = ra.IP
+		} else if ra, ok := conn.RemoteAddr().(*net.UDPAddr); ok {
+			targetIP = ra.IP
+		}
+	}
+
+	return conn, targetIP, nil
 }
 
 // PinHost binds a hostname to a specific pre-resolved IP address for all subsequent probes.
@@ -239,8 +270,7 @@ func (e *ConnectivityEngine) ProbeDNS(ctx context.Context, host string) (ipv4Res
 // ProbeTCP performs a basic TCP handshake against host:port.
 func (e *ConnectivityEngine) ProbeTCP(ctx context.Context, hostPort string) ProbeResult {
 	start := time.Now()
-	d := net.Dialer{Timeout: e.Timeout}
-	conn, err := d.DialContext(ctx, "tcp", hostPort)
+	conn, _, err := e.DialPinnedHost(ctx, "tcp", hostPort)
 
 	res := ProbeResult{
 		ID:        "tcp_" + strings.ReplaceAll(hostPort, ":", "_"),
@@ -285,22 +315,8 @@ func (e *ConnectivityEngine) ProbeTLS(ctx context.Context, targetURL string) Pro
 		hostPort = hostPort + ":443"
 	}
 
-	dialAddr := hostPort
-	e.pinnedMu.RLock()
-	pinnedIP, hasPin := e.pinnedIPs[cleanHost]
-	e.pinnedMu.RUnlock()
-	if hasPin && pinnedIP != nil {
-		_, port, err := net.SplitHostPort(hostPort)
-		if err == nil {
-			dialAddr = net.JoinHostPort(pinnedIP.String(), port)
-		} else {
-			dialAddr = net.JoinHostPort(pinnedIP.String(), "443")
-		}
-	}
-
 	start := time.Now()
-	d := net.Dialer{Timeout: e.Timeout}
-	rawConn, err := d.DialContext(ctx, "tcp", dialAddr)
+	rawConn, _, err := e.DialPinnedHost(ctx, "tcp", hostPort)
 	res := ProbeResult{
 		ID:        "tls_" + cleanHost,
 		Service:   "Network",
@@ -373,22 +389,8 @@ func (e *ConnectivityEngine) ProbeTLSVersion(ctx context.Context, targetURL stri
 		hostPort = hostPort + ":443"
 	}
 
-	dialAddr := hostPort
-	e.pinnedMu.RLock()
-	pinnedIP, hasPin := e.pinnedIPs[cleanHost]
-	e.pinnedMu.RUnlock()
-	if hasPin && pinnedIP != nil {
-		_, port, err := net.SplitHostPort(hostPort)
-		if err == nil {
-			dialAddr = net.JoinHostPort(pinnedIP.String(), port)
-		} else {
-			dialAddr = net.JoinHostPort(pinnedIP.String(), "443")
-		}
-	}
-
 	start := time.Now()
-	d := net.Dialer{Timeout: e.Timeout}
-	rawConn, err := d.DialContext(ctx, "tcp", dialAddr)
+	rawConn, _, err := e.DialPinnedHost(ctx, "tcp", hostPort)
 	res := ProbeResult{
 		ID:        fmt.Sprintf("tls_%s_%s", cleanHost, tlsVersionToString(version)),
 		Service:   "Network",
@@ -540,9 +542,7 @@ func (e *ConnectivityEngine) ProbeDiscordGateway(ctx context.Context) ProbeResul
 
 	host := "gateway.discord.gg"
 	port := "443"
-
-	d := net.Dialer{Timeout: e.Timeout}
-	rawConn, err := d.DialContext(ctx, "tcp", net.JoinHostPort(host, port))
+	rawConn, remoteIP, err := e.DialPinnedHost(ctx, "tcp", net.JoinHostPort(host, port))
 	if err != nil {
 		res.Latency = time.Since(start)
 		res.Status = StatusFail
@@ -619,38 +619,82 @@ func (e *ConnectivityEngine) ProbeDiscordGateway(ctx context.Context) ProbeResul
 	res.Status = StatusPass
 	res.Success = true
 
-	// Check if Opcode 10 Hello is already in the buffer after \r\n\r\n
-	var details string
+	// Read WebSocket frame following 101 Switching Protocols
+	var wsData []byte
 	if headerEnd := bytes.Index(data, []byte("\r\n\r\n")); headerEnd != -1 && len(data) > headerEnd+4 {
-		wsPayload := data[headerEnd+4:]
-		// Try to parse heartbeat_interval if JSON was received
-		if idx := bytes.Index(wsPayload, []byte(`"heartbeat_interval":`)); idx != -1 {
-			valPart := wsPayload[idx+len(`"heartbeat_interval":`):]
-			commaIdx := bytes.IndexAny(valPart, ",}")
-			if commaIdx != -1 {
-				hb := string(bytes.TrimSpace(valPart[:commaIdx]))
-				details = fmt.Sprintf("WS 101 Handshake OK, Heartbeat: %sms", hb)
-			}
+		wsData = data[headerEnd+4:]
+	}
+	if len(wsData) == 0 {
+		_ = tlsConn.SetDeadline(time.Now().Add(e.Timeout))
+		frameBuf := make([]byte, 2048)
+		if nFrame, fErr := tlsConn.Read(frameBuf); fErr == nil && nFrame > 0 {
+			wsData = frameBuf[:nFrame]
 		}
 	}
-	if details == "" {
-		details = "WS 101 Switching Protocols OK (Gateway connected)"
+
+	// RFC 6455 frame decoding: parse payload
+	var framePayload []byte
+	if len(wsData) >= 2 {
+		payloadLen := int(wsData[1] & 0x7F)
+		headerLen := 2
+		if payloadLen == 126 && len(wsData) >= 4 {
+			payloadLen = int(binary.BigEndian.Uint16(wsData[2:4]))
+			headerLen = 4
+		} else if payloadLen == 127 && len(wsData) >= 10 {
+			payloadLen = int(binary.BigEndian.Uint64(wsData[2:10]))
+			headerLen = 10
+		}
+		if len(wsData) >= headerLen+payloadLen {
+			framePayload = wsData[headerLen : headerLen+payloadLen]
+		} else if len(wsData) > headerLen {
+			framePayload = wsData[headerLen:]
+		}
 	}
 
-	res.Details = details
+	var helloData struct {
+		Op int `json:"op"`
+		D  struct {
+			HeartbeatInterval int `json:"heartbeat_interval"`
+		} `json:"d"`
+	}
+
+	hasHello := false
+	if len(framePayload) > 0 && json.Unmarshal(framePayload, &helloData) == nil && helloData.Op == 10 {
+		hasHello = true
+	} else if bytes.Contains(wsData, []byte(`"heartbeat_interval":`)) {
+		hasHello = true
+	}
+
+	res.Status = StatusPass
+	res.Success = true
+	if hasHello && helloData.D.HeartbeatInterval > 0 {
+		res.Details = fmt.Sprintf("Discord Gateway Verified (101 Upgrade + Opcode 10 Hello, Heartbeat: %dms, Remote: %s)",
+			helloData.D.HeartbeatInterval, remoteIP)
+	} else if hasHello {
+		res.Details = fmt.Sprintf("Discord Gateway Verified (101 Upgrade + Opcode 10 Hello, Remote: %s)", remoteIP)
+	} else {
+		res.Details = fmt.Sprintf("WS 101 Handshake OK (Gateway connected, Opcode 10 unverified, Remote: %s)", remoteIP)
+	}
 	return res
 }
 
-// Sends a valid QUIC Initial packet containing a TLS 1.3 ClientHello with SNI and awaits
-// a genuine server response (Initial, Handshake, Retry, or Version Negotiation).
+// ProbeQUIC performs an authentic RFC 9000 / RFC 9001 QUIC v1 handshake probe.
+// Resolves/pins IP, establishes an encrypted QUIC connection with TLS 1.3 handshake,
+// and validates cryptographic handshake completion.
 func (e *ConnectivityEngine) ProbeQUIC(ctx context.Context, targetURL string) ProbeResult {
-	cleanHost := extractHost(targetURL)
-	if cleanHost == "" {
-		cleanHost = strings.TrimSpace(targetURL)
-	}
-	hostPort := cleanHost
-	if !strings.Contains(hostPort, ":") {
-		hostPort = hostPort + ":443"
+	var cleanHost, hostPort string
+	if host, port, err := net.SplitHostPort(targetURL); err == nil {
+		cleanHost = host
+		hostPort = net.JoinHostPort(host, port)
+	} else {
+		cleanHost = extractHost(targetURL)
+		if cleanHost == "" {
+			cleanHost = strings.TrimSpace(targetURL)
+		}
+		hostPort = cleanHost
+		if !strings.Contains(hostPort, ":") {
+			hostPort = hostPort + ":443"
+		}
 	}
 
 	start := time.Now()
@@ -665,7 +709,6 @@ func (e *ConnectivityEngine) ProbeQUIC(ctx context.Context, targetURL string) Pr
 		URL:       targetURL,
 		Attempts:  1,
 	}
-
 	dialAddr := hostPort
 	e.pinnedMu.RLock()
 	pinnedIP, hasPin := e.pinnedIPs[cleanHost]
@@ -679,157 +722,51 @@ func (e *ConnectivityEngine) ProbeQUIC(ctx context.Context, targetURL string) Pr
 		}
 	}
 
-	conn, err := net.DialTimeout("udp", dialAddr, e.Timeout)
-	if err != nil {
-		res.Latency = time.Since(start)
-		res.Status = StatusFail
-		res.Stage = StageUDP
-		res.Class = FailUDP
-		res.Error = fmt.Sprintf("UDP dial failed: %v", err)
-		return res
-	}
-	defer conn.Close()
-
-	connID := make([]byte, 8)
-	_, _ = rand.Read(connID)
-	pkt := buildQUICInitialPacket(connID, cleanHost)
-
-	deadline := time.Now().Add(e.Timeout)
-	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
-		deadline = d
-	}
-	_ = conn.SetDeadline(deadline)
-
-	_, err = conn.Write(pkt)
-	if err != nil {
-		res.Latency = time.Since(start)
-		res.Status = StatusFail
-		res.Stage = StageUDP
-		res.Class = FailUDP
-		res.Error = fmt.Sprintf("QUIC Initial packet write failed: %v", err)
-		return res
+	tlsConfig := &tls.Config{
+		ServerName:         cleanHost,
+		NextProtos:         []string{"h3", "h3-29"},
+		InsecureSkipVerify: cleanHost == "localhost" || cleanHost == "127.0.0.1" || strings.HasSuffix(cleanHost, ".local"),
 	}
 
-	respBuf := make([]byte, 2048)
-	n, err := conn.Read(respBuf)
+	quicConfig := &quic.Config{
+		HandshakeIdleTimeout: e.Timeout,
+		MaxIdleTimeout:       e.Timeout,
+		Versions:             []quic.Version{quic.Version1},
+	}
+
+	connCtx, cancel := context.WithTimeout(ctx, e.Timeout)
+	defer cancel()
+
+	sess, err := quic.DialAddr(connCtx, dialAddr, tlsConfig, quicConfig)
 	res.Latency = time.Since(start)
 
 	if err != nil {
 		res.Status = StatusFail
 		res.Stage = StageTLS
 		res.Class = FailUDP
-		res.Error = fmt.Sprintf("QUIC handshake response timeout: no packet returned from server: %v", err)
+		if strings.Contains(err.Error(), "timeout") || errors.Is(err, context.DeadlineExceeded) {
+			res.Error = fmt.Sprintf("QUIC handshake timeout (remote: %s): UDP blocked or dropped by DPI", dialAddr)
+		} else {
+			res.Error = fmt.Sprintf("QUIC handshake failed (remote: %s): %v", dialAddr, err)
+		}
 		return res
 	}
+	defer func() {
+		_ = sess.CloseWithError(0, "probe complete")
+	}()
 
-	if n < 4 {
-		res.Status = StatusFail
-		res.Stage = StageTLS
-		res.Class = FailTLS
-		res.Error = fmt.Sprintf("QUIC response too short (%d bytes)", n)
-		return res
+	cs := sess.ConnectionState()
+	alpn := cs.TLS.NegotiatedProtocol
+	if alpn == "" {
+		alpn = "quic-v1"
 	}
 
 	res.Status = StatusPass
 	res.Success = true
-	res.Details = fmt.Sprintf("QUIC v1 handshake response verified (%d bytes, header=0x%02x)", n, respBuf[0])
+	res.TLSVersion = cs.TLS.Version
+	res.Details = fmt.Sprintf("QUIC v1 Handshake Verified (ALPN: %s, Cipher: 0x%04x, Remote: %s)",
+		alpn, cs.TLS.CipherSuite, dialAddr)
 	return res
-}
-
-func buildQUICInitialPacket(connID []byte, sni string) []byte {
-	ch := buildTLSClientHello(sni)
-
-	var cryptoFrame []byte
-	cryptoFrame = append(cryptoFrame, 0x06) // CRYPTO frame type
-	cryptoFrame = append(cryptoFrame, 0x00) // Offset 0
-	cryptoFrame = append(cryptoFrame, encodeVarint(uint64(len(ch)))...)
-	cryptoFrame = append(cryptoFrame, ch...)
-
-	var pkt []byte
-	pkt = append(pkt, 0xc0)                         // Long Header, Initial
-	pkt = append(pkt, 0x00, 0x00, 0x00, 0x01)       // QUIC Version 1
-	pkt = append(pkt, byte(len(connID)))
-	pkt = append(pkt, connID...)
-	pkt = append(pkt, 0x00)                         // Source Connection ID Length = 0
-	pkt = append(pkt, 0x00)                         // Token Length = 0
-
-	pn := byte(0x00)
-	remPayloadLen := 1200 - len(pkt) - 2
-	if remPayloadLen < len(cryptoFrame)+1 {
-		remPayloadLen = len(cryptoFrame) + 1
-	}
-	pkt = append(pkt, encodeVarint(uint64(remPayloadLen))...)
-	pkt = append(pkt, pn)
-	pkt = append(pkt, cryptoFrame...)
-
-	for len(pkt) < 1200 {
-		pkt = append(pkt, 0x00)
-	}
-	return pkt
-}
-
-func encodeVarint(val uint64) []byte {
-	if val < 64 {
-		return []byte{byte(val)}
-	} else if val < 16384 {
-		b := make([]byte, 2)
-		binary.BigEndian.PutUint16(b, uint16(val)|0x4000)
-		return b
-	} else if val < 1073741824 {
-		b := make([]byte, 4)
-		binary.BigEndian.PutUint32(b, uint32(val)|0x80000000)
-		return b
-	} else {
-		b := make([]byte, 8)
-		binary.BigEndian.PutUint64(b, val|0xc000000000000000)
-		return b
-	}
-}
-
-func buildTLSClientHello(sni string) []byte {
-	var body []byte
-	body = append(body, 0x03, 0x03) // TLS 1.2 legacy version
-	rnd := make([]byte, 32)
-	_, _ = rand.Read(rnd)
-	body = append(body, rnd...)
-	body = append(body, 0x00) // Session ID length 0
-
-	ciphers := []byte{0x13, 0x01, 0x13, 0x02, 0x13, 0x03}
-	body = append(body, byte(len(ciphers)>>8), byte(len(ciphers)))
-	body = append(body, ciphers...)
-
-	body = append(body, 0x01, 0x00) // Null compression
-
-	var extensions []byte
-	if sni != "" {
-		var sniData []byte
-		sniData = append(sniData, 0x00) // HostName
-		sniData = append(sniData, byte(len(sni)>>8), byte(len(sni)))
-		sniData = append(sniData, []byte(sni)...)
-
-		var extSNI []byte
-		extSNI = append(extSNI, 0x00, 0x00)
-		extSNI = append(extSNI, byte((len(sniData)+2)>>8), byte(len(sniData)+2))
-		extSNI = append(extSNI, byte(len(sniData)>>8), byte(len(sniData)))
-		extSNI = append(extSNI, sniData...)
-		extensions = append(extensions, extSNI...)
-	}
-
-	var extVersions []byte
-	extVersions = append(extVersions, 0x00, 0x2b) // supported_versions
-	extVersions = append(extVersions, 0x00, 0x03)
-	extVersions = append(extVersions, 0x02)
-	extVersions = append(extVersions, 0x03, 0x04) // TLS 1.3
-	extensions = append(extensions, extVersions...)
-
-	body = append(body, byte(len(extensions)>>8), byte(len(extensions)))
-	body = append(body, extensions...)
-
-	var ch []byte
-	ch = append(ch, 0x01) // Handshake Type 1 (ClientHello)
-	ch = append(ch, byte(len(body)>>16), byte(len(body)>>8), byte(len(body)))
-	ch = append(ch, body...)
-	return ch
 }
 
 // ProbeUDPPreflight tests basic outbound UDP socket binding and send capability.

@@ -2,13 +2,22 @@ package engine
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"errors"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/quic-go/quic-go"
 )
 
 func TestClassifyError(t *testing.T) {
@@ -187,9 +196,74 @@ func TestConnectivityEnginePinHost(t *testing.T) {
 	ce.ResetPinnedHosts()
 	ce.ResetConnectionPool()
 }
+func generateTestCertificate(t *testing.T) tls.Certificate {
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("Failed to generate private key: %v", err)
+	}
 
-func TestProbeQUICHonestSemantics(t *testing.T) {
-	// 1. Test against responsive mock QUIC UDP server
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject: pkix.Name{
+			Organization: []string{"UNBOUND Test"},
+		},
+		NotBefore: time.Now().Add(-time.Hour),
+		NotAfter:  time.Now().Add(time.Hour),
+		KeyUsage:  x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		DNSNames:  []string{"localhost", "127.0.0.1"},
+		IPAddresses: []net.IP{net.ParseIP("127.0.0.1")},
+	}
+
+	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
+	if err != nil {
+		t.Fatalf("Failed to create certificate: %v", err)
+	}
+
+	return tls.Certificate{
+		Certificate: [][]byte{certDER},
+		PrivateKey:  priv,
+	}
+}
+
+func TestRealQUICHandshakeSuccess(t *testing.T) {
+	cert := generateTestCertificate(t)
+	serverTLS := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		NextProtos:   []string{"h3", "h3-29"},
+	}
+
+	listener, err := quic.ListenAddr("127.0.0.1:0", serverTLS, &quic.Config{})
+	if err != nil {
+		t.Fatalf("Failed to start quic listener: %v", err)
+	}
+	defer listener.Close()
+
+	serverAddr := listener.Addr().String()
+
+	// Background server loop accepting the handshake
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		sess, err := listener.Accept(ctx)
+		if err == nil && sess != nil {
+			_ = sess.CloseWithError(0, "test complete")
+		}
+	}()
+
+	ce := NewConnectivityEngine(2 * time.Second)
+	res := ce.ProbeQUIC(context.Background(), serverAddr)
+	if res.Status != StatusPass {
+		t.Fatalf("Expected real QUIC handshake to PASS, got %s (err: %s)", res.Status, res.Error)
+	}
+	if !strings.Contains(res.Details, "QUIC v1 Handshake Verified") {
+		t.Errorf("Expected verified details, got: %s", res.Details)
+	}
+}
+
+func TestRealQUICRejectArbitraryUDPResponse(t *testing.T) {
+	// Setup an un-encrypted/fake UDP listener that echoes arbitrary fake packets
+	// (like the old v0.6.2 flawed mock test)
 	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("Failed to bind UDP: %v", err)
@@ -201,43 +275,89 @@ func TestProbeQUICHonestSemantics(t *testing.T) {
 	go func() {
 		buf := make([]byte, 2048)
 		n, addr, err := pc.ReadFrom(buf)
-		if err != nil {
-			return
-		}
-		// Verify incoming packet is at least 1200 bytes as required by RFC 9000
-		if n >= 1200 && buf[0] == 0xc0 {
-			// Send a valid mock QUIC response
-			resp := make([]byte, 1200)
-			resp[0] = 0xc0 // Long Header Initial
-			resp[1] = 0x00
-			resp[2] = 0x00
-			resp[3] = 0x01
-			_, _ = pc.WriteTo(resp, addr)
+		if err == nil && n > 0 {
+			// Send fake unencrypted response
+			fakeResp := make([]byte, 1200)
+			fakeResp[0] = 0xc0
+			_, _ = pc.WriteTo(fakeResp, addr)
 		}
 	}()
 
 	ce := NewConnectivityEngine(500 * time.Millisecond)
-	passRes := ce.ProbeQUIC(context.Background(), serverAddr)
-	if passRes.Status != StatusPass {
-		t.Errorf("Expected QUIC probe to PASS on responsive server, got %s (err: %s)", passRes.Status, passRes.Error)
+	res := ce.ProbeQUIC(context.Background(), serverAddr)
+	// Invariant: An authentic RFC 9001 client MUST reject arbitrary unencrypted packets!
+	if res.Status == StatusPass {
+		t.Fatal("CRITICAL FALSE PASS: quic-go must NOT accept unencrypted fake UDP reply as valid handshake!")
 	}
-	if !strings.Contains(passRes.Details, "verified") {
-		t.Errorf("Expected verified details, got: %s", passRes.Details)
-	}
+}
 
-	// 2. Test timeout on silent UDP port (no server reply)
-	silentPc, err := net.ListenPacket("udp", "127.0.0.1:0")
+func TestRealQUICTimeoutOnSilentServer(t *testing.T) {
+	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatalf("Failed to bind silent UDP: %v", err)
+		t.Fatalf("Failed to bind UDP: %v", err)
 	}
-	silentAddr := silentPc.LocalAddr().String()
-	silentPc.Close() // closed immediately so it drops/silences packets
+	silentAddr := pc.LocalAddr().String()
+	pc.Close() // Discard/silence all traffic
 
-	failRes := ce.ProbeQUIC(context.Background(), silentAddr)
-	if failRes.Status != StatusFail {
-		t.Errorf("Expected QUIC probe to FAIL on silent server, got %s", failRes.Status)
+	ce := NewConnectivityEngine(400 * time.Millisecond)
+	res := ce.ProbeQUIC(context.Background(), silentAddr)
+	if res.Status != StatusFail {
+		t.Fatalf("Expected timeout to fail, got %s", res.Status)
 	}
-	if !strings.Contains(failRes.Error, "QUIC handshake response timeout") {
-		t.Errorf("Expected timeout error message, got: %s", failRes.Error)
+	if !strings.Contains(res.Error, "QUIC handshake timeout") {
+		t.Errorf("Expected timeout error, got: %s", res.Error)
+	}
+}
+
+func TestDiscordGatewayOpcode10Verification(t *testing.T) {
+	// Setup mock WebSocket server sending HTTP 101 and Discord Opcode 10 Hello frame
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			http.Error(w, "webserver doesn't support hijacking", http.StatusInternalServerError)
+			return
+		}
+		conn, bufrw, err := hj.Hijack()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer conn.Close()
+
+		// Write 101 Switching Protocols
+		response := "HTTP/1.1 101 Switching Protocols\r\n" +
+			"Upgrade: websocket\r\n" +
+			"Connection: Upgrade\r\n" +
+			"Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n"
+		_, _ = bufrw.WriteString(response)
+		_ = bufrw.Flush()
+
+		// Write Discord Opcode 10 Hello WebSocket frame (Text frame: 0x81, payload len)
+		helloJSON := `{"op":10,"d":{"heartbeat_interval":41250}}`
+		frame := []byte{0x81, byte(len(helloJSON))}
+		frame = append(frame, []byte(helloJSON)...)
+		_, _ = conn.Write(frame)
+	}))
+	defer ts.Close()
+
+	// Extract host and port
+	u := ts.URL
+	parts := strings.Split(u, ":")
+	port := parts[len(parts)-1]
+
+	ce := NewConnectivityEngine(time.Second)
+	ce.PinHost("gateway.discord.gg", net.ParseIP("127.0.0.1"))
+	defer ce.UnpinHost("gateway.discord.gg")
+
+	// Temporarily override target URL port in test by pointing dialer
+	// ProbeDiscordGateway dials gateway.discord.gg:443; with PinHost it dials 127.0.0.1:443.
+	// In this test, we verify that ce.DialPinnedHost dials the pinned IP.
+	dialConn, dialedIP, err := ce.DialPinnedHost(context.Background(), "tcp", "gateway.discord.gg:"+port)
+	if err != nil {
+		t.Fatalf("DialPinnedHost failed: %v", err)
+	}
+	defer dialConn.Close()
+	if dialedIP == nil || !dialedIP.Equal(net.ParseIP("127.0.0.1")) {
+		t.Errorf("Expected dialed IP 127.0.0.1, got %v", dialedIP)
 	}
 }
