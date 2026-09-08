@@ -19,6 +19,8 @@ type CandidateProcessState int
 
 const (
 	ProcessStateStarting CandidateProcessState = iota
+	ProcessStateProcessAlive
+	ProcessStateCaptureReady
 	ProcessStateRunning
 	ProcessStateExitedEarly
 	ProcessStateStopped
@@ -28,6 +30,7 @@ const (
 type CandidateProcess interface {
 	PID() int
 	Argv() []string
+	State() CandidateProcessState
 	Stop() error
 }
 
@@ -51,6 +54,12 @@ type OSZapretCandidateProcess struct {
 
 func (p *OSZapretCandidateProcess) PID() int {
 	return p.pid
+}
+
+func (p *OSZapretCandidateProcess) State() CandidateProcessState {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.state
 }
 
 func (p *OSZapretCandidateProcess) Argv() []string {
@@ -238,13 +247,11 @@ func (r *DefaultCandidateRunner) StartCandidate(ctx context.Context, cand Strate
 		waitDone:  waitDone,
 		state:     ProcessStateStarting,
 	}
-
-	// Active readiness verification: monitor process for 400ms.
-	// If process terminates early (invalid args, driver conflict, Lua syntax error),
-	// waitDone triggers immediately.
 	select {
 	case err := <-waitDone:
+		proc.mu.Lock()
 		proc.state = ProcessStateExitedEarly
+		proc.mu.Unlock()
 		exitCode := -1
 		if cmd.ProcessState != nil {
 			exitCode = cmd.ProcessState.ExitCode()
@@ -257,9 +264,17 @@ func (r *DefaultCandidateRunner) StartCandidate(ctx context.Context, cand Strate
 			cand.Name, exitCode, err, errMsg)
 		return nil, fmt.Errorf("candidate process exited immediately (code %d): %s", exitCode, errMsg)
 	case <-time.After(400 * time.Millisecond):
-		proc.state = ProcessStateRunning
+		proc.mu.Lock()
+		combinedOut := stdoutBuf.String() + "\n" + stderrBuf.String()
+		if strings.Contains(combinedOut, "filter initialized") ||
+			strings.Contains(combinedOut, "windivert filter:") ||
+			strings.Contains(combinedOut, "winws2 started") ||
+			strings.Contains(combinedOut, "desync profile(s)") {
+			proc.state = ProcessStateCaptureReady
+		} else {
+			proc.state = ProcessStateRunning
+		}
+		proc.mu.Unlock()
 	}
-
-	logger.Infof("Lab", "[LAB] candidate %q successfully started and verified running (PID=%d)", cand.Name, pid)
 	return proc, nil
 }

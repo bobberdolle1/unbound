@@ -35,6 +35,16 @@ type CandidateTestResult struct {
 	Error         string            `json:"error,omitempty"`
 }
 
+// ValidationStatus represents the verified outcome of Strategy Lab service validation.
+type ValidationStatus string
+
+const (
+	ValidationStatusVerified    ValidationStatus = "VERIFIED"
+	ValidationStatusPartial     ValidationStatus = "PARTIAL"
+	ValidationStatusNotVerified ValidationStatus = "NOT_VERIFIED"
+	ValidationStatusFailed      ValidationStatus = "FAILED"
+)
+
 // StrategyLabReport contains the comprehensive findings of the discovery session.
 type StrategyLabReport struct {
 	RunID             string                `json:"runId"`
@@ -47,11 +57,11 @@ type StrategyLabReport struct {
 	TestedCandidates  int                   `json:"testedCandidates"`
 	WorkingCandidates []CandidateTestResult `json:"workingCandidates"`
 	BestCandidate     *CandidateTestResult  `json:"bestCandidate,omitempty"`
-	ServiceVerified   bool                  `json:"serviceVerified"`
+	ValidationStatus  ValidationStatus      `json:"validationStatus"`
+	ServiceVerified   bool                  `json:"serviceVerified"` // Kept for UI backwards compatibility (true if VERIFIED)
 	Duration          time.Duration         `json:"duration"`
 	Timestamp         time.Time             `json:"timestamp"`
 }
-
 // StrategyLabProgress streams live execution progress to the frontend.
 type StrategyLabProgress struct {
 	RunID                string `json:"runId"`
@@ -311,33 +321,67 @@ func RunStrategyLabWithRunner(
 			logger.Infof("Lab", "[LAB] preparing combined service validation filter for %s", cfg.ServicePreset)
 			endpoints := GetServiceValidationEndpoints(cfg.ServicePreset)
 			var combinedIPs []net.IP
+			endpointsResolved := true
 			for _, ep := range endpoints {
-				if epIPs, err := net.DefaultResolver.LookupIP(ctx, "ip", ep); err == nil && len(epIPs) > 0 {
-					ce.PinHost(ep, epIPs[0])
-					defer ce.UnpinHost(ep)
-					combinedIPs = append(combinedIPs, epIPs...)
+				epIPs, err := net.DefaultResolver.LookupIP(ctx, "ip", ep)
+				if err != nil || len(epIPs) == 0 {
+					logger.Warnf("Lab", "[LAB] fail-closed: failed to resolve service endpoint %s: %v", ep, err)
+					endpointsResolved = false
+					break
 				}
-			}
-			serviceRawFilter := rawFilter
-			if len(combinedIPs) > 0 {
-				if f, err := GenerateWinDivertFilterForIPs(combinedIPs, ports, protoStr); err == nil {
-					serviceRawFilter = f
-				}
+				ce.PinHost(ep, epIPs[0])
+				defer ce.UnpinHost(ep)
+				combinedIPs = append(combinedIPs, epIPs...)
 			}
 
-			logger.Infof("Lab", "[LAB] launching winner %s for service validation (%s)", best.Candidate.Name, cfg.ServicePreset)
-			ce.ResetConnectionPool()
-			winnerProc, err := runner.StartCandidate(ctx, best.Candidate, serviceRawFilter)
-			if err == nil {
-				report.ServiceVerified = validateCandidateAgainstService(ctx, ce, cfg.ServicePreset)
-				_ = winnerProc.Stop()
-			} else {
-				logger.Warnf("Lab", "[LAB] failed to start winner for service validation: %v", err)
+			if !endpointsResolved {
+				logger.Warnf("Lab", "[LAB] service validation aborted: one or more required endpoints failed resolution")
+				report.ValidationStatus = ValidationStatusPartial
 				report.ServiceVerified = false
+			} else {
+				serviceRawFilter := rawFilter
+				if len(combinedIPs) > 0 {
+					if f, err := GenerateWinDivertFilterForIPs(combinedIPs, ports, protoStr); err == nil {
+						serviceRawFilter = f
+					}
+				}
+
+				logger.Infof("Lab", "[LAB] launching winner %s for service validation (%s) with filter: %s",
+					best.Candidate.Name, cfg.ServicePreset, serviceRawFilter)
+				ce.ResetConnectionPool()
+				winnerProc, err := runner.StartCandidate(ctx, best.Candidate, serviceRawFilter)
+				if err == nil {
+					verified := validateCandidateAgainstService(ctx, ce, cfg.ServicePreset, cfg.Protocol)
+					if verified {
+						report.ValidationStatus = ValidationStatusVerified
+						report.ServiceVerified = true
+					} else {
+						report.ValidationStatus = ValidationStatusFailed
+						report.ServiceVerified = false
+					}
+					_ = winnerProc.Stop()
+				} else {
+					logger.Warnf("Lab", "[LAB] failed to start winner for service validation: %v", err)
+					report.ValidationStatus = ValidationStatusFailed
+					report.ServiceVerified = false
+				}
+				ce.ResetConnectionPool()
 			}
-			ce.ResetConnectionPool()
 		} else {
-			report.ServiceVerified = true
+			// Custom target validation
+			if strings.EqualFold(cfg.Protocol, "QUIC") {
+				quicRes := ce.ProbeQUIC(ctx, cfg.TargetHost)
+				if quicRes.Status == StatusPass {
+					report.ValidationStatus = ValidationStatusVerified
+					report.ServiceVerified = true
+				} else {
+					report.ValidationStatus = ValidationStatusFailed
+					report.ServiceVerified = false
+				}
+			} else {
+				report.ValidationStatus = ValidationStatusVerified
+				report.ServiceVerified = true
+			}
 		}
 	}
 	report.Duration = time.Since(startTime)
@@ -430,18 +474,31 @@ func testCandidateWithProcess(
 		Error:         lastErr,
 	}
 }
+func validateCandidateAgainstService(ctx context.Context, ce *ConnectivityEngine, servicePreset, protocol string) bool {
+	preset := strings.ToLower(strings.TrimSpace(servicePreset))
+	isQUIC := strings.EqualFold(strings.TrimSpace(protocol), "QUIC")
 
-func validateCandidateAgainstService(ctx context.Context, ce *ConnectivityEngine, servicePreset string) bool {
-	switch strings.ToLower(strings.TrimSpace(servicePreset)) {
+	switch preset {
 	case "youtube":
+		if isQUIC {
+			r1 := ce.ProbeQUIC(ctx, "www.youtube.com:443")
+			r2 := ce.ProbeHTTP(ctx, "https://www.youtube.com/generate_204", http.StatusNoContent, http.StatusOK)
+			return r1.Status == StatusPass && r2.Status == StatusPass
+		}
 		r1 := ce.ProbeHTTP(ctx, "https://www.youtube.com/generate_204", http.StatusNoContent, http.StatusOK)
 		r2 := ce.ProbeHTTP(ctx, "https://i.ytimg.com/generate_204", http.StatusNoContent, http.StatusOK)
 		return r1.Status == StatusPass && r2.Status == StatusPass
 	case "discord":
+		if isQUIC {
+			return false // Discord gateway/API does not use QUIC on 443
+		}
 		r1 := ce.ProbeHTTP(ctx, "https://discord.com/api/v10/gateway", http.StatusOK)
 		r2 := ce.ProbeDiscordGateway(ctx)
 		return r1.Status == StatusPass && r2.Status == StatusPass
 	case "steam":
+		if isQUIC {
+			return false // Steam store/API does not use QUIC on 443
+		}
 		r1 := ce.ProbeHTTP(ctx, "https://store.steampowered.com/", http.StatusOK)
 		r2 := ce.ProbeHTTP(ctx, "https://api.steampowered.com/ISteamWebAPIUtil/GetServerInfo/v1/", http.StatusOK)
 		return r1.Status == StatusPass && r2.Status == StatusPass

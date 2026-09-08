@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"sort"
@@ -12,7 +13,7 @@ import (
 	"time"
 )
 
-// AutoHostlistEntry stores rich metadata for dynamically detected blocked domains.
+// AutoHostlistEntry represents an automatically detected domain with hit statistics.
 type AutoHostlistEntry struct {
 	Domain        string    `json:"domain"`
 	FirstDetected time.Time `json:"firstDetected"`
@@ -24,11 +25,14 @@ type AutoHostlistEntry struct {
 
 // AutoHostlistManager orchestrates thread-safe reading, writing, synchronization, and promotion of auto-discovered hosts.
 type AutoHostlistManager struct {
-	mu       sync.RWMutex
-	listsDir string
-	metaPath string
-	listPath string
-	entries  map[string]*AutoHostlistEntry
+	mu            sync.RWMutex
+	listsDir      string
+	metaPath      string
+	listPath      string
+	entries       map[string]*AutoHostlistEntry
+	tombstones    map[string]bool
+	lastDiskMtime time.Time
+	lastDiskSize  int64
 }
 
 var (
@@ -75,10 +79,11 @@ func GetAutoHostlistPath() (string, error) {
 func NewAutoHostlistManager(listsDir string) *AutoHostlistManager {
 	listPath := filepath.Join(listsDir, "autodetect.txt")
 	mgr := &AutoHostlistManager{
-		listsDir: listsDir,
-		listPath: listPath,
-		metaPath: filepath.Join(listsDir, "autodetect_meta.json"),
-		entries:  make(map[string]*AutoHostlistEntry),
+		listsDir:   listsDir,
+		listPath:   listPath,
+		metaPath:   filepath.Join(listsDir, "autodetect_meta.json"),
+		entries:    make(map[string]*AutoHostlistEntry),
+		tombstones: make(map[string]bool),
 	}
 	_ = mgr.load()
 	return mgr
@@ -88,40 +93,53 @@ var protectedExclusions = []string{
 	"localhost",
 	"127.0.0.1",
 	"::1",
-	"local",
-	"internal",
 	"github.com",
 	"api.github.com",
 	"raw.githubusercontent.com",
-	"steampowered.com",
+	"objects.githubusercontent.com",
+	"store.steampowered.com",
 	"steamcommunity.com",
+	"api.steampowered.com",
 	"steamstatic.com",
 	"steamcontent.com",
-	"s.team",
 }
 
-// IsExcludedDomain verifies if a domain must be excluded from auto-detection.
+// IsExcludedDomain verifies if domain belongs to essential network infrastructure,
+// local networks, Steam/Valve gaming networks, or Unbound GitHub update endpoints.
 func IsExcludedDomain(domain string) bool {
 	clean := strings.ToLower(strings.TrimSpace(domain))
 	if clean == "" {
 		return true
 	}
 
-	for _, p := range protectedExclusions {
-		if clean == p || strings.HasSuffix(clean, "."+p) {
+	// 1. Static protected list
+	for _, excl := range protectedExclusions {
+		if clean == excl || strings.HasSuffix(clean, "."+excl) {
 			return true
 		}
 	}
 
-	// Reject raw LAN IPs
-	if strings.HasPrefix(clean, "192.168.") || strings.HasPrefix(clean, "10.") || strings.HasPrefix(clean, "172.16.") {
+	// 2. IP / Localhost checks
+	if clean == "localhost" {
 		return true
+	}
+	if ip := parseIPOnly(clean); ip != nil {
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
+			return true
+		}
 	}
 
 	return false
 }
 
-// GetEntries returns all detected domains sorted by LastDetected descending.
+func parseIPOnly(s string) net.IP {
+	if idx := strings.Index(s, ":"); idx != -1 {
+		s = s[:idx]
+	}
+	return net.ParseIP(s)
+}
+
+// GetEntries returns a snapshot of detected domains.
 func (m *AutoHostlistManager) GetEntries() []AutoHostlistEntry {
 	m.SyncFromDisk()
 
@@ -153,6 +171,8 @@ func (m *AutoHostlistManager) AddDomain(domain, reason string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.syncFromDiskLocked()
+	delete(m.tombstones, clean)
+
 	now := time.Now()
 	entry, exists := m.entries[clean]
 	if !exists {
@@ -183,6 +203,8 @@ func (m *AutoHostlistManager) RemoveDomain(domain string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.syncFromDiskLocked()
+	m.tombstones[clean] = true
+
 	if _, exists := m.entries[clean]; !exists {
 		return nil
 	}
@@ -197,6 +219,9 @@ func (m *AutoHostlistManager) ClearDynamicList() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	for d := range m.entries {
+		m.tombstones[d] = true
+	}
 	m.entries = make(map[string]*AutoHostlistEntry)
 	GetLogger().Info("AutoHostlist", "[AUTOHOSTLIST] cleared dynamic autodetect list")
 	return m.saveAtomicLocked()
@@ -244,14 +269,16 @@ func (m *AutoHostlistManager) PromoteDomain(domain, targetListFilename string) e
 	// 2. Mark promoted in metadata and remove from autodetect.txt
 	m.mu.Lock()
 	m.syncFromDiskLocked()
+	m.tombstones[clean] = true
 	if entry, exists := m.entries[clean]; exists {
 		entry.Promoted = true
 	}
 	delete(m.entries, clean)
-	_ = m.saveAtomicLocked()
+	err := m.saveAtomicLocked()
 	m.mu.Unlock()
+
 	GetLogger().Infof("AutoHostlist", "[AUTOHOSTLIST] promoted domain %s to %s", clean, targetListFilename)
-	return nil
+	return err
 }
 
 // SyncFromDisk synchronizes entries with autodetect.txt written directly by winws2.
@@ -263,6 +290,13 @@ func (m *AutoHostlistManager) SyncFromDisk() {
 }
 
 func (m *AutoHostlistManager) syncFromDiskLocked() {
+	fi, err := os.Stat(m.listPath)
+	if err != nil {
+		return
+	}
+	m.lastDiskMtime = fi.ModTime()
+	m.lastDiskSize = fi.Size()
+
 	data, err := os.ReadFile(m.listPath)
 	if err != nil {
 		return
@@ -272,6 +306,9 @@ func (m *AutoHostlistManager) syncFromDiskLocked() {
 	for _, line := range strings.Split(string(data), "\n") {
 		clean := strings.ToLower(strings.TrimSpace(line))
 		if clean == "" || strings.HasPrefix(clean, "#") || IsExcludedDomain(clean) {
+			continue
+		}
+		if m.tombstones[clean] {
 			continue
 		}
 		if _, exists := m.entries[clean]; !exists {
@@ -298,41 +335,76 @@ func (m *AutoHostlistManager) load() error {
 }
 
 func (m *AutoHostlistManager) saveAtomicLocked() error {
-	var domains []string
-	for d := range m.entries {
-		domains = append(domains, d)
-	}
-	sort.Strings(domains)
-
 	tmpList := m.listPath + ".tmp"
-	listContent := strings.Join(domains, "\n")
-	if len(domains) > 0 {
-		listContent += "\n"
-	}
-
-	var writeErr error
-	for attempt := range 6 {
-		if writeErr = os.WriteFile(tmpList, []byte(listContent), 0644); writeErr == nil {
-			break
-		}
-		time.Sleep(time.Duration(25*(1<<attempt)) * time.Millisecond)
-	}
-	if writeErr != nil {
-		_ = os.Remove(tmpList)
-		return writeErr
-	}
 
 	var renameErr error
-	for attempt := range 6 {
-		if renameErr = os.Rename(tmpList, m.listPath); renameErr == nil {
+	for attempt := range 15 {
+		var currentDiskSize int64
+		if fi, err := os.Stat(m.listPath); err == nil {
+			currentDiskSize = fi.Size()
+		}
+
+		// Re-read disk file before each attempt so any domain appended by winws2 is merged
+		if diskBytes, err := os.ReadFile(m.listPath); err == nil {
+			now := time.Now()
+			for _, line := range strings.Split(string(diskBytes), "\n") {
+				clean := strings.ToLower(strings.TrimSpace(line))
+				if clean == "" || strings.HasPrefix(clean, "#") || IsExcludedDomain(clean) || m.tombstones[clean] {
+					continue
+				}
+				if _, exists := m.entries[clean]; !exists {
+					m.entries[clean] = &AutoHostlistEntry{
+						Domain:        clean,
+						FirstDetected: now,
+						LastDetected:  now,
+						Reason:        "Winws2 runtime auto-detection",
+						HitCount:      1,
+					}
+				}
+			}
+		}
+
+		var domains []string
+		for d := range m.entries {
+			if !m.tombstones[d] {
+				domains = append(domains, d)
+			}
+		}
+		sort.Strings(domains)
+
+		listContent := strings.Join(domains, "\n")
+		if len(domains) > 0 {
+			listContent += "\n"
+		}
+
+		if err := os.WriteFile(tmpList, []byte(listContent), 0644); err != nil {
+			time.Sleep(time.Duration(10*(1<<attempt)) * time.Millisecond)
+			continue
+		}
+
+		// OCC Conflict Detection: did winws append while writing tmpList?
+		if fiCurrent, err := os.Stat(m.listPath); err == nil && fiCurrent.Size() != currentDiskSize {
+			_ = os.Remove(tmpList)
+			time.Sleep(2 * time.Millisecond)
+			continue
+		}
+
+		renameErr = os.Rename(tmpList, m.listPath)
+		if renameErr == nil {
 			break
 		}
-		time.Sleep(time.Duration(25*(1<<attempt)) * time.Millisecond)
+		time.Sleep(time.Duration(10*(1<<attempt)) * time.Millisecond)
 	}
+
+	_ = os.Remove(tmpList)
 	if renameErr != nil {
-		_ = os.Remove(tmpList)
 		return renameErr
 	}
+	if fi, err := os.Stat(m.listPath); err == nil {
+		m.lastDiskMtime = fi.ModTime()
+		m.lastDiskSize = fi.Size()
+	}
+	m.tombstones = make(map[string]bool)
 
 	return m.saveMetaLocked()
 }
