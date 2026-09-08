@@ -349,6 +349,7 @@ export namespace engine {
 	export class CandidateTestResult {
 	    candidate: StrategyCandidate;
 	    status: string;
+	    executionStatus: string;
 	    passCount: number;
 	    totalAttempts: number;
 	    avgLatency: number;
@@ -364,6 +365,7 @@ export namespace engine {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.candidate = this.convertValues(source["candidate"], StrategyCandidate);
 	        this.status = source["status"];
+	        this.executionStatus = source["executionStatus"];
 	        this.passCount = source["passCount"];
 	        this.totalAttempts = source["totalAttempts"];
 	        this.avgLatency = source["avgLatency"];
@@ -752,6 +754,9 @@ export namespace engine {
 	    baselineReachable: boolean;
 	    baselineStatus: ProbeResult;
 	    baselineProtocolLabel: string;
+	    baselineMap?: Record<string, ProbeResult>;
+	    restorationStatus: string;
+	    restorationError?: string;
 	    candidateResults: CandidateTestResult[];
 	    workingCandidates: CandidateTestResult[];
 	    testedCandidates: number;
@@ -777,6 +782,9 @@ export namespace engine {
 	        this.baselineReachable = source["baselineReachable"];
 	        this.baselineStatus = this.convertValues(source["baselineStatus"], ProbeResult);
 	        this.baselineProtocolLabel = source["baselineProtocolLabel"];
+	        this.baselineMap = this.convertValues(source["baselineMap"], ProbeResult, true);
+	        this.restorationStatus = source["restorationStatus"];
+	        this.restorationError = source["restorationError"];
 	        this.candidateResults = this.convertValues(source["candidateResults"], CandidateTestResult);
 	        this.workingCandidates = this.convertValues(source["workingCandidates"], CandidateTestResult);
 	        this.testedCandidates = source["testedCandidates"];

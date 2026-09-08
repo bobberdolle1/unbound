@@ -211,13 +211,12 @@ func SaveDiscoveredProfile(name string, candidate StrategyCandidate, targetHost 
 	listsDir, _ := GetListsDir()
 	id := fmt.Sprintf("disc_%d", time.Now().UnixNano())
 	effectiveProto := candidate.TestedProtocol
-	if effectiveProto == "" {
+	if effectiveProto == "" || effectiveProto == "ANY" {
 		effectiveProto = candidate.Protocol
 	}
-	if effectiveProto == "" {
+	if effectiveProto == "" || effectiveProto == "ANY" {
 		effectiveProto = "TLS1.3"
 	}
-
 	newProf := DiscoveredProfile{
 		ID:             id,
 		Name:           cleanName,

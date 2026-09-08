@@ -314,6 +314,11 @@ export const StrategyLabModal: React.FC<StrategyLabModalProps> = ({
               </div>
             )}
 
+            {report.restorationStatus === 'FAILED' && (
+              <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-xs">
+                ⚠️ Внимание: не удалось восстановить исходный профиль ({report.restorationError || 'ошибка восстановления'}). Пожалуйста, включите профиль вручную.
+              </div>
+            )}
             {/* Best Candidate Banner */}
             {report.bestCandidate ? (
               <div className="p-4 bg-[var(--ui-surface-elevated)] border border-emerald-500/40 rounded-2xl space-y-3">
@@ -415,7 +420,7 @@ export const StrategyLabModal: React.FC<StrategyLabModalProps> = ({
                           {c.status === 'PASS' ? (
                             <span className="text-emerald-400">{c.passCount}/{c.totalAttempts || 3}</span>
                           ) : (
-                            <span className="text-red-400">{c.status}</span>
+                            <span className="text-red-400" title={c.error || c.details}>{c.executionStatus || c.status}</span>
                           )}
                         </td>
                         <td className="p-2.5 text-right font-mono text-[var(--ui-text-muted)]">
