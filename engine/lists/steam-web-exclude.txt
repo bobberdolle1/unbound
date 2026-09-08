@@ -6,6 +6,17 @@
 steampowered.com
 steamcommunity.com
 steamusercontent.com
+steamcontent.com
 steamstatic.com
 steam-chat.com
+steam-api.com
+steamserver.net
+steamgames.com
+steamdeck.com
 s.team
+steam.tv
+valve.net
+valvesoftware.com
+playartifact.com
+underlords.com
+akamaihd.net

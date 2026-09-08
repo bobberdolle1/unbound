@@ -1116,7 +1116,7 @@ func (a *App) GetLivePing() map[string]interface{} {
 		wg.Add(1)
 		go func(name, url string) {
 			defer wg.Done()
-			ctx, cancel := context.WithTimeout(a.ctx, 2*time.Second)
+			ctx, cancel := context.WithTimeout(a.ctx, 4*time.Second)
 			defer cancel()
 			lat, err := engine.SimplePing(ctx, url)
 			if err == nil {
@@ -1153,7 +1153,7 @@ func (a *App) GetLivePing() map[string]interface{} {
 			return map[string]interface{}{"active": true, "latency": 0, "status": "blocked", "services": resServices}
 		}
 		return map[string]interface{}{"active": true, "latency": minLatency.Milliseconds(), "status": "ok", "services": resServices}
-	case <-time.After(2500 * time.Millisecond):
+	case <-time.After(4500 * time.Millisecond):
 		return map[string]interface{}{"active": true, "latency": 0, "status": "blocked", "services": copyServices()}
 	}
 }
@@ -1382,13 +1382,13 @@ func (a *App) AutoReconnectMonitor() {
 			}
 			a.mu.Unlock()
 		}()
+		maxBlocked := 6
 		blockedCount := 0
-		maxBlocked := 3
-		maxCycles := 3
+		maxCycles := 2
 		cyclesDone := 0
 		switchCount := 0
 		lastSwitch := time.Time{}
-		cooldown := 30 * time.Second
+		cooldown := 60 * time.Second
 		checkInterval := 15 * time.Second
 		ticker := time.NewTicker(checkInterval)
 		defer ticker.Stop()
@@ -1413,12 +1413,27 @@ func (a *App) AutoReconnectMonitor() {
 			}
 			ping := a.GetLivePing()
 			status, _ := ping["status"].(string)
-			if status == "blocked" || status == "disconnected" {
+			services, _ := ping["services"].(map[string]int64)
+
+			// Gaming / Discord protection: if Discord or YouTube is responding,
+			// connection is NOT blocked — do not disconnect user's active call!
+			hasWorkingService := false
+			if services != nil {
+				if lat, ok := services["Discord"]; ok && lat > 0 {
+					hasWorkingService = true
+				}
+				if lat, ok := services["YouTube"]; ok && lat > 0 {
+					hasWorkingService = true
+				}
+			}
+
+			if (status == "blocked" || status == "disconnected") && !hasWorkingService {
 				blockedCount++
 			} else {
 				blockedCount = 0
 				continue
 			}
+
 			if blockedCount >= maxBlocked {
 				names := a.manager.GetEngineNames()
 				if len(names) == 0 {

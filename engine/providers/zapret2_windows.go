@@ -317,6 +317,9 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 			}
 			if e.killedManually {
 				e.addLog(fmt.Sprintf("[EXIT] PID %d stopped by user (code %d)", cmd.Process.Pid, exitCode))
+			} else if exitCode == 3221225794 || uint32(exitCode) == 0xc0000142 {
+				e.addLog(fmt.Sprintf("[EXIT] PID %d terminated by anti-cheat conflict (code 0xc0000142 STATUS_DLL_INIT_FAILED: game anti-cheat blocked cygwin memory mapping)", cmd.Process.Pid))
+				WriteLog(fmt.Sprintf("winws2 PID %d terminated by anti-cheat conflict: code 0xc0000142 STATUS_DLL_INIT_FAILED (BattlEye/EAC blocked cygwin1.dll)", cmd.Process.Pid))
 			} else {
 				e.addLog(fmt.Sprintf("[EXIT] PID %d terminated unexpectedly (code %d, %s)", cmd.Process.Pid, exitCode, reason))
 				WriteLog(fmt.Sprintf("winws2 PID %d terminated unexpectedly: code %d, %s", cmd.Process.Pid, exitCode, reason))
@@ -442,14 +445,17 @@ func (e *Zapret2WindowsProvider) stopLocked() error {
 
 		e.addLog(fmt.Sprintf("[STOP] process PID %d verified terminated and handles released", pid))
 		e.cmd = nil
+
+		// Attempt graceful WinDivert driver service stop so anti-cheats don't flag orphaned driver
+		scCmd := exec.Command("sc", "stop", "WinDivert")
+		scCmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
+		_ = scCmd.Run()
 	}
 
 	if e.logFile != nil {
 		e.logFile.Close()
 		e.logFile = nil
 	}
-
-	e.status = StatusStopped
 	e.currentProfile = ""
 	if e.onStatusChange != nil {
 		e.onStatusChange(e.status)

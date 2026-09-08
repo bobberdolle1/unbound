@@ -56,6 +56,42 @@ func TestSteamSafeArgsInjectsExcludesIntoTCPSections(t *testing.T) {
 	}
 }
 
+func TestSteamSafeArgsInjectsIPSetExcludeIntoCatchAllTCPSections(t *testing.T) {
+	listsDir := t.TempDir()
+	// Catch-all TCP section with NO hostlist
+	args := []string{
+		"--filter-tcp=80,443",
+		"--ipset-exclude=" + filepath.Join(listsDir, "ipset-exclude.txt"),
+		"--lua-desync=hostfakesplit:host=ozon.ru",
+	}
+	got := steamSafeArgs(args, listsDir)
+	wantIPExclude := "--ipset-exclude=" + filepath.ToSlash(filepath.Join(listsDir, "ipset-steam-exclude.txt"))
+	if !sectionHasPrefix(got, wantIPExclude) {
+		t.Fatalf("Catch-all TCP section must receive ipset-steam-exclude to protect Steam CM: %v", got)
+	}
+}
+
+func TestWinDivertSTUNFilterIsScopedToDiscordPorts(t *testing.T) {
+	stunFilterPath := filepath.Join("windivert.filter", "windivert_part.stun.txt")
+	contentBytes, err := os.ReadFile(stunFilterPath)
+	if err != nil {
+		t.Fatalf("Failed to read %s: %v", stunFilterPath, err)
+	}
+	content := string(contentBytes)
+
+	// Must NOT be a wildcard matching all UDP ports
+	if !strings.Contains(content, "udp.DstPort") {
+		t.Fatal("STUN filter must be scoped to specific UDP destination ports to avoid breaking game traffic (PUBG/Vivox)")
+	}
+
+	// Must include Discord ports (3478, 19294-19344, 50000-50100)
+	for _, portPattern := range []string{"3478", "19294", "19344", "50000", "50100"} {
+		if !strings.Contains(content, portPattern) {
+			t.Errorf("STUN filter missing Discord port pattern %s: %s", portPattern, content)
+		}
+	}
+}
+
 func TestSteamSafeArgsSkipsUDPSections(t *testing.T) {
 	listsDir := t.TempDir()
 	args := []string{
@@ -169,7 +205,20 @@ func TestCatalogGuardsEveryProfileAgainstSteamDesync(t *testing.T) {
 				continue
 			}
 			if !sectionHasPrefix(section, "--hostlist-exclude=") {
-				t.Errorf("profile %q TCP section %d is not Steam-guarded: %v", profile.Name, i, section)
+				t.Errorf("profile %q TCP section %d is not Steam host-guarded: %v", profile.Name, i, section)
+			}
+			// If the section has no hostlist, it is a catch-all and MUST have Valve IP exclude
+			if !hasDomainHostlist(section) {
+				hasSteamIP := false
+				for _, arg := range section {
+					if strings.HasPrefix(arg, "--ipset-exclude=") && strings.Contains(arg, "ipset-steam-exclude.txt") {
+						hasSteamIP = true
+						break
+					}
+				}
+				if !hasSteamIP {
+					t.Errorf("profile %q catch-all TCP section %d is missing Steam IP exclude: %v", profile.Name, i, section)
+				}
 			}
 		}
 	}

@@ -292,7 +292,11 @@ func steamSafeArgs(args []string, listsDir string) []string {
 		if tcpMode && !hasHostExclude {
 			out = append(out, hostExclude)
 		}
-		if hasIPList(section) && !hasSteamIPExclude {
+		// Protect Steam Connection Managers (CM) and Valve servers from TCP desync:
+		// Any TCP section without domain hostlist gating (catch-all) or any section with IP sets/excludes
+		// MUST exclude Valve IP ranges!
+		isCatchAllTCP := tcpMode && !hasDomainHostlist(section)
+		if (hasIPListOrExclude(section) || isCatchAllTCP) && !hasSteamIPExclude {
 			out = append(out, ipExclude)
 		}
 	}
@@ -308,6 +312,26 @@ func steamSafeArgs(args []string, listsDir string) []string {
 	}
 	flushSection()
 	return out
+}
+
+// hasDomainHostlist reports whether the section restricts traffic to specific domain hostnames.
+func hasDomainHostlist(section []string) bool {
+	for _, arg := range section {
+		if strings.HasPrefix(arg, "--hostlist=") || strings.HasPrefix(arg, "--hostlist-domains=") {
+			return true
+		}
+	}
+	return false
+}
+
+// hasIPListOrExclude reports whether the section selects or excludes destinations by IP.
+func hasIPListOrExclude(section []string) bool {
+	for _, arg := range section {
+		if strings.HasPrefix(arg, "--ipset=") || strings.HasPrefix(arg, "--ipset-exclude=") {
+			return true
+		}
+	}
+	return false
 }
 
 // hasIPList reports whether the section selects destinations by IP
