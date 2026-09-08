@@ -3,6 +3,7 @@ package engine
 import (
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -15,6 +16,7 @@ type AdaptiveHostState struct {
 	StrategyIndex int       `json:"strategyIndex"`
 	Confidence    string    `json:"confidence"` // "high", "medium", "low"
 	FailureCount  int       `json:"failureCount"`
+	Threshold     int       `json:"threshold,omitempty"`
 	LastSuccess   time.Time `json:"lastSuccess"`
 	LastFailure   time.Time `json:"lastFailure,omitempty"`
 }
@@ -151,6 +153,32 @@ func (t *AdaptiveStateTracker) ResetState() {
 	GetLogger().Info("Adaptive", "[ADAPTIVE] per-host adaptive state reset")
 }
 
+// RecordFailureDetected updates failure counter without forcing rotation until threshold is reached.
+func (t *AdaptiveStateTracker) RecordFailureDetected(host string, strategyIndex int, strategyName string, count, threshold int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	state, ok := t.states[host]
+	if !ok {
+		state = &AdaptiveHostState{
+			Host:          host,
+			StrategyIndex: strategyIndex,
+			StrategyName:  strategyName,
+			Confidence:    "low",
+		}
+		t.states[host] = state
+	}
+
+	state.LastFailure = time.Now()
+	state.FailureCount = count
+	state.Threshold = threshold
+	if strategyIndex > 0 && strategyName != "" {
+		state.StrategyIndex = strategyIndex
+		state.StrategyName = strategyName
+	}
+	state.Confidence = "low"
+}
+
 // GetAdaptiveProfile generates the command-line arguments for the Adaptive (Experimental) profile.
 // Uses bundled zapret-auto.lua with circular orchestration, event bridge, and directional capture.
 func GetAdaptiveProfile(luaDir, listsDir string) Profile {
@@ -224,7 +252,6 @@ func ParseAdaptiveLogEvent(logLine string) {
 			}
 		}
 		stratName := adaptiveStrategyNames[stratNum]
-
 		tracker := GetAdaptiveStateTracker()
 		switch event {
 		case "init":
@@ -232,16 +259,21 @@ func ParseAdaptiveLogEvent(logLine string) {
 		case "rotate":
 			tracker.RecordRotation(host, stratNum, stratName)
 			GetLogger().Infof("Adaptive", "[ADAPTIVE] circular rotated strategy to #%d (%s) for %s", stratNum, stratName, host)
-		case "success":
+		case "success", "success_detected":
 			tracker.RecordSuccess(host, stratNum, stratName)
 			GetLogger().Infof("Adaptive", "[ADAPTIVE] host %s success confirmed on strategy #%d (%s)", host, stratNum, stratName)
-		case "failure":
-			tracker.RecordFailure(host, stratNum, stratName)
-			GetLogger().Infof("Adaptive", "[ADAPTIVE] host %s failure detected on strategy #%d (%s)", host, stratNum, stratName)
+		case "failure", "failure_detected":
+			count, _ := strconv.Atoi(kv["count"])
+			threshold, _ := strconv.Atoi(kv["threshold"])
+			if threshold == 0 {
+				threshold = 3
+			}
+			tracker.RecordFailureDetected(host, stratNum, stratName, count, threshold)
+			GetLogger().Infof("Adaptive", "[ADAPTIVE] host %s failure detected on strategy #%d (%s) [%d/%d]",
+				host, stratNum, stratName, count, threshold)
 		}
 		return
 	}
-
 	// Priority 2: Fallback Scraper for legacy or manual --debug=1 upstream logs
 	if idx := strings.Index(logLine, "circular: rotate strategy to "); idx != -1 {
 		part := strings.TrimSpace(logLine[idx+len("circular: rotate strategy to "):])

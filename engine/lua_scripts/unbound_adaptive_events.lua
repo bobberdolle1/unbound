@@ -16,7 +16,7 @@ if orig_circular then
 			if not had_strat then
 				print(string.format("[UNBOUND_EVENT] adaptive host=%s event=init strategy=1", host))
 			elseif hrec.nstrategy ~= old_strat then
-				print(string.format("[UNBOUND_EVENT] adaptive host=%s event=rotate strategy=%d", host, hrec.nstrategy))
+				print(string.format("[UNBOUND_EVENT] adaptive host=%s event=rotate from=%d to=%d strategy=%d", host, old_strat, hrec.nstrategy, hrec.nstrategy))
 			end
 		end
 		return verdict
@@ -28,16 +28,18 @@ if orig_check then
 	_G["automate_failure_check"] = function(desync, hrec, crec)
 		local host = (desync.track and desync.track.hostname) or (hrec and hrec.host) or "unknown"
 		local strat = (hrec and hrec.nstrategy) or 1
-		local was_nocheck = crec and crec.nocheck
+		local was_failure = (crec and crec.failure)
+		local was_nocheck = (crec and crec.nocheck)
+		local old_counter = (hrec and hrec.failure_counter) or 0
 
 		local failed = orig_check(desync, hrec, crec)
 
-		if crec and crec.nocheck and not was_nocheck then
-			if failed then
-				print(string.format("[UNBOUND_EVENT] adaptive host=%s event=failure strategy=%d", host, strat))
-			else
-				print(string.format("[UNBOUND_EVENT] adaptive host=%s event=success strategy=%d", host, strat))
-			end
+		if crec and crec.failure and not was_failure then
+			local current_count = (hrec and hrec.failure_counter) or (old_counter + 1)
+			local threshold = tonumber(desync.arg.fails) or 3
+			print(string.format("[UNBOUND_EVENT] adaptive host=%s event=failure_detected strategy=%d count=%d threshold=%d", host, strat, current_count, threshold))
+		elseif crec and crec.nocheck and not was_nocheck and not (crec and crec.failure) then
+			print(string.format("[UNBOUND_EVENT] adaptive host=%s event=success_detected strategy=%d", host, strat))
 		end
 		return failed
 	end

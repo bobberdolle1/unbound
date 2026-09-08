@@ -81,19 +81,34 @@ func TestParseAdaptiveStructuredEventBridge(t *testing.T) {
 		t.Fatalf("Expected strategy 1 on init, got: %+v", states)
 	}
 
-	// 2. Rotations to 2, then 3
-	ParseAdaptiveLogEvent("[UNBOUND_EVENT] adaptive host=youtube.com event=rotate strategy=2")
-	ParseAdaptiveLogEvent("[UNBOUND_EVENT] adaptive host=youtube.com event=rotate strategy=3")
+	// 2. Sub-threshold failures: failure 1 and failure 2
+	ParseAdaptiveLogEvent("[UNBOUND_EVENT] adaptive host=youtube.com event=failure_detected strategy=1 count=1 threshold=3")
 	states = tracker.GetHostStates()
-	if states[0].StrategyIndex != 3 || states[0].StrategyName != "Fake TLS" {
-		t.Fatalf("Expected strategy 3 (Fake TLS) after rotation, got: %+v", states[0])
+	if states[0].FailureCount != 1 || states[0].Confidence != "low" {
+		t.Errorf("Expected failure count 1 and low confidence, got: %+v", states[0])
 	}
 
-	// 3. Success on strategy 3 - MUST NOT reset to strategy 1!
-	ParseAdaptiveLogEvent("[UNBOUND_EVENT] adaptive host=youtube.com event=success strategy=3")
+	ParseAdaptiveLogEvent("[UNBOUND_EVENT] adaptive host=youtube.com event=failure_detected strategy=1 count=2 threshold=3")
 	states = tracker.GetHostStates()
-	if states[0].StrategyIndex != 3 {
-		t.Errorf("BUG REGRESSION: Success on strategy 3 reset to %d", states[0].StrategyIndex)
+	if states[0].FailureCount != 2 {
+		t.Errorf("Expected failure count 2, got: %d", states[0].FailureCount)
+	}
+
+	// 3. Threshold reached and circular rotation to strategy 2
+	ParseAdaptiveLogEvent("[UNBOUND_EVENT] adaptive host=youtube.com event=rotate from=1 to=2 strategy=2")
+	states = tracker.GetHostStates()
+	if states[0].StrategyIndex != 2 || states[0].StrategyName != "MultiSplit (midsld)" {
+		t.Fatalf("Expected strategy 2 after rotation, got: %+v", states[0])
+	}
+	if states[0].Confidence != "medium" {
+		t.Errorf("Expected medium confidence after rotation, got %s", states[0].Confidence)
+	}
+
+	// 4. Success on strategy 2: strategy must remain 2 and confidence become high
+	ParseAdaptiveLogEvent("[UNBOUND_EVENT] adaptive host=youtube.com event=success_detected strategy=2")
+	states = tracker.GetHostStates()
+	if states[0].StrategyIndex != 2 {
+		t.Errorf("BUG REGRESSION: Success on strategy 2 reset to %d", states[0].StrategyIndex)
 	}
 	if states[0].Confidence != "high" {
 		t.Errorf("Expected high confidence after success, got %s", states[0].Confidence)
@@ -102,7 +117,6 @@ func TestParseAdaptiveStructuredEventBridge(t *testing.T) {
 		t.Errorf("Expected failure count 0 after success, got %d", states[0].FailureCount)
 	}
 }
-
 func TestAdaptiveConcurrentHostsNoRace(t *testing.T) {
 	tracker := GetAdaptiveStateTracker()
 	tracker.ResetState()
