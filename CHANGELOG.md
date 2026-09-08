@@ -3,6 +3,28 @@
 Все значимые изменения проекта документируются в этом файле.
 
 
+## [0.6.7] - 2026-09-08
+### 🚀 Релиз UNBOUND v0.6.7 — Launchers Packaging & Acceptance Truth
+
+#### Fixed
+
+- **Восстановление .CMD / BAT Launchers в релизных сборках Windows**:
+  - Устранена регрессия упаковки (packaging regression), из-за которой в архивы Windows перестали включаться готовые командные файлы быстрого запуска из `scripts/control_windows/`.
+  - В релизный ZIP-архив Windows возвращены 6 штатных лаунчеров:
+    - `general_recommended.cmd` — запуск рекомендованного профиля (`--cli --profile rec`);
+    - `general_autotune.cmd` — запуск автоматического подбора AutoTune (`--cli --autotune`);
+    - `general_universal.cmd` — запуск универсального профиля (`--cli --profile universal`);
+    - `general_alt1_multisplit.cmd` — запуск профиля Alternative 1 (`--cli --profile alt1`);
+    - `general_alt2_fake_tls.cmd` — запуск профиля Alternative 2 (`--cli --profile alt2`);
+    - `service_control.cmd` — открытие интерактивного Control Center (`--control`).
+  - Добавлен автоматический регрессионный тест `TestWindowsPackagingLaunchers`, проверяющий наличие всех 6 файлов, валидность аргументов, прав администратора и соответствие профилей текущему каталогу `Zapret 2 (winws)`.
+- **Исправление приёмки WinDivert (Acceptance Probe Desync Truth)**:
+  - В `runAcceptanceTest()` кандидат обновлён на канонический `MultiSplit (midsld)` (`--payload=tls_client_hello --lua-desync=multisplit:pos=midsld`).
+  - В отличие от прямого `hostfakesplit:repeats=2` без middlebox-поглощения (где фейковые SNI вызывали TCP RST со стороны незаблокированного `1.1.1.1`), `multisplit` выполняет чистое сегментирование ClientHello через WinDivert и Lua-движок, позволяя удалённому серверу Cloudflare успешно завершить подлинное рукопожатие TLS 1.3 за ~400 мс.
+- **Потоковое отображение и диагностика приёмки (Acceptance UX)**:
+  - Скрипт `verify_uac_acceptance.ps1` переведён на потоковое чтение `StandardOutput` через `.NET` `ProcessStartInfo`, устраняя пустое окно консоли при запуске GUI-подсистемы `Unbound.exe`.
+  - В `runAcceptanceTest()` добавлен вывод подробного блока `ACCEPTANCE FAILED: Stage: ... Root cause: ...` с принудительным `os.Stdout.Sync()` и `os.Stderr.Sync()` перед выходом.
+
 ## [0.6.6] - 2026-09-08
 ### 🛡️ Релиз UNBOUND v0.6.6 — Lifecycle & Kernel Acceptance Truth
 
