@@ -6,6 +6,7 @@ export namespace engine {
 	    strategyIndex: number;
 	    confidence: string;
 	    failureCount: number;
+	    threshold?: number;
 	    // Go type: time
 	    lastSuccess: any;
 	    // Go type: time
@@ -22,6 +23,7 @@ export namespace engine {
 	        this.strategyIndex = source["strategyIndex"];
 	        this.confidence = source["confidence"];
 	        this.failureCount = source["failureCount"];
+	        this.threshold = source["threshold"];
 	        this.lastSuccess = this.convertValues(source["lastSuccess"], null);
 	        this.lastFailure = this.convertValues(source["lastFailure"], null);
 	    }
@@ -752,6 +754,7 @@ export namespace engine {
 	    testedCandidates: number;
 	    workingCandidates: CandidateTestResult[];
 	    bestCandidate?: CandidateTestResult;
+	    validationStatus: string;
 	    serviceVerified: boolean;
 	    duration: number;
 	    // Go type: time
@@ -773,6 +776,7 @@ export namespace engine {
 	        this.testedCandidates = source["testedCandidates"];
 	        this.workingCandidates = this.convertValues(source["workingCandidates"], CandidateTestResult);
 	        this.bestCandidate = this.convertValues(source["bestCandidate"], CandidateTestResult);
+	        this.validationStatus = source["validationStatus"];
 	        this.serviceVerified = source["serviceVerified"];
 	        this.duration = source["duration"];
 	        this.timestamp = this.convertValues(source["timestamp"], null);

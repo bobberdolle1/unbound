@@ -188,8 +188,9 @@ type dummyProcess struct {
 	runner *recordingCandidateRunner
 }
 
-func (d *dummyProcess) PID() int           { return 12345 }
-func (d *dummyProcess) Argv() []string     { return []string{"--dummy"} }
+func (d *dummyProcess) PID() int                       { return 12345 }
+func (d *dummyProcess) Argv() []string                 { return []string{"--dummy"} }
+func (d *dummyProcess) State() CandidateProcessState   { return ProcessStateCaptureReady }
 func (d *dummyProcess) Stop() error {
 	d.runner.stoppedCandidates = append(d.runner.stoppedCandidates, d.name)
 	d.runner.activeCount--
@@ -350,5 +351,36 @@ func TestBuildDiscoveredProfileRuntimeArgs(t *testing.T) {
 	joinedQUIC := strings.Join(quicArgs, " ")
 	if !strings.Contains(joinedQUIC, "--filter-udp=443") {
 		t.Errorf("Missing --filter-udp=443 for QUIC protocol in args: %v", quicArgs)
+	}
+}
+
+func TestBuildDiscoveredProfileRuntimeArgsMultiSection(t *testing.T) {
+	tempLists := t.TempDir()
+
+	multiProf := DiscoveredProfile{
+		Name:     "Multi-Section Candidate",
+		Target:   "discord.com",
+		Protocol: "TLS1.3",
+		CandidateArgs: []string{
+			"--filter-tcp=80",
+			"--lua-desync=multisplit",
+			"--new",
+			"--payload=tls_client_hello",
+			"--lua-desync=fake:repeats=2",
+		},
+	}
+
+	args := BuildDiscoveredProfileRuntimeArgs(multiProf, tempLists)
+	joined := strings.Join(args, " ")
+
+	// Invariant: Both sections must be scoped to discord.com
+	scopeCount := strings.Count(joined, "--hostlist-domains=discord.com")
+	if scopeCount != 2 {
+		t.Errorf("Expected 2 scoped --hostlist-domains=discord.com across sections, got %d in: %s", scopeCount, joined)
+	}
+
+	// Invariant: Second section without explicit transport must get default --filter-tcp=443
+	if !strings.Contains(joined, "--filter-tcp=443") {
+		t.Errorf("Expected default --filter-tcp=443 in second section: %s", joined)
 	}
 }
