@@ -2,6 +2,9 @@ package engine
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -71,14 +74,72 @@ func (sc StrategyCandidate) SummaryDescription() string {
 		sc.Name, sc.Protocol, sc.Aggressiveness.String(), sc.Source)
 }
 
+// ValidProtocols lists all officially recognized protocols for Strategy Lab.
+var ValidProtocols = map[string]bool{
+	"HTTP":   true,
+	"TLS1.2": true,
+	"TLS1.3": true,
+	"QUIC":   true,
+	"ANY":    true,
+}
+
+// IsValidProtocol checks whether a protocol identifier is recognized and supported.
+func IsValidProtocol(protocol string) bool {
+	return ValidProtocols[strings.ToUpper(strings.TrimSpace(protocol))]
+}
+
+// CheckCandidateCapabilities evaluates whether system environment supports candidate requirements.
+func CheckCandidateCapabilities(cand StrategyCandidate, assets *AssetPaths) (bool, string) {
+	req := cand.Requirements
+
+	// 1. TCP Timestamps requirement
+	if req.TCPTimestamps == TimestampsRequired {
+		if runtime.GOOS != "windows" && runtime.GOOS != "linux" {
+			return false, "SKIPPED_UNSUPPORTED: TCP timestamps required but not supported on platform"
+		}
+	}
+
+	// 2. QUIC requirements
+	if req.QUIC {
+		if runtime.GOOS != "windows" && runtime.GOOS != "linux" {
+			return false, "SKIPPED_UNSUPPORTED: QUIC interception requires Windows WinDivert or Linux NFQUEUE"
+		}
+	}
+
+	// 3. Fake payload files
+	if len(req.FakePayloads) > 0 && assets != nil {
+		for _, fp := range req.FakePayloads {
+			target := filepath.Join(assets.ListDir, fp)
+			if _, err := os.Stat(target); os.IsNotExist(err) {
+				return false, fmt.Sprintf("SKIPPED_CONFIG_ERROR: missing required fake payload %s", fp)
+			}
+		}
+	}
+
+	// 4. Lua modules
+	if len(req.LuaModules) > 0 && assets != nil {
+		for _, mod := range req.LuaModules {
+			target := filepath.Join(assets.LuaDir, mod)
+			if _, err := os.Stat(target); os.IsNotExist(err) {
+				return false, fmt.Sprintf("SKIPPED_CONFIG_ERROR: missing required Lua module %s", mod)
+			}
+		}
+	}
+
+	return true, ""
+}
+
 // GetBlockCheck2Candidates returns the canonical suite of BlockCheck2-inspired candidates
 // safe for isolated testing via WinDivert raw filter.
+// Rejects invalid or unknown protocols with fail-closed nil return.
 func GetBlockCheck2Candidates(protocol string) []StrategyCandidate {
 	proto := strings.ToUpper(strings.TrimSpace(protocol))
 	if proto == "" {
 		proto = "TLS1.3"
 	}
-
+	if !IsValidProtocol(proto) {
+		return nil
+	}
 	all := []StrategyCandidate{
 		// 1. HostFakeSplit (Low Aggressiveness - Canonical baseline)
 		{
@@ -281,9 +342,6 @@ func GetBlockCheck2Candidates(protocol string) []StrategyCandidate {
 		if proto == "ANY" || c.Protocol == proto || (strings.HasPrefix(proto, "TLS") && strings.HasPrefix(c.Protocol, "TLS")) {
 			matched = append(matched, c)
 		}
-	}
-	if len(matched) == 0 {
-		return all
 	}
 	return matched
 }

@@ -2,9 +2,12 @@ package engine
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	neturl "net/url"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -191,6 +194,8 @@ type dummyProcess struct {
 func (d *dummyProcess) PID() int                       { return 12345 }
 func (d *dummyProcess) Argv() []string                 { return []string{"--dummy"} }
 func (d *dummyProcess) State() CandidateProcessState   { return ProcessStateCaptureReady }
+func (d *dummyProcess) Alive() bool                    { return true }
+func (d *dummyProcess) WaitErr() error                 { return nil }
 func (d *dummyProcess) Stop() error {
 	d.runner.stoppedCandidates = append(d.runner.stoppedCandidates, d.name)
 	d.runner.activeCount--
@@ -382,5 +387,120 @@ func TestBuildDiscoveredProfileRuntimeArgsMultiSection(t *testing.T) {
 	// Invariant: Second section without explicit transport must get default --filter-tcp=443
 	if !strings.Contains(joined, "--filter-tcp=443") {
 		t.Errorf("Expected default --filter-tcp=443 in second section: %s", joined)
+	}
+}
+
+func TestStrategyLabBaselineProtocolCorrectness(t *testing.T) {
+	mockPC := &mockProviderController{
+		profile: "Recommended (hostfakesplit)",
+		status:  providers.StatusRunning,
+	}
+
+	// 1. HTTP PASS + QUIC FAIL must NOT early-exit QUIC Strategy Lab
+	t.Run("HTTPPassQUICFailDoesNotEarlyExitQUICLab", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer ts.Close()
+
+		u, _ := neturl.Parse(ts.URL)
+		host, _, _ := net.SplitHostPort(u.Host)
+
+		cfg := StrategyLabTargetConfig{
+			TargetHost:    host,
+			Protocol:      "QUIC",
+			ServicePreset: "Custom",
+		}
+
+		runner := &recordingCandidateRunner{}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		report, err := RunStrategyLabWithRunner(ctx, mockPC, runner, cfg, nil)
+		if err != nil {
+			t.Fatalf("RunStrategyLabWithRunner failed: %v", err)
+		}
+
+		if report.BaselineReachable {
+			t.Errorf("Expected QUIC baseline to FAIL because no QUIC server is running, got reachable=true")
+		}
+		if report.BaselineProtocolLabel != "Baseline QUIC" {
+			t.Errorf("Expected BaselineProtocolLabel='Baseline QUIC', got %q", report.BaselineProtocolLabel)
+		}
+		if len(runner.startedCandidates) == 0 {
+			t.Errorf("QUIC discovery exited early even though QUIC baseline was unreachable")
+		}
+	})
+
+	// 2. TLS 1.3 PASS + TLS 1.2 FAIL must NOT early-exit TLS 1.2 Strategy Lab
+	t.Run("TLS13PassTLS12FailDoesNotEarlyExitTLS12Lab", func(t *testing.T) {
+		ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		ts.TLS = &tls.Config{
+			MinVersion: tls.VersionTLS13,
+			MaxVersion: tls.VersionTLS13,
+		}
+		ts.StartTLS()
+		defer ts.Close()
+
+		u, _ := neturl.Parse(ts.URL)
+		host, _, _ := net.SplitHostPort(u.Host)
+
+		cfg := StrategyLabTargetConfig{
+			TargetHost:    host,
+			Protocol:      "TLS1.2",
+			ServicePreset: "Custom",
+		}
+
+		runner := &recordingCandidateRunner{}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		report, err := RunStrategyLabWithRunner(ctx, mockPC, runner, cfg, nil)
+		if err != nil {
+			t.Fatalf("RunStrategyLabWithRunner failed: %v", err)
+		}
+
+		if report.BaselineReachable {
+			t.Errorf("Expected TLS 1.2 baseline to FAIL against TLS 1.3-only server, got reachable=true")
+		}
+		if report.BaselineProtocolLabel != "Baseline TLS 1.2" {
+			t.Errorf("Expected BaselineProtocolLabel='Baseline TLS 1.2', got %q", report.BaselineProtocolLabel)
+		}
+		if len(runner.startedCandidates) == 0 {
+			t.Errorf("TLS 1.2 discovery exited early even though TLS 1.2 baseline was unreachable")
+		}
+	})
+}
+
+type dyingCandidateProcess struct {
+	alive bool
+}
+
+func (d *dyingCandidateProcess) PID() int                     { return 99999 }
+func (d *dyingCandidateProcess) Argv() []string               { return []string{"--dying"} }
+func (d *dyingCandidateProcess) State() CandidateProcessState { return ProcessStateExitedEarly }
+func (d *dyingCandidateProcess) Alive() bool                  { return d.alive }
+func (d *dyingCandidateProcess) WaitErr() error               { return errors.New("signal: killed") }
+func (d *dyingCandidateProcess) Stop() error                  { return nil }
+
+func TestCandidateProcessLivenessDetection(t *testing.T) {
+	ce := NewConnectivityEngine(time.Second)
+	cand := StrategyCandidate{
+		ID:          "cand_liveness_test",
+		Name:        "Liveness Test Candidate",
+		Protocol:    "HTTP",
+		Zapret2Args: []string{"--dummy"},
+	}
+
+	// 1. Process already dead before attempt
+	deadProc := &dyingCandidateProcess{alive: false}
+	res := testCandidateWithProcess(context.Background(), ce, deadProc, cand, "http://127.0.0.1:80", "HTTP", false)
+	if res.Status != StatusFail {
+		t.Errorf("Expected FAIL when candidate is dead, got %s", res.Status)
+	}
+	if !strings.Contains(res.Error, "ENGINE_EXITED") {
+		t.Errorf("Expected ENGINE_EXITED in error, got: %s", res.Error)
 	}
 }
