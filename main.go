@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"embed"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -205,31 +207,36 @@ func runAcceptanceTest() {
 	// 1. Verify elevation
 	hasPriv, err := checkAdminPrivileges()
 	if err != nil || !hasPriv {
-		fmt.Println("[FAIL] Step 1/5: Administrator privileges required. Please run from an elevated prompt.")
+		fmt.Println("Administrator: FAIL (Elevation required. Run from an elevated prompt)")
 		os.Exit(1)
 	}
-	fmt.Println("[PASS] Step 1/5: Administrator privileges verified")
+	fmt.Println("Administrator: PASS")
 
-	// 2. Extract verified engine assets
+	// 2. Extract and verify engine assets
 	assets, err := engine.ExtractAssets()
 	if err != nil {
-		fmt.Printf("[FAIL] Step 2/5: Failed to extract engine assets: %v\n", err)
+		fmt.Printf("Engine assets integrity: FAIL (Extraction failed: %v)\n", err)
 		os.Exit(2)
 	}
 	winwsPath := filepath.Join(assets.BinDir, "winws2.exe")
 	if _, err := os.Stat(winwsPath); err != nil {
-		fmt.Printf("[FAIL] Step 2/5: winws2.exe not found at %s: %v\n", winwsPath, err)
+		fmt.Printf("Engine assets integrity: FAIL (winws2.exe not found at %s: %v)\n", winwsPath, err)
 		os.Exit(2)
 	}
-	fmt.Printf("[PASS] Step 2/5: Engine assets extracted and verified (%s)\n", winwsPath)
+	fmt.Println("Engine assets integrity: PASS")
 
-	// 3. Construct strict, non-broad test filter (only 1.1.1.1 on port 443)
-	testFilter := "(ip.DstAddr == 1.1.1.1 or ip.SrcAddr == 1.1.1.1) and tcp.DstPort == 443"
+	// 3. Construct canonical bidirectional test filter via GenerateWinDivertFilterForIPs
+	targetIP := net.ParseIP("1.1.1.1")
+	testFilter, err := engine.GenerateWinDivertFilterForIPs([]net.IP{targetIP}, []int{443}, "tcp")
+	if err != nil {
+		fmt.Printf("Filter construction: FAIL (%v)\n", err)
+		os.Exit(3)
+	}
 
 	// 4. Launch winws2 with official base scripts and candidate desync args
 	runner, err := engine.NewDefaultCandidateRunner()
 	if err != nil {
-		fmt.Printf("[FAIL] Step 3/5: Failed to initialize runner: %v\n", err)
+		fmt.Printf("Runner initialization: FAIL (%v)\n", err)
 		os.Exit(3)
 	}
 
@@ -242,49 +249,59 @@ func runAcceptanceTest() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-
-	proc, err := runner.StartCandidate(ctx, cand, testFilter)
-	if err != nil {
-		fmt.Printf("[FAIL] Step 3/5: WinDivert driver failed to initialize or start capture: %v\n", err)
-		os.Exit(4)
-	}
-	pid := proc.PID()
-	fmt.Printf("[PASS] Step 3/5: winws2.exe launched with WinDivert (PID=%d, Filter=%s)\n", pid, testFilter)
-
-	// Verify exact CAPTURE_READY state
-	if proc.State() != engine.ProcessStateCaptureReady {
-		_ = proc.Stop()
-		fmt.Printf("[FAIL] Step 4/5: Process in unexpected state %v (expected CAPTURE_READY)\n", proc.State())
-		os.Exit(4)
-	}
-	fmt.Println("[PASS] Step 4/5: Exact marker verified: 'windivert initialized. capture is started.'")
-
-	// 5. Run one bounded probe through captured scope
-	ce := engine.NewConnectivityEngine(3 * time.Second)
-	ce.PinHost("cloudflare-dns.com", net.ParseIP("1.1.1.1"))
-	probeRes := ce.ProbeTCP(ctx, "cloudflare-dns.com:443")
-	fmt.Printf("        Network probe through WinDivert scope: %s (latency=%v)\n", probeRes.Status, probeRes.Latency)
-
-	// Verify process still alive
-	if !proc.Alive() {
-		_ = proc.Stop()
-		fmt.Printf("[FAIL] Step 5/5: winws2.exe process died during network probe: %v\n", proc.WaitErr())
+	if err := executeAcceptanceProbe(ctx, runner, cand, testFilter, targetIP); err != nil {
 		os.Exit(5)
 	}
-
-	// Stop process and verify PID gone
-	_ = proc.Stop()
-	time.Sleep(150 * time.Millisecond)
-	if proc.Alive() {
-		fmt.Println("[FAIL] Step 5/5: winws2.exe process failed to terminate cleanly")
-		os.Exit(5)
-	}
-	fmt.Println("[PASS] Step 5/5: Process PID cleanly terminated and WinDivert handles released")
 
 	fmt.Println("\n==================================================")
 	fmt.Println(" ALL CHECKS PASSED: KERNEL_RUNTIME_VERIFIED")
 	fmt.Println("==================================================")
 	os.Exit(0)
+}
+
+func executeAcceptanceProbe(ctx context.Context, runner engine.CandidateRunner, cand engine.StrategyCandidate, testFilter string, targetIP net.IP) error {
+	proc, err := runner.StartCandidate(ctx, cand, testFilter)
+	if err != nil {
+		return fmt.Errorf("winws2 start failed: %w", err)
+	}
+	pid := proc.PID()
+	fmt.Printf("winws2 PID: %d\n", pid)
+
+	// Verify exact CAPTURE_READY state
+	if proc.State() != engine.ProcessStateCaptureReady {
+		_ = proc.Stop()
+		return fmt.Errorf("CAPTURE_READY: FAIL (Unexpected process state %v)", proc.State())
+	}
+	fmt.Println("CAPTURE_READY: PASS")
+	fmt.Printf("Captured remote IP: %s\n", targetIP.String())
+
+	// Run real TLS 1.3 handshake probe pinned to captured IP
+	ce := engine.NewConnectivityEngine(4 * time.Second)
+	ce.PinHost("cloudflare-dns.com", targetIP)
+	probeRes := ce.ProbeTLSVersion(ctx, "cloudflare-dns.com:443", tls.VersionTLS13)
+	if probeRes.Status != engine.StatusPass {
+		_ = proc.Stop()
+		return fmt.Errorf("TLS handshake: FAIL (%s: %s)", probeRes.Status, probeRes.Error)
+	}
+	fmt.Println("TLS handshake: PASS")
+
+	// Verify candidate process still alive after TLS handshake
+	if !proc.Alive() {
+		_ = proc.Stop()
+		return fmt.Errorf("Candidate alive after TLS: FAIL (Process died during handshake: %v)", proc.WaitErr())
+	}
+	fmt.Println("Candidate alive after TLS: PASS")
+
+	// Stop requested and verified process exit
+	fmt.Println("Stop requested: PASS")
+	if stopErr := proc.Stop(); stopErr != nil {
+		return fmt.Errorf("Process exit confirmed: FAIL (Stop returned error: %w)", stopErr)
+	}
+	if proc.Alive() {
+		return errors.New("Process exit confirmed: FAIL (Process still running after Stop)")
+	}
+	fmt.Println("Process exit confirmed: PASS")
+	return nil
 }
 
 // newHeadlessManager performs the setup shared by --cli and --list-profiles.

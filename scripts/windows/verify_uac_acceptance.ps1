@@ -1,10 +1,10 @@
-# UNBOUND v0.6.5 — Elevated WinDivert Driver Acceptance Script
+# UNBOUND v0.6.6 — Elevated WinDivert Driver Acceptance Script
 # Run this script in an Administrator PowerShell prompt on Windows.
 
 $ErrorActionPreference = "Stop"
 
 Write-Host "==================================================" -ForegroundColor Cyan
-Write-Host " UNBOUND v0.6.5 — Windows WinDivert Driver Acceptance" -ForegroundColor Cyan
+Write-Host " UNBOUND v0.6.6 — Windows WinDivert Driver Acceptance" -ForegroundColor Cyan
 Write-Host "==================================================" -ForegroundColor Cyan
 
 # 1. Verify Administrator elevation
