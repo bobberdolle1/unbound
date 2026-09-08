@@ -39,7 +39,7 @@ export const StrategyLabModal: React.FC<StrategyLabModalProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
   const [profileNameInput, setProfileNameInput] = useState('');
-
+  const [acknowledgeWarning, setAcknowledgeWarning] = useState<boolean>(false);
   // Subscribe to Strategy Lab progress events
   useEffect(() => {
     if (!eventBus?.onStrategyLabProgress) return;
@@ -73,15 +73,17 @@ export const StrategyLabModal: React.FC<StrategyLabModalProps> = ({
       setErrorMsg('Укажите домен или IP цели');
       return;
     }
-
     setIsRunning(true);
-    setErrorMsg(null);
     setReport(null);
+    setErrorMsg(null);
     setSaveSuccessMsg(null);
+    setAcknowledgeWarning(false);
+    setProgress({ currentCandidateIndex: 0, totalCandidates: 0, currentCandidateName: '', baselineStatus: '', percent: 0, elapsedMs: 0 });
 
     try {
       const res = await backendService.runStrategyLab(targetHost.trim(), servicePreset, protocol, []);
       setReport(res);
+      setAcknowledgeWarning(false);
       if (res?.bestCandidate) {
         setProfileNameInput(`Discovered - ${res.bestCandidate.candidate.name}`);
       }
@@ -106,16 +108,63 @@ export const StrategyLabModal: React.FC<StrategyLabModalProps> = ({
     }
   };
 
-  const renderAggressivenessBadge = (agg: number) => {
-    switch (agg) {
+  const renderAggressivenessBadge = (aggressiveness: number) => {
+    switch (aggressiveness) {
       case 1:
-        return <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-emerald-500/20 text-emerald-400 font-semibold">LOW</span>;
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Низкая</span>;
       case 2:
-        return <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-blue-500/20 text-blue-400 font-semibold">MEDIUM</span>;
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-blue-500/10 text-blue-400 border border-blue-500/20">Средняя</span>;
       case 3:
-        return <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-orange-500/20 text-orange-400 font-semibold">HIGH</span>;
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-amber-500/10 text-amber-400 border border-amber-500/20">Высокая</span>;
+      case 4:
       default:
-        return <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-purple-500/20 text-purple-400 font-semibold">EXPERIMENTAL</span>;
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-purple-500/10 text-purple-400 border border-purple-500/20">Эксперимент</span>;
+    }
+  };
+
+  const renderValidationBadge = (status?: string, details?: string) => {
+    switch (status) {
+      case 'VERIFIED':
+        return (
+          <div className="flex flex-col gap-1 p-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">
+            <div className="text-[11px] text-emerald-400 font-mono font-semibold flex items-center gap-1.5">
+              <UICheck className="w-3.5 h-3.5 text-emerald-400" />
+              <span>✓ Проверено (VERIFIED)</span>
+            </div>
+            {details && <div className="text-[10px] text-emerald-300/80 pl-5">{details}</div>}
+          </div>
+        );
+      case 'PARTIAL':
+        return (
+          <div className="flex flex-col gap-1 p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-xl">
+            <div className="text-[11px] text-amber-400 font-mono font-semibold flex items-center gap-1.5">
+              <span className="text-amber-400">⚠</span>
+              <span>⚠ Частично проверено (PARTIAL)</span>
+            </div>
+            {details && <div className="text-[10px] text-amber-200/90 pl-5">{details}</div>}
+          </div>
+        );
+      case 'NOT_VERIFIED':
+        return (
+          <div className="flex flex-col gap-1 p-2.5 bg-blue-500/10 border border-blue-500/30 rounded-xl">
+            <div className="text-[11px] text-blue-400 font-mono font-semibold flex items-center gap-1.5">
+              <span className="text-blue-400">○</span>
+              <span>○ Не проверено (NOT VERIFIED)</span>
+            </div>
+            {details && <div className="text-[10px] text-blue-200/90 pl-5">{details}</div>}
+          </div>
+        );
+      case 'FAILED':
+      default:
+        return (
+          <div className="flex flex-col gap-1 p-2.5 bg-red-500/10 border border-red-500/30 rounded-xl">
+            <div className="text-[11px] text-red-400 font-mono font-semibold flex items-center gap-1.5">
+              <span className="text-red-400">✕</span>
+              <span>✕ Ошибка валидации (FAILED)</span>
+            </div>
+            {details && <div className="text-[10px] text-red-200/90 pl-5">{details}</div>}
+          </div>
+        );
     }
   };
 
@@ -221,7 +270,7 @@ export const StrategyLabModal: React.FC<StrategyLabModalProps> = ({
             <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl text-[11px] text-blue-300 space-y-1">
               <div className="font-semibold">Безопасная изоляция WinDivert:</div>
               <p className="text-[var(--ui-text-muted)]">
-                Strategy Lab автоматически генерирует строгий фильтр <span className="font-mono text-white/90">--wf-raw-filter</span> только для IP-адресов выбранной цели. Экспериментальные стратегии не затронут остальной интернет-трафик вашего компьютера.
+                Strategy Lab автоматически изолирует процесс через строгий WinDivert raw-фильтр (<span className="font-mono text-white/90">--wf-raw=</span>) только для IP-адресов выбранной цели. Экспериментальные стратегии не затронут остальной интернет-трафик вашего компьютера.
               </p>
             </div>
           </div>
@@ -250,7 +299,7 @@ export const StrategyLabModal: React.FC<StrategyLabModalProps> = ({
 
             <div className="space-y-1 bg-black/20 p-3 rounded-xl border border-[var(--ui-border)] font-mono text-[11px]">
               <div><span className="text-[var(--ui-text-muted)]">Тестируемый кандидат:</span> <span className="text-white font-semibold">{progress.currentCandidateName || 'Подготовка...'}</span></div>
-              <div><span className="text-[var(--ui-text-muted)]">Прямой доступ (без обхода):</span> <span className={progress.baselineStatus === 'PASS' ? 'text-emerald-400' : 'text-red-400'}>{progress.baselineStatus || 'Проверка...'}</span></div>
+              <div><span className="text-[var(--ui-text-muted)]">{protocol === 'QUIC' ? 'Baseline QUIC:' : protocol === 'TLS1.3' ? 'Baseline TLS 1.3:' : protocol === 'TLS1.2' ? 'Baseline TLS 1.2:' : protocol === 'HTTP' ? 'Baseline HTTP:' : 'Прямой доступ (без обхода):'}</span> <span className={progress.baselineStatus === 'PASS' ? 'text-emerald-400' : 'text-red-400'}>{progress.baselineStatus || 'Проверка...'}</span></div>
               <div><span className="text-[var(--ui-text-muted)]">Прошедшее время:</span> {((progress.elapsedMs || 0) / 1000).toFixed(1)}с</div>
             </div>
           </div>
@@ -282,29 +331,54 @@ export const StrategyLabModal: React.FC<StrategyLabModalProps> = ({
                   </div>
                 </div>
 
-                {report.serviceVerified && (
-                  <div className="text-[11px] text-emerald-400 font-mono flex items-center gap-1.5 pt-1 border-t border-[var(--ui-border)]">
-                    <UICheck className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Комплексная проверка доступности сервиса подтверждена</span>
+                {/* Service Validation Outcome */}
+                {renderValidationBadge(report.validationStatus, report.validationDetails)}
+
+                {/* Save as Profile controls based on ValidationStatus */}
+                {report.validationStatus === 'FAILED' ? (
+                  <div className="pt-2 border-t border-[var(--ui-border)] text-xs text-red-400 font-mono flex items-center gap-2">
+                    <span>✕ Сохранение недоступно: найденная стратегия не прошла валидацию сервиса.</span>
+                  </div>
+                ) : (
+                  <div className="space-y-2 pt-2 border-t border-[var(--ui-border)]">
+                    {(report.validationStatus === 'PARTIAL' || report.validationStatus === 'NOT_VERIFIED') && (
+                      <div className="flex items-center gap-2 text-[11px] text-amber-300">
+                        <input
+                          type="checkbox"
+                          id="ackWarning"
+                          checked={acknowledgeWarning}
+                          onChange={(e) => setAcknowledgeWarning(e.target.checked)}
+                          className="rounded border-[var(--ui-border)] bg-[var(--ui-panel)] text-emerald-500 focus:ring-0"
+                        />
+                        <label htmlFor="ackWarning" className="cursor-pointer select-none">
+                          Я понимаю, что стратегия подтверждена только частично ({report.validationStatus}), и хочу сохранить её всё равно
+                        </label>
+                      </div>
+                    )}
+
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={profileNameInput}
+                        onChange={(e) => setProfileNameInput(e.target.value)}
+                        placeholder="Название нового профиля"
+                        className="flex-1 p-2 rounded-xl border bg-[var(--ui-panel)] border-[var(--ui-border)] text-xs text-[var(--ui-text)] focus:outline-none"
+                      />
+                      <button
+                        onClick={handleSaveDiscoveredProfile}
+                        disabled={
+                          (report.validationStatus === 'PARTIAL' || report.validationStatus === 'NOT_VERIFIED') && !acknowledgeWarning
+                        }
+                        className={cn(
+                          "btn-ui-primary text-xs px-4 whitespace-nowrap",
+                          ((report.validationStatus === 'PARTIAL' || report.validationStatus === 'NOT_VERIFIED') && !acknowledgeWarning) && "opacity-50 cursor-not-allowed"
+                        )}
+                      >
+                        {report.validationStatus === 'VERIFIED' ? 'Сохранить профиль' : 'Сохранить всё равно'}
+                      </button>
+                    </div>
                   </div>
                 )}
-
-                {/* Save as Profile controls */}
-                <div className="flex gap-2 pt-2 border-t border-[var(--ui-border)]">
-                  <input
-                    type="text"
-                    value={profileNameInput}
-                    onChange={(e) => setProfileNameInput(e.target.value)}
-                    placeholder="Название нового профиля"
-                    className="flex-1 p-2 rounded-xl border bg-[var(--ui-panel)] border-[var(--ui-border)] text-xs text-[var(--ui-text)] focus:outline-none"
-                  />
-                  <button
-                    onClick={handleSaveDiscoveredProfile}
-                    className="btn-ui-primary text-xs px-4 whitespace-nowrap"
-                  >
-                    Сохранить профиль
-                  </button>
-                </div>
                 {saveSuccessMsg && (
                   <div className="text-[11px] text-emerald-400 font-mono">{saveSuccessMsg}</div>
                 )}
