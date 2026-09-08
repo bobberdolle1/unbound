@@ -16,7 +16,6 @@ func EnableTCPTimestamps() error {
 	return cmd.Run()
 }
 
-
 func RunDiagnostics() []DiagnosticResult {
 	return []DiagnosticResult{
 		checkAdminPrivileges(),
@@ -35,20 +34,75 @@ func checkAdminPrivileges() DiagnosticResult {
 	return DiagnosticResult{"Privileges", "OK", "Running as Admin.", false}
 }
 
+// parseNetshTimestamps scans output strictly for the RFC 1323 property line and checks its value.
+// It avoids false matches against unrelated global TCP settings like Receive-Side Scaling or Fast Open.
+func parseNetshTimestamps(output string) (enabled bool, matched bool) {
+	for _, line := range strings.Split(output, "\n") {
+		lineLower := strings.ToLower(line)
+		if strings.Contains(lineLower, "1323") {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				val := strings.ToLower(strings.TrimSpace(parts[1]))
+				// Check for known disabled values across locales
+				if strings.Contains(val, "disabled") ||
+					strings.Contains(val, "отключ") ||
+					strings.Contains(val, "запрещ") ||
+					strings.Contains(val, "désactivé") ||
+					strings.Contains(val, "deaktiviert") ||
+					val == "0" || val == "off" || val == "none" {
+					return false, true
+				}
+				// Check for known enabled/allowed values across locales
+				if strings.Contains(val, "allowed") ||
+					strings.Contains(val, "enabled") ||
+					strings.Contains(val, "разреш") ||
+					strings.Contains(val, "включ") ||
+					strings.Contains(val, "activé") ||
+					strings.Contains(val, "autorisé") ||
+					strings.Contains(val, "aktiviert") ||
+					strings.Contains(val, "zulässig") ||
+					val == "1" || val == "on" {
+					return true, true
+				}
+			}
+		}
+	}
+	return false, false
+}
+
 func checkTCPTimestamps() DiagnosticResult {
 	cmd := exec.Command("netsh", "interface", "tcp", "show", "global")
 	cmd.SysProcAttr = GetHiddenSysProcAttr()
-	out, _ := cmd.Output()
-	if strings.Contains(strings.ToLower(string(out)), "enabled") {
-		return DiagnosticResult{"TCP Stack", "OK", "Timestamps enabled.", false}
+	out, err := cmd.Output()
+	if err == nil {
+		if enabled, matched := parseNetshTimestamps(string(out)); matched {
+			if enabled {
+				return DiagnosticResult{"TCP Stack", "OK", "Timestamps enabled (RFC 1323 allowed/enabled).", false}
+			}
+			return DiagnosticResult{"TCP Stack", "Warning", "Timestamps disabled (RFC 1323 disabled).", true}
+		}
 	}
-	return DiagnosticResult{"TCP Stack", "Warning", "Timestamps disabled.", true}
+
+	// Fallback to PowerShell Get-NetTCPSetting
+	psCmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "(Get-NetTCPSetting -SettingName Internet -ErrorAction SilentlyContinue).Timestamps")
+	psCmd.SysProcAttr = GetHiddenSysProcAttr()
+	psOut, psErr := psCmd.Output()
+	if psErr == nil {
+		val := strings.ToLower(strings.TrimSpace(string(psOut)))
+		if strings.Contains(val, "allowed") || strings.Contains(val, "enabled") {
+			return DiagnosticResult{"TCP Stack", "OK", "Timestamps enabled (PowerShell Get-NetTCPSetting).", false}
+		}
+		if strings.Contains(val, "disabled") {
+			return DiagnosticResult{"TCP Stack", "Warning", "Timestamps disabled (PowerShell Get-NetTCPSetting).", true}
+		}
+	}
+
+	return DiagnosticResult{"TCP Stack", "Warning", "Timestamps disabled or unknown.", true}
 }
 
 func checkTCPTimestampsBool() bool {
 	return checkTCPTimestamps().Status == "OK"
 }
-
 func checkConflictingProcesses() DiagnosticResult {
 	conflicts := []string{
 		"goodbyedpi.exe", "winws.exe", "nfqws.exe",

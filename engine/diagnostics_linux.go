@@ -18,11 +18,19 @@ import (
 func EnableTCPTimestamps() error {
 	return exec.Command("sysctl", "-w", "net.ipv4.tcp_timestamps=1").Run()
 }
-
 func checkTCPTimestampsBool() bool {
-	return true
+	data, err := os.ReadFile("/proc/sys/net/ipv4/tcp_timestamps")
+	if err == nil {
+		val := strings.TrimSpace(string(data))
+		return val == "1" || val == "2"
+	}
+	out, err := exec.Command("sysctl", "-n", "net.ipv4.tcp_timestamps").Output()
+	if err == nil {
+		val := strings.TrimSpace(string(out))
+		return val == "1" || val == "2"
+	}
+	return false
 }
-
 
 // RunDiagnostics inspects the parts of the system the Linux engine depends on.
 // It previously returned a single hardcoded "Linux diagnostics active - OK",
@@ -100,14 +108,10 @@ func checkFirewallTooling() DiagnosticResult {
 }
 
 func checkTCPTimestampsLinux() DiagnosticResult {
-	data, err := os.ReadFile("/proc/sys/net/ipv4/tcp_timestamps")
-	if err != nil {
-		return DiagnosticResult{"TCP Stack", "Warning", "Не удалось прочитать tcp_timestamps.", true}
+	if checkTCPTimestampsBool() {
+		return DiagnosticResult{"TCP Stack", "OK", "TCP timestamps включены.", false}
 	}
-	if strings.TrimSpace(string(data)) == "0" {
-		return DiagnosticResult{"TCP Stack", "Warning", "TCP timestamps отключены — часть стратегий не сработает.", true}
-	}
-	return DiagnosticResult{"TCP Stack", "OK", "TCP timestamps включены.", false}
+	return DiagnosticResult{"TCP Stack", "Warning", "TCP timestamps отключены — часть стратегий не сработает.", true}
 }
 
 func checkConflictingProcessesLinux() DiagnosticResult {
