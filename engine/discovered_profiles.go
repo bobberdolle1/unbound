@@ -76,40 +76,59 @@ func BuildDiscoveredProfileRuntimeArgs(dp DiscoveredProfile, listsDir string) []
 	if h := extractHost(cleanTarget); h != "" {
 		cleanTarget = h
 	}
-	compiled := make([]string, 0, len(srcArgs)+4)
-	hasTransportFilter := false
+	// Split by --new into individual profile sections
+	var sections [][]string
+	currentSection := make([]string, 0, len(srcArgs))
 	for _, a := range srcArgs {
-		if strings.HasPrefix(a, "--filter-tcp=") || strings.HasPrefix(a, "--filter-udp=") {
-			hasTransportFilter = true
-			break
+		if strings.HasPrefix(a, "--new") {
+			if len(currentSection) > 0 {
+				sections = append(sections, currentSection)
+				currentSection = make([]string, 0, 4)
+			}
 		}
+		currentSection = append(currentSection, a)
 	}
-	if !hasTransportFilter {
-		protoUpper := strings.ToUpper(dp.Protocol)
-		if protoUpper == "HTTP" {
-			compiled = append(compiled, "--filter-tcp=80")
-		} else if protoUpper == "QUIC" {
-			compiled = append(compiled, "--filter-udp=443")
-		} else {
-			compiled = append(compiled, "--filter-tcp=443")
-		}
+	if len(currentSection) > 0 {
+		sections = append(sections, currentSection)
 	}
 
-	// Scope desync to target domain so it does not desync unrelated traffic across the PC
-	hasHostScope := false
-	for _, a := range srcArgs {
-		if strings.HasPrefix(a, "--hostlist") {
-			hasHostScope = true
-			break
+	var compiled []string
+	protoUpper := strings.ToUpper(dp.Protocol)
+
+	for i, sec := range sections {
+		if i > 0 {
+			compiled = append(compiled, sec[0])
+			sec = sec[1:]
 		}
-	}
-	if !hasHostScope && cleanTarget != "" {
-		compiled = append(compiled, "--hostlist-domains="+cleanTarget)
+
+		hasTransport := false
+		hasHostScope := false
+		for _, a := range sec {
+			if strings.HasPrefix(a, "--filter-tcp=") || strings.HasPrefix(a, "--filter-udp=") {
+				hasTransport = true
+			}
+			if strings.HasPrefix(a, "--hostlist") {
+				hasHostScope = true
+			}
+		}
+
+		if !hasTransport {
+			if protoUpper == "HTTP" {
+				compiled = append(compiled, "--filter-tcp=80")
+			} else if protoUpper == "QUIC" {
+				compiled = append(compiled, "--filter-udp=443")
+			} else {
+				compiled = append(compiled, "--filter-tcp=443")
+			}
+		}
+
+		if !hasHostScope && cleanTarget != "" {
+			compiled = append(compiled, "--hostlist-domains="+cleanTarget)
+		}
+
+		compiled = append(compiled, sec...)
 	}
 
-	compiled = append(compiled, srcArgs...)
-
-	// Apply Steam and gaming safety exclusions
 	return steamSafeArgs(compiled, listsDir)
 }
 
