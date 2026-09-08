@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha1"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
@@ -19,6 +21,7 @@ import (
 	"time"
 
 	"github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go/http3"
 )
 
 const (
@@ -30,7 +33,9 @@ const (
 type ConnectivityEngine struct {
 	Timeout   time.Duration
 	UserAgent string
-	client    *http.Client
+	client             *http.Client
+	InsecureSkipVerify bool
+	CustomRootCAs      *x509.CertPool
 
 	pinnedMu  sync.RWMutex
 	pinnedIPs map[string]net.IP
@@ -127,6 +132,17 @@ func (e *ConnectivityEngine) UnpinHost(host string) {
 		clean = strings.TrimSpace(host)
 	}
 	delete(e.pinnedIPs, clean)
+}
+
+// GetPinnedHost returns the currently pinned IP for a host, or nil if unpinned.
+func (e *ConnectivityEngine) GetPinnedHost(host string) net.IP {
+	e.pinnedMu.RLock()
+	defer e.pinnedMu.RUnlock()
+	clean := extractHost(host)
+	if clean == "" {
+		clean = strings.TrimSpace(host)
+	}
+	return e.pinnedIPs[clean]
 }
 
 // ResetPinnedHosts clears all host pinning mappings.
@@ -524,36 +540,115 @@ func (e *ConnectivityEngine) ProbeHTTP(ctx context.Context, targetURL string, ex
 	return res
 }
 
-// ProbeDiscordGateway connects to Discord Gateway via TLS, initiates a WebSocket handshake,
-// and reads the incoming Opcode 10 Hello frame to verify real WebSocket bidirectional transport.
-func (e *ConnectivityEngine) ProbeDiscordGateway(ctx context.Context) ProbeResult {
+// DiscordGatewayStatus contains structured diagnostics from a Discord Gateway WebSocket verification.
+type DiscordGatewayStatus struct {
+	WebSocketUpgradeVerified bool   `json:"webSocketUpgradeVerified"`
+	Opcode10Verified         bool   `json:"opcode10Verified"`
+	HeartbeatInterval        int    `json:"heartbeatInterval"`
+	RemoteIP                 string `json:"remoteIP"`
+	Error                    string `json:"error,omitempty"`
+}
+
+func computeSecWebSocketAccept(key string) string {
+	h := sha1.New()
+	h.Write([]byte(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"))
+	return base64.StdEncoding.EncodeToString(h.Sum(nil))
+}
+
+func extractHeaderValue(data []byte, headerName string) string {
+	lines := bytes.Split(data, []byte("\r\n"))
+	prefix := []byte(strings.ToLower(headerName) + ":")
+	for _, line := range lines {
+		lower := bytes.ToLower(line)
+		if bytes.HasPrefix(lower, prefix) {
+			val := line[len(prefix):]
+			return strings.TrimSpace(string(val))
+		}
+	}
+	return ""
+}
+
+func parseWebSocketFrame(wsData []byte) (opcode int, payload []byte, err error) {
+	if len(wsData) < 2 {
+		return 0, nil, errors.New("frame truncated (< 2 bytes)")
+	}
+	b0 := wsData[0]
+	b1 := wsData[1]
+	opcode = int(b0 & 0x0F)
+	isMasked := (b1 & 0x80) != 0
+	if isMasked {
+		return opcode, nil, errors.New("server frame must not be masked")
+	}
+
+	payloadLen := int(b1 & 0x7F)
+	headerLen := 2
+	if payloadLen == 126 {
+		if len(wsData) < 4 {
+			return opcode, nil, errors.New("frame truncated for 16-bit length")
+		}
+		payloadLen = int(binary.BigEndian.Uint16(wsData[2:4]))
+		headerLen = 4
+	} else if payloadLen == 127 {
+		if len(wsData) < 10 {
+			return opcode, nil, errors.New("frame truncated for 64-bit length")
+		}
+		payloadLen = int(binary.BigEndian.Uint64(wsData[2:10]))
+		headerLen = 10
+	}
+
+	if len(wsData) < headerLen+payloadLen {
+		return opcode, nil, fmt.Errorf("frame incomplete: have %d bytes, need %d", len(wsData), headerLen+payloadLen)
+	}
+
+	return opcode, wsData[headerLen : headerLen+payloadLen], nil
+}
+
+// ProbeDiscordGatewayWithTarget connects to an injected or canonical Discord Gateway via TLS,
+// validates RFC 6455 Sec-WebSocket-Accept handshake semantics, and decodes the WebSocket Opcode 10 Hello frame.
+func (e *ConnectivityEngine) ProbeDiscordGatewayWithTarget(ctx context.Context, hostPort string) (ProbeResult, DiscordGatewayStatus) {
 	start := time.Now()
+	target := hostPort
+	if strings.TrimSpace(target) == "" {
+		target = "gateway.discord.gg:443"
+	}
+
+	host, port, splitErr := net.SplitHostPort(target)
+	if splitErr != nil {
+		host = target
+		port = "443"
+		target = net.JoinHostPort(host, port)
+	}
+
 	res := ProbeResult{
 		ID:        "discord_gateway_ws",
 		Service:   "Discord",
 		Category:  "Gateway",
 		Name:      "Discord Gateway WebSocket",
-		Target:    "wss://gateway.discord.gg/?v=10&encoding=json",
+		Target:    "wss://" + target + "/?v=10&encoding=json",
 		Transport: "WebSocket",
 		Timestamp: start,
-		URL:       "wss://gateway.discord.gg/?v=10&encoding=json",
+		URL:       "wss://" + target + "/?v=10&encoding=json",
 		Attempts:  1,
 	}
+	status := DiscordGatewayStatus{}
 
-	host := "gateway.discord.gg"
-	port := "443"
-	rawConn, remoteIP, err := e.DialPinnedHost(ctx, "tcp", net.JoinHostPort(host, port))
+	rawConn, remoteIP, err := e.DialPinnedHost(ctx, "tcp", target)
 	if err != nil {
 		res.Latency = time.Since(start)
 		res.Status = StatusFail
 		res.Stage, res.Class = ClassifyError(err)
 		res.Error = fmt.Sprintf("TCP dial to gateway failed: %v", err)
-		return res
+		status.Error = res.Error
+		return res, status
 	}
 	defer rawConn.Close()
-
+	if remoteIP != nil {
+		status.RemoteIP = remoteIP.String()
+	}
 	tlsConfig := &tls.Config{
-		ServerName: host,
+		ServerName:         host,
+		RootCAs:            e.CustomRootCAs,
+		InsecureSkipVerify: e.InsecureSkipVerify,
 	}
 	tlsConn := tls.Client(rawConn, tlsConfig)
 	if err := tlsConn.HandshakeContext(ctx); err != nil {
@@ -562,13 +657,15 @@ func (e *ConnectivityEngine) ProbeDiscordGateway(ctx context.Context) ProbeResul
 		res.Stage = StageTLS
 		res.Class = FailTLS
 		res.Error = fmt.Sprintf("TLS handshake to gateway failed: %v", err)
-		return res
+		status.Error = res.Error
+		return res, status
 	}
 
 	// Generate standard WebSocket key
 	wsKeyBytes := make([]byte, 16)
 	_, _ = rand.Read(wsKeyBytes)
 	wsKey := base64.StdEncoding.EncodeToString(wsKeyBytes)
+	expectedAccept := computeSecWebSocketAccept(wsKey)
 
 	// Send HTTP 1.1 WebSocket upgrade request
 	upgradeReq := fmt.Sprintf(
@@ -589,11 +686,12 @@ func (e *ConnectivityEngine) ProbeDiscordGateway(ctx context.Context) ProbeResul
 		res.Stage = StageWebSocket
 		res.Class = FailWebSocket
 		res.Error = fmt.Sprintf("Failed to write WS upgrade request: %v", err)
-		return res
+		status.Error = res.Error
+		return res, status
 	}
 
-	// Read handshake response
-	respBuf := make([]byte, 2048)
+	// Read handshake response headers
+	respBuf := make([]byte, 4096)
 	n, err := tlsConn.Read(respBuf)
 	if err != nil && !errors.Is(err, io.EOF) {
 		res.Latency = time.Since(start)
@@ -601,7 +699,8 @@ func (e *ConnectivityEngine) ProbeDiscordGateway(ctx context.Context) ProbeResul
 		res.Stage = StageWebSocket
 		res.Class = FailWebSocket
 		res.Error = fmt.Sprintf("Failed to read WS upgrade response: %v", err)
-		return res
+		status.Error = res.Error
+		return res, status
 	}
 
 	data := respBuf[:n]
@@ -612,43 +711,64 @@ func (e *ConnectivityEngine) ProbeDiscordGateway(ctx context.Context) ProbeResul
 		res.Class = FailWebSocket
 		firstLine := string(bytes.Split(data, []byte("\r\n"))[0])
 		res.Error = fmt.Sprintf("Gateway rejected WS upgrade: %s", firstLine)
-		return res
+		status.Error = res.Error
+		return res, status
 	}
 
-	res.Latency = time.Since(start)
-	res.Status = StatusPass
-	res.Success = true
+	// RFC 6455 Section 4.2.2: Verify Sec-WebSocket-Accept
+	actualAccept := extractHeaderValue(data, "Sec-WebSocket-Accept")
+	if actualAccept != expectedAccept {
+		res.Latency = time.Since(start)
+		res.Status = StatusFail
+		res.Stage = StageWebSocket
+		res.Class = FailWebSocket
+		res.Error = fmt.Sprintf("invalid Sec-WebSocket-Accept header (got %q, expected %q)", actualAccept, expectedAccept)
+		status.Error = res.Error
+		return res, status
+	}
+	status.WebSocketUpgradeVerified = true
 
-	// Read WebSocket frame following 101 Switching Protocols
+	// Read WebSocket frame following headers
 	var wsData []byte
 	if headerEnd := bytes.Index(data, []byte("\r\n\r\n")); headerEnd != -1 && len(data) > headerEnd+4 {
 		wsData = data[headerEnd+4:]
 	}
-	if len(wsData) == 0 {
+	if len(wsData) < 2 {
 		_ = tlsConn.SetDeadline(time.Now().Add(e.Timeout))
-		frameBuf := make([]byte, 2048)
+		frameBuf := make([]byte, 4096)
 		if nFrame, fErr := tlsConn.Read(frameBuf); fErr == nil && nFrame > 0 {
-			wsData = frameBuf[:nFrame]
+			wsData = append(wsData, frameBuf[:nFrame]...)
 		}
 	}
 
-	// RFC 6455 frame decoding: parse payload
-	var framePayload []byte
-	if len(wsData) >= 2 {
-		payloadLen := int(wsData[1] & 0x7F)
-		headerLen := 2
-		if payloadLen == 126 && len(wsData) >= 4 {
-			payloadLen = int(binary.BigEndian.Uint16(wsData[2:4]))
-			headerLen = 4
-		} else if payloadLen == 127 && len(wsData) >= 10 {
-			payloadLen = int(binary.BigEndian.Uint64(wsData[2:10]))
-			headerLen = 10
+	opcode, framePayload, parseErr := parseWebSocketFrame(wsData)
+	if parseErr != nil {
+		// Try one more bounded read if frame was incomplete
+		_ = tlsConn.SetDeadline(time.Now().Add(e.Timeout))
+		frameBuf := make([]byte, 4096)
+		if nFrame, fErr := tlsConn.Read(frameBuf); fErr == nil && nFrame > 0 {
+			wsData = append(wsData, frameBuf[:nFrame]...)
+			opcode, framePayload, parseErr = parseWebSocketFrame(wsData)
 		}
-		if len(wsData) >= headerLen+payloadLen {
-			framePayload = wsData[headerLen : headerLen+payloadLen]
-		} else if len(wsData) > headerLen {
-			framePayload = wsData[headerLen:]
-		}
+	}
+
+	res.Latency = time.Since(start)
+	if parseErr != nil {
+		res.Status = StatusFail
+		res.Stage = StageWebSocket
+		res.Class = FailWebSocket
+		res.Error = fmt.Sprintf("WebSocket frame decoding failed: %v", parseErr)
+		status.Error = res.Error
+		return res, status
+	}
+
+	if opcode != 1 && opcode != 2 {
+		res.Status = StatusFail
+		res.Stage = StageWebSocket
+		res.Class = FailWebSocket
+		res.Error = fmt.Sprintf("unexpected WebSocket frame opcode %d (expected 1 or 2)", opcode)
+		status.Error = res.Error
+		return res, status
 	}
 
 	var helloData struct {
@@ -658,24 +778,183 @@ func (e *ConnectivityEngine) ProbeDiscordGateway(ctx context.Context) ProbeResul
 		} `json:"d"`
 	}
 
-	hasHello := false
-	if len(framePayload) > 0 && json.Unmarshal(framePayload, &helloData) == nil && helloData.Op == 10 {
-		hasHello = true
-	} else if bytes.Contains(wsData, []byte(`"heartbeat_interval":`)) {
-		hasHello = true
+	if err := json.Unmarshal(framePayload, &helloData); err != nil {
+		res.Status = StatusFail
+		res.Stage = StageWebSocket
+		res.Class = FailWebSocket
+		res.Error = fmt.Sprintf("failed to parse Discord Hello JSON: %v", err)
+		status.Error = res.Error
+		return res, status
 	}
 
+	if helloData.Op != 10 || helloData.D.HeartbeatInterval <= 0 {
+		res.Status = StatusFail
+		res.Stage = StageWebSocket
+		res.Class = FailWebSocket
+		res.Error = fmt.Sprintf("invalid Discord Gateway payload (op=%d, heartbeat=%d)", helloData.Op, helloData.D.HeartbeatInterval)
+		status.Error = res.Error
+		return res, status
+	}
+
+	status.Opcode10Verified = true
+	status.HeartbeatInterval = helloData.D.HeartbeatInterval
 	res.Status = StatusPass
 	res.Success = true
-	if hasHello && helloData.D.HeartbeatInterval > 0 {
-		res.Details = fmt.Sprintf("Discord Gateway Verified (101 Upgrade + Opcode 10 Hello, Heartbeat: %dms, Remote: %s)",
-			helloData.D.HeartbeatInterval, remoteIP)
-	} else if hasHello {
-		res.Details = fmt.Sprintf("Discord Gateway Verified (101 Upgrade + Opcode 10 Hello, Remote: %s)", remoteIP)
+	res.Details = fmt.Sprintf("Discord Gateway Verified (101 Upgrade + Opcode 10 Hello, Heartbeat: %dms, Remote: %s)",
+		status.HeartbeatInterval, remoteIP)
+	return res, status
+}
+
+// ProbeDiscordGateway connects to canonical Discord Gateway via TLS, initiates a WebSocket handshake,
+// verifies Sec-WebSocket-Accept, and reads the incoming Opcode 10 Hello frame.
+func (e *ConnectivityEngine) ProbeDiscordGateway(ctx context.Context) ProbeResult {
+	res, _ := e.ProbeDiscordGatewayWithTarget(ctx, "gateway.discord.gg:443")
+	return res
+}
+
+// ProbeHTTP3 performs an authentic RFC 9114 HTTP/3 application request over QUIC.
+func (e *ConnectivityEngine) ProbeHTTP3(ctx context.Context, targetURL string) ProbeResult {
+	cleanHost := extractHost(targetURL)
+	if cleanHost == "" {
+		cleanHost = targetURL
+	}
+	hostPort := cleanHost
+	if !strings.Contains(hostPort, ":") {
+		hostPort = hostPort + ":443"
+	}
+	urlStr := targetURL
+	if !strings.HasPrefix(urlStr, "https://") {
+		urlStr = "https://" + cleanHost
+	}
+
+	start := time.Now()
+	res := ProbeResult{
+		ID:        "http3_" + strings.ReplaceAll(cleanHost, ":", "_"),
+		Service:   "Network",
+		Category:  "HTTP3",
+		Name:      fmt.Sprintf("HTTP/3 (%s)", cleanHost),
+		Target:    urlStr,
+		Transport: "QUIC/HTTP3",
+		Timestamp: start,
+		URL:       urlStr,
+		Attempts:  1,
+	}
+
+	pinnedIP := e.GetPinnedHost(cleanHost)
+	dialAddr := hostPort
+	if pinnedIP != nil {
+		_, port, _ := net.SplitHostPort(hostPort)
+		if port == "" {
+			port = "443"
+		}
+		dialAddr = net.JoinHostPort(pinnedIP.String(), port)
+		res.ResolvedIP = pinnedIP.String()
+	}
+
+	tlsConfig := &tls.Config{
+		ServerName:         cleanHost,
+		InsecureSkipVerify: false,
+	}
+
+	tr := &http3.Transport{
+		TLSClientConfig: tlsConfig,
+		QUICConfig: &quic.Config{
+			HandshakeIdleTimeout: e.Timeout,
+			MaxIdleTimeout:       e.Timeout,
+		},
+		Dial: func(dialCtx context.Context, addr string, tlsCfg *tls.Config, quicCfg *quic.Config) (*quic.Conn, error) {
+			targetDial := dialAddr
+			return quic.DialAddr(dialCtx, targetDial, tlsCfg, quicCfg)
+		},
+	}
+	defer tr.Close()
+
+	client := &http.Client{
+		Transport: tr,
+		Timeout:   e.Timeout,
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlStr, nil)
+	if err != nil {
+		res.Latency = time.Since(start)
+		res.Status = StatusFail
+		res.Stage = StageHTTP
+		res.Class = FailUnknown
+		res.Error = err.Error()
+		return res
+	}
+	req.Header.Set("User-Agent", e.UserAgent)
+
+	resp, err := client.Do(req)
+	res.Latency = time.Since(start)
+	if err != nil {
+		res.Status = StatusFail
+		res.Stage, res.Class = ClassifyError(err)
+		res.Error = err.Error()
+		return res
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+
+	res.HTTPStatus = resp.StatusCode
+	if resp.StatusCode >= 200 && resp.StatusCode < 400 {
+		res.Status = StatusPass
+		res.Success = true
+		res.Details = fmt.Sprintf("HTTP/3 GET OK (%d %s) in %v", resp.StatusCode, resp.Status, res.Latency.Round(time.Millisecond))
 	} else {
-		res.Details = fmt.Sprintf("WS 101 Handshake OK (Gateway connected, Opcode 10 unverified, Remote: %s)", remoteIP)
+		res.Status = StatusPass
+		res.Success = true
+		res.Details = fmt.Sprintf("HTTP/3 Response %d in %v", resp.StatusCode, res.Latency.Round(time.Millisecond))
 	}
 	return res
+}
+
+// ProbeTargetProtocol is the canonical dispatcher probing the specified target according to protocol.
+func ProbeTargetProtocol(ctx context.Context, ce *ConnectivityEngine, targetURL, protocol string) ProbeResult {
+	proto := strings.ToUpper(strings.TrimSpace(protocol))
+	cleanHost := extractHost(targetURL)
+	if cleanHost == "" {
+		cleanHost = targetURL
+	}
+
+	switch proto {
+	case "HTTP":
+		httpURL := targetURL
+		if !strings.HasPrefix(httpURL, "http://") {
+			httpURL = "http://" + cleanHost
+		}
+		return ce.ProbeHTTP(ctx, httpURL, http.StatusOK, http.StatusNoContent, http.StatusMovedPermanently, http.StatusFound)
+	case "TLS1.2":
+		return ce.ProbeTLSVersion(ctx, cleanHost+":443", tls.VersionTLS12)
+	case "TLS1.3":
+		return ce.ProbeTLSVersion(ctx, cleanHost+":443", tls.VersionTLS13)
+	case "QUIC":
+		return ce.ProbeQUIC(ctx, cleanHost+":443")
+	case "ANY":
+		// Canonical ANY probe: TLS 1.3 first, then HTTP, then QUIC
+		res1 := ce.ProbeTLSVersion(ctx, cleanHost+":443", tls.VersionTLS13)
+		if res1.Status == StatusPass {
+			return res1
+		}
+		httpURL := "http://" + cleanHost
+		res2 := ce.ProbeHTTP(ctx, httpURL, http.StatusOK, http.StatusNoContent, http.StatusMovedPermanently, http.StatusFound)
+		if res2.Status == StatusPass {
+			return res2
+		}
+		return ce.ProbeQUIC(ctx, cleanHost+":443")
+	default:
+		return ProbeResult{
+			ID:        "unknown_proto",
+			Status:    StatusFail,
+			Error:     fmt.Sprintf("unsupported protocol %q", protocol),
+			Timestamp: time.Now(),
+		}
+	}
+}
+
+// ProbeStrategyLabBaseline measures the unassisted reachability baseline for a target and protocol.
+func ProbeStrategyLabBaseline(ctx context.Context, ce *ConnectivityEngine, targetURL, protocol string) ProbeResult {
+	return ProbeTargetProtocol(ctx, ce, targetURL, protocol)
 }
 
 // ProbeQUIC performs an authentic RFC 9000 / RFC 9001 QUIC v1 handshake probe.

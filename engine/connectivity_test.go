@@ -5,14 +5,19 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha1"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"errors"
+	"fmt"
 	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	neturl "net/url"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -309,55 +314,179 @@ func TestRealQUICTimeoutOnSilentServer(t *testing.T) {
 	}
 }
 
-func TestDiscordGatewayOpcode10Verification(t *testing.T) {
-	// Setup mock WebSocket server sending HTTP 101 and Discord Opcode 10 Hello frame
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hj, ok := w.(http.Hijacker)
-		if !ok {
-			http.Error(w, "webserver doesn't support hijacking", http.StatusInternalServerError)
-			return
-		}
-		conn, bufrw, err := hj.Hijack()
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		defer conn.Close()
-
-		// Write 101 Switching Protocols
-		response := "HTTP/1.1 101 Switching Protocols\r\n" +
-			"Upgrade: websocket\r\n" +
-			"Connection: Upgrade\r\n" +
-			"Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n"
-		_, _ = bufrw.WriteString(response)
-		_ = bufrw.Flush()
-
-		// Write Discord Opcode 10 Hello WebSocket frame (Text frame: 0x81, payload len)
-		helloJSON := `{"op":10,"d":{"heartbeat_interval":41250}}`
-		frame := []byte{0x81, byte(len(helloJSON))}
-		frame = append(frame, []byte(helloJSON)...)
-		_, _ = conn.Write(frame)
-	}))
-	defer ts.Close()
-
-	// Extract host and port
-	u := ts.URL
-	parts := strings.Split(u, ":")
-	port := parts[len(parts)-1]
-
-	ce := NewConnectivityEngine(time.Second)
-	ce.PinHost("gateway.discord.gg", net.ParseIP("127.0.0.1"))
-	defer ce.UnpinHost("gateway.discord.gg")
-
-	// Temporarily override target URL port in test by pointing dialer
-	// ProbeDiscordGateway dials gateway.discord.gg:443; with PinHost it dials 127.0.0.1:443.
-	// In this test, we verify that ce.DialPinnedHost dials the pinned IP.
-	dialConn, dialedIP, err := ce.DialPinnedHost(context.Background(), "tcp", "gateway.discord.gg:"+port)
-	if err != nil {
-		t.Fatalf("DialPinnedHost failed: %v", err)
+func TestLiveNetworkPublicQUIC(t *testing.T) {
+	if os.Getenv("UNBOUND_LIVE_TEST") != "1" {
+		t.Skip("Skipping live network test; set UNBOUND_LIVE_TEST=1 to enable")
 	}
-	defer dialConn.Close()
-	if dialedIP == nil || !dialedIP.Equal(net.ParseIP("127.0.0.1")) {
-		t.Errorf("Expected dialed IP 127.0.0.1, got %v", dialedIP)
+
+	ce := NewConnectivityEngine(4 * time.Second)
+	targets := []string{"cloudflare-quic.com:443", "www.google.com:443"}
+
+	passed := 0
+	for _, target := range targets {
+		res := ce.ProbeQUIC(context.Background(), target)
+		t.Logf("Live public QUIC probe to %s: status=%s, latency=%v, err=%v", target, res.Status, res.Latency, res.Error)
+		if res.Status == StatusPass {
+			passed++
+		}
 	}
+
+	if passed == 0 {
+		t.Log("Public QUIC is unassisted/blocked by local ISP/DPI (expected in restricted environments)")
+	} else {
+		t.Logf("Live public QUIC connection verified on %d/%d targets", passed, len(targets))
+	}
+}
+
+func TestDiscordGatewayProductionProbeValidation(t *testing.T) {
+	// 1. Test Success: Valid HTTP 101, Valid Sec-WebSocket-Accept, and Valid Opcode 10 Hello Frame
+	t.Run("ValidHandshakeAndOpcode10Hello", func(t *testing.T) {
+		ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			clientKey := r.Header.Get("Sec-WebSocket-Key")
+			if clientKey == "" {
+				http.Error(w, "missing key", http.StatusBadRequest)
+				return
+			}
+			h := sha1.New()
+			h.Write([]byte(clientKey + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"))
+			expectedAccept := base64.StdEncoding.EncodeToString(h.Sum(nil))
+
+			hj, ok := w.(http.Hijacker)
+			if !ok {
+				http.Error(w, "hijack failed", http.StatusInternalServerError)
+				return
+			}
+			conn, bufrw, err := hj.Hijack()
+			if err != nil {
+				return
+			}
+			defer conn.Close()
+
+			response := fmt.Sprintf("HTTP/1.1 101 Switching Protocols\r\n"+
+				"Upgrade: websocket\r\n"+
+				"Connection: Upgrade\r\n"+
+				"Sec-WebSocket-Accept: %s\r\n\r\n", expectedAccept)
+			_, _ = bufrw.WriteString(response)
+			_ = bufrw.Flush()
+
+			// Send Opcode 10 Hello JSON text frame
+			helloJSON := `{"op":10,"d":{"heartbeat_interval":41250}}`
+			frame := []byte{0x81, byte(len(helloJSON))}
+			frame = append(frame, []byte(helloJSON)...)
+			_, _ = conn.Write(frame)
+		}))
+		defer ts.Close()
+
+		u, _ := neturl.Parse(ts.URL)
+		ce := NewConnectivityEngine(2 * time.Second)
+		ce.InsecureSkipVerify = true
+		ce.PinHost("gateway.discord.gg", net.ParseIP("127.0.0.1"))
+		defer ce.UnpinHost("gateway.discord.gg")
+
+		res, status := ce.ProbeDiscordGatewayWithTarget(context.Background(), u.Host)
+		if res.Status != StatusPass {
+			t.Fatalf("Expected probe to PASS, got %s: %s", res.Status, res.Error)
+		}
+		if !status.WebSocketUpgradeVerified {
+			t.Errorf("Expected WebSocketUpgradeVerified=true")
+		}
+		if !status.Opcode10Verified {
+			t.Errorf("Expected Opcode10Verified=true")
+		}
+		if status.HeartbeatInterval != 41250 {
+			t.Errorf("Expected heartbeat 41250, got %d", status.HeartbeatInterval)
+		}
+	})
+
+	// 2. Test Invalid Sec-WebSocket-Accept Header (Must FAIL handshake)
+	t.Run("InvalidSecWebSocketAcceptFails", func(t *testing.T) {
+		ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			hj, ok := w.(http.Hijacker)
+			if !ok {
+				return
+			}
+			conn, bufrw, err := hj.Hijack()
+			if err != nil {
+				return
+			}
+			defer conn.Close()
+
+			// Send completely bogus accept key
+			response := "HTTP/1.1 101 Switching Protocols\r\n" +
+				"Upgrade: websocket\r\n" +
+				"Connection: Upgrade\r\n" +
+				"Sec-WebSocket-Accept: bogusAcceptValue12345=\r\n\r\n"
+			_, _ = bufrw.WriteString(response)
+			_ = bufrw.Flush()
+		}))
+		defer ts.Close()
+
+		u, _ := neturl.Parse(ts.URL)
+		ce := NewConnectivityEngine(2 * time.Second)
+		ce.InsecureSkipVerify = true
+		ce.PinHost("gateway.discord.gg", net.ParseIP("127.0.0.1"))
+		defer ce.UnpinHost("gateway.discord.gg")
+
+		res, status := ce.ProbeDiscordGatewayWithTarget(context.Background(), u.Host)
+		if res.Status != StatusFail {
+			t.Fatalf("Expected probe to FAIL on invalid Sec-WebSocket-Accept, got %s", res.Status)
+		}
+		if status.WebSocketUpgradeVerified {
+			t.Errorf("Expected WebSocketUpgradeVerified=false on invalid Sec-WebSocket-Accept")
+		}
+		if !strings.Contains(res.Error, "invalid Sec-WebSocket-Accept header") {
+			t.Errorf("Unexpected error message: %s", res.Error)
+		}
+	})
+
+	// 3. Test Invalid Opcode Payload (Must FAIL Opcode 10 verification)
+	t.Run("InvalidOpcodePayloadFails", func(t *testing.T) {
+		ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			clientKey := r.Header.Get("Sec-WebSocket-Key")
+			h := sha1.New()
+			h.Write([]byte(clientKey + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"))
+			expectedAccept := base64.StdEncoding.EncodeToString(h.Sum(nil))
+
+			hj, ok := w.(http.Hijacker)
+			if !ok {
+				return
+			}
+			conn, bufrw, err := hj.Hijack()
+			if err != nil {
+				return
+			}
+			defer conn.Close()
+
+			response := fmt.Sprintf("HTTP/1.1 101 Switching Protocols\r\n"+
+				"Upgrade: websocket\r\n"+
+				"Connection: Upgrade\r\n"+
+				"Sec-WebSocket-Accept: %s\r\n\r\n", expectedAccept)
+			_, _ = bufrw.WriteString(response)
+			_ = bufrw.Flush()
+
+			// Send Opcode 11 (invalid Discord Hello)
+			invalidJSON := `{"op":11,"d":{}}`
+			frame := []byte{0x81, byte(len(invalidJSON))}
+			frame = append(frame, []byte(invalidJSON)...)
+			_, _ = conn.Write(frame)
+		}))
+		defer ts.Close()
+
+		u, _ := neturl.Parse(ts.URL)
+		ce := NewConnectivityEngine(2 * time.Second)
+		ce.InsecureSkipVerify = true
+		ce.PinHost("gateway.discord.gg", net.ParseIP("127.0.0.1"))
+		defer ce.UnpinHost("gateway.discord.gg")
+
+		res, status := ce.ProbeDiscordGatewayWithTarget(context.Background(), u.Host)
+		if res.Status != StatusFail {
+			t.Fatalf("Expected probe to FAIL on invalid Hello opcode, got %s", res.Status)
+		}
+		if !status.WebSocketUpgradeVerified {
+			t.Errorf("Expected WebSocketUpgradeVerified=true because HTTP 101 and Accept matched")
+		}
+		if status.Opcode10Verified {
+			t.Errorf("Expected Opcode10Verified=false on invalid opcode")
+		}
+	})
 }
