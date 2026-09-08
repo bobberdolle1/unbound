@@ -396,19 +396,51 @@ func (e *Zapret2WindowsProvider) Stop() error {
 // start/stop cycle. killedManually tells the Wait goroutine whether the exit
 // was user-requested (taskkill produces a non-zero exit code that would
 // otherwise read as a crash).
+func isWindowsPIDAlive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	cmd := exec.Command("tasklist.exe", "/FI", fmt.Sprintf("PID eq %d", pid), "/NH")
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), fmt.Sprintf("%d", pid))
+}
+
 func (e *Zapret2WindowsProvider) stopLocked() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
 	if e.cmd != nil && e.cmd.Process != nil {
 		e.killedManually = true
-		runHidden := func(name string, args ...string) {
-			cmd := exec.Command(name, args...)
-			cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
-			cmd.Run()
+		pid := e.cmd.Process.Pid
+		e.addLog(fmt.Sprintf("[STOP] terminating winws2 process (PID=%d)", pid))
+
+		killCmd := exec.Command("taskkill.exe", "/F", "/T", "/PID", fmt.Sprintf("%d", pid))
+		killCmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
+		if killErr := killCmd.Run(); killErr != nil {
+			e.addLog(fmt.Sprintf("[STOP] taskkill PID %d returned: %v", pid, killErr))
 		}
-		runHidden("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", e.cmd.Process.Pid))
-		time.Sleep(200 * time.Millisecond)
+
+		// Bounded poll to verify that owned PID has actually terminated
+		exited := false
+		for i := 0; i < 20; i++ {
+			time.Sleep(50 * time.Millisecond)
+			if !isWindowsPIDAlive(pid) {
+				exited = true
+				break
+			}
+		}
+
+		if !exited {
+			e.status = StatusError
+			e.addLog(fmt.Sprintf("[ERROR] process PID %d failed to terminate within timeout", pid))
+			return fmt.Errorf("process PID %d failed to terminate after taskkill", pid)
+		}
+
+		e.addLog(fmt.Sprintf("[STOP] process PID %d verified terminated and handles released", pid))
 		e.cmd = nil
 	}
 
@@ -419,6 +451,9 @@ func (e *Zapret2WindowsProvider) stopLocked() error {
 
 	e.status = StatusStopped
 	e.currentProfile = ""
+	if e.onStatusChange != nil {
+		e.onStatusChange(e.status)
+	}
 	return nil
 }
 

@@ -695,10 +695,18 @@ func (a *App) SaveDiscoveredProfile(name string, candidate engine.StrategyCandid
 	}
 
 	listsDir, _ := engine.GetListsDir()
+	effectiveProto := candidate.TestedProtocol
+	if effectiveProto == "" {
+		effectiveProto = candidate.Protocol
+	}
+	if effectiveProto == "" {
+		effectiveProto = "TLS1.3"
+	}
+
 	tempProf := engine.DiscoveredProfile{
 		Name:          cleanName,
 		Target:        targetHost,
-		Protocol:      candidate.Protocol,
+		Protocol:      effectiveProto,
 		CandidateArgs: candidate.Zapret2Args,
 	}
 	effectiveArgs := engine.BuildDiscoveredProfileRuntimeArgs(tempProf, listsDir)
@@ -729,16 +737,33 @@ func (a *App) executeWithAutoHostlistPause(fn func() error) error {
 
 	if isRunning && isAutoHostlist && activeEngine != "" {
 		engine.GetLogger().Info("AutoHostlist", "[AUTOHOSTLIST] pausing active profile for exclusive mutation transaction")
-		_ = a.manager.Stop()
-		time.Sleep(100 * time.Millisecond)
+		stopErr := a.manager.Stop()
+		if stopErr != nil {
+			engine.GetLogger().Errorf("AutoHostlist", "[AUTOHOSTLIST] aborting mutation: failed to stop active profile: %v", stopErr)
+			return fmt.Errorf("failed to pause AutoHostlist engine before mutation: %w", stopErr)
+		}
 
-		err := fn()
+		// Verify provider status is actually stopped
+		if a.manager.GetStatus() != providers.StatusStopped {
+			engine.GetLogger().Error("AutoHostlist", "[AUTOHOSTLIST] aborting mutation: provider did not transition to StatusStopped")
+			return errors.New("engine failed to reach StatusStopped state before mutation")
+		}
+
+		mutationErr := fn()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_ = a.manager.Start(ctx, activeEngine, activeProfile)
+		startErr := a.manager.Start(ctx, activeEngine, activeProfile)
+		if startErr != nil {
+			engine.GetLogger().Errorf("AutoHostlist", "[AUTOHOSTLIST] CRITICAL: failed to restart profile %s after mutation: %v", activeProfile, startErr)
+			if mutationErr != nil {
+				return fmt.Errorf("mutation failed (%v) and failed to resume profile: %w", mutationErr, startErr)
+			}
+			return fmt.Errorf("mutation succeeded but failed to resume AutoHostlist engine: %w", startErr)
+		}
+
 		engine.GetLogger().Info("AutoHostlist", "[AUTOHOSTLIST] resumed active profile after mutation transaction")
-		return err
+		return mutationErr
 	}
 
 	return fn()
