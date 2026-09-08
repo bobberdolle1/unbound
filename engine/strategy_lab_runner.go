@@ -21,9 +21,18 @@ const (
 	ProcessStateStarting CandidateProcessState = iota
 	ProcessStateProcessAlive
 	ProcessStateCaptureReady
+	ProcessStateDryRunValidated
 	ProcessStateRunning
 	ProcessStateExitedEarly
 	ProcessStateStopped
+)
+
+// RunnerMode specifies whether the runner requires live driver interception or accepts dry-run verification.
+type RunnerMode int
+
+const (
+	RunnerModeInterception RunnerMode = iota
+	RunnerModeDryRun
 )
 
 // CandidateProcess manages the lifecycle of an isolated temporary winws2 execution.
@@ -31,6 +40,8 @@ type CandidateProcess interface {
 	PID() int
 	Argv() []string
 	State() CandidateProcessState
+	Alive() bool
+	WaitErr() error
 	Stop() error
 }
 
@@ -62,10 +73,34 @@ func (p *OSZapretCandidateProcess) State() CandidateProcessState {
 	return p.state
 }
 
+func (p *OSZapretCandidateProcess) Alive() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.stopped {
+		return false
+	}
+	select {
+	case <-p.waitDone:
+		return false
+	default:
+		return true
+	}
+}
+
+func (p *OSZapretCandidateProcess) WaitErr() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	select {
+	case err := <-p.waitDone:
+		return err
+	default:
+		return nil
+	}
+}
+
 func (p *OSZapretCandidateProcess) Argv() []string {
 	return p.argv
 }
-
 func (p *OSZapretCandidateProcess) Stop() error {
 	p.mu.Lock()
 	if p.stopped {
@@ -108,6 +143,7 @@ func (p *OSZapretCandidateProcess) Stop() error {
 // DefaultCandidateRunner is the production runner for Windows and Linux.
 type DefaultCandidateRunner struct {
 	assets *AssetPaths
+	mode   RunnerMode
 }
 
 // NewDefaultCandidateRunner initializes the runner with verified extracted assets.
@@ -116,7 +152,17 @@ func NewDefaultCandidateRunner() (*DefaultCandidateRunner, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract assets for candidate runner: %w", err)
 	}
-	return &DefaultCandidateRunner{assets: assets}, nil
+	return &DefaultCandidateRunner{assets: assets, mode: RunnerModeInterception}, nil
+}
+
+// SetMode configures the operational mode (interception vs dry-run).
+func (r *DefaultCandidateRunner) SetMode(m RunnerMode) {
+	r.mode = m
+}
+
+// Mode returns the current operational mode.
+func (r *DefaultCandidateRunner) Mode() RunnerMode {
+	return r.mode
 }
 
 // SanitizeCandidateArgs validates that candidate arguments cannot break isolation or inject dangerous parameters.
@@ -247,34 +293,89 @@ func (r *DefaultCandidateRunner) StartCandidate(ctx context.Context, cand Strate
 		waitDone:  waitDone,
 		state:     ProcessStateStarting,
 	}
-	select {
-	case err := <-waitDone:
-		proc.mu.Lock()
-		proc.state = ProcessStateExitedEarly
-		proc.mu.Unlock()
-		exitCode := -1
-		if cmd.ProcessState != nil {
-			exitCode = cmd.ProcessState.ExitCode()
+	// Detect if candidate is explicitly invoked in dry-run mode
+	isDryRun := false
+	for _, a := range fullArgv {
+		if a == "--dry-run" {
+			isDryRun = true
+			break
 		}
-		errMsg := strings.TrimSpace(stderrBuf.String())
-		if errMsg == "" {
-			errMsg = strings.TrimSpace(stdoutBuf.String())
-		}
-		logger.Errorf("Lab", "[LAB] candidate %q exited prematurely (code %d, err: %v): %s",
-			cand.Name, exitCode, err, errMsg)
-		return nil, fmt.Errorf("candidate process exited immediately (code %d): %s", exitCode, errMsg)
-	case <-time.After(400 * time.Millisecond):
-		proc.mu.Lock()
-		combinedOut := stdoutBuf.String() + "\n" + stderrBuf.String()
-		if strings.Contains(combinedOut, "filter initialized") ||
-			strings.Contains(combinedOut, "windivert filter:") ||
-			strings.Contains(combinedOut, "winws2 started") ||
-			strings.Contains(combinedOut, "desync profile(s)") {
-			proc.state = ProcessStateCaptureReady
-		} else {
+	}
+
+	readyTimeout := 1500 * time.Millisecond
+	if isDryRun || r.mode == RunnerModeDryRun {
+		readyTimeout = 600 * time.Millisecond
+	}
+
+	readyTimer := time.NewTimer(readyTimeout)
+	defer readyTimer.Stop()
+
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case err := <-waitDone:
+			proc.mu.Lock()
+			exitCode := -1
+			if cmd.ProcessState != nil {
+				exitCode = cmd.ProcessState.ExitCode()
+			}
+			errMsg := strings.TrimSpace(stderrBuf.String())
+			if errMsg == "" {
+				errMsg = strings.TrimSpace(stdoutBuf.String())
+			}
+
+			if (isDryRun || r.mode == RunnerModeDryRun) && exitCode == 0 {
+				proc.state = ProcessStateDryRunValidated
+				proc.mu.Unlock()
+				logger.Infof("Lab", "[LAB] candidate %q argv dry-run validated successfully", cand.Name)
+				return proc, nil
+			}
+
+			proc.state = ProcessStateExitedEarly
+			proc.mu.Unlock()
+			logger.Errorf("Lab", "[LAB] candidate %q exited prematurely (code %d, err: %v): %s",
+				cand.Name, exitCode, err, errMsg)
+			return nil, fmt.Errorf("candidate process exited immediately (code %d): %s", exitCode, errMsg)
+
+		case <-ticker.C:
+			proc.mu.Lock()
+			combinedOut := strings.ToLower(stdoutBuf.String() + "\n" + stderrBuf.String())
+			// Stable upstream marker from nfqws.c:912: DLOG_CONDUP("windivert initialized. capture is started.\n")
+			if strings.Contains(combinedOut, "windivert initialized") ||
+				strings.Contains(combinedOut, "capture is started") {
+				proc.state = ProcessStateCaptureReady
+				proc.mu.Unlock()
+				logger.Infof("Lab", "[LAB] candidate %q signaled CAPTURE_READY (PID=%d)", cand.Name, pid)
+				return proc, nil
+			}
+			proc.mu.Unlock()
+
+		case <-readyTimer.C:
+			proc.mu.Lock()
+			combinedOut := strings.ToLower(stdoutBuf.String() + "\n" + stderrBuf.String())
+			if strings.Contains(combinedOut, "windivert initialized") ||
+				strings.Contains(combinedOut, "capture is started") {
+				proc.state = ProcessStateCaptureReady
+				proc.mu.Unlock()
+				return proc, nil
+			}
+
+			if isDryRun || r.mode == RunnerModeDryRun {
+				proc.state = ProcessStateDryRunValidated
+				proc.mu.Unlock()
+				return proc, nil
+			}
+
 			proc.state = ProcessStateRunning
+			proc.mu.Unlock()
+
+			// Strict interception invariant: probe MUST NOT begin without verified CAPTURE_READY!
+			_ = proc.Stop()
+			return nil, fmt.Errorf("candidate %q failed to reach CAPTURE_READY within %v (no WinDivert initialization detected, out: %s)",
+				cand.Name, readyTimeout, strings.TrimSpace(combinedOut))
 		}
-		proc.mu.Unlock()
 	}
 	return proc, nil
 }
