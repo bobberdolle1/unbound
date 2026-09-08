@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -89,14 +90,77 @@ func IsValidProtocol(protocol string) bool {
 	return ValidProtocols[strings.ToUpper(strings.TrimSpace(protocol))]
 }
 
-// CheckCandidateCapabilities evaluates whether system environment supports candidate requirements.
+// knownLuaFunctions is the authoritative registry of desync functions provided by zapret-antidpi.lua.
 var knownLuaFunctions = map[string]bool{
-	"hostfakesplit": true,
-	"multisplit":    true,
-	"fakedsplit":    true,
-	"fake":          true,
-	"circular":      true,
-	"ip_fragment":   true,
+	"drop":                   true,
+	"send":                   true,
+	"pktmod":                 true,
+	"http_domcase":           true,
+	"http_hostcase":          true,
+	"http_methodeol":         true,
+	"http_unixeol":           true,
+	"synack_split":           true,
+	"synack":                 true,
+	"wsize":                  true,
+	"wssize":                 true,
+	"tls_client_hello_clone": true,
+	"syndata":                true,
+	"rst":                    true,
+	"fake":                   true,
+	"multisplit":             true,
+	"multidisorder":          true,
+	"multidisorder_legacy":   true,
+	"hostfakesplit":          true,
+	"fakedsplit":             true,
+	"fakeddisorder":          true,
+	"tcpseg":                 true,
+	"oob":                    true,
+	"udplen":                 true,
+	"dht_dn":                 true,
+	"circular":               true,
+	"ip_fragment":            true,
+}
+
+// deriveRequiredLuaFunctions extracts desync functions referenced in candidate arguments.
+func deriveRequiredLuaFunctions(args []string) []string {
+	var fns []string
+	seen := make(map[string]bool)
+	for _, a := range args {
+		if strings.HasPrefix(a, "--lua-desync=") {
+			val := strings.TrimPrefix(a, "--lua-desync=")
+			parts := strings.SplitN(val, ":", 2)
+			fnName := strings.ToLower(strings.TrimSpace(parts[0]))
+			if fnName != "" && !seen[fnName] {
+				seen[fnName] = true
+				fns = append(fns, fnName)
+			}
+		}
+	}
+	return fns
+}
+
+// checkIPv6Support verifies whether the operating system has active IPv6 global unicast connectivity.
+func checkIPv6Support() bool {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return false
+	}
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp != 0 && iface.Flags&net.FlagLoopback == 0 {
+			addrs, err := iface.Addrs()
+			if err != nil {
+				continue
+			}
+			for _, addr := range addrs {
+				if ipNet, ok := addr.(*net.IPNet); ok {
+					if ipNet.IP.To4() == nil && ipNet.IP.IsGlobalUnicast() {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
 }
 
 // CheckCandidateCapabilities evaluates whether system environment supports candidate requirements.
@@ -117,21 +181,30 @@ func CheckCandidateCapabilities(cand StrategyCandidate, assets *AssetPaths) (boo
 		}
 	}
 
-	// 3. Engine minimum version requirement
+	// 3. IPv6 requirement — verify actual global unicast IPv6 connectivity
+	if req.IPv6 {
+		if !checkIPv6Support() {
+			return false, "SKIPPED_UNSUPPORTED: System does not have active IPv6 global unicast connectivity"
+		}
+	}
+
+	// 4. Engine minimum version requirement
 	if req.EngineMinVersion != "" {
 		if compareVersions(BundledEngineVersion, normalizeVersion(req.EngineMinVersion)) < 0 {
 			return false, fmt.Sprintf("SKIPPED_UNSUPPORTED: Requires engine version >= %s (bundled: %s)", req.EngineMinVersion, BundledEngineVersion)
 		}
 	}
 
-	// 4. Required Lua functions
-	for _, fn := range cand.RequiredLuaFunctions {
+	// 5. Required Lua functions (both explicitly declared and derived from --lua-desync)
+	allLuaFns := append([]string(nil), cand.RequiredLuaFunctions...)
+	allLuaFns = append(allLuaFns, deriveRequiredLuaFunctions(cand.Zapret2Args)...)
+	for _, fn := range allLuaFns {
 		if !knownLuaFunctions[strings.ToLower(strings.TrimSpace(fn))] {
 			return false, fmt.Sprintf("SKIPPED_UNSUPPORTED: Required Lua function %q not supported in bundled engine", fn)
 		}
 	}
 
-	// 5. Fake payload files
+	// 6. Fake payload files
 	if len(req.FakePayloads) > 0 && assets != nil {
 		for _, fp := range req.FakePayloads {
 			target := filepath.Join(assets.ListDir, fp)
@@ -141,7 +214,7 @@ func CheckCandidateCapabilities(cand StrategyCandidate, assets *AssetPaths) (boo
 		}
 	}
 
-	// 6. Lua modules
+	// 7. Lua modules
 	if len(req.LuaModules) > 0 && assets != nil {
 		for _, mod := range req.LuaModules {
 			target := filepath.Join(assets.LuaDir, mod)

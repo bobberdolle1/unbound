@@ -22,9 +22,9 @@ import (
 )
 
 const (
-	GitHubAPIURL        = "https://api.github.com/repos/bobberdolle1/unbound/releases/latest"
-	Zapret2GitHubAPIURL = "https://api.github.com/repos/bol-van/zapret2/releases/latest"
-	HTTPTimeout         = 10 * time.Second
+	GitHubAPIURL         = "https://api.github.com/repos/bobberdolle1/unbound/releases/latest"
+	Zapret2GitHubAPIURL  = "https://api.github.com/repos/bol-van/zapret2/releases/latest"
+	HTTPTimeout          = 10 * time.Second
 	BundledEngineVersion = "1.0.5.1"
 )
 

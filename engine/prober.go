@@ -10,7 +10,6 @@ import (
 	"time"
 )
 
-
 func ProbeConnection(ctx context.Context, targetURL string) (ProbeResult, error) {
 	result := ProbeResult{
 		URL:     targetURL,

@@ -31,8 +31,8 @@ const (
 
 // ConnectivityEngine runs bounded, typed network probes with cancellation and retries.
 type ConnectivityEngine struct {
-	Timeout   time.Duration
-	UserAgent string
+	Timeout            time.Duration
+	UserAgent          string
 	client             *http.Client
 	InsecureSkipVerify bool
 	CustomRootCAs      *x509.CertPool
@@ -40,6 +40,7 @@ type ConnectivityEngine struct {
 	pinnedMu  sync.RWMutex
 	pinnedIPs map[string]net.IP
 }
+
 // NewConnectivityEngine creates an initialized ConnectivityEngine.
 func NewConnectivityEngine(timeout time.Duration) *ConnectivityEngine {
 	if timeout <= 0 {
@@ -394,6 +395,7 @@ func (e *ConnectivityEngine) ProbeTLS(ctx context.Context, targetURL string) Pro
 	res.Details = fmt.Sprintf("TLS %s (%s), Issuer: %s", tlsVersionToString(state.Version), proto, res.CertIssuer)
 	return res
 }
+
 // ProbeTLSVersion performs a TLS handshake forcing an exact TLS version.
 func (e *ConnectivityEngine) ProbeTLSVersion(ctx context.Context, targetURL string, version uint16) ProbeResult {
 	cleanHost := extractHost(targetURL)

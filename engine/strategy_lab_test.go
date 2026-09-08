@@ -190,11 +190,11 @@ type dummyProcess struct {
 	runner *recordingCandidateRunner
 }
 
-func (d *dummyProcess) PID() int                       { return 12345 }
-func (d *dummyProcess) Argv() []string                 { return []string{"--dummy"} }
-func (d *dummyProcess) State() CandidateProcessState   { return ProcessStateCaptureReady }
-func (d *dummyProcess) Alive() bool                    { return true }
-func (d *dummyProcess) WaitErr() error                 { return nil }
+func (d *dummyProcess) PID() int                     { return 12345 }
+func (d *dummyProcess) Argv() []string               { return []string{"--dummy"} }
+func (d *dummyProcess) State() CandidateProcessState { return ProcessStateCaptureReady }
+func (d *dummyProcess) Alive() bool                  { return true }
+func (d *dummyProcess) WaitErr() error               { return nil }
 func (d *dummyProcess) Stop() error {
 	d.runner.stoppedCandidates = append(d.runner.stoppedCandidates, d.name)
 	d.runner.activeCount--
@@ -662,5 +662,304 @@ func TestSaveDiscoveredProfilePreservesTestedProtocol(t *testing.T) {
 	}
 	if profs[0].Protocol != "TLS1.2" {
 		t.Errorf("Expected saved profile protocol to be 'TLS1.2', got %q", profs[0].Protocol)
+	}
+}
+
+func TestCandidateProcessAliveRemainsTrueUntilDoneClosed(t *testing.T) {
+	done := make(chan struct{})
+	proc := &OSZapretCandidateProcess{
+		pid:   12345,
+		done:  done,
+		state: ProcessStateRunning,
+	}
+
+	// Process is running: Alive() must be true
+	if !proc.Alive() {
+		t.Fatal("Expected Alive() to be true while done channel is open")
+	}
+
+	// Close done channel to signal actual OS process termination
+	close(done)
+
+	// Now Alive() must be false
+	if proc.Alive() {
+		t.Fatal("Expected Alive() to be false after done channel closed")
+	}
+}
+
+type failingStopCandidateProcess struct {
+	name string
+	dead chan struct{}
+}
+
+func (p *failingStopCandidateProcess) PID() int                     { return 88888 }
+func (p *failingStopCandidateProcess) Argv() []string               { return []string{"--fail-stop"} }
+func (p *failingStopCandidateProcess) State() CandidateProcessState { return ProcessStateCaptureReady }
+func (p *failingStopCandidateProcess) Alive() bool                  { return true }
+func (p *failingStopCandidateProcess) WaitErr() error               { return nil }
+func (p *failingStopCandidateProcess) Stop() error {
+	return errors.New("simulated candidate stop failure: process hung")
+}
+
+type abortTrackingCandidateRunner struct {
+	startedCandidates []string
+	failCandidateName string
+}
+
+func (r *abortTrackingCandidateRunner) StartCandidate(ctx context.Context, cand StrategyCandidate, rawFilter string) (CandidateProcess, error) {
+	r.startedCandidates = append(r.startedCandidates, cand.Name)
+	if cand.Name == r.failCandidateName {
+		return &failingStopCandidateProcess{name: cand.Name}, nil
+	}
+	return &dummyProcess{name: cand.Name, runner: &recordingCandidateRunner{}}, nil
+}
+
+func TestCandidateCleanupFailureAbortsNextCandidate(t *testing.T) {
+	mockPC := &mockProviderController{
+		status:  providers.StatusStopped,
+		profile: "",
+	}
+
+	runner := &abortTrackingCandidateRunner{
+		failCandidateName: "Custom Strategy", // Custom candidate will run first and fail on Stop()
+	}
+
+	cfg := StrategyLabTargetConfig{
+		TargetHost:            "127.0.0.1",
+		Protocol:              "HTTP",
+		CustomCandidateArgs:   []string{"--filter-tcp=80", "--lua-desync=fake"},
+		ForceProbeIfReachable: true,
+	}
+
+	report, err := RunStrategyLabWithRunner(context.Background(), mockPC, runner, cfg, nil)
+	if err == nil {
+		t.Fatal("Expected RunStrategyLabWithRunner to abort with error on cleanup failure, got nil")
+	}
+	if !strings.Contains(err.Error(), "cleanup failed") {
+		t.Errorf("Expected error to contain 'cleanup failed', got: %v", err)
+	}
+
+	// Invariant: candidate N+1 must NEVER start after candidate N fails Stop()
+	if len(runner.startedCandidates) != 1 {
+		t.Fatalf("Expected exactly 1 candidate started before abort, got %d (%v)",
+			len(runner.startedCandidates), runner.startedCandidates)
+	}
+	if report == nil {
+		t.Fatal("Expected non-nil report even on abort")
+	}
+}
+
+type failingStopProviderController struct {
+	stopErr error
+}
+
+func (c *failingStopProviderController) CurrentProfile() string                          { return "Recommended" }
+func (c *failingStopProviderController) GetStatus() providers.Status                     { return providers.StatusRunning }
+func (c *failingStopProviderController) Start(ctx context.Context, profile string) error { return nil }
+func (c *failingStopProviderController) Stop() error {
+	return c.stopErr
+}
+
+func TestPreviousEngineStopFailureAbortsBaseline(t *testing.T) {
+	failingPC := &failingStopProviderController{
+		stopErr: errors.New("simulated driver lock error on Stop"),
+	}
+
+	runner := &recordingCandidateRunner{}
+	cfg := StrategyLabTargetConfig{
+		TargetHost: "127.0.0.1",
+		Protocol:   "HTTP",
+	}
+
+	report, err := RunStrategyLabWithRunner(context.Background(), failingPC, runner, cfg, nil)
+	if err == nil {
+		t.Fatal("Expected RunStrategyLabWithRunner to abort when active engine fails to stop, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to stop active engine for clean baseline") {
+		t.Errorf("Expected error message to specify engine stop failure, got: %v", err)
+	}
+	if report != nil {
+		t.Errorf("Expected nil report on baseline abort, got %v", report)
+	}
+	if len(runner.startedCandidates) != 0 {
+		t.Errorf("Expected 0 candidates started, got %d", len(runner.startedCandidates))
+	}
+}
+
+type failingStartProviderController struct {
+	startErr error
+	running  bool
+}
+
+func (c *failingStartProviderController) CurrentProfile() string { return "Recommended" }
+func (c *failingStartProviderController) GetStatus() providers.Status {
+	if c.running {
+		return providers.StatusRunning
+	}
+	return providers.StatusStopped
+}
+func (c *failingStartProviderController) Start(ctx context.Context, profile string) error {
+	return c.startErr
+}
+func (c *failingStartProviderController) Stop() error {
+	c.running = false
+	return nil
+}
+
+func TestPreviousProfileRestorationFailureVisible(t *testing.T) {
+	failingPC := &failingStartProviderController{
+		startErr: errors.New("driver failed to rehook on restore"),
+		running:  true,
+	}
+
+	runner := &recordingCandidateRunner{}
+	cfg := StrategyLabTargetConfig{
+		TargetHost:            "127.0.0.1",
+		Protocol:              "HTTP",
+		ForceProbeIfReachable: true,
+	}
+
+	report, err := RunStrategyLabWithRunner(context.Background(), failingPC, runner, cfg, nil)
+	if err != nil {
+		t.Fatalf("RunStrategyLabWithRunner failed: %v", err)
+	}
+	if report == nil {
+		t.Fatal("Expected non-nil report")
+	}
+	if report.RestorationStatus != RestorationStatusFailed {
+		t.Errorf("Expected RestorationStatus=FAILED, got %s", report.RestorationStatus)
+	}
+	if !strings.Contains(report.RestorationError, "driver failed to rehook on restore") {
+		t.Errorf("Expected RestorationError to contain root cause, got: %s", report.RestorationError)
+	}
+}
+
+func TestWinnerStopFailureMarksValidationFailed(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+	u, _ := neturl.Parse(ts.URL)
+
+	mockPC := &mockProviderController{
+		status:  providers.StatusStopped,
+		profile: "",
+	}
+
+	callCount := 0
+	winnerStopFailingRunner := &failingWinnerStopRunner{
+		onStart: func(name string, filter string) CandidateProcess {
+			callCount++
+			if callCount > 3 {
+				// Winner validation run
+				return &failingStopCandidateProcess{name: name}
+			}
+			return &dummyProcess{name: name, runner: &recordingCandidateRunner{}}
+		},
+	}
+
+	cfg := StrategyLabTargetConfig{
+		TargetHost:            u.Host,
+		Protocol:              "HTTP",
+		CustomCandidateArgs:   []string{"--filter-tcp=80", "--lua-desync=fake"},
+		ForceProbeIfReachable: true,
+	}
+
+	report, err := RunStrategyLabWithRunner(context.Background(), mockPC, winnerStopFailingRunner, cfg, nil)
+	t.Logf("err=%v, report=%+v", err, report)
+	if err == nil {
+		t.Fatal("Expected error when winner stop fails, got nil")
+	}
+	if report != nil && report.ValidationStatus != ValidationStatusFailed {
+		t.Errorf("Expected ValidationStatus=FAILED when winner cleanup fails, got %s", report.ValidationStatus)
+	}
+}
+
+type failingWinnerStopRunner struct {
+	onStart func(name string, filter string) CandidateProcess
+}
+
+func (r *failingWinnerStopRunner) StartCandidate(ctx context.Context, cand StrategyCandidate, rawFilter string) (CandidateProcess, error) {
+	return r.onStart(cand.Name, rawFilter), nil
+}
+
+func TestANYModeQUICCandidateDoesNotPassFromTLSProbe(t *testing.T) {
+	// Server answers HTTP and TLS, but NOT QUIC
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+	u, _ := neturl.Parse(ts.URL)
+
+	mockPC := &mockProviderController{
+		status:  providers.StatusStopped,
+		profile: "",
+	}
+
+	runner := &recordingCandidateRunner{}
+
+	// In ANY mode, test candidate with QUIC protocol
+	cfg := StrategyLabTargetConfig{
+		TargetHost:            u.Host,
+		Protocol:              "ANY",
+		CustomCandidateArgs:   []string{"--payload=quic", "--lua-desync=fake"},
+		ForceProbeIfReachable: true,
+	}
+
+	report, err := RunStrategyLabWithRunner(context.Background(), mockPC, runner, cfg, nil)
+	if err != nil {
+		t.Fatalf("RunStrategyLabWithRunner failed: %v", err)
+	}
+	if report == nil {
+		t.Fatal("Expected report, got nil")
+	}
+
+	// Find the custom QUIC candidate in CandidateResults
+	var quicResult *CandidateTestResult
+	for i, cr := range report.CandidateResults {
+		if cr.Candidate.Name == "Custom Strategy" {
+			quicResult = &report.CandidateResults[i]
+			break
+		}
+	}
+
+	if quicResult == nil {
+		t.Fatal("Expected Custom Strategy to be in CandidateResults")
+	}
+
+	// Invariant: QUIC candidate must be probed with QUIC (which fails), NOT with TLS (which passes)
+	if quicResult.Candidate.TestedProtocol != "QUIC" {
+		t.Errorf("Expected TestedProtocol='QUIC', got %q", quicResult.Candidate.TestedProtocol)
+	}
+	if quicResult.Status == StatusPass {
+		t.Errorf("CRITICAL BUG: QUIC candidate falsely PASSED in ANY mode when QUIC was unreachable: %+v", quicResult)
+	}
+	if quicResult.ExecutionStatus == ExecutionStatusPass {
+		t.Errorf("Expected ExecutionStatus != PASS, got %s", quicResult.ExecutionStatus)
+	}
+}
+
+func TestCandidateProcessStopTimeoutReturnsError(t *testing.T) {
+	// An unclosed done channel simulates a hung or unkillable process
+	done := make(chan struct{})
+	proc := &OSZapretCandidateProcess{
+		pid:   999999,
+		done:  done,
+		state: ProcessStateRunning,
+	}
+
+	err := proc.Stop()
+	if err == nil {
+		t.Fatal("Expected Stop() to return an error when process fails to terminate, got nil")
+	}
+	if proc.State() != ProcessStateStopFailed {
+		t.Errorf("Expected state to be STOP_FAILED, got %s", proc.State())
+	}
+	if proc.StopErr() == nil {
+		t.Error("Expected StopErr() to be recorded on process")
+	}
+	// Invariant: Alive() must accurately return true because process has not exited!
+	if !proc.Alive() {
+		t.Error("Expected Alive() to return true when done channel was never closed")
 	}
 }

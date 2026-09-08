@@ -11,10 +11,10 @@ import (
 )
 
 type mockProviderController struct {
-	profile string
-	status  providers.Status
-	startErr error
-	stopErr  error
+	profile    string
+	status     providers.Status
+	startErr   error
+	stopErr    error
 	startCalls int
 	stopCalls  int
 }
@@ -149,8 +149,8 @@ func TestBypassComparisonFormatMarkdown(t *testing.T) {
 		Duration:       500 * time.Millisecond,
 		Items: []ComparisonItem{
 			{
-				Service: "YouTube",
-				Name:    "YouTube Web",
+				Service:  "YouTube",
+				Name:     "YouTube Web",
 				Baseline: ProbeResult{Status: StatusFail},
 				Profile:  ProbeResult{Status: StatusPass},
 				Verdict:  VerdictFixedByProfile,

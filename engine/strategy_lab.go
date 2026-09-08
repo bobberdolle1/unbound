@@ -15,23 +15,50 @@ import (
 
 // StrategyLabTargetConfig defines the target host and parameters for Strategy Lab.
 type StrategyLabTargetConfig struct {
-	TargetHost           string   `json:"targetHost"`
-	ServicePreset        string   `json:"servicePreset"` // "YouTube", "Discord", "Steam", "Custom"
-	Protocol             string   `json:"protocol"`      // "TLS1.3", "TLS1.2", "HTTP", "QUIC", "ANY"
-	CustomCandidateArgs  []string `json:"customCandidateArgs,omitempty"`
-	ForceProbeIfReachable bool    `json:"forceProbeIfReachable"`
+	TargetHost            string   `json:"targetHost"`
+	ServicePreset         string   `json:"servicePreset"` // "YouTube", "Discord", "Steam", "Custom"
+	Protocol              string   `json:"protocol"`      // "TLS1.3", "TLS1.2", "HTTP", "QUIC", "ANY"
+	CustomCandidateArgs   []string `json:"customCandidateArgs,omitempty"`
+	ForceProbeIfReachable bool     `json:"forceProbeIfReachable"`
 }
+
+// ExecutionStatus models the orchestration and execution outcome of a candidate test.
+type ExecutionStatus string
+
+const (
+	ExecutionStatusPass               ExecutionStatus = "PASS"
+	ExecutionStatusFail               ExecutionStatus = "FAIL"
+	ExecutionStatusSkippedUnsupported ExecutionStatus = "SKIPPED_UNSUPPORTED"
+	ExecutionStatusSkippedConfigError ExecutionStatus = "SKIPPED_CONFIG_ERROR"
+	ExecutionStatusStartFailed        ExecutionStatus = "START_FAILED"
+	ExecutionStatusCaptureNotReady    ExecutionStatus = "CAPTURE_NOT_READY"
+	ExecutionStatusEngineExited       ExecutionStatus = "ENGINE_EXITED"
+	ExecutionStatusTimeout            ExecutionStatus = "TIMEOUT"
+	ExecutionStatusCancelled          ExecutionStatus = "CANCELLED"
+	ExecutionStatusCleanupFailed      ExecutionStatus = "CLEANUP_FAILED"
+	ExecutionStatusNoBypassNeeded     ExecutionStatus = "NO_BYPASS_NEEDED"
+)
+
+// RestorationStatus models the transactional outcome of restoring the previous engine state.
+type RestorationStatus string
+
+const (
+	RestorationStatusRestored  RestorationStatus = "RESTORED"
+	RestorationStatusNotNeeded RestorationStatus = "NOT_NEEDED"
+	RestorationStatusFailed    RestorationStatus = "FAILED"
+)
 
 // CandidateTestResult represents the evaluation result of a single strategy candidate.
 type CandidateTestResult struct {
-	Candidate     StrategyCandidate `json:"candidate"`
-	Status        ProbeStatus       `json:"status"` // PASS, FAIL, WARNING, NOT_VERIFIED
-	PassCount     int               `json:"passCount"`
-	TotalAttempts int               `json:"totalAttempts"`
-	AvgLatency    time.Duration     `json:"avgLatency"`
-	Score         int               `json:"score"`
-	Details       string            `json:"details"`
-	Error         string            `json:"error,omitempty"`
+	Candidate       StrategyCandidate `json:"candidate"`
+	Status          ProbeStatus       `json:"status"`          // PASS, FAIL, WARNING, NOT_VERIFIED (network probe outcome)
+	ExecutionStatus ExecutionStatus   `json:"executionStatus"` // Structured orchestration outcome
+	PassCount       int               `json:"passCount"`
+	TotalAttempts   int               `json:"totalAttempts"`
+	AvgLatency      time.Duration     `json:"avgLatency"`
+	Score           int               `json:"score"`
+	Details         string            `json:"details"`
+	Error           string            `json:"error,omitempty"`
 }
 
 // ValidationStatus represents the verified outcome of Strategy Lab service validation.
@@ -46,36 +73,39 @@ const (
 
 // StrategyLabReport contains the comprehensive findings of the discovery session.
 type StrategyLabReport struct {
-	RunID                 string                `json:"runId"`
-	TargetHost            string                `json:"targetHost"`
-	Protocol              string                `json:"protocol"`
-	BaselineReachable     bool                  `json:"baselineReachable"`
-	BaselineStatus        ProbeResult           `json:"baselineStatus"`
-	BaselineProtocolLabel string                `json:"baselineProtocolLabel"`
-	CandidateResults      []CandidateTestResult `json:"candidateResults"`
-	WorkingCandidates     []CandidateTestResult `json:"workingCandidates"`
-	TestedCandidates      int                   `json:"testedCandidates"`
-	TotalCandidates       int                   `json:"totalCandidates"`
-	BestCandidate         *CandidateTestResult  `json:"bestCandidate,omitempty"`
-	ValidationStatus      ValidationStatus      `json:"validationStatus"`
-	ValidationDetails     string                `json:"validationDetails,omitempty"`
-	ServiceVerified       bool                  `json:"serviceVerified"` // Kept for UI backwards compatibility (true if VERIFIED)
-	Duration              time.Duration         `json:"duration"`
-	Timestamp             time.Time             `json:"timestamp"`
-	TargetIPs             []string              `json:"targetIps,omitempty"`
+	RunID                 string                 `json:"runId"`
+	TargetHost            string                 `json:"targetHost"`
+	Protocol              string                 `json:"protocol"`
+	BaselineReachable     bool                   `json:"baselineReachable"`
+	BaselineStatus        ProbeResult            `json:"baselineStatus"`
+	BaselineProtocolLabel string                 `json:"baselineProtocolLabel"`
+	BaselineMap           map[string]ProbeResult `json:"baselineMap,omitempty"`
+	RestorationStatus     RestorationStatus      `json:"restorationStatus"`
+	RestorationError      string                 `json:"restorationError,omitempty"`
+	CandidateResults      []CandidateTestResult  `json:"candidateResults"`
+	WorkingCandidates     []CandidateTestResult  `json:"workingCandidates"`
+	TestedCandidates      int                    `json:"testedCandidates"`
+	TotalCandidates       int                    `json:"totalCandidates"`
+	BestCandidate         *CandidateTestResult   `json:"bestCandidate,omitempty"`
+	ValidationStatus      ValidationStatus       `json:"validationStatus"`
+	ValidationDetails     string                 `json:"validationDetails,omitempty"`
+	ServiceVerified       bool                   `json:"serviceVerified"` // Kept for UI backwards compatibility (true if VERIFIED)
+	Duration              time.Duration          `json:"duration"`
+	Timestamp             time.Time              `json:"timestamp"`
+	TargetIPs             []string               `json:"targetIps,omitempty"`
 }
 
 // StrategyLabProgress reports real-time iteration metrics to the frontend UI.
 type StrategyLabProgress struct {
 	RunID                 string `json:"runId"`
-	TargetHost           string `json:"targetHost"`
+	TargetHost            string `json:"targetHost"`
 	CurrentCandidateIndex int    `json:"currentCandidateIndex"`
-	TotalCandidates      int    `json:"totalCandidates"`
-	CurrentCandidateName string `json:"currentCandidateName"`
-	BaselineStatus       string `json:"baselineStatus"`
-	Percent              int    `json:"percent"`
-	ElapsedMs            int64  `json:"elapsedMs"`
-	LastResult           string `json:"lastResult"`
+	TotalCandidates       int    `json:"totalCandidates"`
+	CurrentCandidateName  string `json:"currentCandidateName"`
+	BaselineStatus        string `json:"baselineStatus"`
+	Percent               int    `json:"percent"`
+	ElapsedMs             int64  `json:"elapsedMs"`
+	LastResult            string `json:"lastResult"`
 }
 
 type StrategyLabProgressFn func(p StrategyLabProgress)
@@ -136,6 +166,17 @@ func RunStrategyLabWithRunner(
 		wasRunning = pc.GetStatus() == providers.StatusRunning
 	}
 
+	report := &StrategyLabReport{
+		RunID:             runID,
+		TargetHost:        cfg.TargetHost,
+		Protocol:          cfg.Protocol,
+		RestorationStatus: RestorationStatusNotNeeded,
+		Timestamp:         startTime,
+		CandidateResults:  make([]CandidateTestResult, 0),
+		WorkingCandidates: make([]CandidateTestResult, 0),
+		BaselineMap:       make(map[string]ProbeResult),
+	}
+
 	// Defer guarantees that previous profile is restored and coordinator is released
 	defer func() {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -144,11 +185,25 @@ func RunStrategyLabWithRunner(
 		if wasRunning && pc != nil && initialProfile != "" {
 			if pc.GetStatus() != providers.StatusRunning || pc.CurrentProfile() != initialProfile {
 				logger.Infof("Lab", "[LAB] restoring previous active profile %s", initialProfile)
-				_ = pc.Start(cleanupCtx, initialProfile)
+				if err := pc.Start(cleanupCtx, initialProfile); err != nil {
+					logger.Errorf("Lab", "[LAB] CRITICAL: failed to restore previous active profile %s: %v", initialProfile, err)
+					report.RestorationStatus = RestorationStatusFailed
+					report.RestorationError = fmt.Sprintf("Failed to restore previous profile %s: %v", initialProfile, err)
+				} else {
+					report.RestorationStatus = RestorationStatusRestored
+				}
+			} else {
+				report.RestorationStatus = RestorationStatusRestored
 			}
 		} else if !wasRunning && pc != nil {
 			if pc.GetStatus() == providers.StatusRunning {
-				_ = pc.Stop()
+				if err := pc.Stop(); err != nil {
+					logger.Errorf("Lab", "[LAB] failed to stop engine during cleanup: %v", err)
+					report.RestorationStatus = RestorationStatusFailed
+					report.RestorationError = fmt.Sprintf("Failed to stop engine during cleanup: %v", err)
+				} else {
+					report.RestorationStatus = RestorationStatusNotNeeded
+				}
 			}
 		}
 		release()
@@ -157,11 +212,27 @@ func RunStrategyLabWithRunner(
 	ce := NewConnectivityEngine(3 * time.Second)
 
 	// 2. Step 1: Baseline measurement (without bypass)
+	// Invariant: previous engine must be fully stopped and verified before baseline
 	if wasRunning && pc != nil {
 		logger.Info("Lab", "[LAB] stopping active engine for baseline measurement")
-		_ = pc.Stop()
-		time.Sleep(300 * time.Millisecond)
+		if err := pc.Stop(); err != nil {
+			logger.Errorf("Lab", "[LAB] failed to stop active engine before baseline: %v", err)
+			return nil, fmt.Errorf("cannot run Strategy Lab: failed to stop active engine for clean baseline: %w", err)
+		}
+		deadline := time.Now().Add(2 * time.Second)
+		stopped := false
+		for time.Now().Before(deadline) {
+			if pc.GetStatus() == providers.StatusStopped {
+				stopped = true
+				break
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		if !stopped && pc.GetStatus() != providers.StatusStopped {
+			return nil, fmt.Errorf("cannot run Strategy Lab: engine did not transition to StatusStopped (current: %v)", pc.GetStatus())
+		}
 	}
+
 	targetURL := cfg.TargetHost
 	if !strings.HasPrefix(targetURL, "http://") && !strings.HasPrefix(targetURL, "https://") {
 		if strings.EqualFold(cfg.Protocol, "HTTP") {
@@ -172,34 +243,47 @@ func RunStrategyLabWithRunner(
 	}
 	protoUpper := strings.ToUpper(strings.TrimSpace(cfg.Protocol))
 	baselineLabel := fmt.Sprintf("Baseline %s", protoUpper)
-	switch protoUpper {
-	case "TLS1.3":
-		baselineLabel = "Baseline TLS 1.3"
-	case "TLS1.2":
-		baselineLabel = "Baseline TLS 1.2"
-	case "QUIC":
-		baselineLabel = "Baseline QUIC"
-	case "HTTP":
-		baselineLabel = "Baseline HTTP"
-	case "ANY":
+	baselineMap := make(map[string]ProbeResult)
+	var baseResult ProbeResult
+	var baselineReachable bool
+
+	if protoUpper == "ANY" {
 		baselineLabel = "Baseline Multi-Protocol"
+		// Compute per-protocol baselines: HTTP, TLS1.2, TLS1.3, QUIC
+		httpBase := ProbeStrategyLabBaseline(ctx, ce, targetURL, "HTTP")
+		tls12Base := ProbeStrategyLabBaseline(ctx, ce, targetURL, "TLS1.2")
+		tls13Base := ProbeStrategyLabBaseline(ctx, ce, targetURL, "TLS1.3")
+		quicBase := ProbeStrategyLabBaseline(ctx, ce, targetURL, "QUIC")
+		baselineMap["HTTP"] = httpBase
+		baselineMap["TLS1.2"] = tls12Base
+		baselineMap["TLS1.3"] = tls13Base
+		baselineMap["QUIC"] = quicBase
+
+		baselineReachable = httpBase.Status == StatusPass && tls12Base.Status == StatusPass && tls13Base.Status == StatusPass && quicBase.Status == StatusPass
+		baseResult = tls13Base
+		logger.Infof("Lab", "[LAB] ANY multi-protocol baselines: HTTP=%s, TLS1.2=%s, TLS1.3=%s, QUIC=%s",
+			httpBase.Status, tls12Base.Status, tls13Base.Status, quicBase.Status)
+	} else {
+		switch protoUpper {
+		case "TLS1.3":
+			baselineLabel = "Baseline TLS 1.3"
+		case "TLS1.2":
+			baselineLabel = "Baseline TLS 1.2"
+		case "QUIC":
+			baselineLabel = "Baseline QUIC"
+		case "HTTP":
+			baselineLabel = "Baseline HTTP"
+		}
+		baseResult = ProbeStrategyLabBaseline(ctx, ce, targetURL, cfg.Protocol)
+		baselineReachable = baseResult.Status == StatusPass
+		baselineMap[protoUpper] = baseResult
+		logger.Infof("Lab", "[LAB] %s check for %s: %s (latency=%v)", baselineLabel, targetURL, baseResult.Status, baseResult.Latency)
 	}
 
-	baseResult := ProbeStrategyLabBaseline(ctx, ce, targetURL, cfg.Protocol)
-	baselineReachable := baseResult.Status == StatusPass
-	logger.Infof("Lab", "[LAB] %s check for %s: %s (latency=%v)", baselineLabel, targetURL, baseResult.Status, baseResult.Latency)
-
-	report := &StrategyLabReport{
-		RunID:                 runID,
-		TargetHost:            cfg.TargetHost,
-		Protocol:              cfg.Protocol,
-		BaselineReachable:     baselineReachable,
-		BaselineStatus:        baseResult,
-		BaselineProtocolLabel: baselineLabel,
-		Timestamp:             startTime,
-		CandidateResults:      make([]CandidateTestResult, 0),
-		WorkingCandidates:     make([]CandidateTestResult, 0),
-	}
+	report.BaselineReachable = baselineReachable
+	report.BaselineStatus = baseResult
+	report.BaselineProtocolLabel = baselineLabel
+	report.BaselineMap = baselineMap
 
 	if baselineReachable && !cfg.ForceProbeIfReachable {
 		logger.Infof("Lab", "[LAB] target is already reachable via %s without bypass, discovery completed early", protoUpper)
@@ -283,21 +367,67 @@ func RunStrategyLabWithRunner(
 			})
 		}
 
-		// Capability check before launch
-		if ok, reason := CheckCandidateCapabilities(cand, assets); !ok {
-			logger.Infof("Lab", "[LAB] skipping candidate [%d/%d] %s: %s", idx+1, len(candidates), cand.Name, reason)
+		// Determine candidate's tested protocol
+		candProto := strings.ToUpper(strings.TrimSpace(cand.Protocol))
+		if candProto == "" || candProto == "ANY" {
+			candProto = "TLS1.3"
+			for _, a := range cand.Zapret2Args {
+				if strings.Contains(a, "quic") {
+					candProto = "QUIC"
+					break
+				}
+				if strings.Contains(a, "http") && !strings.Contains(a, "tls") {
+					candProto = "HTTP"
+					break
+				}
+			}
+		}
+		cand.TestedProtocol = candProto
+
+		candBase, hasBase := baselineMap[candProto]
+		candBaselineReachable := false
+		if hasBase {
+			candBaselineReachable = candBase.Status == StatusPass
+		} else {
+			candBaselineReachable = baselineReachable
+		}
+
+		// In ANY mode, if this candidate's protocol is ALREADY reachable without bypass:
+		if protoUpper == "ANY" && candBaselineReachable && !cfg.ForceProbeIfReachable {
+			logger.Infof("Lab", "[LAB] candidate %s protocol %s already reachable without bypass (baseline PASS), skipping bypass test", cand.Name, candProto)
 			report.TestedCandidates++
 			report.CandidateResults = append(report.CandidateResults, CandidateTestResult{
-				Candidate:     cand,
-				Status:        StatusFail,
-				TotalAttempts: 0,
-				Error:         reason,
-				Details:       reason,
+				Candidate:       cand,
+				Status:          StatusPass,
+				ExecutionStatus: ExecutionStatusNoBypassNeeded,
+				TotalAttempts:   0,
+				PassCount:       0,
+				Score:           0,
+				Details:         fmt.Sprintf("Protocol %s is already reachable without bypass (baseline PASS)", candProto),
 			})
 			continue
 		}
 
-		logger.Infof("Lab", "[LAB] testing candidate [%d/%d]: %s", idx+1, len(candidates), cand.Name)
+		// Capability check before launch
+		if ok, reason := CheckCandidateCapabilities(cand, assets); !ok {
+			logger.Infof("Lab", "[LAB] skipping candidate [%d/%d] %s: %s", idx+1, len(candidates), cand.Name, reason)
+			report.TestedCandidates++
+			execStatus := ExecutionStatusSkippedUnsupported
+			if strings.HasPrefix(reason, "SKIPPED_CONFIG_ERROR") {
+				execStatus = ExecutionStatusSkippedConfigError
+			}
+			report.CandidateResults = append(report.CandidateResults, CandidateTestResult{
+				Candidate:       cand,
+				Status:          StatusFail,
+				ExecutionStatus: execStatus,
+				TotalAttempts:   0,
+				Error:           reason,
+				Details:         reason,
+			})
+			continue
+		}
+
+		logger.Infof("Lab", "[LAB] testing candidate [%d/%d]: %s (proto=%s)", idx+1, len(candidates), cand.Name, candProto)
 
 		// 1. Launch temporary isolated winws2 process with strict raw filter
 		proc, err := runner.StartCandidate(ctx, cand, rawFilter)
@@ -305,37 +435,56 @@ func RunStrategyLabWithRunner(
 			logger.Warnf("Lab", "[LAB] candidate %s failed to start: %v", cand.Name, err)
 			report.TestedCandidates++
 			report.CandidateResults = append(report.CandidateResults, CandidateTestResult{
-				Candidate:     cand,
-				Status:        StatusFail,
-				TotalAttempts: 3,
-				Error:         fmt.Sprintf("START_FAILED: %v", err),
-				Details:       "Failed to spawn candidate process",
+				Candidate:       cand,
+				Status:          StatusFail,
+				ExecutionStatus: ExecutionStatusStartFailed,
+				TotalAttempts:   3,
+				Error:           fmt.Sprintf("START_FAILED: %v", err),
+				Details:         "Failed to spawn candidate process",
 			})
 			continue
 		}
 
 		// Invariant: probe MUST NOT begin unless process reached CaptureReady or DryRunValidated
 		if proc.State() != ProcessStateCaptureReady && proc.State() != ProcessStateDryRunValidated {
-			_ = proc.Stop()
+			stopErr := proc.Stop()
 			logger.Warnf("Lab", "[LAB] candidate %s in invalid state %v: capture not ready", cand.Name, proc.State())
 			report.TestedCandidates++
+			if stopErr != nil {
+				report.CandidateResults = append(report.CandidateResults, CandidateTestResult{
+					Candidate:       cand,
+					Status:          StatusFail,
+					ExecutionStatus: ExecutionStatusCleanupFailed,
+					TotalAttempts:   3,
+					Error:           fmt.Sprintf("CAPTURE_NOT_READY and CLEANUP_FAILED: %v", stopErr),
+					Details:         "Candidate failed to reach CAPTURE_READY and failed to terminate cleanly",
+				})
+				return report, fmt.Errorf("aborting Strategy Lab: invalid candidate %q cleanup failed: %w", cand.Name, stopErr)
+			}
 			report.CandidateResults = append(report.CandidateResults, CandidateTestResult{
-				Candidate:     cand,
-				Status:        StatusFail,
-				TotalAttempts: 3,
-				Error:         fmt.Sprintf("CAPTURE_NOT_READY: process state %v", proc.State()),
-				Details:       "Candidate failed to reach CAPTURE_READY",
+				Candidate:       cand,
+				Status:          StatusFail,
+				ExecutionStatus: ExecutionStatusCaptureNotReady,
+				TotalAttempts:   3,
+				Error:           fmt.Sprintf("CAPTURE_NOT_READY: process state %v", proc.State()),
+				Details:         "Candidate failed to reach CAPTURE_READY",
 			})
 			continue
 		}
 
 		// 2. Perform protocol-specific probes while candidate process is active
-		res := testCandidateWithProcess(ctx, ce, proc, cand, targetURL, cfg.Protocol, baselineReachable)
+		res := testCandidateWithProcess(ctx, ce, proc, cand, targetURL, candProto, candBaselineReachable)
 		report.TestedCandidates++
 		report.CandidateResults = append(report.CandidateResults, res)
 
 		// 3. Stop candidate process and release WinDivert handles
-		_ = proc.Stop()
+		// Invariant: stop error MUST abort lab immediately to prevent overlapping candidate processes!
+		if stopErr := proc.Stop(); stopErr != nil {
+			logger.Errorf("Lab", "[LAB] candidate %s cleanup failed: %v — aborting discovery to prevent overlapping processes", cand.Name, stopErr)
+			res.ExecutionStatus = ExecutionStatusCleanupFailed
+			res.Error = fmt.Sprintf("CLEANUP_FAILED: %v", stopErr)
+			return report, fmt.Errorf("aborting Strategy Lab: candidate %q cleanup failed: %w", cand.Name, stopErr)
+		}
 
 		if res.Status == StatusPass && res.PassCount >= 2 {
 			logger.Infof("Lab", "[LAB] candidate %s PASSED (%d/%d, avg latency=%v)",
@@ -363,12 +512,16 @@ func RunStrategyLabWithRunner(
 		})
 
 		best := report.WorkingCandidates[0]
-		best.Candidate.TestedProtocol = cfg.Protocol
+		if best.Candidate.TestedProtocol == "" || best.Candidate.TestedProtocol == "ANY" {
+			best.Candidate.TestedProtocol = best.Candidate.Protocol
+		}
+		if best.Candidate.TestedProtocol == "" || best.Candidate.TestedProtocol == "ANY" {
+			best.Candidate.TestedProtocol = "TLS1.3"
+		}
 		report.BestCandidate = &best
-		logger.Infof("Lab", "[LAB] best discovered candidate: %s (score=%d, aggressiveness=%s)",
-			best.Candidate.Name, best.Score, best.Candidate.Aggressiveness)
+		logger.Infof("Lab", "[LAB] best discovered candidate: %s (score=%d, proto=%s, aggressiveness=%s)",
+			best.Candidate.Name, best.Score, best.Candidate.TestedProtocol, best.Candidate.Aggressiveness)
 
-		// 7. Step 6: Full Service Validation on Winner WHILE WINNER PROCESS IS ACTIVE!
 		// 7. Step 6: Full Service/Target Validation on Winner WHILE WINNER PROCESS IS ACTIVE!
 		var validationEndpoints []string
 		isCustom := cfg.ServicePreset == "" || strings.EqualFold(cfg.ServicePreset, "Custom")
@@ -408,6 +561,7 @@ func RunStrategyLabWithRunner(
 		} else {
 			serviceRawFilter := rawFilter
 			filterGenErr := false
+
 			if len(combinedIPs) > 0 {
 				f, err := GenerateWinDivertFilterForIPs(combinedIPs, ports, protoStr)
 				if err != nil {
@@ -427,7 +581,11 @@ func RunStrategyLabWithRunner(
 				ce.ResetConnectionPool()
 				winnerProc, err := runner.StartCandidate(ctx, best.Candidate, serviceRawFilter)
 				if err == nil && winnerProc != nil {
-					valResult := validateCandidateAgainstService(ctx, ce, cfg.ServicePreset, cfg.Protocol, cfg.TargetHost)
+					validationProto := best.Candidate.TestedProtocol
+					if validationProto == "" || validationProto == "ANY" {
+						validationProto = "TLS1.3"
+					}
+					valResult := validateCandidateAgainstService(ctx, ce, cfg.ServicePreset, validationProto, cfg.TargetHost)
 					if !winnerProc.Alive() {
 						logger.Warnf("Lab", "[LAB] winner process exited prematurely during validation")
 						report.ValidationStatus = ValidationStatusFailed
@@ -438,7 +596,13 @@ func RunStrategyLabWithRunner(
 						report.ValidationDetails = valResult.Details
 						report.ServiceVerified = (valResult.Status == ValidationStatusVerified)
 					}
-					_ = winnerProc.Stop()
+					if stopErr := winnerProc.Stop(); stopErr != nil {
+						logger.Errorf("Lab", "[LAB] winner validation cleanup failed: %v", stopErr)
+						report.ValidationStatus = ValidationStatusFailed
+						report.ServiceVerified = false
+						report.ValidationDetails = fmt.Sprintf("Winner process cleanup failed: %v", stopErr)
+						return report, fmt.Errorf("winner validation cleanup failed: %w", stopErr)
+					}
 				} else {
 					logger.Warnf("Lab", "[LAB] failed to start winner for validation: %v", err)
 					report.ValidationStatus = ValidationStatusFailed
@@ -454,6 +618,7 @@ func RunStrategyLabWithRunner(
 		report.ValidationDetails = "No working candidates discovered"
 		report.ServiceVerified = false
 	}
+
 	report.Duration = time.Since(startTime)
 	logger.Infof("Lab", "[LAB] discovery completed in %v: %d working candidates found",
 		report.Duration, len(report.WorkingCandidates))
@@ -484,11 +649,12 @@ func testCandidateWithProcess(
 		if proc != nil && !proc.Alive() {
 			waitErr := proc.WaitErr()
 			return CandidateTestResult{
-				Candidate:     cand,
-				Status:        StatusFail,
-				TotalAttempts: attempts,
-				Error:         fmt.Sprintf("ENGINE_EXITED: candidate process terminated unexpectedly before attempt %d (err: %v)", i+1, waitErr),
-				Details:       "ENGINE_EXITED: process crashed or terminated prematurely",
+				Candidate:       cand,
+				Status:          StatusFail,
+				ExecutionStatus: ExecutionStatusEngineExited,
+				TotalAttempts:   attempts,
+				Error:           fmt.Sprintf("ENGINE_EXITED: candidate process terminated unexpectedly before attempt %d (err: %v)", i+1, waitErr),
+				Details:         "ENGINE_EXITED: process crashed or terminated prematurely",
 			}
 		}
 
@@ -499,14 +665,14 @@ func testCandidateWithProcess(
 		if proc != nil && !proc.Alive() {
 			waitErr := proc.WaitErr()
 			return CandidateTestResult{
-				Candidate:     cand,
-				Status:        StatusFail,
-				TotalAttempts: attempts,
-				Error:         fmt.Sprintf("ENGINE_EXITED: candidate process terminated during attempt %d (err: %v)", i+1, waitErr),
-				Details:       "ENGINE_EXITED: process crashed during network probe",
+				Candidate:       cand,
+				Status:          StatusFail,
+				ExecutionStatus: ExecutionStatusEngineExited,
+				TotalAttempts:   attempts,
+				Error:           fmt.Sprintf("ENGINE_EXITED: candidate process terminated during attempt %d (err: %v)", i+1, waitErr),
+				Details:         "ENGINE_EXITED: process crashed during network probe",
 			}
 		}
-
 		if probeRes.Status == StatusPass {
 			passCount++
 			totalLatency += probeRes.Latency
@@ -520,12 +686,14 @@ func testCandidateWithProcess(
 	if passCount > 0 {
 		avgLat = totalLatency / time.Duration(passCount)
 	}
-
 	status := StatusFail
-	if passCount >= 2 {
+	execStatus := ExecutionStatusFail
+	if ctx.Err() != nil {
+		execStatus = ExecutionStatusCancelled
+	} else if passCount >= 2 {
 		status = StatusPass
+		execStatus = ExecutionStatusPass
 	}
-
 	score := passCount * 30
 	if cand.Aggressiveness == AggressivenessLow {
 		score += 20
@@ -544,16 +712,18 @@ func testCandidateWithProcess(
 	}
 
 	return CandidateTestResult{
-		Candidate:     cand,
-		Status:        status,
-		PassCount:     passCount,
-		TotalAttempts: attempts,
-		AvgLatency:    avgLat,
-		Score:         score,
-		Details:       details,
-		Error:         lastErr,
+		Candidate:       cand,
+		Status:          status,
+		ExecutionStatus: execStatus,
+		PassCount:       passCount,
+		TotalAttempts:   attempts,
+		AvgLatency:      avgLat,
+		Score:           score,
+		Details:         details,
+		Error:           lastErr,
 	}
 }
+
 // ServiceValidationResult contains structured outcomes of the final winner verification.
 type ServiceValidationResult struct {
 	Status   ValidationStatus `json:"status"`
@@ -687,4 +857,3 @@ func GetServiceValidationEndpoints(servicePreset string) []string {
 		return nil
 	}
 }
-

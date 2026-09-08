@@ -37,18 +37,18 @@ type App struct {
 	quitting            bool
 
 	// Tray lifecycle & cache
-	trayCtx             context.Context
-	trayCancel          context.CancelFunc
-	trayUpdateTrigger   chan struct{}
-	lastPingLatency     int64
-	lastPingStatus      string
-	lastPingMu          sync.RWMutex
+	trayCtx           context.Context
+	trayCancel        context.CancelFunc
+	trayUpdateTrigger chan struct{}
+	lastPingLatency   int64
+	lastPingStatus    string
+	lastPingMu        sync.RWMutex
 
 	// Doctor lifecycle & cancellation
-	doctorMu            sync.Mutex
-	doctorCancel        context.CancelFunc
-	doctorRunID         string
-	doctorState         *engine.DoctorRunState
+	doctorMu     sync.Mutex
+	doctorCancel context.CancelFunc
+	doctorRunID  string
+	doctorState  *engine.DoctorRunState
 }
 
 func NewApp() *App {
@@ -838,6 +838,7 @@ func (a *App) GetAutoStartTaskInfo() (*engine.TaskRegistrationInfo, error) {
 type appProviderController struct {
 	app *App
 }
+
 func (c *appProviderController) CurrentProfile() string {
 	return c.app.manager.CurrentProfileName("")
 }

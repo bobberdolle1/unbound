@@ -25,12 +25,12 @@ type AutoHostlistEntry struct {
 
 // AutoHostlistManager orchestrates thread-safe reading, writing, synchronization, and promotion of auto-discovered hosts.
 type AutoHostlistManager struct {
-	mu            sync.RWMutex
-	listsDir      string
-	metaPath      string
-	listPath      string
-	entries       map[string]*AutoHostlistEntry
-	tombstones    map[string]bool
+	mu                sync.RWMutex
+	listsDir          string
+	metaPath          string
+	listPath          string
+	entries           map[string]*AutoHostlistEntry
+	tombstones        map[string]bool
 	lastDiskMtime     time.Time
 	lastDiskSize      int64
 	beforeReplaceHook func()
@@ -216,6 +216,7 @@ func (m *AutoHostlistManager) AddDomain(domain, reason string) error {
 	GetLogger().Infof("AutoHostlist", "[AUTOHOSTLIST] added/updated domain: %s (reason=%s, hits=%d)", clean, reason, entry.HitCount)
 	return m.saveMetaLocked()
 }
+
 // RemoveDomain deletes a domain from the dynamic list.
 func (m *AutoHostlistManager) RemoveDomain(domain string) error {
 	clean := strings.ToLower(strings.TrimSpace(domain))

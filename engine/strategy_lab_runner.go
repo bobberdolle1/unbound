@@ -24,8 +24,36 @@ const (
 	ProcessStateDryRunValidated
 	ProcessStateRunning
 	ProcessStateExitedEarly
-	ProcessStateStopped
+	ProcessStateStopping
+	ProcessStateExited
+	ProcessStateStopFailed
+	ProcessStateStopped = ProcessStateExited // backward compatibility alias
 )
+
+func (s CandidateProcessState) String() string {
+	switch s {
+	case ProcessStateStarting:
+		return "STARTING"
+	case ProcessStateProcessAlive:
+		return "PROCESS_ALIVE"
+	case ProcessStateCaptureReady:
+		return "CAPTURE_READY"
+	case ProcessStateDryRunValidated:
+		return "DRY_RUN_VALIDATED"
+	case ProcessStateRunning:
+		return "RUNNING"
+	case ProcessStateExitedEarly:
+		return "EXITED_EARLY"
+	case ProcessStateStopping:
+		return "STOPPING"
+	case ProcessStateExited:
+		return "EXITED"
+	case ProcessStateStopFailed:
+		return "STOP_FAILED"
+	default:
+		return fmt.Sprintf("STATE_%d", int(s))
+	}
+}
 
 // RunnerMode specifies whether the runner requires live driver interception or accepts dry-run verification.
 type RunnerMode int
@@ -77,7 +105,8 @@ type OSZapretCandidateProcess struct {
 	stdoutBuf *safeBuffer
 	done      chan struct{}
 	waitErr   error
-	stopped   bool
+	stopErr   error
+	exitCode  int
 	state     CandidateProcessState
 	mu        sync.Mutex
 }
@@ -93,12 +122,7 @@ func (p *OSZapretCandidateProcess) State() CandidateProcessState {
 }
 
 func (p *OSZapretCandidateProcess) Alive() bool {
-	p.mu.Lock()
-	stopped := p.stopped
-	p.mu.Unlock()
-	if stopped {
-		return false
-	}
+	// Alive reflects factual process completion (via done chan), NEVER user intent
 	select {
 	case <-p.done:
 		return false
@@ -112,44 +136,100 @@ func (p *OSZapretCandidateProcess) WaitErr() error {
 	defer p.mu.Unlock()
 	return p.waitErr
 }
+
+func (p *OSZapretCandidateProcess) StopErr() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.stopErr
+}
+
+func (p *OSZapretCandidateProcess) ExitCode() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.exitCode
+}
+
 func (p *OSZapretCandidateProcess) Argv() []string {
 	return p.argv
 }
+
 func (p *OSZapretCandidateProcess) Stop() error {
 	p.mu.Lock()
-	if p.stopped {
+	// If already in a terminal stopped/exited state, return existing stopErr or nil
+	if p.state == ProcessStateExited || p.state == ProcessStateExitedEarly {
+		err := p.stopErr
 		p.mu.Unlock()
-		return nil
+		return err
 	}
-	p.stopped = true
-	p.state = ProcessStateStopped
+	p.state = ProcessStateStopping
 	p.mu.Unlock()
 
-	if p.cmd == nil || p.cmd.Process == nil {
+	// Check if already finished naturally
+	select {
+	case <-p.done:
+		p.mu.Lock()
+		p.state = ProcessStateExited
+		p.mu.Unlock()
+		return nil
+	default:
+	}
+
+	if (p.cmd == nil || p.cmd.Process == nil) && p.pid == 0 {
+		p.mu.Lock()
+		p.state = ProcessStateExited
+		p.mu.Unlock()
 		return nil
 	}
 
 	logger := GetLogger()
 	logger.Infof("Lab", "[LAB] stopping temporary candidate process (PID=%d)", p.pid)
 
-	if runtime.GOOS == "windows" {
-		// taskkill /F /T terminates the process tree immediately
+	var termErr error
+	if runtime.GOOS == "windows" && p.pid != 0 {
 		killCmd := exec.Command("taskkill.exe", "/F", "/T", "/PID", fmt.Sprintf("%d", p.pid))
 		killCmd.SysProcAttr = GetHiddenSysProcAttr()
-		_ = killCmd.Run()
-	} else {
-		_ = p.cmd.Process.Kill()
+		termErr = killCmd.Run()
+	} else if p.cmd != nil && p.cmd.Process != nil {
+		termErr = p.cmd.Process.Kill()
 	}
 
+	// 1. Bounded wait for process completion
 	select {
 	case <-p.done:
-	case <-time.After(2 * time.Second):
-		logger.Warnf("Lab", "[LAB] candidate process (PID=%d) stop timeout, forcing release", p.pid)
+		p.mu.Lock()
+		p.state = ProcessStateExited
+		p.mu.Unlock()
+		time.Sleep(50 * time.Millisecond) // driver handle unhook delay
+		logger.Infof("Lab", "[LAB] candidate process (PID=%d) stopped cleanly", p.pid)
+		return nil
+	case <-time.After(1500 * time.Millisecond):
+		logger.Warnf("Lab", "[LAB] candidate process (PID=%d) stop timeout, attempting fallback kill", p.pid)
 	}
-	// Driver handle unhook delay
-	time.Sleep(100 * time.Millisecond)
-	logger.Infof("Lab", "[LAB] temporary candidate process (PID=%d) stopped and handles released", p.pid)
-	return nil
+
+	// 2. Fallback termination
+	if p.cmd != nil && p.cmd.Process != nil {
+		_ = p.cmd.Process.Kill()
+	}
+	select {
+	case <-p.done:
+		p.mu.Lock()
+		p.state = ProcessStateExited
+		p.mu.Unlock()
+		time.Sleep(50 * time.Millisecond)
+		logger.Infof("Lab", "[LAB] candidate process (PID=%d) stopped after fallback", p.pid)
+		return nil
+	case <-time.After(1500 * time.Millisecond):
+		// Still alive!
+	}
+
+	// If still not done, factual process has failed to exit!
+	p.mu.Lock()
+	p.state = ProcessStateStopFailed
+	err := fmt.Errorf("candidate process (PID=%d) failed to exit: termination err: %v", p.pid, termErr)
+	p.stopErr = err
+	p.mu.Unlock()
+	logger.Errorf("Lab", "[LAB] %v", err)
+	return err
 }
 
 // DefaultCandidateRunner is the production runner for Windows and Linux.
@@ -304,6 +384,9 @@ func (r *DefaultCandidateRunner) StartCandidate(ctx context.Context, cand Strate
 		err := cmd.Wait()
 		proc.mu.Lock()
 		proc.waitErr = err
+		if cmd.ProcessState != nil {
+			proc.exitCode = cmd.ProcessState.ExitCode()
+		}
 		proc.mu.Unlock()
 		close(done)
 	}()
@@ -391,5 +474,4 @@ func (r *DefaultCandidateRunner) StartCandidate(ctx context.Context, cand Strate
 				cand.Name, readyTimeout, strings.TrimSpace(combinedOut))
 		}
 	}
-	return proc, nil
 }
