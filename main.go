@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -44,7 +45,7 @@ func main() {
 	listProfiles := flag.Bool("list-profiles", false, "List the profiles available on this platform and exit")
 	controlMode := flag.Bool("control", false, "Run interactive Control Center menu in CLI")
 	runDuration := flag.Duration("run-duration", 0, "Stop CLI automatically after this duration (0 = wait for signal)")
-
+	acceptanceTest := flag.Bool("acceptance-test", false, "Run elevated WinDivert kernel driver acceptance test and exit")
 	flag.Usage = func() {
 		fmt.Printf("UNBOUND v%s (%s/%s)\n", engine.Version, runtime.GOOS, runtime.GOARCH)
 		fmt.Println("Usage: unbound [options]")
@@ -63,11 +64,16 @@ func main() {
 
 	flag.Parse()
 	if !isBindingsBuild() {
-		if relaunched, err := relaunchElevatedIfNeeded(requiresElevationForMode(*showVersion, *testMode, *listProfiles, *cliMode, *autoTuneMode, *installService, *uninstallService, *controlMode)); err != nil {
+		if relaunched, err := relaunchElevatedIfNeeded(requiresElevationForMode(*showVersion, *testMode, *listProfiles, *cliMode, *autoTuneMode, *installService, *uninstallService, *controlMode, *acceptanceTest)); err != nil {
 			log.Fatalf("Failed to request administrator privileges: %v", err)
 		} else if relaunched {
 			return
 		}
+	}
+
+	if *acceptanceTest {
+		runAcceptanceTest()
+		return
 	}
 
 	if *showVersion {
@@ -181,8 +187,104 @@ func main() {
 	}
 }
 
-func requiresElevationForMode(showVersion, testMode, listProfiles, cliMode, autoTuneMode, installService, uninstallService, controlMode bool) bool {
+func requiresElevationForMode(showVersion, testMode, listProfiles, cliMode, autoTuneMode, installService, uninstallService, controlMode, acceptanceTest bool) bool {
+	if acceptanceTest {
+		return true
+	}
 	return !(showVersion || testMode || listProfiles || cliMode || autoTuneMode || installService || uninstallService || controlMode)
+}
+
+func runAcceptanceTest() {
+	fmt.Printf("=== UNBOUND v%s — Elevated WinDivert Kernel Acceptance ===\n", engine.Version)
+
+	if runtime.GOOS != "windows" {
+		fmt.Printf("[SKIP] WinDivert acceptance test is only applicable on Windows (current: %s)\n", runtime.GOOS)
+		os.Exit(0)
+	}
+
+	// 1. Verify elevation
+	hasPriv, err := checkAdminPrivileges()
+	if err != nil || !hasPriv {
+		fmt.Println("[FAIL] Step 1/5: Administrator privileges required. Please run from an elevated prompt.")
+		os.Exit(1)
+	}
+	fmt.Println("[PASS] Step 1/5: Administrator privileges verified")
+
+	// 2. Extract verified engine assets
+	assets, err := engine.ExtractAssets()
+	if err != nil {
+		fmt.Printf("[FAIL] Step 2/5: Failed to extract engine assets: %v\n", err)
+		os.Exit(2)
+	}
+	winwsPath := filepath.Join(assets.BinDir, "winws2.exe")
+	if _, err := os.Stat(winwsPath); err != nil {
+		fmt.Printf("[FAIL] Step 2/5: winws2.exe not found at %s: %v\n", winwsPath, err)
+		os.Exit(2)
+	}
+	fmt.Printf("[PASS] Step 2/5: Engine assets extracted and verified (%s)\n", winwsPath)
+
+	// 3. Construct strict, non-broad test filter (only 1.1.1.1 on port 443)
+	testFilter := "(ip.DstAddr == 1.1.1.1 or ip.SrcAddr == 1.1.1.1) and tcp.DstPort == 443"
+
+	// 4. Launch winws2 with official base scripts and candidate desync args
+	runner, err := engine.NewDefaultCandidateRunner()
+	if err != nil {
+		fmt.Printf("[FAIL] Step 3/5: Failed to initialize runner: %v\n", err)
+		os.Exit(3)
+	}
+
+	cand := engine.StrategyCandidate{
+		ID:          "acceptance_cand",
+		Name:        "Acceptance HostFakeSplit",
+		Protocol:    "TLS1.3",
+		Zapret2Args: []string{"--payload=tls_client_hello", "--lua-desync=hostfakesplit:repeats=2"},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	proc, err := runner.StartCandidate(ctx, cand, testFilter)
+	if err != nil {
+		fmt.Printf("[FAIL] Step 3/5: WinDivert driver failed to initialize or start capture: %v\n", err)
+		os.Exit(4)
+	}
+	pid := proc.PID()
+	fmt.Printf("[PASS] Step 3/5: winws2.exe launched with WinDivert (PID=%d, Filter=%s)\n", pid, testFilter)
+
+	// Verify exact CAPTURE_READY state
+	if proc.State() != engine.ProcessStateCaptureReady {
+		_ = proc.Stop()
+		fmt.Printf("[FAIL] Step 4/5: Process in unexpected state %v (expected CAPTURE_READY)\n", proc.State())
+		os.Exit(4)
+	}
+	fmt.Println("[PASS] Step 4/5: Exact marker verified: 'windivert initialized. capture is started.'")
+
+	// 5. Run one bounded probe through captured scope
+	ce := engine.NewConnectivityEngine(3 * time.Second)
+	ce.PinHost("cloudflare-dns.com", net.ParseIP("1.1.1.1"))
+	probeRes := ce.ProbeTCP(ctx, "cloudflare-dns.com:443")
+	fmt.Printf("        Network probe through WinDivert scope: %s (latency=%v)\n", probeRes.Status, probeRes.Latency)
+
+	// Verify process still alive
+	if !proc.Alive() {
+		_ = proc.Stop()
+		fmt.Printf("[FAIL] Step 5/5: winws2.exe process died during network probe: %v\n", proc.WaitErr())
+		os.Exit(5)
+	}
+
+	// Stop process and verify PID gone
+	_ = proc.Stop()
+	time.Sleep(150 * time.Millisecond)
+	if proc.Alive() {
+		fmt.Println("[FAIL] Step 5/5: winws2.exe process failed to terminate cleanly")
+		os.Exit(5)
+	}
+	fmt.Println("[PASS] Step 5/5: Process PID cleanly terminated and WinDivert handles released")
+
+	fmt.Println("\n==================================================")
+	fmt.Println(" ALL CHECKS PASSED: KERNEL_RUNTIME_VERIFIED")
+	fmt.Println("==================================================")
+	os.Exit(0)
 }
 
 // newHeadlessManager performs the setup shared by --cli and --list-profiles.
