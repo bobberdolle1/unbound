@@ -137,6 +137,29 @@ func (m *ProviderManager) CurrentProfileName(engineName string) string {
 	return ""
 }
 
+// ActiveProfileName returns the currently active profile name across any active engine.
+func (m *ProviderManager) ActiveProfileName() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.activeProvider == nil {
+		return ""
+	}
+	if bp, ok := m.activeProvider.(BypassProviderWithCallbacks); ok {
+		return bp.CurrentProfile()
+	}
+	return ""
+}
+
+// ActiveEngineName returns the name of the currently active engine.
+func (m *ProviderManager) ActiveEngineName() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.activeProvider != nil {
+		return m.activeProvider.Name()
+	}
+	return ""
+}
+
 func (m *ProviderManager) GetStatusInfo() map[string]interface{} {
 	m.mu.Lock()
 	defer m.mu.Unlock()

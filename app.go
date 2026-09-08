@@ -717,16 +717,49 @@ func (a *App) AddAutoHostlistDomain(domain, reason string) error {
 	return engine.GetAutoHostlistManager().AddDomain(domain, reason)
 }
 
+func (a *App) executeWithAutoHostlistPause(fn func() error) error {
+	if a.manager == nil {
+		return fn()
+	}
+
+	activeProfile := a.manager.ActiveProfileName()
+	activeEngine := a.manager.ActiveEngineName()
+	isRunning := a.manager.GetStatus() == providers.StatusRunning
+	isAutoHostlist := strings.Contains(activeProfile, "AutoHostlist")
+
+	if isRunning && isAutoHostlist && activeEngine != "" {
+		engine.GetLogger().Info("AutoHostlist", "[AUTOHOSTLIST] pausing active profile for exclusive mutation transaction")
+		_ = a.manager.Stop()
+		time.Sleep(100 * time.Millisecond)
+
+		err := fn()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = a.manager.Start(ctx, activeEngine, activeProfile)
+		engine.GetLogger().Info("AutoHostlist", "[AUTOHOSTLIST] resumed active profile after mutation transaction")
+		return err
+	}
+
+	return fn()
+}
+
 func (a *App) RemoveAutoHostlistDomain(domain string) error {
-	return engine.GetAutoHostlistManager().RemoveDomain(domain)
+	return a.executeWithAutoHostlistPause(func() error {
+		return engine.GetAutoHostlistManager().RemoveDomain(domain)
+	})
 }
 
 func (a *App) ClearAutoHostlist() error {
-	return engine.GetAutoHostlistManager().ClearDynamicList()
+	return a.executeWithAutoHostlistPause(func() error {
+		return engine.GetAutoHostlistManager().ClearDynamicList()
+	})
 }
 
 func (a *App) PromoteAutoHostlistDomain(domain, targetList string) error {
-	return engine.GetAutoHostlistManager().PromoteDomain(domain, targetList)
+	return a.executeWithAutoHostlistPause(func() error {
+		return engine.GetAutoHostlistManager().PromoteDomain(domain, targetList)
+	})
 }
 
 // Adaptive state APIs

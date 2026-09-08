@@ -31,8 +31,9 @@ type AutoHostlistManager struct {
 	listPath      string
 	entries       map[string]*AutoHostlistEntry
 	tombstones    map[string]bool
-	lastDiskMtime time.Time
-	lastDiskSize  int64
+	lastDiskMtime     time.Time
+	lastDiskSize      int64
+	beforeReplaceHook func()
 }
 
 var (
@@ -184,6 +185,26 @@ func (m *AutoHostlistManager) AddDomain(domain, reason string) error {
 			HitCount:      1,
 		}
 		m.entries[clean] = entry
+
+		if m.beforeReplaceHook != nil {
+			m.beforeReplaceHook()
+		}
+
+		// Append directly using O_APPEND: kernel-level atomic append, completely immune to TOCTOU overwrite race
+		f, err := os.OpenFile(m.listPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			return fmt.Errorf("failed to open autodetect file for append: %w", err)
+		}
+		if _, err := f.WriteString(clean + "\n"); err != nil {
+			_ = f.Close()
+			return fmt.Errorf("failed to append to autodetect file: %w", err)
+		}
+		_ = f.Close()
+
+		if fi, err := os.Stat(m.listPath); err == nil {
+			m.lastDiskMtime = fi.ModTime()
+			m.lastDiskSize = fi.Size()
+		}
 	} else {
 		entry.LastDetected = now
 		entry.HitCount++
@@ -193,9 +214,8 @@ func (m *AutoHostlistManager) AddDomain(domain, reason string) error {
 	}
 
 	GetLogger().Infof("AutoHostlist", "[AUTOHOSTLIST] added/updated domain: %s (reason=%s, hits=%d)", clean, reason, entry.HitCount)
-	return m.saveAtomicLocked()
+	return m.saveMetaLocked()
 }
-
 // RemoveDomain deletes a domain from the dynamic list.
 func (m *AutoHostlistManager) RemoveDomain(domain string) error {
 	clean := strings.ToLower(strings.TrimSpace(domain))
@@ -215,16 +235,25 @@ func (m *AutoHostlistManager) RemoveDomain(domain string) error {
 }
 
 // ClearDynamicList empties the autodetect list completely.
+// First synchronizes from disk so any externally appended entries are tombstoned and wiped.
 func (m *AutoHostlistManager) ClearDynamicList() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	m.syncFromDiskLocked()
 	for d := range m.entries {
 		m.tombstones[d] = true
 	}
 	m.entries = make(map[string]*AutoHostlistEntry)
 	GetLogger().Info("AutoHostlist", "[AUTOHOSTLIST] cleared dynamic autodetect list")
 	return m.saveAtomicLocked()
+}
+
+// SetBeforeReplaceHook registers a deterministic test hook called immediately prior to replacing autodetect.txt.
+func (m *AutoHostlistManager) SetBeforeReplaceHook(hook func()) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.beforeReplaceHook = hook
 }
 
 // PromoteDomain moves a domain from autodetect.txt to a permanent curated list (e.g. other.txt or youtube.txt).
@@ -371,21 +400,22 @@ func (m *AutoHostlistManager) saveAtomicLocked() error {
 			}
 		}
 		sort.Strings(domains)
-
-		listContent := strings.Join(domains, "\n")
-		if len(domains) > 0 {
-			listContent += "\n"
+		outLines := []string{"# Auto-detected domains by UNBOUND / winws2"}
+		outLines = append(outLines, domains...)
+		if m.beforeReplaceHook != nil {
+			m.beforeReplaceHook()
 		}
 
-		if err := os.WriteFile(tmpList, []byte(listContent), 0644); err != nil {
-			time.Sleep(time.Duration(10*(1<<attempt)) * time.Millisecond)
-			continue
+		// Atomic write tmp file
+		if err := os.WriteFile(tmpList, []byte(strings.Join(outLines, "\n")+"\n"), 0644); err != nil {
+			return fmt.Errorf("failed to write tmp auto hostlist: %w", err)
 		}
 
-		// OCC Conflict Detection: did winws append while writing tmpList?
-		if fiCurrent, err := os.Stat(m.listPath); err == nil && fiCurrent.Size() != currentDiskSize {
+		// Check if file size changed on disk since we read it
+		if fi, err := os.Stat(m.listPath); err == nil && fi.Size() != currentDiskSize {
+			// File changed! Someone (winws2) appended while we prepared the replacement.
+			// Discard tmp file and retry OCC merge.
 			_ = os.Remove(tmpList)
-			time.Sleep(2 * time.Millisecond)
 			continue
 		}
 

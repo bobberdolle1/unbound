@@ -746,19 +746,21 @@ export namespace engine {
 	export class StrategyLabReport {
 	    runId: string;
 	    targetHost: string;
-	    targetIps: string[];
 	    protocol: string;
 	    baselineReachable: boolean;
 	    baselineStatus: ProbeResult;
-	    totalCandidates: number;
-	    testedCandidates: number;
+	    baselineProtocolLabel: string;
 	    workingCandidates: CandidateTestResult[];
+	    testedCandidates: number;
+	    totalCandidates: number;
 	    bestCandidate?: CandidateTestResult;
 	    validationStatus: string;
+	    validationDetails?: string;
 	    serviceVerified: boolean;
 	    duration: number;
 	    // Go type: time
 	    timestamp: any;
+	    targetIps?: string[];
 	
 	    static createFrom(source: any = {}) {
 	        return new StrategyLabReport(source);
@@ -768,18 +770,20 @@ export namespace engine {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.runId = source["runId"];
 	        this.targetHost = source["targetHost"];
-	        this.targetIps = source["targetIps"];
 	        this.protocol = source["protocol"];
 	        this.baselineReachable = source["baselineReachable"];
 	        this.baselineStatus = this.convertValues(source["baselineStatus"], ProbeResult);
-	        this.totalCandidates = source["totalCandidates"];
-	        this.testedCandidates = source["testedCandidates"];
+	        this.baselineProtocolLabel = source["baselineProtocolLabel"];
 	        this.workingCandidates = this.convertValues(source["workingCandidates"], CandidateTestResult);
+	        this.testedCandidates = source["testedCandidates"];
+	        this.totalCandidates = source["totalCandidates"];
 	        this.bestCandidate = this.convertValues(source["bestCandidate"], CandidateTestResult);
 	        this.validationStatus = source["validationStatus"];
+	        this.validationDetails = source["validationDetails"];
 	        this.serviceVerified = source["serviceVerified"];
 	        this.duration = source["duration"];
 	        this.timestamp = this.convertValues(source["timestamp"], null);
+	        this.targetIps = source["targetIps"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
