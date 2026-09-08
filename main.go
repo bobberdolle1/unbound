@@ -239,23 +239,27 @@ func runAcceptanceTest() {
 		fmt.Printf("Runner initialization: FAIL (%v)\n", err)
 		os.Exit(3)
 	}
-
 	cand := engine.StrategyCandidate{
 		ID:          "acceptance_cand",
-		Name:        "Acceptance HostFakeSplit",
+		Name:        "Acceptance MultiSplit",
 		Protocol:    "TLS1.3",
-		Zapret2Args: []string{"--payload=tls_client_hello", "--lua-desync=hostfakesplit:repeats=2"},
+		Zapret2Args: []string{"--payload=tls_client_hello", "--lua-desync=multisplit:pos=midsld"},
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := executeAcceptanceProbe(ctx, runner, cand, testFilter, targetIP); err != nil {
+		fmt.Printf("\nACCEPTANCE FAILED:\nStage: %s\nRoot cause: %v\n", "WinDivert TLS 1.3 packet desync handshake", err)
+		_ = os.Stdout.Sync()
+		_ = os.Stderr.Sync()
 		os.Exit(5)
 	}
 
 	fmt.Println("\n==================================================")
 	fmt.Println(" ALL CHECKS PASSED: KERNEL_RUNTIME_VERIFIED")
 	fmt.Println("==================================================")
+	_ = os.Stdout.Sync()
+	_ = os.Stderr.Sync()
 	os.Exit(0)
 }
 
