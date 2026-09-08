@@ -1,10 +1,13 @@
 package engine
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestIsExcludedDomain(t *testing.T) {
@@ -233,5 +236,76 @@ func TestGetAutoHostlistPathCanonical(t *testing.T) {
 	}
 	if !strings.HasSuffix(filepath.ToSlash(path), "/lists/autodetect.txt") {
 		t.Errorf("Path does not end in /lists/autodetect.txt: %s", path)
+	}
+}
+
+func TestAutoHostlistStressConcurrentInterleavedAppends(t *testing.T) {
+	tempLists := t.TempDir()
+	mgr := NewAutoHostlistManager(tempLists)
+	listFile := filepath.Join(tempLists, "autodetect.txt")
+
+	const numWorkers = 6
+	const appendsPerWorker = 8
+	var wg sync.WaitGroup
+	var successfulAppends sync.Map
+
+	// Goroutines simulating winws2 appending directly to file
+	for w := range numWorkers {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			for i := range appendsPerWorker {
+				dom := fmt.Sprintf("winws-w%d-item%d.com", workerID, i)
+				for range 10 {
+					f, err := os.OpenFile(listFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+					if err == nil {
+						if _, wErr := f.WriteString(dom + "\n"); wErr == nil {
+							successfulAppends.Store(dom, true)
+						}
+						_ = f.Close()
+						break
+					}
+					time.Sleep(3 * time.Millisecond)
+				}
+				time.Sleep(5 * time.Millisecond)
+			}
+		}(w)
+	}
+
+	// Goroutines simulating UI mutations
+	for u := range 2 {
+		wg.Add(1)
+		go func(uiID int) {
+			defer wg.Done()
+			for i := range 4 {
+				_ = mgr.AddDomain(fmt.Sprintf("ui-%d-%d.org", uiID, i), "manual")
+				time.Sleep(10 * time.Millisecond)
+			}
+		}(u)
+	}
+
+	wg.Wait()
+
+	// Invariant: Final sync must observe ALL successfully appended domains (zero lost updates!)
+	mgr.SyncFromDisk()
+	entries := mgr.GetEntries()
+	entryMap := make(map[string]bool)
+	for _, e := range entries {
+		entryMap[e.Domain] = true
+	}
+
+	missing := 0
+	totalChecked := 0
+	successfulAppends.Range(func(key, value interface{}) bool {
+		totalChecked++
+		dom := key.(string)
+		if !entryMap[dom] {
+			missing++
+		}
+		return true
+	})
+
+	if missing > 0 {
+		t.Fatalf("CRITICAL LOST UPDATE REGRESSION: %d out of %d concurrently appended domains were lost!", missing, totalChecked)
 	}
 }
