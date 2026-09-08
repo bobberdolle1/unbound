@@ -309,3 +309,102 @@ func TestAutoHostlistStressConcurrentInterleavedAppends(t *testing.T) {
 		t.Fatalf("CRITICAL LOST UPDATE REGRESSION: %d out of %d concurrently appended domains were lost!", missing, totalChecked)
 	}
 }
+
+func TestAutoHostlistClearRemovesExternalDiskEntries(t *testing.T) {
+	tempLists := t.TempDir()
+	mgr := NewAutoHostlistManager(tempLists)
+	listFile := filepath.Join(tempLists, "autodetect.txt")
+
+	// 1. Memory has domain A
+	if err := mgr.AddDomain("memory-domain-a.com", "user"); err != nil {
+		t.Fatalf("AddDomain failed: %v", err)
+	}
+
+	// 2. Disk externally gains domain B
+	f, err := os.OpenFile(listFile, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		t.Fatalf("Failed to open file: %v", err)
+	}
+	_, _ = f.WriteString("external-domain-b.com\n")
+	f.Close()
+
+	// 3. ClearDynamicList() is invoked
+	if err := mgr.ClearDynamicList(); err != nil {
+		t.Fatalf("ClearDynamicList failed: %v", err)
+	}
+
+	// 4. Invariant: Neither A nor B must remain in memory
+	entries := mgr.GetEntries()
+	if len(entries) != 0 {
+		t.Errorf("Expected 0 entries in memory after ClearDynamicList, got %d: %v", len(entries), entries)
+	}
+
+	// 5. Invariant: Neither A nor B must remain on disk
+	diskBytes, err := os.ReadFile(listFile)
+	if err != nil {
+		t.Fatalf("Failed to read disk file: %v", err)
+	}
+	diskContent := string(diskBytes)
+	if strings.Contains(diskContent, "memory-domain-a.com") {
+		t.Errorf("memory-domain-a.com still present on disk after Clear: %s", diskContent)
+	}
+	if strings.Contains(diskContent, "external-domain-b.com") {
+		t.Errorf("external-domain-b.com still present on disk after Clear: %s", diskContent)
+	}
+}
+
+func TestAutoHostlistDeterministicWriterRace(t *testing.T) {
+	tempLists := t.TempDir()
+	mgr := NewAutoHostlistManager(tempLists)
+	listFile := filepath.Join(tempLists, "autodetect.txt")
+
+	hookFired := false
+	// Hook injects an external winws2 append immediately before UNBOUND replaces the file
+	mgr.SetBeforeReplaceHook(func() {
+		if !hookFired {
+			hookFired = true
+			f, err := os.OpenFile(listFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			if err == nil {
+				_, _ = f.WriteString("concurrent-winws-append.com\n")
+				f.Close()
+			}
+		}
+	})
+
+	if err := mgr.AddDomain("user-domain-target.com", "user"); err != nil {
+		t.Fatalf("AddDomain failed: %v", err)
+	}
+
+	if !hookFired {
+		t.Fatal("Expected beforeReplaceHook to fire during AddDomain")
+	}
+
+	// Invariant: Both domains must be preserved without lost updates!
+	entries := mgr.GetEntries()
+	foundUser := false
+	foundConcurrent := false
+	for _, e := range entries {
+		if e.Domain == "user-domain-target.com" {
+			foundUser = true
+		}
+		if e.Domain == "concurrent-winws-append.com" {
+			foundConcurrent = true
+		}
+	}
+
+	if !foundUser {
+		t.Errorf("Missing user domain user-domain-target.com in entries: %v", entries)
+	}
+	if !foundConcurrent {
+		t.Errorf("CRITICAL LOST UPDATE: concurrent-winws-append.com was lost during mutation! entries: %v", entries)
+	}
+
+	diskBytes, err := os.ReadFile(listFile)
+	if err != nil {
+		t.Fatalf("Failed to read disk file: %v", err)
+	}
+	diskContent := string(diskBytes)
+	if !strings.Contains(diskContent, "user-domain-target.com") || !strings.Contains(diskContent, "concurrent-winws-append.com") {
+		t.Errorf("Missing domain on disk: %s", diskContent)
+	}
+}
