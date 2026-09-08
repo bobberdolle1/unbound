@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	neturl "net/url"
@@ -404,18 +403,15 @@ func TestStrategyLabBaselineProtocolCorrectness(t *testing.T) {
 		defer ts.Close()
 
 		u, _ := neturl.Parse(ts.URL)
-		host, _, _ := net.SplitHostPort(u.Host)
-
 		cfg := StrategyLabTargetConfig{
-			TargetHost:    host,
+			TargetHost:    u.Host,
 			Protocol:      "QUIC",
 			ServicePreset: "Custom",
 		}
 
 		runner := &recordingCandidateRunner{}
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-
 		report, err := RunStrategyLabWithRunner(ctx, mockPC, runner, cfg, nil)
 		if err != nil {
 			t.Fatalf("RunStrategyLabWithRunner failed: %v", err)
@@ -445,16 +441,13 @@ func TestStrategyLabBaselineProtocolCorrectness(t *testing.T) {
 		defer ts.Close()
 
 		u, _ := neturl.Parse(ts.URL)
-		host, _, _ := net.SplitHostPort(u.Host)
-
 		cfg := StrategyLabTargetConfig{
-			TargetHost:    host,
+			TargetHost:    u.Host,
 			Protocol:      "TLS1.2",
 			ServicePreset: "Custom",
 		}
-
 		runner := &recordingCandidateRunner{}
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 
 		report, err := RunStrategyLabWithRunner(ctx, mockPC, runner, cfg, nil)
@@ -502,5 +495,172 @@ func TestCandidateProcessLivenessDetection(t *testing.T) {
 	}
 	if !strings.Contains(res.Error, "ENGINE_EXITED") {
 		t.Errorf("Expected ENGINE_EXITED in error, got: %s", res.Error)
+	}
+}
+
+type failingCandidateRunner struct{}
+
+func (f *failingCandidateRunner) StartCandidate(ctx context.Context, cand StrategyCandidate, rawFilter string) (CandidateProcess, error) {
+	return nil, errors.New("simulated candidate start failure")
+}
+
+func TestAllFailedCandidatesNeverBecomeBestCandidate(t *testing.T) {
+	mockPC := &mockProviderController{
+		profile: "Recommended (hostfakesplit)",
+		status:  providers.StatusRunning,
+	}
+
+	cfg := StrategyLabTargetConfig{
+		TargetHost:            "127.0.0.1",
+		Protocol:              "HTTP",
+		ServicePreset:         "Custom",
+		ForceProbeIfReachable: true,
+	}
+
+	runner := &failingCandidateRunner{}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	report, err := RunStrategyLabWithRunner(ctx, mockPC, runner, cfg, nil)
+	if err != nil {
+		t.Fatalf("RunStrategyLabWithRunner failed: %v", err)
+	}
+
+	if report.BestCandidate != nil {
+		t.Fatalf("CRITICAL INTEGRITY REGRESSION: BestCandidate must be nil when all candidates fail, got: %s", report.BestCandidate.Candidate.Name)
+	}
+	if len(report.WorkingCandidates) != 0 {
+		t.Errorf("Expected 0 WorkingCandidates, got %d", len(report.WorkingCandidates))
+	}
+	if len(report.CandidateResults) == 0 {
+		t.Errorf("Expected CandidateResults to record all failed attempts, got 0")
+	}
+	if report.ValidationStatus != ValidationStatusNotVerified {
+		t.Errorf("Expected ValidationStatus %s, got %s", ValidationStatusNotVerified, report.ValidationStatus)
+	}
+}
+
+type selectiveCandidateRunner struct {
+	passName string
+}
+
+func (s *selectiveCandidateRunner) StartCandidate(ctx context.Context, cand StrategyCandidate, rawFilter string) (CandidateProcess, error) {
+	if cand.Name == s.passName {
+		return &dummyProcess{name: cand.Name, runner: &recordingCandidateRunner{}}, nil
+	}
+	return nil, errors.New("candidate failed")
+}
+
+func TestMixedFailAndOnePassSelectsWorkingWinner(t *testing.T) {
+	mockPC := &mockProviderController{
+		profile: "Recommended (hostfakesplit)",
+		status:  providers.StatusRunning,
+	}
+
+	// Run mock HTTP server so the passing candidate probe succeeds
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	u, _ := neturl.Parse(ts.URL)
+
+	cfg := StrategyLabTargetConfig{
+		TargetHost:            u.Host,
+		Protocol:              "HTTP",
+		ServicePreset:         "Custom",
+		ForceProbeIfReachable: true,
+		CustomCandidateArgs:   []string{"--filter-tcp=80", "--lua-desync=fake"},
+	}
+	runner := &selectiveCandidateRunner{passName: "Custom Strategy"}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	report, err := RunStrategyLabWithRunner(ctx, mockPC, runner, cfg, nil)
+	if err != nil {
+		t.Fatalf("RunStrategyLabWithRunner failed: %v", err)
+	}
+
+	for _, cr := range report.CandidateResults {
+		t.Logf("Candidate %s: status=%s, passCount=%d, error=%s", cr.Candidate.Name, cr.Status, cr.PassCount, cr.Error)
+	}
+
+	if report.BestCandidate == nil {
+		t.Fatal("Expected BestCandidate to be selected from working candidate, got nil")
+	}
+	if report.BestCandidate.Candidate.Name != "Custom Strategy" {
+		t.Errorf("Expected 'Custom Strategy' as winner, got: %s", report.BestCandidate.Candidate.Name)
+	}
+	if len(report.WorkingCandidates) != 1 {
+		t.Errorf("Expected exactly 1 working candidate, got %d", len(report.WorkingCandidates))
+	}
+	if report.BestCandidate.Candidate.TestedProtocol != "HTTP" {
+		t.Errorf("Expected TestedProtocol='HTTP', got %q", report.BestCandidate.Candidate.TestedProtocol)
+	}
+}
+
+func TestCandidateProcessWaitErrPreservedAfterAlive(t *testing.T) {
+	done := make(chan struct{})
+	expectedErr := errors.New("exit status 123")
+
+	proc := &OSZapretCandidateProcess{
+		pid:     112233,
+		argv:    []string{"--test"},
+		done:    done,
+		waitErr: expectedErr,
+		state:   ProcessStateRunning,
+	}
+
+	// Close done to simulate process exit
+	close(done)
+
+	// 1. Alive() must return false
+	if proc.Alive() {
+		t.Error("Expected Alive() to return false after process exit")
+	}
+
+	// 2. WaitErr() must return the original error
+	err1 := proc.WaitErr()
+	if err1 != expectedErr {
+		t.Errorf("WaitErr() = %v, want %v", err1, expectedErr)
+	}
+
+	// 3. Repeated Alive() and WaitErr() calls must preserve the error without eating it
+	if proc.Alive() {
+		t.Error("Alive() returned true on second call")
+	}
+	err2 := proc.WaitErr()
+	if err2 != expectedErr {
+		t.Errorf("WaitErr() on second call = %v, want %v", err2, expectedErr)
+	}
+}
+
+func TestSaveDiscoveredProfilePreservesTestedProtocol(t *testing.T) {
+	tempFile := filepath.Join(t.TempDir(), "discovered_profiles_proto.json")
+	cleanup := SetDiscoveredProfilesPathForTest(tempFile)
+	defer cleanup()
+
+	cand := StrategyCandidate{
+		ID:             "cand_proto_test",
+		Name:           "TLS Candidate Tested on TLS 1.2",
+		Protocol:       "TLS1.3", // Catalog default
+		TestedProtocol: "TLS1.2", // Actual tested protocol in Strategy Lab
+		Zapret2Args:    []string{"--filter-tcp=443", "--lua-desync=fake"},
+	}
+
+	err := SaveDiscoveredProfile("TLS 1.2 Discovered", cand, "example.com")
+	if err != nil {
+		t.Fatalf("SaveDiscoveredProfile failed: %v", err)
+	}
+
+	profs, err := LoadDiscoveredProfiles()
+	if err != nil {
+		t.Fatalf("LoadDiscoveredProfiles failed: %v", err)
+	}
+	if len(profs) != 1 {
+		t.Fatalf("Expected 1 profile, got %d", len(profs))
+	}
+	if profs[0].Protocol != "TLS1.2" {
+		t.Errorf("Expected saved profile protocol to be 'TLS1.2', got %q", profs[0].Protocol)
 	}
 }

@@ -141,9 +141,20 @@ func SimplePing(ctx context.Context, targetURL string) (time.Duration, error) {
 }
 
 func extractHost(rawURL string) string {
-	parsed, err := neturl.Parse(rawURL)
-	if err != nil || parsed.Hostname() == "" {
+	raw := strings.TrimSpace(rawURL)
+	if raw == "" {
 		return ""
 	}
-	return strings.ToLower(parsed.Hostname())
+	if strings.Contains(raw, "://") {
+		if parsed, err := neturl.Parse(raw); err == nil && parsed.Hostname() != "" {
+			return strings.ToLower(parsed.Hostname())
+		}
+	}
+	if h, _, err := net.SplitHostPort(raw); err == nil && h != "" {
+		return strings.ToLower(h)
+	}
+	if parsed, err := neturl.Parse("http://" + raw); err == nil && parsed.Hostname() != "" {
+		return strings.ToLower(parsed.Hostname())
+	}
+	return strings.ToLower(raw)
 }

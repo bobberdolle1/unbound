@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 )
-
 const MaxTargetIPs = 16
 
 // TargetFilterConfig holds parameters for building a strict WinDivert raw filter.
@@ -50,7 +50,21 @@ func BuildIsolatedWinDivertFilter(ctx context.Context, cfg TargetFilterConfig) (
 		ips = ips[:MaxTargetIPs]
 	}
 
-	ports := cfg.Ports
+	ports := append([]int(nil), cfg.Ports...)
+	if _, pStr, err := net.SplitHostPort(strings.TrimSpace(cfg.TargetHost)); err == nil {
+		if pNum, err := strconv.Atoi(pStr); err == nil && pNum > 0 {
+			hasPort := false
+			for _, p := range ports {
+				if p == pNum {
+					hasPort = true
+					break
+				}
+			}
+			if !hasPort {
+				ports = append(ports, pNum)
+			}
+		}
+	}
 	if len(ports) == 0 {
 		ports = []int{443}
 	}
