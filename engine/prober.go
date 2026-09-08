@@ -117,28 +117,32 @@ func SimplePing(ctx context.Context, targetURL string) (time.Duration, error) {
 	if host == "" {
 		return 0, fmt.Errorf("invalid URL: %s", targetURL)
 	}
-
 	startTime := time.Now()
 
 	dialer := &net.Dialer{
-		Timeout: 5 * time.Second,
+		Timeout: 4 * time.Second,
 	}
+
+	rawConn, err := dialer.DialContext(ctx, "tcp", host+":443")
+	if err != nil {
+		return 0, err
+	}
+	defer rawConn.Close()
 
 	tlsConfig := &tls.Config{
 		ServerName: host,
 		MinVersion: tls.VersionTLS12,
 	}
 
-	conn, err := tls.DialWithDialer(dialer, "tcp", host+":443", tlsConfig)
-	if err != nil {
+	tlsConn := tls.Client(rawConn, tlsConfig)
+	if err := tlsConn.HandshakeContext(ctx); err != nil {
 		return 0, err
 	}
-	defer conn.Close()
+	defer tlsConn.Close()
 
 	latency := time.Since(startTime)
 	return latency, nil
 }
-
 func extractHost(rawURL string) string {
 	raw := strings.TrimSpace(rawURL)
 	if raw == "" {

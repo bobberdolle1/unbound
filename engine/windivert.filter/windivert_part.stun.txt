@@ -1,3 +1,4 @@
   outbound and
+  (udp.DstPort == 3478 or (udp.DstPort >= 19294 and udp.DstPort <= 19344) or (udp.DstPort >= 50000 and udp.DstPort <= 50100)) and
   udp.PayloadLength>=20 and
   udp.Payload32[1]=0x2112A442 and udp.Payload[0]<0x40
