@@ -57,8 +57,12 @@ func checkEngineStatusMac() DiagnosticResult {
 }
 
 func checkPfAnchorStatus() DiagnosticResult {
-	cmd := exec.Command("pfctl", "-s", "info")
+	cmd := exec.Command("sudo", "-n", "pfctl", "-s", "info")
 	out, err := cmd.CombinedOutput()
+	if err != nil {
+		cmd2 := exec.Command("pfctl", "-s", "info")
+		out, err = cmd2.CombinedOutput()
+	}
 	if err != nil {
 		return DiagnosticResult{"Packet Filter (pf)", "Warning", "pfctl check failed (requires root or pf disabled).", false}
 	}

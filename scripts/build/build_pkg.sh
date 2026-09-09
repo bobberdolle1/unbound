@@ -123,9 +123,25 @@ chmod 0755 "$SCRIPTS_DIR/postinstall"
 
 # Build component package
 COMPONENT_PKG="$TMP_WORK/unbound-component.pkg"
-echo "[INFO] Running pkgbuild for component..."
+COMPONENT_PLIST="$TMP_WORK/component.plist"
+
+# Generate and configure component plist to disable relocation (force install to /Applications)
+pkgbuild --analyze --root "$ROOT_DIR" "$COMPONENT_PLIST"
+python3 -c "
+import plistlib
+with open('$COMPONENT_PLIST', 'rb') as f:
+    plist = plistlib.load(f)
+for item in plist:
+    item['BundleIsRelocatable'] = False
+    item['BundleOverwriteAction'] = 'upgrade'
+with open('$COMPONENT_PLIST', 'wb') as f:
+    plistlib.dump(plist, f)
+"
+
+echo "[INFO] Running pkgbuild for component (BundleIsRelocatable=false)..."
 pkgbuild \
     --root "$ROOT_DIR" \
+    --component-plist "$COMPONENT_PLIST" \
     --install-location "/Applications" \
     --scripts "$SCRIPTS_DIR" \
     --identifier "com.unbound.app" \
