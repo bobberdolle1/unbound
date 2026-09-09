@@ -8,11 +8,11 @@ import (
 	"net/http/httptest"
 	neturl "net/url"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
 	"time"
-
 	"unbound/engine/providers"
 )
 
@@ -397,6 +397,9 @@ func TestStrategyLabBaselineProtocolCorrectness(t *testing.T) {
 
 	// 1. HTTP PASS + QUIC FAIL must NOT early-exit QUIC Strategy Lab
 	t.Run("HTTPPassQUICFailDoesNotEarlyExitQUICLab", func(t *testing.T) {
+		if runtime.GOOS != "windows" && runtime.GOOS != "linux" {
+			t.Skip("QUIC candidate testing requires WinDivert (Windows) or NFQUEUE (Linux)")
+		}
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		}))

@@ -3,6 +3,7 @@ package engine
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -56,8 +57,20 @@ func TestClearDiscordCacheMockDirectories(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", tempHome)
 
 	// Create mock Discord Stable and Canary installations
-	stableRoot := filepath.Join(tempHome, "discord")
-	canaryRoot := filepath.Join(tempHome, "discordcanary")
+	var stableRoot, canaryRoot string
+	switch runtime.GOOS {
+	case "darwin":
+		appSupport := filepath.Join(tempHome, "Library", "Application Support")
+		stableRoot = filepath.Join(appSupport, "discord")
+		canaryRoot = filepath.Join(appSupport, "discordcanary")
+	case "linux":
+		configDir := filepath.Join(tempHome, ".config")
+		stableRoot = filepath.Join(configDir, "discord")
+		canaryRoot = filepath.Join(configDir, "discordcanary")
+	default:
+		stableRoot = filepath.Join(tempHome, "discord")
+		canaryRoot = filepath.Join(tempHome, "discordcanary")
+	}
 
 	cacheDir := filepath.Join(stableRoot, "Cache")
 	codeCacheDir := filepath.Join(stableRoot, "Code Cache")

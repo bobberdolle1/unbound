@@ -288,6 +288,11 @@ func ValidateStagedEngine(stagingDir string) error {
 		if stat, err := os.Stat(nfqws); err != nil || stat.IsDir() {
 			return fmt.Errorf("nfqws2 missing in staged directory")
 		}
+	} else if runtime.GOOS == "darwin" {
+		tpws := filepath.Join(stagingDir, "tpws")
+		if stat, err := os.Stat(tpws); err != nil || stat.IsDir() {
+			return fmt.Errorf("tpws missing in staged directory")
+		}
 	}
 	return nil
 }
