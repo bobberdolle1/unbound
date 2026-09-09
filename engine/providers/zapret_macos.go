@@ -702,9 +702,11 @@ func (e *ZapretMacOSProvider) Start(ctx context.Context, profileName string) err
 		e.addLogLocked(fmt.Sprintf("Системный SOCKS5 прокси включен для: %s (127.0.0.1:%s)", strings.Join(e.modifiedServices, ", "), tpwsPort))
 	}
 
-	// Try best-effort pf anchor loading (for dropping UDP/443 so QUIC falls back to TCP)
+	// In SOCKS5 mode, TCP traffic is routed cleanly through tpws via the system proxy.
+	// pf only blocks UDP port 443 so that browsers and apps fall back from QUIC to TCP.
+	quicBlockRule := []string{"block drop out quick proto udp to port 443"}
 	go func() {
-		if pfErr := e.loadPfAnchor(profile.PfRules); pfErr == nil {
+		if pfErr := e.loadPfAnchor(quicBlockRule); pfErr == nil {
 			e.mu.Lock()
 			e.anchorLoaded = true
 			e.mu.Unlock()
