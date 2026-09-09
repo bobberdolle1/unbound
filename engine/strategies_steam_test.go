@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -249,6 +250,9 @@ func (f *fakeRegistrar) RegisterProfile(name string, args []string) {
 // shells skip the check instead of failing.
 func TestWinws2DryRunAcceptsAllProfiles(t *testing.T) {
 	winws := os.Getenv("UNBOUND_WINWS2")
+	if runtime.GOOS != "windows" {
+		t.Skip("winws2.exe dry-run verification is specific to Windows")
+	}
 	if winws == "" {
 		winws = filepath.Join("core_bin", "windows", "winws2.exe")
 	}

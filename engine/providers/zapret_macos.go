@@ -276,9 +276,31 @@ func (e *ZapretMacOSProvider) resolveProfile(name string) (macProfile, error) {
 			"general":     "Ultimate Bypass (Multi-Strategy)",
 			"autotune":    "Ultimate Bypass (Multi-Strategy)",
 		}
-		for alias, target := range aliases {
-			if strings.Contains(nameLower, alias) {
-				if p, ok := macBuiltinProfiles[target]; ok {
+		if target, ok := aliases[nameLower]; ok {
+			if p, ok := macBuiltinProfiles[target]; ok {
+				return p, nil
+			}
+		}
+
+		// Ordered aliases by descending key length to prevent shorter substrings (like "http")
+		// from greedily intercepting longer keys (like "https")
+		orderedAliases := []struct{ alias, target string }{
+			{"recommended", "Ultimate Bypass (Multi-Strategy)"},
+			{"universal", "Ultimate Bypass (Multi-Strategy)"},
+			{"ultimate", "Ultimate Bypass (Multi-Strategy)"},
+			{"autotune", "Ultimate Bypass (Multi-Strategy)"},
+			{"standard", "Standard HTTPS/QUIC"},
+			{"telegram", "Telegram API Bypass"},
+			{"youtube", "YouTube QUIC Aggressive"},
+			{"discord", "Discord Voice Optimized"},
+			{"general", "Ultimate Bypass (Multi-Strategy)"},
+			{"https", "Standard HTTPS/QUIC"},
+			{"split", "HTTP + HTTPS Split"},
+			{"http", "HTTP + HTTPS Split"},
+		}
+		for _, pair := range orderedAliases {
+			if strings.Contains(nameLower, pair.alias) {
+				if p, ok := macBuiltinProfiles[pair.target]; ok {
 					return p, nil
 				}
 			}

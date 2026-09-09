@@ -38,7 +38,11 @@ func skipIfNoRuntimeEnvironment(t *testing.T, output string) {
 		strings.Contains(output, "Run as administrator"),
 		strings.Contains(output, "Root privileges required"),
 		strings.Contains(output, "Permission denied"),
-		strings.Contains(output, "you must be root"):
+		strings.Contains(output, "you must be root"),
+		strings.Contains(output, "pfctl single-prompt setup"),
+		strings.Contains(output, "with administrator privileges"),
+		strings.Contains(output, "failed to create sudoers file"),
+		strings.Contains(output, "sudo: a password is required"):
 		t.Skip("Skipping CLI E2E test - requires administrator/root privileges")
 	case strings.Contains(output, "не найден бинарник движка"),
 		strings.Contains(output, "No bypass engine is available"):
@@ -68,6 +72,9 @@ func firstCLIProfile(t *testing.T, binary string) string {
 }
 
 func TestCLIHeadlessMode(t *testing.T) {
+	if runtime.GOOS != "windows" && os.Geteuid() != 0 {
+		t.Skip("Skipping CLI headless start test - requires root privileges on Unix platforms")
+	}
 	t.Log("Building temporary test binary...")
 
 	tempBinary := testBinaryPath("temp_unbound_test")
