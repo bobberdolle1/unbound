@@ -2,11 +2,21 @@
 
 package main
 
+/*
+#cgo darwin CFLAGS: -x objective-c -fobjc-arc
+#cgo darwin LDFLAGS: -framework Cocoa
+#include <stdlib.h>
+#include "tray_darwin.h"
+*/
+import "C"
+
 import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
+	"unsafe"
 
 	"unbound/engine"
 	"unbound/engine/providers"
@@ -16,14 +26,103 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
+var (
+	globalAppRef   *App
+	globalAppRefMu sync.RWMutex
+)
+
+func setGlobalApp(a *App) {
+	globalAppRefMu.Lock()
+	globalAppRef = a
+	globalAppRefMu.Unlock()
+}
+
+func getGlobalApp() *App {
+	globalAppRefMu.RLock()
+	defer globalAppRefMu.RUnlock()
+	return globalAppRef
+}
+
+//export onTrayAction
+func onTrayAction(actionTag C.int) {
+	a := getGlobalApp()
+	if a == nil {
+		return
+	}
+
+	switch int(actionTag) {
+	case 1: // Show Window
+		a.ShowFromTray()
+	case 2: // Hide Window
+		if a.ctx != nil {
+			runtime.WindowHide(a.ctx)
+		}
+	case 3: // Connect
+		eng, prof := a.defaultEngineAndProfile()
+		if eng != "" {
+			_ = a.StartEngine(eng, prof)
+			a.TriggerTrayUpdate()
+		}
+	case 4: // Disconnect
+		_ = a.StopEngine()
+		a.TriggerTrayUpdate()
+	case 5: // AutoTune
+		go func() {
+			a.TriggerTrayUpdate()
+			_ = a.AutoTune()
+			a.TriggerTrayUpdate()
+		}()
+	case 6: // Quit
+		a.QuitApp()
+	}
+}
+
+//export onTraySelectProfile
+func onTraySelectProfile(profileIndex C.int) {
+	a := getGlobalApp()
+	if a == nil {
+		return
+	}
+
+	engines := a.manager.GetEngineNames()
+	if len(engines) == 0 {
+		return
+	}
+	engName := engines[0]
+	profiles := a.manager.GetProfiles(engName)
+	idx := int(profileIndex)
+	if idx >= 0 && idx < len(profiles) {
+		_ = a.StartEngine(engName, profiles[idx])
+		a.TriggerTrayUpdate()
+	}
+}
+
+//export onDockReopen
+func onDockReopen() {
+	a := getGlobalApp()
+	if a == nil {
+		return
+	}
+	a.ShowFromTray()
+}
+
 func (a *App) setupTray() {
+	setGlobalApp(a)
+
 	a.mu.Lock()
 	a.trayCtx, a.trayCancel = context.WithCancel(context.Background())
 	a.mu.Unlock()
 
-	runtime.LogInfo(a.ctx, "macOS Menu Bar controller initialized")
+	runtime.LogInfo(a.ctx, "macOS Native Status Bar Tray initialized")
 
-	// Dynamic updater for macOS Application Menu Bar
+	// Set up Cocoa Dock click observer and Status Bar Item
+	C.setupDockClickObserver()
+	C.initNativeTray()
+
+	// Initial push to tray
+	a.syncNativeStatusBar()
+
+	// Dynamic updater for macOS Status Bar Tray & Application Menu Bar
 	go func() {
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
@@ -33,10 +132,12 @@ func (a *App) setupTray() {
 			case <-a.trayCtx.Done():
 				return
 			case <-a.trayUpdateTrigger:
+				a.syncNativeStatusBar()
 				if a.ctx != nil {
 					runtime.MenuSetApplicationMenu(a.ctx, getAppMenu(a))
 				}
 			case <-ticker.C:
+				a.syncNativeStatusBar()
 				if a.ctx != nil {
 					runtime.MenuSetApplicationMenu(a.ctx, getAppMenu(a))
 				}
@@ -45,15 +146,90 @@ func (a *App) setupTray() {
 	}()
 }
 
+func (a *App) syncNativeStatusBar() {
+	status := a.manager.GetStatus()
+	currentProfile := a.manager.CurrentProfileName("")
+	pingText := a.getCachedPingText()
+
+	var statusLabel string
+	isRunning := 0
+	switch status {
+	case providers.StatusRunning:
+		isRunning = 1
+		if currentProfile != "" {
+			statusLabel = fmt.Sprintf("Статус: Подключено (%s)", currentProfile)
+		} else {
+			statusLabel = "Статус: Подключено"
+		}
+	case providers.StatusStarting:
+		statusLabel = "Статус: Подключение..."
+	case providers.StatusError:
+		statusLabel = "Статус: Ошибка"
+	default:
+		statusLabel = "Статус: Отключено"
+	}
+
+	engines := a.manager.GetEngineNames()
+	var profiles []string
+	activeProfileIndex := -1
+	if len(engines) > 0 {
+		profiles = a.manager.GetProfiles(engines[0])
+		for i, p := range profiles {
+			if strings.EqualFold(p, currentProfile) {
+				activeProfileIndex = i
+				break
+			}
+		}
+	}
+
+	cStatus := C.CString(statusLabel)
+	defer C.free(unsafe.Pointer(cStatus))
+
+	cPing := C.CString(pingText)
+	defer C.free(unsafe.Pointer(cPing))
+
+	cProfilePointers := make([]*C.char, len(profiles))
+	for i, p := range profiles {
+		cProfilePointers[i] = C.CString(p)
+		defer C.free(unsafe.Pointer(cProfilePointers[i]))
+	}
+
+	var cProfileArray **C.char
+	if len(cProfilePointers) > 0 {
+		cProfileArray = &cProfilePointers[0]
+	}
+
+	C.updateNativeTray(
+		cStatus,
+		cPing,
+		C.int(isRunning),
+		C.int(activeProfileIndex),
+		cProfileArray,
+		C.int(len(profiles)),
+	)
+}
+
 func (a *App) onBeforeClose(ctx context.Context) bool {
-	// Returning false allows macOS system quit requests (Dock icon "Завершить", Cmd+Q, OS shutdown)
-	// to terminate the application cleanly. Window 'X' button in UI calls HideWindowToTray() directly.
-	return false
+	a.mu.Lock()
+	closing := a.closing || a.quitting
+	a.mu.Unlock()
+
+	if closing {
+		return false // Allow system quit requests to terminate cleanly
+	}
+
+	// Hide window to status bar tray when 'X' is clicked
+	if a.ctx != nil {
+		runtime.WindowHide(a.ctx)
+	}
+	return true
 }
 
 func (a *App) ShowFromTray() {
-	runtime.WindowShow(a.ctx)
-	runtime.WindowUnminimise(a.ctx)
+	if a.ctx != nil {
+		runtime.WindowShow(a.ctx)
+		runtime.WindowUnminimise(a.ctx)
+	}
 }
 
 func (a *App) defaultEngineAndProfile() (string, string) {

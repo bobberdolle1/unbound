@@ -152,12 +152,59 @@ type ZapretMacOSProvider struct {
 	binPath        string
 	currentProfile string
 	anchorLoaded   bool
-
+	modifiedServices []string
 	customProfiles map[string][]string
 	customOrder    []string
 
 	statusCallback func(Status)
 	logCallback    func(string)
+}
+
+// getActiveNetworkServices queries networksetup for all non-disabled network services.
+func getActiveNetworkServices() []string {
+	out, err := exec.Command("networksetup", "-listnetworkserviceorder").Output()
+	if err != nil {
+		return []string{"Wi-Fi"}
+	}
+	var services []string
+	lines := strings.Split(string(out), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "(") && !strings.Contains(line, "Hardware Port:") {
+			parts := strings.SplitN(line, ") ", 2)
+			if len(parts) == 2 {
+				svc := strings.TrimSpace(parts[1])
+				if !strings.HasPrefix(svc, "*") && svc != "" {
+					services = append(services, svc)
+				}
+			}
+		}
+	}
+	if len(services) == 0 {
+		services = append(services, "Wi-Fi")
+	}
+	return services
+}
+
+func enableSystemSocks(port string) []string {
+	services := getActiveNetworkServices()
+	var modified []string
+	for _, s := range services {
+		_ = exec.Command("networksetup", "-setsocksfirewallproxy", s, "127.0.0.1", port).Run()
+		if err := exec.Command("networksetup", "-setsocksfirewallproxystate", s, "on").Run(); err == nil {
+			modified = append(modified, s)
+		}
+	}
+	return modified
+}
+
+func disableSystemSocks(services []string) {
+	if len(services) == 0 {
+		services = getActiveNetworkServices()
+	}
+	for _, s := range services {
+		_ = exec.Command("networksetup", "-setsocksfirewallproxystate", s, "off").Run()
+	}
 }
 
 // NewZapretMacOSProvider builds the macOS engine provider.
@@ -613,54 +660,31 @@ func (e *ZapretMacOSProvider) Start(ctx context.Context, profileName string) err
 	}
 
 	e.setStatusLocked(StatusStarting)
-	e.addLogLocked(fmt.Sprintf("[%s] Настраиваем pf (route-to + rdr)...", e.Name()))
 
-	if err := e.loadPfAnchor(profile.PfRules); err != nil {
-		e.addLogLocked("Ошибка настройки pf: " + err.Error())
-		e.setStatusLocked(StatusError)
-		return err
-	}
-	e.anchorLoaded = true
+	// tpws args: run in SOCKS5 proxy mode on tpwsPort, then DPI desync flags.
+	args := append([]string{"--socks", "--port=" + tpwsPort}, profile.Args...)
 
-	// tpws args: --port=PORT, bind addr, then DPI desync flags.
-	args := append([]string{"--port=" + tpwsPort}, profile.Args...)
-
-	e.addLogLocked(fmt.Sprintf("[%s] Запускаем tpws, профиль: %s", e.Name(), profileName))
+	e.addLogLocked(fmt.Sprintf("[%s] Запускаем tpws (SOCKS5), профиль: %s", e.Name(), profileName))
 	e.addLogLocked(fmt.Sprintf("  Команда: tpws %s", strings.Join(args, " ")))
 
-	// No --daemon: the engine would fork and exit, cmd.Wait() would return
-	// immediately, and the provider would report Stopped while the real
-	// process kept running with its PID lost.
 	runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	var cmd *exec.Cmd
-	if os.Geteuid() == 0 {
-		cmd = exec.CommandContext(runCtx, e.binPath, args...)
-	} else {
-		// Run tpws as root via sudo -n so its outgoing packets have UID 0.
-		// This ensures pf's "user { >0 }" rule only redirects user apps to tpws
-		// and avoids a circular self-redirection routing loop.
-		sudoArgs := append([]string{"-n", e.binPath}, args...)
-		cmd = exec.CommandContext(runCtx, "sudo", sudoArgs...)
-	}
+	cmd := exec.CommandContext(runCtx, e.binPath, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		cancel()
-		e.flushPfAnchor()
 		e.setStatusLocked(StatusError)
 		return err
 	}
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		cancel()
-		e.flushPfAnchor()
 		e.setStatusLocked(StatusError)
 		return err
 	}
 
 	if err := cmd.Start(); err != nil {
 		cancel()
-		e.flushPfAnchor()
 		e.addLogLocked("Ошибка запуска tpws: " + err.Error())
 		e.setStatusLocked(StatusError)
 		return fmt.Errorf("не удалось запустить %s: %w", e.binPath, err)
@@ -670,7 +694,22 @@ func (e *ZapretMacOSProvider) Start(ctx context.Context, profileName string) err
 	e.cancel = cancel
 	e.currentProfile = profileName
 	e.setStatusLocked(StatusRunning)
-	e.addLogLocked("tpws активен. Трафик перенаправлен.")
+	e.addLogLocked("tpws активен. Активируем системный SOCKS5 прокси...")
+
+	// Enable system SOCKS proxy for active network services
+	e.modifiedServices = enableSystemSocks(tpwsPort)
+	if len(e.modifiedServices) > 0 {
+		e.addLogLocked(fmt.Sprintf("Системный SOCKS5 прокси включен для: %s (127.0.0.1:%s)", strings.Join(e.modifiedServices, ", "), tpwsPort))
+	}
+
+	// Try best-effort pf anchor loading (for dropping UDP/443 so QUIC falls back to TCP)
+	go func() {
+		if pfErr := e.loadPfAnchor(profile.PfRules); pfErr == nil {
+			e.mu.Lock()
+			e.anchorLoaded = true
+			e.mu.Unlock()
+		}
+	}()
 
 	go e.pipeToLogs(stdout, "")
 	go e.pipeToLogs(stderr, "[stderr] ")
@@ -696,6 +735,12 @@ func (e *ZapretMacOSProvider) reap(cmd *exec.Cmd, profileName string) {
 		return // a newer Start() already replaced this process
 	}
 
+	if len(e.modifiedServices) > 0 {
+		disableSystemSocks(e.modifiedServices)
+		e.modifiedServices = nil
+	} else {
+		disableSystemSocks(nil)
+	}
 	e.flushPfAnchor()
 	e.cmd = nil
 	e.cancel = nil
@@ -715,6 +760,13 @@ func (e *ZapretMacOSProvider) reap(cmd *exec.Cmd, profileName string) {
 
 func (e *ZapretMacOSProvider) Stop() error {
 	e.mu.Lock()
+
+	if len(e.modifiedServices) > 0 {
+		disableSystemSocks(e.modifiedServices)
+		e.modifiedServices = nil
+	} else {
+		disableSystemSocks(nil)
+	}
 
 	if e.cmd == nil || e.cmd.Process == nil {
 		e.flushPfAnchor()
