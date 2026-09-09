@@ -36,12 +36,31 @@ void setupDockClickObserver(void) {
     });
 }
 
+void setNativeTrayIcon(const void *bytes, int length) {
+    if (!bytes || length <= 0) return;
+    NSData *data = [NSData dataWithBytes:bytes length:length];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (globalStatusItem == nil) {
+            initNativeTray();
+        }
+        if (globalStatusItem.button != nil) {
+            NSImage *img = [[NSImage alloc] initWithData:data];
+            [img setSize:NSMakeSize(18, 18)];
+            [img setTemplate:YES];
+            globalStatusItem.button.image = img;
+            globalStatusItem.button.imagePosition = NSImageOnly;
+            globalStatusItem.button.title = @"";
+        }
+    });
+}
+
 void initNativeTray(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
         if (globalStatusItem == nil) {
-            globalStatusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength];
+            globalStatusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSSquareStatusItemLength];
             if (globalStatusItem.button != nil) {
-                globalStatusItem.button.title = @"⚡ UNBOUND";
+                globalStatusItem.button.title = @"";
+                globalStatusItem.button.imagePosition = NSImageOnly;
             }
             if (globalTrayDelegate == nil) {
                 globalTrayDelegate = [[UnboundTrayDelegate alloc] init];
@@ -158,11 +177,8 @@ void updateNativeTray(const char *statusText, const char *pingText, int isRunnin
         globalStatusItem.menu = menu;
 
         if (globalStatusItem.button != nil) {
-            if (isRunning) {
-                globalStatusItem.button.title = @"● UNBOUND";
-            } else {
-                globalStatusItem.button.title = @"○ UNBOUND";
-            }
+            globalStatusItem.button.title = @"";
+            globalStatusItem.button.toolTip = [NSString stringWithFormat:@"UNBOUND — %@", statusStr];
         }
     });
 }
