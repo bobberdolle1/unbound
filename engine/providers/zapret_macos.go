@@ -64,6 +64,7 @@ var macBuiltinProfiles = map[string]macProfile{
 			"--new",
 			"--filter-tcp=443",
 			"--split-pos=1,midsld",
+			"--tlsrec=1,midsld",
 			"--disorder",
 		},
 	},
@@ -72,7 +73,8 @@ var macBuiltinProfiles = map[string]macProfile{
 		Args: []string{
 			"--bind-addr=127.0.0.1",
 			"--filter-tcp=443",
-			"--split-pos=1",
+			"--split-pos=1,midsld",
+			"--tlsrec=1,midsld",
 			"--disorder",
 			"--new",
 			"--filter-tcp=5222,5223,5228",
@@ -660,6 +662,9 @@ func (e *ZapretMacOSProvider) Start(ctx context.Context, profileName string) err
 	}
 
 	e.setStatusLocked(StatusStarting)
+
+	// Ensure no stale tpws processes hold the port
+	_ = exec.Command("killall", "-9", "tpws").Run()
 
 	// tpws args: run in SOCKS5 proxy mode on tpwsPort, then DPI desync flags.
 	args := append([]string{"--socks", "--port=" + tpwsPort}, profile.Args...)

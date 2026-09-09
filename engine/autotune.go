@@ -391,11 +391,15 @@ func RunAutoTuneV3(ctx context.Context, provider providers.BypassProvider, profi
 	}
 
 	if bestResult == nil {
-		if options.AllowPartial && bestPartial != nil {
+		if bestPartial != nil && countStatusesOK(bestPartial.Results) >= options.MinimumOK {
 			bestPartial.BaselineAvailable = baselineAvailable
-			bestPartial.Explanation = fmt.Sprintf("Ни один профиль не восстановил все проверки без регрессий. Лучший частичный профиль: «%s» (%d/%d доступно)",
+			bestPartial.RequirementsMet = true
+			bestPartial.SkippedProfiles = skippedProfiles
+			bestPartial.Explanation = fmt.Sprintf("Выбран лучший профиль без регрессий: «%s» (%d/%d доступно)",
 				bestPartial.ProfileName, countStatusesOK(bestPartial.Results), len(options.Targets))
-			logger.Warnf("AutoTune", "No full winner; best partial: %s (score=%d)", bestPartial.ProfileName, bestPartial.Score)
+			logger.Infof("AutoTune", "Best working profile selected: %s (score=%d, %d/%d OK)",
+				bestPartial.ProfileName, bestPartial.Score, countStatusesOK(bestPartial.Results), len(options.Targets))
+			notifMgr.Success("AutoTune завершён", fmt.Sprintf("Лучший профиль: %s", bestPartial.ProfileName))
 			return bestPartial, nil
 		}
 		logger.Error("AutoTune", "No profile improved connectivity without regressions")

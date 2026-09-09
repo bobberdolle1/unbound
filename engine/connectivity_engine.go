@@ -16,12 +16,14 @@ import (
 	"net"
 	"net/http"
 	neturl "net/url"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
+	"golang.org/x/net/proxy"
 )
 
 const (
@@ -29,6 +31,27 @@ const (
 	DefaultUserAgent    = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 )
 
+func isLoopbackAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	host = strings.TrimSpace(host)
+	if host == "localhost" || host == "127.0.0.1" || host == "::1" || strings.HasPrefix(host, "127.") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+func isDarwinLocalSocksListening() bool {
+	conn, err := net.DialTimeout("tcp", "127.0.0.1:9888", 30*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	_ = conn.Close()
+	return true
+}
 // ConnectivityEngine runs bounded, typed network probes with cancellation and retries.
 type ConnectivityEngine struct {
 	Timeout            time.Duration
@@ -96,7 +119,21 @@ func (e *ConnectivityEngine) DialPinnedHost(ctx context.Context, network, hostPo
 	}
 
 	d := net.Dialer{Timeout: e.Timeout}
-	conn, err := d.DialContext(ctx, network, dialAddr)
+	var conn net.Conn
+	err = nil
+	if runtime.GOOS == "darwin" && strings.HasPrefix(network, "tcp") && !isLoopbackAddr(dialAddr) && isDarwinLocalSocksListening() {
+		if socksDialer, sErr := proxy.SOCKS5("tcp", "127.0.0.1:9888", nil, &d); sErr == nil {
+			if cd, ok := socksDialer.(proxy.ContextDialer); ok {
+				conn, err = cd.DialContext(ctx, network, dialAddr)
+			} else {
+				conn, err = socksDialer.Dial(network, dialAddr)
+			}
+		}
+	}
+
+	if conn == nil && err == nil {
+		conn, err = d.DialContext(ctx, network, dialAddr)
+	}
 	if err != nil {
 		return nil, targetIP, err
 	}
