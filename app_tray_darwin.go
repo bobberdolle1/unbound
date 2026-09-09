@@ -31,9 +31,6 @@ var (
 	globalAppRef   *App
 	globalAppRefMu sync.RWMutex
 )
-
-//go:embed build/darwin/tray_icon@2x.png
-var trayIconData []byte
 func setGlobalApp(a *App) {
 	globalAppRefMu.Lock()
 	globalAppRef = a
@@ -121,9 +118,6 @@ func (a *App) setupTray() {
 	// Set up Cocoa Dock click observer and Status Bar Item
 	C.setupDockClickObserver()
 	C.initNativeTray()
-	if len(trayIconData) > 0 {
-		C.setNativeTrayIcon(unsafe.Pointer(&trayIconData[0]), C.int(len(trayIconData)))
-	}
 	// Initial push to tray
 	a.syncNativeStatusBar()
 

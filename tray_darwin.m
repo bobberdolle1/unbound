@@ -8,6 +8,7 @@ extern void onDockReopen(void);
 @interface UnboundTrayDelegate : NSObject
 - (void)menuAction:(id)sender;
 - (void)profileAction:(id)sender;
++ (NSImage *)unboundTemplateLogoImage;
 @end
 
 @implementation UnboundTrayDelegate
@@ -19,6 +20,47 @@ extern void onDockReopen(void);
 - (void)profileAction:(id)sender {
     NSMenuItem *item = (NSMenuItem *)sender;
     onTraySelectProfile((int)item.tag);
+}
+
++ (NSImage *)unboundTemplateLogoImage {
+    NSSize size = NSMakeSize(18, 18);
+    NSImage *image = [NSImage imageWithSize:size flipped:NO drawingHandler:^BOOL(NSRect dstRect) {
+        CGContextRef ctx = [[NSGraphicsContext currentContext] CGContext];
+        CGContextClearRect(ctx, dstRect);
+        
+        // 14x14 pt logo centered inside 18x18 pt canvas (2pt margin)
+        CGFloat scale = 14.0 / 512.0;
+        CGContextTranslateCTM(ctx, 2.0, 16.0);
+        CGContextScaleCTM(ctx, scale, -scale);
+        
+        [[NSColor blackColor] setFill];
+        
+        // Path 1: U shape
+        NSBezierPath *path = [NSBezierPath bezierPath];
+        [path moveToPoint:NSMakePoint(96, 80)];
+        [path lineToPoint:NSMakePoint(168, 80)];
+        [path lineToPoint:NSMakePoint(168, 344)];
+        [path curveToPoint:NSMakePoint(192, 368) controlPoint1:NSMakePoint(168, 357.25) controlPoint2:NSMakePoint(178.75, 368)];
+        [path lineToPoint:NSMakePoint(320, 368)];
+        [path curveToPoint:NSMakePoint(344, 344) controlPoint1:NSMakePoint(333.25, 368) controlPoint2:NSMakePoint(344, 357.25)];
+        [path lineToPoint:NSMakePoint(344, 240)];
+        [path lineToPoint:NSMakePoint(416, 240)];
+        [path lineToPoint:NSMakePoint(416, 344)];
+        [path curveToPoint:NSMakePoint(320, 440) controlPoint1:NSMakePoint(416, 397.02) controlPoint2:NSMakePoint(373.02, 440)];
+        [path lineToPoint:NSMakePoint(192, 440)];
+        [path curveToPoint:NSMakePoint(96, 344) controlPoint1:NSMakePoint(138.98, 440) controlPoint2:NSMakePoint(96, 397.02)];
+        [path closePath];
+        [path fill];
+        
+        // Path 2: Rounded rect notch
+        NSRect notchRect = NSMakeRect(344, 80, 72, 112);
+        NSBezierPath *notch = [NSBezierPath bezierPathWithRoundedRect:notchRect xRadius:16 yRadius:16];
+        [notch fill];
+        
+        return YES;
+    }];
+    [image setTemplate:YES];
+    return image;
 }
 @end
 
@@ -37,21 +79,7 @@ void setupDockClickObserver(void) {
 }
 
 void setNativeTrayIcon(const void *bytes, int length) {
-    if (!bytes || length <= 0) return;
-    NSData *data = [NSData dataWithBytes:bytes length:length];
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if (globalStatusItem == nil) {
-            initNativeTray();
-        }
-        if (globalStatusItem.button != nil) {
-            NSImage *img = [[NSImage alloc] initWithData:data];
-            [img setSize:NSMakeSize(18, 18)];
-            [img setTemplate:YES];
-            globalStatusItem.button.image = img;
-            globalStatusItem.button.imagePosition = NSImageOnly;
-            globalStatusItem.button.title = @"";
-        }
-    });
+    // Vector icon is rendered natively via unboundTemplateLogoImage
 }
 
 void initNativeTray(void) {
@@ -59,8 +87,9 @@ void initNativeTray(void) {
         if (globalStatusItem == nil) {
             globalStatusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSSquareStatusItemLength];
             if (globalStatusItem.button != nil) {
-                globalStatusItem.button.title = @"";
+                globalStatusItem.button.image = [UnboundTrayDelegate unboundTemplateLogoImage];
                 globalStatusItem.button.imagePosition = NSImageOnly;
+                globalStatusItem.button.title = @"";
             }
             if (globalTrayDelegate == nil) {
                 globalTrayDelegate = [[UnboundTrayDelegate alloc] init];
@@ -177,6 +206,10 @@ void updateNativeTray(const char *statusText, const char *pingText, int isRunnin
         globalStatusItem.menu = menu;
 
         if (globalStatusItem.button != nil) {
+            if (globalStatusItem.button.image == nil) {
+                globalStatusItem.button.image = [UnboundTrayDelegate unboundTemplateLogoImage];
+            }
+            globalStatusItem.button.imagePosition = NSImageOnly;
             globalStatusItem.button.title = @"";
             globalStatusItem.button.toolTip = [NSString stringWithFormat:@"UNBOUND — %@", statusStr];
         }
