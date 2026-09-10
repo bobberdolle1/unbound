@@ -410,6 +410,11 @@ func (a *App) StartEngine(engineName string, profileName string) (err error) {
 	logger.Infof("App", "Manager.Start returned: err=%v", err)
 	wailsruntime.LogInfof(a.ctx, "Manager.Start returned: err=%v", err)
 
+	// nil means started cleanly; also treat "already running same profile" as
+	// a silent success — the engine IS up, just a second concurrent Start lost
+	// the race and returned nil after the idempotent guard above.
+	engineIsRunning := err == nil || a.manager.GetStatus() == providers.StatusRunning
+
 	if err == nil {
 		logger.Infof("App", "Engine started successfully: %s", profileName)
 		if saveErr := engine.SaveLastProfile(profileName); saveErr != nil {
@@ -419,6 +424,13 @@ func (a *App) StartEngine(engineName string, profileName string) (err error) {
 		notifMgr.Success("Успешный запуск", fmt.Sprintf("Профиль: %s", profileName))
 		wailsruntime.EventsEmit(a.ctx, "status_changed", "Running")
 		wailsruntime.LogInfof(a.ctx, "Started: %s", profileName)
+	} else if engineIsRunning {
+		// A concurrent Start already finished successfully for this profile.
+		// The engine is running — don't show an error toast; just sync UI.
+		logger.Infof("App", "Engine already running (%s), concurrent Start was a no-op: %v", profileName, err)
+		wailsruntime.EventsEmit(a.ctx, "profile_changed", profileName)
+		wailsruntime.EventsEmit(a.ctx, "status_changed", "Running")
+		err = nil
 	} else {
 		logger.Errorf("App", "Failed to start engine: %v", err)
 		notifMgr.Error("Ошибка запуска", fmt.Sprintf("Не удалось произвести запуск: %v", err))
