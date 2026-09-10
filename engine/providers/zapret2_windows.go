@@ -247,9 +247,14 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 	defer e.mu.Unlock()
 	e.killedManually = false
 
-	// State may have changed while the lock was released.
+	// State may have changed while hostlist sync ran outside the lock.
+	// If the same profile already started successfully, this is a no-op.
+	// If a *different* profile started, surface a clear conflict error.
 	if e.status == StatusRunning {
-		return fmt.Errorf("another start already completed while this one was in progress")
+		if e.currentProfile == profileName {
+			return nil
+		}
+		return fmt.Errorf("another profile (%s) started while this one (%s) was in progress", e.currentProfile, profileName)
 	}
 
 	e.status = StatusStarting

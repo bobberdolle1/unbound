@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -44,11 +45,65 @@ discordapp.com`,
 	},
 }
 
+// syncGuard collapses concurrent SyncHostlists calls into a single in-flight
+// request. A second caller arriving while the first is still running waits for
+// it to finish and reuses its result. A caller arriving after the previous run
+// finished within minSyncInterval gets a free pass (lists are fresh enough).
+var syncGuard struct {
+	mu              sync.Mutex
+	inFlight        bool
+	waiters         []chan error
+	lastSyncTime    time.Time
+	minSyncInterval time.Duration
+}
+
+func init() { syncGuard.minSyncInterval = 30 * time.Second }
+
 // SyncHostlists refreshes the hostlist files the engine profiles load. Each
 // file is rebuilt as the union of the upstream list, the built-in fallback
 // and the user's current content, so manual edits made in the bypass-lists
 // editor survive a sync.
+//
+// Concurrent callers are collapsed: at most one HTTP round-trip runs at a
+// time, and results fresher than minSyncInterval are reused immediately.
 func SyncHostlists() error {
+	syncGuard.mu.Lock()
+
+	// Fresh enough — skip the network entirely.
+	if !syncGuard.lastSyncTime.IsZero() && time.Since(syncGuard.lastSyncTime) < syncGuard.minSyncInterval {
+		syncGuard.mu.Unlock()
+		return nil
+	}
+
+	// Another goroutine is already syncing — subscribe and wait.
+	if syncGuard.inFlight {
+		ch := make(chan error, 1)
+		syncGuard.waiters = append(syncGuard.waiters, ch)
+		syncGuard.mu.Unlock()
+		return <-ch
+	}
+
+	syncGuard.inFlight = true
+	syncGuard.mu.Unlock()
+
+	err := doSyncHostlists()
+
+	syncGuard.mu.Lock()
+	syncGuard.inFlight = false
+	if err == nil {
+		syncGuard.lastSyncTime = time.Now()
+	}
+	waiters := syncGuard.waiters
+	syncGuard.waiters = nil
+	syncGuard.mu.Unlock()
+
+	for _, ch := range waiters {
+		ch <- err
+	}
+	return err
+}
+
+func doSyncHostlists() error {
 	userConfigDir, err := os.UserConfigDir()
 	if err != nil {
 		return fmt.Errorf("failed to get user config directory: %w", err)
