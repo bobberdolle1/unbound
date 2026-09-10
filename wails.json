@@ -19,8 +19,8 @@
   "info": {
     "companyName": "UNBOUND",
     "productName": "UNBOUND",
-    "productVersion": "0.6.7",
-    "copyright": "Copyright \u00a9 2024-2026 UNBOUND Team",
+    "productVersion": "0.6.8",
+    "copyright": "Copyright © 2024-2026 UNBOUND Team",
     "comments": "UNBOUND"
   },
   "wails": {
