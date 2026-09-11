@@ -588,6 +588,30 @@ func preparePfConfPatch() (bool, string, error) {
 	return true, tmpPath, nil
 }
 
+// removeLegacyUnboundPFDeclarations removes only exact historical anchor
+// declarations. It is pure so a future privileged migration can first back up,
+// validate, and atomically replace /etc/pf.conf without rewriting unrelated
+// configuration.
+func removeLegacyUnboundPFDeclarations(content []byte) ([]byte, error) {
+	const (
+		rdrDeclaration    = `rdr-anchor "com.unbound.zapret"`
+		anchorDeclaration = `anchor "com.unbound.zapret"`
+	)
+	var out strings.Builder
+	for _, line := range strings.SplitAfter(string(content), "\n") {
+		trimmed := strings.TrimSpace(strings.TrimSuffix(line, "\n"))
+		switch trimmed {
+		case rdrDeclaration, anchorDeclaration:
+			continue
+		}
+		if strings.Contains(trimmed, pfAnchorName) {
+			return nil, fmt.Errorf("unexpected %s declaration: %q", pfAnchorName, trimmed)
+		}
+		out.WriteString(line)
+	}
+	return []byte(out.String()), nil
+}
+
 // sendMacOSNotification displays a native macOS desktop notification toast.
 func sendMacOSNotification(title, message string) {
 	escapedTitle := strings.ReplaceAll(title, `"`, `\"`)
@@ -748,20 +772,6 @@ func (e *ZapretMacOSProvider) Start(ctx context.Context, profileName string) err
 	e.modifiedServices = enableSystemSocks(tpwsPort)
 	if len(e.modifiedServices) > 0 {
 		e.addLogLocked(fmt.Sprintf("Системный SOCKS5 прокси включен для: %s (127.0.0.1:%s)", strings.Join(e.modifiedServices, ", "), tpwsPort))
-	}
-
-	// SOCKS mode does not use transparent PF redirection. For profiles that
-	// deliberately force HTTP/3-capable clients back to TCP, PF blocks only
-	// UDP/443; every other profile leaves unrelated UDP untouched.
-	if profile.BlockQUIC {
-		quicBlockRule := []string{"block drop out quick proto udp to port 443"}
-		go func() {
-			if pfErr := e.loadPfAnchor(quicBlockRule); pfErr == nil {
-				e.mu.Lock()
-				e.anchorLoaded = true
-				e.mu.Unlock()
-			}
-		}()
 	}
 
 	go e.pipeToLogs(stdout, "")
