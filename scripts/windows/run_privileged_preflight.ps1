@@ -18,16 +18,27 @@ New-Item -ItemType Directory -Force -Path $bundle | Out-Null
 function Invoke-Captured([string]$Name, [string[]]$Arguments, [int]$TimeoutSeconds) {
     $stdout = Join-Path $bundle "$Name.stdout.log"
     $stderr = Join-Path $bundle "$Name.stderr.log"
-    $process = Start-Process -FilePath $exe -ArgumentList $Arguments -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $exe
+    $startInfo.Arguments = (($Arguments | ForEach-Object { "`"$_`"" }) -join ' ')
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.CreateNoWindow = $true
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $startInfo
+    if (-not $process.Start()) { throw "PROCESS_START_FAILED: $Name" }
+    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+    $stderrTask = $process.StandardError.ReadToEndAsync()
     $timedOut = -not $process.WaitForExit($TimeoutSeconds * 1000)
     if ($timedOut) {
         Stop-TrackedProcessTree $process
         return [pscustomobject]@{ name=$Name; exitCode=$null; timedOut=$true; stdout=$stdout; stderr=$stderr }
     }
     $process.WaitForExit()
-    $process.Refresh()
-    $exitCode = [int]$process.ExitCode
-    return [pscustomobject]@{ name=$Name; exitCode=$exitCode; timedOut=$false; stdout=$stdout; stderr=$stderr }
+    [IO.File]::WriteAllText($stdout, $stdoutTask.Result)
+    [IO.File]::WriteAllText($stderr, $stderrTask.Result)
+    return [pscustomobject]@{ name=$Name; exitCode=[int]$process.ExitCode; timedOut=$false; stdout=$stdout; stderr=$stderr }
 }
 
 trap {
