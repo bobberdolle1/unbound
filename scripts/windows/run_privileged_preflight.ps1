@@ -14,6 +14,20 @@ $CandidateDirectory = (Resolve-Path $CandidateDirectory).Path
 $ArchivePath = (Resolve-Path $ArchivePath).Path
 $bundle = [IO.Path]::GetFullPath($BundleDirectory)
 New-Item -ItemType Directory -Force -Path $bundle | Out-Null
+
+trap {
+    $errorText = ($_ | Out-String).Trim()
+    $failure = [ordered]@{
+        candidateCommit = $CandidateCommit
+        candidateDirectory = $CandidateDirectory
+        status = 'FAIL'
+        error = $errorText
+        failedAt = (Get-Date).ToString('o')
+    }
+    $failure | ConvertTo-Json | Set-Content -Path (Join-Path $bundle 'result.json') -Encoding utf8
+    $errorText | Set-Content -Path (Join-Path $bundle 'controller.error.log') -Encoding utf8
+    exit 1
+}
 $exe = Join-Path $CandidateDirectory 'Unbound.exe'
 
 function Invoke-Captured([string]$Name, [string[]]$Arguments, [int]$TimeoutSeconds) {
