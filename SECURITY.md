@@ -25,12 +25,12 @@ UNBOUND не устанавливает корневой сертификат и
 ```
 Windows: приложение → WinDivert/winws2 → целевой сервер
 Linux:   приложение → NFQUEUE/nfqws2 → целевой сервер
-macOS:   приложение → pf → локальный tpws → целевой сервер
+macOS:   приложение → system SOCKS → локальный tpws --socks → целевой сервер
 ```
 
 - TLS остаётся сквозным между клиентом и целевым сервером.
 - Windows/Linux применяют десинхронизацию к начальному TCP/UDP-трафику согласно профилю.
-- macOS `tpws` меняет TCP-поток локально; UDP/QUIC он не обрабатывает.
+- macOS `tpws --socks` меняет TCP-поток локально; UDP/QUIC он не обрабатывает. PF при Ultimate/YouTube может только заблокировать UDP/443 для TCP fallback и не перенаправляет raw TLS в SOCKS listener.
 
 ---
 

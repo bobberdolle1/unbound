@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"net"
 	neturl "net/url"
+	"runtime"
 	"strings"
 	"time"
+
+	"golang.org/x/net/proxy"
 )
 
 func ProbeConnection(ctx context.Context, targetURL string) (ProbeResult, error) {
@@ -123,7 +126,22 @@ func SimplePing(ctx context.Context, targetURL string) (time.Duration, error) {
 		Timeout: 4 * time.Second,
 	}
 
-	rawConn, err := dialer.DialContext(ctx, "tcp", host+":443")
+	var rawConn net.Conn
+	var err error
+
+	if runtime.GOOS == "darwin" && isDarwinLocalSocksListening() {
+		if socksDialer, sErr := proxy.SOCKS5("tcp", "127.0.0.1:9888", nil, dialer); sErr == nil {
+			if cd, ok := socksDialer.(proxy.ContextDialer); ok {
+				rawConn, err = cd.DialContext(ctx, "tcp", host+":443")
+			} else {
+				rawConn, err = socksDialer.Dial("tcp", host+":443")
+			}
+		}
+	}
+
+	if rawConn == nil && err == nil {
+		rawConn, err = dialer.DialContext(ctx, "tcp", host+":443")
+	}
 	if err != nil {
 		return 0, err
 	}

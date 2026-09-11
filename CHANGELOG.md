@@ -3,6 +3,16 @@
 Все значимые изменения проекта документируются в этом файле.
 
 
+## [0.6.8] - 2026-09-11
+### macOS SOCKS lifecycle and reproducible packaging
+
+#### Fixed
+
+- macOS `tpws` теперь обслуживает только SOCKS5: профили Ultimate и YouTube блокируют только исходящий UDP/443, а Discord TCP Bypass не изменяет UDP-трафик.
+- Остановка UNBOUND завершает только процесс `tpws`, которым владеет текущий экземпляр; глобальные `killall tpws` удалены.
+- Системный SOCKS настраивается только для сервиса, обслуживающего default route, и полностью очищается при остановке.
+- Релизная упаковка macOS собирает ZIP, DMG и PKG вне File Provider, очищает `FinderInfo`/`ResourceFork`, переподписывает bundle и smoke-тестирует артефакты.
+
 ## [0.6.7] - 2026-09-08
 ### 🚀 Релиз UNBOUND v0.6.7 — Launchers Packaging & Acceptance Truth
 

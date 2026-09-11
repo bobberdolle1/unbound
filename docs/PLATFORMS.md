@@ -6,7 +6,7 @@ UNBOUND использует разные механизмы обхода на �
 |-----------|-------------------|-----------------|------------------------|
 | 🪟 **Windows 10/11 x64** | Zapret 2 `winws2.exe` + WinDivert | Wails GUI + CLI | TCP и UDP/QUIC согласно профилю |
 | 🐧 **Linux amd64/arm64** | Zapret 2 `nfqws2` + NFQUEUE | CLI | TCP и UDP/QUIC согласно профилю |
-| 🍎 **macOS 11+ Intel/Apple Silicon** | Zapret `tpws` + `pf` redirect | Universal Wails GUI + CLI | Только TCP |
+| 🍎 **macOS 11+ Intel/Apple Silicon** | Zapret `tpws --socks` + system SOCKS; profile-specific PF UDP/443 fallback | Universal Wails GUI + CLI | TCP only |
 
 ---
 
@@ -31,11 +31,11 @@ UNBOUND использует разные механизмы обхода на �
 
 ## 🍎 macOS
 
-**Требования:** macOS 11+, права администратора для изменения `pf`, WebKit в составе системы.
+**Требования:** macOS 11+, права администратора только для профилей, блокирующих UDP/443 через `pf`, WebKit в составе системы.
 
-- Universal `tpws` (`x86_64` + `arm64`) работает как локальный прозрачный TCP-прокси; `pf` перенаправляет выбранные TCP-порты в `127.0.0.1:988`.
-- Правила загружаются в якорь `com.unbound.zapret` и очищаются при штатной остановке.
-- `tpws` не обрабатывает UDP/QUIC. Профили macOS не обещают обход Discord voice или другого UDP-трафика; названия `Discord`/`YouTube` относятся к соответствующим TCP-доменам.
+- Universal `tpws` (`x86_64` + `arm64`) работает как локальный SOCKS4/5 TCP-прокси на `127.0.0.1:9888`; UNBOUND применяет SOCKS только к сетевому сервису активного default route.
+- PF не перенаправляет TCP в SOCKS listener. Для Ultimate/YouTube-профилей он ограниченно блокирует UDP/443, чтобы браузеры откатывались с QUIC на TCP; остальные профили не меняют UDP.
+- `tpws` не обрабатывает UDP/QUIC. Профиль `Discord TCP Bypass (Web / Gateway)` охватывает HTTPS/Gateway TCP, но не Discord voice media.
 - Приложение не подписано Apple Developer ID и не notarized. После загрузки GitHub Gatekeeper может потребовать снять quarantine через включённый `fix_gatekeeper.command`; это осознанное локальное действие пользователя.
 
 ---

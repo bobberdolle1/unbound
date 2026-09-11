@@ -39,22 +39,29 @@ export function usePingPolling(status: string) {
       return;
     }
 
-    const interval = setInterval(() => {
+    const poll = () => {
       backendService
         .getLivePing()
-        .then((data: any) => {
-          const lat = data?.latency || 0;
-          const stat = data?.status || 'stopped';
-          const serv = data?.services || {};
-          setLivePingData({ active: data?.active || false, latency: lat, status: stat, services: serv });
-          if (stat === 'ok') {
+        .then((data: Record<string, unknown>) => {
+          const lat = typeof data?.latency === 'number' ? data.latency : 0;
+          const stat = typeof data?.status === 'string' ? data.status : 'stopped';
+          const serv: Record<string, number> = {};
+          if (data?.services && typeof data.services === 'object') {
+            for (const [service, latency] of Object.entries(data.services)) {
+              if (typeof latency === 'number') serv[service] = latency;
+            }
+          }
+          setLivePingData({ active: Boolean(data?.active), latency: lat, status: stat, services: serv });
+          if (stat === 'ok' && lat > 0) {
             setPingHistory((prev) => [...prev.slice(-14), lat]);
           }
           backendService.savePingHistory(lat, stat).catch(() => {});
         })
         .catch(() => setLivePingData({ active: false, latency: 0, status: 'error' }));
-    }, 5000);
+    };
 
+    poll();
+    const interval = setInterval(poll, 4000);
     return () => clearInterval(interval);
   }, [status]);
 
