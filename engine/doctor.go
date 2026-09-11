@@ -248,9 +248,13 @@ func RunDoctorWithProgress(ctx context.Context, mode string, activeProfile strin
 	if mode == "extended" {
 		result.ManualItems = []string{
 			"YouTube: 1080p/4K video playback with seeking in browser",
-			"Discord: Voice channel connection and microphone/audio stream",
 			"Steam: Desktop client login and community/friends tab",
 			"Steam: Content download/update for any small game",
+		}
+		if runtime.GOOS == "darwin" {
+			result.ManualItems = append(result.ManualItems, "Discord Voice UDP/media: unsupported by macOS tpws SOCKS mode")
+		} else {
+			result.ManualItems = append(result.ManualItems, "Discord: Voice channel connection and microphone/audio stream")
 		}
 	}
 

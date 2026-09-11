@@ -118,22 +118,22 @@ describe('Hooks Lifecycle & Error Handling Tests', () => {
       // Change status to Running
       rerender({ status: 'Running' });
 
-      // Advance by 5s interval
+      // The first ping is immediate; subsequent polls occur every 4s.
       await act(async () => {
         vi.advanceTimersByTime(5000);
       });
-      expect(backendService.getLivePing).toHaveBeenCalledTimes(1);
+      expect(backendService.getLivePing).toHaveBeenCalledTimes(2);
 
       // Unmount hook -> interval cleared
       unmount();
       await act(async () => {
         vi.advanceTimersByTime(10000);
       });
-      expect(backendService.getLivePing).toHaveBeenCalledTimes(1); // no extra calls
+      expect(backendService.getLivePing).toHaveBeenCalledTimes(2); // no extra calls
     });
 
     it('handles backend error gracefully without crashing', async () => {
-      (backendService.getLivePing as any).mockRejectedValueOnce(new Error('Network error'));
+      vi.mocked(backendService.getLivePing).mockRejectedValueOnce(new Error('Network error'));
 
       const { result } = renderHook(() => usePingPolling('Running'));
 

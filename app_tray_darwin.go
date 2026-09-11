@@ -225,6 +225,7 @@ func (a *App) onBeforeClose(ctx context.Context) bool {
 }
 
 func (a *App) ShowFromTray() {
+	C.showAppWindowNative()
 	if a.ctx != nil {
 		runtime.WindowShow(a.ctx)
 		runtime.WindowUnminimise(a.ctx)

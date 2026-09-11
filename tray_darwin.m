@@ -67,12 +67,24 @@ extern void onDockReopen(void);
 static NSStatusItem *globalStatusItem = nil;
 static UnboundTrayDelegate *globalTrayDelegate = nil;
 
+void showAppWindowNative(void) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [NSApp unhide:nil];
+        [NSApp activateIgnoringOtherApps:YES];
+        for (NSWindow *window in [NSApp windows]) {
+            [window makeKeyAndOrderFront:nil];
+            [window setIsVisible:YES];
+        }
+    });
+}
+
 void setupDockClickObserver(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
         [[NSNotificationCenter defaultCenter] addObserverForName:NSApplicationDidBecomeActiveNotification
                                                           object:nil
                                                            queue:[NSOperationQueue mainQueue]
                                                       usingBlock:^(NSNotification *note) {
+            showAppWindowNative();
             onDockReopen();
         }];
     });

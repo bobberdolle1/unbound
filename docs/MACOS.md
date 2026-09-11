@@ -1,78 +1,61 @@
-# 🍎 Unbound macOS — SOCKS5 Прокси и Ядерный PF
+# UNBOUND macOS: TCP SOCKS architecture
 
-Нативный модуль для Apple macOS (Intel x86_64 и Apple Silicon M1-M3). В отличие от Windows, macOS не позволяет драйверам уровня `WinDivert` вмешиваться в стек на лету без отключения SIP (System Integrity Protection). 
-
-Поэтому мы используем элегантное решение: локальный прозрачный SOCKS5 прокси (`SpoofDPI` / `tpws`) с глобальной системной регистрацией.
-
----
-
-## 🔬 Интеграция в систему
-
-Мы используем мощные Unix/Darwin инструменты для бесшовного опыта:
+## Runtime path
 
 ```mermaid
-graph TD
-    A[Ваши браузеры: Safari, Chrome, Telegram] -->|Сетевой запрос| B{Mac SCPreferences}
-    B -->|Генерирует профиль| C[127.0.0.1:1080 SOCKS5]
-    C -->|tpws / SpoofDPI Демон| D[Десинхронизация TCP 80/443]
-    D --> E[Магистраль провайдера]
-    style C fill:#0ea5e9,color:#fff
+flowchart LR
+    App[Application that honors macOS SOCKS] -->|SOCKS5 CONNECT| Proxy[127.0.0.1:9888]
+    Proxy -->|TCP desync| Tpws[tpws --socks]
+    Tpws --> Internet
+    Browser[HTTP/3-capable browser] -. Ultimate / YouTube only .->|UDP/443 blocked by PF| TCP
 ```
 
-### 1. Ядро (kqueue)
-Программа использует системный вызов `kqueue` вместо `epoll` для высокопроизводительного мультиплексирования. Скрипты полностью адаптированы под Mach-O файловую систему.
+UNBOUND starts bundled `tpws` in upstream SOCKS mode:
 
-### 2. Системные настройки (SCPreferences API)
-Как только вы нажимаете кнопку «Подключить» в приложении, наш движок вызывает проприетарное `SCPreferences` API.
-Оно автоматически идет в "Настройки -> Сеть -> Прокси" и включает системный SOCKS5 на порту `1080`. 
-Как только вы выключаете программу, API мгновенно откатывает настройки, не оставляя систему без интернета.
+```text
+tpws --socks --port=9888 --bind-addr=127.0.0.1 …
+```
 
----
+The active default-route network service is configured with macOS `networksetup` to use SOCKS5 `127.0.0.1:9888`. The listener requires a SOCKS4/5 handshake; it is **not** a transparent proxy. UNBOUND therefore never redirects raw TCP/TLS into that listener with PF `rdr` or `route-to`.
 
-## 🚀 Установка (Без терминала)
+`pf` is optional and is used only by the **Ultimate Bypass** and **YouTube QUIC Aggressive** profiles to block outbound UDP/443. This makes QUIC clients fall back to TCP, which then reaches `tpws` through the system SOCKS proxy. Other macOS profiles do not install the UDP/443 block.
 
-Для 99% пользователей:
-1. Скачайте `Unbound-macOS-Universal.app.zip` со страницы релизов.
-2. Распакуйте и перенесите в папку `Программы` (Applications).
-3. Запустите. При первом запуске может потребоваться зайти в "Системные настройки -> Конфиденциальность -> Разрешить запуск", так как это независимый Open Source проект без жесткой цифровой подписи Apple.
-4. Нажмите «Подключить» в приложении.
+## What macOS profiles cover
 
----
+`tpws` operates on TCP streams. It does not proxy UDP or QUIC.
 
-## 🔥 Сборка (Для контрибьюторов)
+- **Ultimate Bypass (Multi-Strategy):** general HTTP/TCP HTTPS, with UDP/443 fallback to TCP.
+- **YouTube QUIC Aggressive:** YouTube HTTP/TCP HTTPS, with UDP/443 fallback to TCP.
+- **Discord TCP Bypass (Web / Gateway):** Discord HTTPS, REST, CDN and Gateway TCP/WebSocket traffic. It does **not** support Discord voice media.
 
-Для компиляции обертки и GUI под macOS используется фреймворк Wails (в корне репозитория):
+Discord voice uses a separately negotiated UDP media path. Successful HTTPS or Gateway checks do not demonstrate voice support. A real UDP bypass needs a separate architecture, such as a Network Extension packet tunnel with supported UDP handling; it is not provided by `tpws --socks`.
+
+## Diagnostics
+
+With UNBOUND running, the active service should report:
+
+```text
+networksetup -getsocksfirewallproxy "Wi-Fi"
+Enabled: Yes
+Server: 127.0.0.1
+Port: 9888
+```
+
+The effective proxy state is available via `scutil --proxy`; the listener can be inspected with:
+
+```text
+lsof -nP -iTCP:9888 -sTCP:LISTEN
+```
+
+A successful UNBOUND Doctor or AutoTune probe verifies the local SOCKS path used by that probe. It does not prove that every transport in a desktop application, including UDP voice, follows the proxy.
+
+## Installation and build
+
+Move `Unbound.app` to `/Applications`, launch it, then select a profile and connect. The application may request administrator approval only when a profile needs the PF UDP/443 fallback rule.
+
+For source builds:
 
 ```bash
-# 1. Установите инструменты Xcode
-xcode-select --install
-
-# 2. Установите Go и Node.js (рекомендуется brew)
-brew install go node
-
-# 3. Установите Wails CLI
-go install github.com/wailsapp/wails/v2/cmd/wails@latest
-
-# 4. Сборка из корня проекта для вашего процессора (Apple Silicon)
 wails build -platform darwin/arm64
-
-# Или если вы на Intel Mac (x86_64):
 wails build -platform darwin/amd64
 ```
-
-Собранный `.app` паккет появится в папке `build/bin/`. 
-
----
-
-## 🛠 Устранение неполадок (Troubleshooting)
-
-**Интернет пропал после некорректного закрытия программы:**
-Если приложение "упало" (crash) и не успело удалить за собой настройки прокси, то Mac будет пытаться отправлять трафик на выключенный порт 1080.
-**Решение:** Откройте `Системные настройки` -> `Сеть` -> `Ваш Wi-Fi` -> `Подробнее` -> `Прокси`. И уберите галочку с `SOCKS-прокси`.
-
-Или сделайте это через терминал:
-```bash
-networksetup -setsocksfirewallproxystate Wi-Fi off
-```
-
-**Лицензия**: GPL-3.0

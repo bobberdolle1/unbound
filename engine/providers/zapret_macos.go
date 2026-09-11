@@ -19,43 +19,23 @@ import (
 // touching the rest of the user's firewall.
 const pfAnchorName = "com.unbound.zapret"
 
-// tpwsPort is the port that tpws listens on for transparent proxying.
-// Using a non-privileged port (>= 1024) allows tpws to bind as standard user.
+// tpwsPort is the local SOCKS5 listener port.
 const tpwsPort = "9888"
 
-// macProfile holds the pf rules and tpws arguments for a bypass strategy.
-// On macOS, tpws is a transparent TCP proxy. Traffic is redirected to it
-// via pf "route-to" + "rdr pass" rules (divert-packet is Linux-only).
+// macProfile holds the DPI arguments and optional QUIC fallback policy for a
+// SOCKS-mode tpws profile. SOCKS mode is mutually exclusive with transparent
+// PF redirection: clients must send a SOCKS handshake to tpws themselves.
 type macProfile struct {
-	// PfRules are loaded into our dedicated pf anchor.
-	//
-	// Two rules are always needed:
-	//   1. "pass out route-to (lo0 127.0.0.1) ..." — redirects outgoing
-	//      TCP packets back through loopback so the rdr rule can catch them.
-	//   2. "rdr pass on lo0 ..." — rewrites the destination port to tpwsPort
-	//      so tpws receives the connection.
-	PfRules []string
-	// Args are passed to tpws. Do NOT include --port or --bind-addr; those
-	// are added by Start().
+	// BlockQUIC makes this profile request a narrowly scoped PF UDP/443 block.
+	// It is used only where TCP fallback is part of the profile's purpose.
+	BlockQUIC bool
+	// Args are passed to tpws. Do NOT include --port; Start adds it.
 	Args []string
-}
-
-// tpwsPfRules builds the pf ruleset for a given set of TCP/UDP ports.
-// Returns rules that redirect all non-root outgoing TCP on those ports to
-// tpws via loopback.
-func tpwsPfRules(tcpPorts string) []string {
-	return []string{
-		// 1. Translation (rdr) rules MUST come before filtering (pass/block) rules in pfctl!
-		fmt.Sprintf("rdr pass on lo0 inet proto tcp from !127.0.0.0/8 to any port {%s} -> 127.0.0.1 port %s", tcpPorts, tpwsPort),
-		// 2. Filtering (pass out / block drop out) rules come after translation rules.
-		fmt.Sprintf("pass out route-to (lo0 127.0.0.1) proto tcp to port {%s} user { >0 }", tcpPorts),
-		"block drop out quick proto udp to port 443",
-	}
 }
 
 var macBuiltinProfiles = map[string]macProfile{
 	"Ultimate Bypass (Multi-Strategy)": {
-		PfRules: tpwsPfRules("80,443"),
+		BlockQUIC: true,
 		Args: []string{
 			"--bind-addr=127.0.0.1",
 			"--filter-tcp=80",
@@ -68,8 +48,7 @@ var macBuiltinProfiles = map[string]macProfile{
 			"--disorder",
 		},
 	},
-	"Discord Voice Optimized": {
-		PfRules: tpwsPfRules("443,5222,5223,5228"),
+	"Discord TCP Bypass (Web / Gateway)": {
 		Args: []string{
 			"--bind-addr=127.0.0.1",
 			"--filter-tcp=443",
@@ -83,7 +62,7 @@ var macBuiltinProfiles = map[string]macProfile{
 		},
 	},
 	"YouTube QUIC Aggressive": {
-		PfRules: tpwsPfRules("80,443"),
+		BlockQUIC: true,
 		Args: []string{
 			"--bind-addr=127.0.0.1",
 			"--filter-tcp=80",
@@ -97,7 +76,6 @@ var macBuiltinProfiles = map[string]macProfile{
 		},
 	},
 	"Telegram API Bypass": {
-		PfRules: tpwsPfRules("443,5222,5223,5228"),
 		Args: []string{
 			"--bind-addr=127.0.0.1",
 			"--filter-tcp=443",
@@ -110,7 +88,6 @@ var macBuiltinProfiles = map[string]macProfile{
 		},
 	},
 	"Standard HTTPS/QUIC": {
-		PfRules: tpwsPfRules("80,443"),
 		Args: []string{
 			"--bind-addr=127.0.0.1",
 			"--filter-tcp=443",
@@ -119,7 +96,6 @@ var macBuiltinProfiles = map[string]macProfile{
 		},
 	},
 	"HTTP + HTTPS Split": {
-		PfRules: tpwsPfRules("80,443"),
 		Args: []string{
 			"--bind-addr=127.0.0.1",
 			"--filter-tcp=80",
@@ -137,7 +113,7 @@ var macBuiltinProfiles = map[string]macProfile{
 // reshuffle it on every call.
 var macProfileOrder = []string{
 	"Ultimate Bypass (Multi-Strategy)",
-	"Discord Voice Optimized",
+	"Discord TCP Bypass (Web / Gateway)",
 	"YouTube QUIC Aggressive",
 	"Telegram API Bypass",
 	"Standard HTTPS/QUIC",
@@ -147,54 +123,71 @@ var macProfileOrder = []string{
 type ZapretMacOSProvider struct {
 	mu sync.Mutex
 
-	status         Status
-	logs           []string
-	cmd            *exec.Cmd
-	cancel         context.CancelFunc
-	binPath        string
-	currentProfile string
-	anchorLoaded   bool
+	status           Status
+	logs             []string
+	cmd              *exec.Cmd
+	cancel           context.CancelFunc
+	binPath          string
+	currentProfile   string
+	anchorLoaded     bool
 	modifiedServices []string
-	customProfiles map[string][]string
-	customOrder    []string
+	customProfiles   map[string][]string
+	customOrder      []string
 
 	statusCallback func(Status)
 	logCallback    func(string)
 }
 
-// getActiveNetworkServices queries networksetup for all non-disabled network services.
+// getActiveNetworkServices returns the service bound to the default-route
+// interface. Configuring inactive hardware and virtual VPN services creates
+// stale proxy settings without helping the active network path.
 func getActiveNetworkServices() []string {
+	route, err := exec.Command("route", "-n", "get", "default").Output()
+	if err != nil {
+		return []string{"Wi-Fi"}
+	}
+
+	var device string
+	for _, line := range strings.Split(string(route), "\n") {
+		field := strings.TrimSpace(line)
+		if strings.HasPrefix(field, "interface:") {
+			device = strings.TrimSpace(strings.TrimPrefix(field, "interface:"))
+			break
+		}
+	}
+	if device == "" {
+		return []string{"Wi-Fi"}
+	}
+
 	out, err := exec.Command("networksetup", "-listnetworkserviceorder").Output()
 	if err != nil {
 		return []string{"Wi-Fi"}
 	}
-	var services []string
-	lines := strings.Split(string(out), "\n")
-	for _, line := range lines {
+
+	var service string
+	for _, line := range strings.Split(string(out), "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "(") && !strings.Contains(line, "Hardware Port:") {
 			parts := strings.SplitN(line, ") ", 2)
 			if len(parts) == 2 {
-				svc := strings.TrimSpace(parts[1])
-				if !strings.HasPrefix(svc, "*") && svc != "" {
-					services = append(services, svc)
-				}
+				service = strings.TrimPrefix(strings.TrimSpace(parts[1]), "*")
 			}
+			continue
+		}
+		if service != "" && strings.Contains(line, "Device: "+device) {
+			return []string{service}
 		}
 	}
-	if len(services) == 0 {
-		services = append(services, "Wi-Fi")
-	}
-	return services
+	return []string{"Wi-Fi"}
 }
 
 func enableSystemSocks(port string) []string {
 	services := getActiveNetworkServices()
 	var modified []string
-	for _, s := range services {
-		_ = exec.Command("networksetup", "-setsocksfirewallproxy", s, "127.0.0.1", port).Run()
-		if err := exec.Command("networksetup", "-setsocksfirewallproxystate", s, "on").Run(); err == nil {
-			modified = append(modified, s)
+	for _, service := range services {
+		_ = exec.Command("networksetup", "-setsocksfirewallproxy", service, "127.0.0.1", port).Run()
+		if err := exec.Command("networksetup", "-setsocksfirewallproxystate", service, "on").Run(); err == nil {
+			modified = append(modified, service)
 		}
 	}
 	return modified
@@ -204,8 +197,8 @@ func disableSystemSocks(services []string) {
 	if len(services) == 0 {
 		services = getActiveNetworkServices()
 	}
-	for _, s := range services {
-		_ = exec.Command("networksetup", "-setsocksfirewallproxystate", s, "off").Run()
+	for _, service := range services {
+		_ = exec.Command("networksetup", "-setsocksfirewallproxystate", service, "off").Run()
 	}
 }
 
@@ -293,10 +286,8 @@ func (e *ZapretMacOSProvider) resolveProfile(name string) (macProfile, error) {
 		return p, nil
 	}
 	if args, ok := e.customProfiles[name]; ok {
-		// Custom profiles use the same broad redirect rules as Ultimate Bypass.
 		return macProfile{
-			PfRules: tpwsPfRules("80,443"),
-			Args:    append([]string{"--bind-addr=127.0.0.1"}, args...),
+			Args: append([]string{"--bind-addr=127.0.0.1"}, args...),
 		}, nil
 	}
 
@@ -314,8 +305,7 @@ func (e *ZapretMacOSProvider) resolveProfile(name string) (macProfile, error) {
 		aliases := map[string]string{
 			"ultimate":    "Ultimate Bypass (Multi-Strategy)",
 			"youtube":     "YouTube QUIC Aggressive",
-			"discord":     "Discord Voice Optimized",
-			"telegram":    "Telegram API Bypass",
+			"discord":     "Discord TCP Bypass (Web / Gateway)",
 			"https":       "Standard HTTPS/QUIC",
 			"standard":    "Standard HTTPS/QUIC",
 			"split":       "HTTP + HTTPS Split",
@@ -341,8 +331,7 @@ func (e *ZapretMacOSProvider) resolveProfile(name string) (macProfile, error) {
 			{"standard", "Standard HTTPS/QUIC"},
 			{"telegram", "Telegram API Bypass"},
 			{"youtube", "YouTube QUIC Aggressive"},
-			{"discord", "Discord Voice Optimized"},
-			{"general", "Ultimate Bypass (Multi-Strategy)"},
+			{"discord", "Discord TCP Bypass (Web / Gateway)"},
 			{"https", "Standard HTTPS/QUIC"},
 			{"split", "HTTP + HTTPS Split"},
 			{"http", "HTTP + HTTPS Split"},
@@ -663,8 +652,6 @@ func (e *ZapretMacOSProvider) Start(ctx context.Context, profileName string) err
 
 	e.setStatusLocked(StatusStarting)
 
-	// Ensure no stale tpws processes hold the port
-	_ = exec.Command("killall", "-9", "tpws").Run()
 
 	// tpws args: run in SOCKS5 proxy mode on tpwsPort, then DPI desync flags.
 	args := append([]string{"--socks", "--port=" + tpwsPort}, profile.Args...)
@@ -707,16 +694,19 @@ func (e *ZapretMacOSProvider) Start(ctx context.Context, profileName string) err
 		e.addLogLocked(fmt.Sprintf("Системный SOCKS5 прокси включен для: %s (127.0.0.1:%s)", strings.Join(e.modifiedServices, ", "), tpwsPort))
 	}
 
-	// In SOCKS5 mode, TCP traffic is routed cleanly through tpws via the system proxy.
-	// pf only blocks UDP port 443 so that browsers and apps fall back from QUIC to TCP.
-	quicBlockRule := []string{"block drop out quick proto udp to port 443"}
-	go func() {
-		if pfErr := e.loadPfAnchor(quicBlockRule); pfErr == nil {
-			e.mu.Lock()
-			e.anchorLoaded = true
-			e.mu.Unlock()
-		}
-	}()
+	// SOCKS mode does not use transparent PF redirection. For profiles that
+	// deliberately force HTTP/3-capable clients back to TCP, PF blocks only
+	// UDP/443; every other profile leaves unrelated UDP untouched.
+	if profile.BlockQUIC {
+		quicBlockRule := []string{"block drop out quick proto udp to port 443"}
+		go func() {
+			if pfErr := e.loadPfAnchor(quicBlockRule); pfErr == nil {
+				e.mu.Lock()
+				e.anchorLoaded = true
+				e.mu.Unlock()
+			}
+		}()
+	}
 
 	go e.pipeToLogs(stdout, "")
 	go e.pipeToLogs(stderr, "[stderr] ")
@@ -811,7 +801,6 @@ func (e *ZapretMacOSProvider) Stop() error {
 			_ = cmd.Process.Kill()
 			_ = exec.Command("sudo", "-n", "kill", "-KILL", fmt.Sprintf("%d", pid)).Run()
 		}
-		_ = exec.Command("sudo", "-n", "killall", "-9", "tpws").Run()
 	}
 	if cancel != nil {
 		cancel()

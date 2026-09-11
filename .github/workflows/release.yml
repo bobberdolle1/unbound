@@ -322,79 +322,16 @@ jobs:
       - name: Install Wails CLI
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.13.0
 
-      - name: Build
-        run: |
-          wails build -platform darwin/universal -clean \
-            -ldflags "-X unbound/engine.Version=${VERSION}"
-
-      - name: Package and smoke-test
-        run: |
-          set -euo pipefail
-          mkdir -p release
-          app="$(find build/bin -maxdepth 1 -name '*.app' | head -1)"
-          if [ -z "$app" ]; then
-            echo "::error::wails build produced no .app bundle"
-            exit 1
-          fi
-
-          # Ad-hoc code signing is mandatory on macOS to prevent "app is damaged / malware" Gatekeeper alerts
-          xattr -cr "$app" || true
-          codesign --force --deep -s - "$app"
-          codesign --verify --strict "$app"
-
-          dist="release/unbound-v${VERSION}-macos-universal"
-          mkdir -p "$dist"
-          cp -R "$app" "$dist/"
-          cp README.md LICENSE "$dist/"
-          cp engine/third_party/ZAPRET2_LICENSE.txt "$dist/"
-          cp engine/third_party/ZAPRET_LICENSE.txt "$dist/"
-          cp engine/ENGINE_PROVENANCE.json "$dist/"
-          cp scripts/control_macOS/*.command "$dist/"
-          chmod +x "$dist/"*.command
-          executable="$(find "$dist" -path '*/Contents/MacOS/*' -type f -perm -111 | head -1)"
-          if [ -z "$executable" ]; then
-            echo "::error::macOS app contains no executable"
-            exit 1
-          fi
-          (
-            cd "$dist"
-            find . -type f ! -name BUNDLE_SHA256SUMS.txt -exec shasum -a 256 {} \; | sort -k2 > BUNDLE_SHA256SUMS.txt
-          )
-          ditto -c -k --sequesterRsrc --keepParent "$dist" "${dist}.zip"
-
-          # Create DMG Image
-          dmg_stage="$(mktemp -d)"
-          cp -R "$app" "$dmg_stage/Unbound.app"
-          ln -s /Applications "$dmg_stage/Applications" || true
-          cat > "$dmg_stage/ОБЯЗАТЕЛЬНО К ПРОЧТЕНИЮ.txt" << 'EOF'
-          ===================================================
-            🍎 UNBOUND macOS Installation & Gatekeeper Fix
-          ===================================================
-
-          1. Перетащите Unbound.app в папку «Программы» (Applications).
-          2. Если macOS сообщает «Файл поврежден» или «Не удается проверить разработчика»:
-             Откройте Терминал и выполните:
-             xattr -cr /Applications/Unbound.app
-             или нажмите правой кнопкой мыши по Unbound.app -> Открыть -> Подтвердить.
-          ===================================================
-          EOF
-          hdiutil create -volname "UNBOUND" -srcfolder "$dmg_stage" -ov -format UDZO "${dist}.dmg"
-          rm -rf "$dmg_stage"
-
-          smoke="$(mktemp -d)"
-          ditto -x -k "${dist}.zip" "$smoke"
-          smoke_executable="$(find "$smoke" -path '*/Contents/MacOS/*' -type f -perm -111 | head -1)"
-          test -n "$smoke_executable"
-          smoke_root="$smoke/$(basename "$dist")"
-          test -f "$smoke_root/ZAPRET_LICENSE.txt"
-          test -x "$smoke_root/general_autotune.command"
-          "$smoke_executable" --version | grep -F "$VERSION"
+      - name: Build, package, and smoke-test
+        run: ./scripts/build/build_macos_release.sh "$VERSION"
       - uses: actions/upload-artifact@v4
         with:
           name: unbound-macos
           path: |
             release/*.zip
             release/*.dmg
+            release/*.pkg
+            release/SHA256SUMS.txt
           retention-days: 30
   release:
     name: Publish GitHub Release
@@ -424,7 +361,7 @@ jobs:
       - name: Generate release checksums
         run: |
           set -euo pipefail
-          find artifacts -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.dmg' \) -print0 \
+          find artifacts -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.dmg' -o -name '*.pkg' \) -print0 \
             | sort -z \
             | xargs -0 sha256sum \
             | sed 's#  artifacts/[^/]*/#  #' > artifacts/SHA256SUMS.txt
@@ -465,6 +402,7 @@ jobs:
             artifacts/**/*.zip
             artifacts/**/*.tar.gz
             artifacts/**/*.dmg
+            artifacts/**/*.pkg
             artifacts/SHA256SUMS.txt
           draft: ${{ github.ref_type != 'tag' }}
           prerelease: ${{ contains(needs.resolve-version.outputs.version, 'dev') || contains(needs.resolve-version.outputs.version, 'beta') || contains(needs.resolve-version.outputs.version, 'rc') }}
