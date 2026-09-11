@@ -38,7 +38,7 @@ function Invoke-Captured([string]$Name, [string[]]$Arguments, [int]$TimeoutSecon
     $process.WaitForExit()
     [IO.File]::WriteAllText($stdout, $stdoutTask.Result)
     [IO.File]::WriteAllText($stderr, $stderrTask.Result)
-    return [pscustomobject]@{ name=$Name; exitCode=[int]$process.ExitCode; timedOut=$false; stdout=$stdout; stderr=$stderr }
+    return [pscustomobject]@{ name=$Name; exitCode=[int]($process.ExitCode); timedOut=$false; stdout=$stdout; stderr=$stderr }
 }
 
 trap {
