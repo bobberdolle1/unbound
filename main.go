@@ -416,8 +416,22 @@ func runHeadlessMode(profileName string, runAutoTune bool, debugMode bool, runDu
 		result, err := engine.RunAutoTuneV2WithProgress(context.Background(), provider, allProfiles, progressFn)
 		fmt.Println()
 		if err != nil {
+			category := "AUTOTUNE_INTERNAL_FAILURE"
+			if strings.Contains(err.Error(), "AUTOTUNE_LIFECYCLE_FAILURE") {
+				category = "AUTOTUNE_LIFECYCLE_FAILURE"
+			}
+			payload, _ := json.Marshal(map[string]any{
+				"completed":      false,
+				"cancelled":      false,
+				"profiles_total": len(allProfiles),
+				"error_category": category,
+				"error":          err.Error(),
+			})
+			fmt.Printf("AUTOTUNE_RESULT_JSON=%s\n", payload)
 			log.Fatalf("AutoTune failed: %v", err)
 		}
+		payload, _ := json.Marshal(result)
+		fmt.Printf("AUTOTUNE_RESULT_JSON=%s\n", payload)
 		fmt.Printf("✅ AutoTune completed! Best profile: %s (score: %d)\n", result.ProfileName, result.Score)
 		profileName = result.ProfileName
 	} else if profileName != "" {
