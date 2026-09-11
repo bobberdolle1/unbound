@@ -29,6 +29,13 @@ type AutoTuneResult struct {
 	SkippedProfiles    map[string]string
 	RequirementsMet    bool
 	CapabilityWarnings []string
+	Completed          bool
+	Cancelled          bool
+	ProfilesTotal      int
+	ProfilesAttempted  int
+	ProfilesCompleted  int
+	LifecycleFailures  int
+	ErrorCategory      string
 }
 
 type TargetStatus struct {
@@ -305,6 +312,7 @@ func RunAutoTuneV3(ctx context.Context, provider providers.BypassProvider, profi
 	var runnerUp *AutoTuneResult
 	var bestPartial *AutoTuneResult
 	skippedProfiles := make(map[string]string)
+	execution := AutoTuneResult{ProfilesTotal: len(profiles), Baseline: baseline}
 	timestampsActive := true
 	if options.TCPTimestampsActive != nil {
 		timestampsActive = *options.TCPTimestampsActive
@@ -331,13 +339,13 @@ func RunAutoTuneV3(ctx context.Context, provider providers.BypassProvider, profi
 			progressFn(step, len(profiles), profile.Name, 0, len(options.Targets), fmt.Sprintf("Тестируем [%d/%d]: %s...", step, len(profiles), profile.Name))
 		}
 		logger.Infof("AutoTune", "[%d/%d] Starting %s", step, len(profiles), profile.Name)
+		execution.ProfilesAttempted++
 
 		if err := provider.Start(ctx, profile.Name); err != nil {
-			logger.Warnf("AutoTune", "Profile %s failed to start: %v", profile.Name, err)
-			if progressFn != nil {
-				progressFn(step, len(profiles), profile.Name, 0, len(options.Targets), fmt.Sprintf("Ошибка запуска %s: %v", profile.Name, err))
-			}
-			continue
+			execution.LifecycleFailures++
+			execution.ErrorCategory = "AUTOTUNE_LIFECYCLE_FAILURE"
+			logger.Errorf("AutoTune", "Profile %s lifecycle start failure: %v", profile.Name, err)
+			return nil, fmt.Errorf("%s: start %q: %w", execution.ErrorCategory, profile.Name, err)
 		}
 
 		if err := waitAutoTune(ctx, options.StabilizationDelay); err != nil {
@@ -345,14 +353,12 @@ func RunAutoTuneV3(ctx context.Context, provider providers.BypassProvider, profi
 			return nil, err
 		}
 		statuses := runAutoTuneProbes(ctx, options)
-		stopErr := provider.Stop()
-		if err := waitAutoTune(ctx, options.CleanupDelay); err != nil {
-			return nil, err
+		if stopErr := provider.Stop(); stopErr != nil {
+			execution.LifecycleFailures++
+			execution.ErrorCategory = "AUTOTUNE_LIFECYCLE_FAILURE"
+			return nil, fmt.Errorf("%s: stop %q: %w", execution.ErrorCategory, profile.Name, stopErr)
 		}
-		if stopErr != nil {
-			logger.Warnf("AutoTune", "Profile %s did not stop cleanly: %v", profile.Name, stopErr)
-			continue
-		}
+		execution.ProfilesCompleted++
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -400,6 +406,11 @@ func RunAutoTuneV3(ctx context.Context, provider providers.BypassProvider, profi
 			logger.Infof("AutoTune", "Best working profile selected: %s (score=%d, %d/%d OK)",
 				bestPartial.ProfileName, bestPartial.Score, countStatusesOK(bestPartial.Results), len(options.Targets))
 			notifMgr.Success("AutoTune завершён", fmt.Sprintf("Лучший профиль: %s", bestPartial.ProfileName))
+			bestPartial.Completed = true
+			bestPartial.ProfilesTotal = execution.ProfilesTotal
+			bestPartial.ProfilesAttempted = execution.ProfilesAttempted
+			bestPartial.ProfilesCompleted = execution.ProfilesCompleted
+			bestPartial.LifecycleFailures = execution.LifecycleFailures
 			return bestPartial, nil
 		}
 		logger.Error("AutoTune", "No profile improved connectivity without regressions")
@@ -417,6 +428,11 @@ func RunAutoTuneV3(ctx context.Context, provider providers.BypassProvider, profi
 	bestResult.BaselineAvailable = baselineAvailable
 	logger.Infof("AutoTune", "Winner: %s (score=%d, recovered=%d, latency=%dms)", bestResult.ProfileName, bestResult.Score, bestResult.RecoveredTargets, bestResult.Latency.Milliseconds())
 	notifMgr.Success("AutoTune завершён", fmt.Sprintf("Лучший профиль: %s", bestResult.ProfileName))
+	bestResult.Completed = true
+	bestResult.ProfilesTotal = execution.ProfilesTotal
+	bestResult.ProfilesAttempted = execution.ProfilesAttempted
+	bestResult.ProfilesCompleted = execution.ProfilesCompleted
+	bestResult.LifecycleFailures = execution.LifecycleFailures
 	return bestResult, nil
 }
 
