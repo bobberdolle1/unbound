@@ -17,8 +17,9 @@ if (-not (Test-Path $worker -PathType Leaf)) {
     $worker = Join-Path $PSScriptRoot 'run_offline_physical_acceptance.ps1'
 }
 if (-not (Test-Path $worker -PathType Leaf)) { throw "Worker missing: $worker" }
-$args = @('-NoProfile','-ExecutionPolicy','Bypass','-File',$worker,'-CandidateDirectory',$CandidateDirectory,'-CandidateCommit',$CandidateCommit,'-ArchivePath',$ArchivePath,'-SmokeMode',$SmokeMode,'-SmokeSleepSeconds',$SmokeSleepSeconds)
+$args = @('-NoProfile','-ExecutionPolicy','Bypass')
 if ($SmokeMode -ne 'Acceptance') { $args += @('-WindowStyle', 'Hidden') }
+$args += @('-File',$worker,'-CandidateDirectory',$CandidateDirectory,'-CandidateCommit',$CandidateCommit,'-ArchivePath',$ArchivePath,'-SmokeMode',$SmokeMode,'-SmokeSleepSeconds',$SmokeSleepSeconds)
 if ($OutputRoot) { $args += @('-OutputRoot', $OutputRoot) }
 if ($SimulateNotificationFailure) { $args += '-SimulateNotificationFailure' }
 if ($SimulateLogSinkFailure) { $args += '-SimulateLogSinkFailure' }
