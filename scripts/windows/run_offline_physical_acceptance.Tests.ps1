@@ -17,7 +17,7 @@ function Import-HarnessFunctions([string[]]$Names) {
 
 Describe 'offline physical acceptance harness helpers' {
     BeforeAll {
-        Import-HarnessFunctions @('Save-Results', 'Get-ProcessTreeIds', 'Stop-HarnessProcessTree')
+        Import-HarnessFunctions @('Save-Results', 'Get-ProcessTreeIds', 'Stop-HarnessProcessTree', 'Test-AutoTuneTerminalResult')
     }
 
     It 'persists the latest complete JSON result without leaving a temporary file' {
@@ -46,6 +46,23 @@ Describe 'offline physical acceptance harness helpers' {
             $process.HasExited | Should Be $true
         } finally {
             if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue }
+        }
+    }
+
+    It 'fails closed on malformed, missing, duplicate, and contradictory AutoTune terminal results' {
+        $valid = '{"completed":true,"cancelled":false,"lifecycle_failures":0,"profiles_total":2,"profiles_attempted":2,"profiles_completed":2,"profiles_failed_to_start":0,"winner":"Recommended","winner_score":1,"baseline":{}}'
+        $cases = @(
+            @{ name='valid'; text="AUTOTUNE_RESULT_JSON=$valid`n"; expected='PASS' },
+            @{ name='missing'; text='ordinary output'; expected='FAIL' },
+            @{ name='malformed'; text='AUTOTUNE_RESULT_JSON={'; expected='FAIL' },
+            @{ name='duplicate'; text="AUTOTUNE_RESULT_JSON=$valid`nAUTOTUNE_RESULT_JSON=$valid`n"; expected='FAIL' },
+            @{ name='lifecycle'; text='AUTOTUNE_RESULT_JSON={"completed":true,"cancelled":false,"lifecycle_failures":1,"profiles_total":1,"profiles_attempted":1,"profiles_completed":1,"profiles_failed_to_start":0,"winner":"Recommended","winner_score":1,"baseline":{}}'; expected='FAIL' }
+        )
+        foreach ($case in $cases) {
+            $stdout = Join-Path $TestDrive "$($case.name).stdout.log"
+            [IO.File]::WriteAllText($stdout, $case.text, [Text.Encoding]::UTF8)
+            $result = Test-AutoTuneTerminalResult ([pscustomobject]@{ timedOut=$false; exitCode=0; stdout=$stdout })
+            $result.status | Should Be $case.expected
         }
     }
 }
