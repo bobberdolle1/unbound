@@ -40,7 +40,6 @@ function Invoke-Captured([string]$Name, [string[]]$Arguments, [int]$TimeoutSecon
     [IO.File]::WriteAllText($stderr, $stderrTask.Result)
     $capturedExitCode = $process.ExitCode
     if ($null -eq $capturedExitCode) { throw "PROCESS_EXIT_CODE_MISSING: $Name" }
-    [IO.File]::WriteAllText((Join-Path $bundle "$Name.exit-debug.txt"), "value=[$capturedExitCode] type=$($capturedExitCode.GetType().FullName)")
     $exitCodeValue = [string]($capturedExitCode)
     $capture = [pscustomobject]@{ name=$Name; timedOut=$false; stdout=$stdout; stderr=$stderr }
     $capture | Add-Member -NotePropertyName exitCode -NotePropertyValue $exitCodeValue
@@ -62,18 +61,6 @@ trap {
 }
 $exe = Join-Path $CandidateDirectory 'Unbound.exe'
 
-function Invoke-Captured([string]$Name, [string[]]$Arguments, [int]$TimeoutSeconds) {
-    $stdout = Join-Path $bundle "$Name.stdout.log"
-    $stderr = Join-Path $bundle "$Name.stderr.log"
-    $process = Start-Process -FilePath $exe -ArgumentList $Arguments -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
-    $timedOut = -not $process.WaitForExit($TimeoutSeconds * 1000)
-    if ($timedOut) {
-        Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
-        return [pscustomobject]@{ name=$Name; exitCode=$null; timedOut=$true; stdout=$stdout; stderr=$stderr }
-    }
-    $process.Refresh()
-    [pscustomobject]@{ name=$Name; exitCode=$process.ExitCode; timedOut=$false; stdout=$stdout; stderr=$stderr }
-}
 
 function Get-ProcessTreeIds([int]$RootProcessId) {
     $ids = New-Object 'System.Collections.Generic.List[int]'
