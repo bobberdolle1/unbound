@@ -81,9 +81,9 @@ func TestRegisterProfileIsIdempotent(t *testing.T) {
 // netfilter rules from the built-ins.
 func TestBuiltinProfileWinsOverRegistered(t *testing.T) {
 	p := newTestProvider(t)
-	p.RegisterProfile("Standard HTTPS/QUIC", []string{"--override"})
+	p.RegisterProfile("Targeted HTTPS (YouTube + Discord)", []string{"--override"})
 
-	resolved, err := p.resolveProfile("Standard HTTPS/QUIC")
+	resolved, err := p.resolveProfile("Targeted HTTPS (YouTube + Discord)")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,6 +124,36 @@ func TestEveryBuiltinProfileHasFiltersAndArgs(t *testing.T) {
 	if len(profileOrder) != len(builtinProfiles) {
 		t.Errorf("profileOrder lists %d profiles but %d are defined; the extras would be invisible in the UI",
 			len(profileOrder), len(builtinProfiles))
+	}
+}
+
+func TestTargetedHTTPSProfileScopesDiscoveryStrategies(t *testing.T) {
+	profile, ok := builtinProfiles["Targeted HTTPS (YouTube + Discord)"]
+	if !ok {
+		t.Fatal("targeted HTTPS profile is missing")
+	}
+	if len(profile.Filters) != 1 || profile.Filters[0] != (packetFilter{Proto: "tcp", Ports: "443", HandshakeOnly: true}) {
+		t.Fatalf("targeted HTTPS filter = %#v, want TCP handshake packets on 443 only", profile.Filters)
+	}
+
+	want := []string{
+		"--filter-tcp=443",
+		"--payload=tls_client_hello",
+		"--hostlist-domains=youtube.com,www.youtube.com,ytimg.com,googlevideo.com",
+		"--lua-desync=multidisorder:pos=midsld",
+		"--new",
+		"--filter-tcp=443",
+		"--payload=tls_client_hello",
+		"--hostlist-domains=discord.com,gateway.discord.gg",
+		"--lua-desync=multidisorder:pos=1,sniext+1,host+1,midsld-2,midsld,midsld+2,endhost-1",
+	}
+	if !slices.Equal(profile.Args, want) {
+		t.Fatalf("targeted HTTPS args = %#v, want %#v", profile.Args, want)
+	}
+	for _, arg := range profile.Args {
+		if strings.HasPrefix(arg, "--lua-init=") || strings.Contains(arg, "luaexec") {
+			t.Fatalf("targeted HTTPS profile permits arbitrary Lua execution: %q", arg)
+		}
 	}
 }
 
