@@ -30,6 +30,15 @@ The active default-route network service is configured with macOS `networksetup`
 
 Discord voice uses a separately negotiated UDP media path. Successful HTTPS or Gateway checks do not demonstrate voice support. A real UDP bypass needs a separate architecture, such as a Network Extension packet tunnel with supported UDP handling; it is not provided by `tpws --socks`.
 
+## v0.7 proposal: UDP-capable bypass
+
+This is a design proposal, not an implemented feature or a promised delivery date.
+
+- Evaluate a macOS Network Extension packet tunnel that can own UDP flows without redirecting raw TCP into `tpws`.
+- Keep the current SOCKS/TCP path separate and unchanged; a UDP tunnel must be opt-in and report its own lifecycle, routes, and cleanup result.
+- Define acceptance around Discord voice: join a voice channel, receive and transmit media, disconnect, and prove that routes, PF rules, and processes are removed.
+- Do not claim Discord voice support until that end-to-end acceptance passes on a signed release build.
+
 ## Diagnostics
 
 With UNBOUND running, the active service should report:
