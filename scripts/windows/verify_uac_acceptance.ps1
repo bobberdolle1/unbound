@@ -4,7 +4,7 @@
 $ErrorActionPreference = "Stop"
 
 Write-Host "==================================================" -ForegroundColor Cyan
-Write-Host " UNBOUND v0.6.9 — Windows WinDivert Driver Acceptance" -ForegroundColor Cyan
+Write-Host " UNBOUND v0.6.9 - Windows WinDivert Driver Acceptance" -ForegroundColor Cyan
 Write-Host "==================================================" -ForegroundColor Cyan
 
 # 1. Verify Administrator elevation
