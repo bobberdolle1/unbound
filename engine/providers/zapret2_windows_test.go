@@ -187,6 +187,21 @@ func TestStatusTransitions(t *testing.T) {
 	t.Log("Status transitions working correctly")
 }
 
+func TestSetStoppedClearsEveryOwnedState(t *testing.T) {
+	provider := NewZapret2WindowsProvider("", "", "", "", false, false)
+	provider.status = StatusRunning
+	provider.currentProfile = "Profile A"
+	provider.ownedPID = 1234
+	provider.processDone = make(chan struct{})
+
+	provider.setStoppedLocked("test")
+
+	if provider.status != StatusStopped || provider.currentProfile != "" || provider.cmd != nil || provider.ownedPID != 0 || provider.processDone != nil {
+		t.Fatalf("stopped invariant violated: status=%s profile=%q cmd=%v pid=%d done=%v",
+			provider.status, provider.currentProfile, provider.cmd, provider.ownedPID, provider.processDone)
+	}
+}
+
 func TestLogManagement(t *testing.T) {
 	provider := NewZapret2WindowsProvider("", "", "", "", false, false)
 
