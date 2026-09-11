@@ -24,6 +24,20 @@ function Invoke-Captured([string]$Name, [string[]]$Arguments, [int]$TimeoutSecon
     [pscustomobject]@{ name=$Name; exitCode=if($timedOut){$null}else{$process.ExitCode}; timedOut=$timedOut; stdout=$stdout; stderr=$stderr }
 }
 
+function Get-ProcessTreeIds([int]$RootProcessId) {
+    $ids = New-Object 'System.Collections.Generic.List[int]'
+    $pending = New-Object 'System.Collections.Generic.Queue[int]'
+    $pending.Enqueue($RootProcessId)
+    while ($pending.Count -gt 0) {
+        $parent = $pending.Dequeue()
+        foreach ($child in @(Get-CimInstance Win32_Process -Filter "ParentProcessId = $parent" -ErrorAction SilentlyContinue)) {
+            $ids.Add([int]$child.ProcessId)
+            $pending.Enqueue([int]$child.ProcessId)
+        }
+    }
+    return $ids.ToArray()
+}
+
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin) { throw 'ELEVATION_REQUIRED' }
 if (-not (Test-Path $exe -PathType Leaf)) { throw "Missing candidate executable: $exe" }
@@ -49,11 +63,20 @@ $profileSets = Get-Content $catalog.stdout -Raw | ConvertFrom-Json
 $maxWinws = 0
 foreach ($engine in $profileSets.PSObject.Properties) {
     foreach ($profile in @($engine.Value)) {
-        $entry = Invoke-Captured ("profile-" + [Guid]::NewGuid().ToString('N')) @('--cli','--profile',$profile,"--run-duration=$($ProfileSeconds)s") ($ProfileSeconds + 35)
+        $name = "profile-$([Guid]::NewGuid().ToString('N'))"
+        $stdout = Join-Path $bundle "$name.stdout.log"
+        $stderr = Join-Path $bundle "$name.stderr.log"
+        $process = Start-Process -FilePath $exe -ArgumentList '--cli','--profile',$profile,"--run-duration=$($ProfileSeconds)s" -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+        Start-Sleep -Seconds 2
+        $owned = @(Get-ProcessTreeIds $process.Id | ForEach-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue } | Where-Object { $_.ProcessName -eq 'winws2' } | Select-Object -ExpandProperty Id)
         $active = @(Get-Process winws2 -ErrorAction SilentlyContinue)
         $maxWinws = [Math]::Max($maxWinws, $active.Count)
-        $result.profiles += [pscustomobject]@{ engine=$engine.Name; profile=$profile; exitCode=$entry.exitCode; timedOut=$entry.timedOut; winwsAfter=$active.Count; stdout=$entry.stdout; stderr=$entry.stderr }
-        if ($entry.timedOut -or $entry.exitCode -ne 0 -or $active.Count -ne 0) { throw "PROFILE_LIFECYCLE_FAILED: $profile" }
+        $aliveAtStart = $owned.Count -eq 1 -and $null -ne (Get-Process -Id $owned[0] -ErrorAction SilentlyContinue)
+        $timedOut = -not $process.WaitForExit(($ProfileSeconds + 35) * 1000)
+        if ($timedOut) { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue }
+        $aliveAfterStop = if ($owned.Count -eq 1) { $null -ne (Get-Process -Id $owned[0] -ErrorAction SilentlyContinue) } else { $true }
+        $result.profiles += [pscustomobject]@{ engine=$engine.Name; profile=$profile; processId=$process.Id; winwsPid=if($owned.Count -eq 1){$owned[0]}else{$null}; aliveAtStart=$aliveAtStart; aliveAfterStop=$aliveAfterStop; exitCode=if($timedOut){$null}else{$process.ExitCode}; timedOut=$timedOut; stdout=$stdout; stderr=$stderr }
+        if ($timedOut -or $process.ExitCode -ne 0 -or -not $aliveAtStart -or $aliveAfterStop -or $active.Count -ne 1) { throw "PROFILE_LIFECYCLE_FAILED: $profile" }
     }
 }
 $result.maxConcurrentWinws2 = $maxWinws
