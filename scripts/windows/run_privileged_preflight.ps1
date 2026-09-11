@@ -117,7 +117,7 @@ foreach ($line in Get-Content $manifest) {
 $result = [ordered]@{ candidateCommit=$CandidateCommit; archivePath=$ArchivePath; executableVersion=(& $exe --version | Out-String).Trim(); startedAt=(Get-Date).ToString('o'); stages=@(); profiles=@() }
 $kernel = Invoke-Captured 'kernel' @('--acceptance-test') 90
 $result.kernel = $kernel
-if ($kernel.timedOut -or $kernel.exitCode -ne 0) { throw 'KERNEL_FAILED' }
+if ($kernel.timedOut -or $kernel.exitCode -ne 0) { throw "KERNEL_FAILED: timedOut=$($kernel.timedOut) exitCode=$($kernel.exitCode)" }
 $result.stages += [pscustomobject]@{ name='KERNEL'; status='PASS' }
 
 $catalog = Invoke-Captured 'profiles' @('--list-profiles','--json') 30
