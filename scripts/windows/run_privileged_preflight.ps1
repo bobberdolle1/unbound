@@ -38,7 +38,9 @@ function Invoke-Captured([string]$Name, [string[]]$Arguments, [int]$TimeoutSecon
     $process.WaitForExit()
     [IO.File]::WriteAllText($stdout, $stdoutTask.Result)
     [IO.File]::WriteAllText($stderr, $stderrTask.Result)
-    return [pscustomobject]@{ name=$Name; exitCode=[int]($process.ExitCode); timedOut=$false; stdout=$stdout; stderr=$stderr }
+    $capturedExitCode = $process.ExitCode
+    if ($null -eq $capturedExitCode) { throw "PROCESS_EXIT_CODE_MISSING: $Name" }
+    return [pscustomobject]@{ name=$Name; exitCode=[Convert]::ToInt32($capturedExitCode); timedOut=$false; stdout=$stdout; stderr=$stderr }
 }
 
 trap {
