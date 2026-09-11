@@ -7,6 +7,7 @@ param(
     [int]$ProfileSeconds = 45,
     [int]$AutoTuneSeconds = 180,
     [string]$LogSink = 'bobpc@192.168.0.236',
+    [string]$SshKeyPath,
     [string]$CandidateCommit,
     [string]$ArchivePath
 )
@@ -19,23 +20,56 @@ $logPath = Join-Path $bundle 'harness.log'
 $resultPath = Join-Path $bundle 'result.json'
 New-Item -ItemType Directory -Force -Path $bundle | Out-Null
 
+$trackedProcesses = @()
+
 function Write-ProgressLine([string]$Message) {
     $line = "$(Get-Date -Format o) $Message"
     $line | Tee-Object -FilePath $logPath -Append
 }
 function Save-Results {
-    $results | ConvertTo-Json -Depth 10 | Set-Content $resultPath -Encoding utf8
+    $temporaryResultPath = "$resultPath.tmp"
+    $results | ConvertTo-Json -Depth 10 | Set-Content $temporaryResultPath -Encoding utf8
+    Move-Item -Path $temporaryResultPath -Destination $resultPath -Force
 }
 function Show-LocalStatus([string]$Message, [string]$Title) {
-    Add-Type -AssemblyName System.Windows.Forms
-    [void][Windows.Forms.MessageBox]::Show($Message, $Title, [Windows.Forms.MessageBoxButtons]::OK, [Windows.Forms.MessageBoxIcon]::Information)
+    try {
+        Add-Type -AssemblyName System.Windows.Forms
+        [void][Windows.Forms.MessageBox]::Show($Message, $Title, [Windows.Forms.MessageBoxButtons]::OK, [Windows.Forms.MessageBoxIcon]::Information)
+    } catch {
+        Write-ProgressLine "LOCAL_NOTIFICATION_FAILED: $($_.Exception.Message)"
+    }
+}
+function Register-HarnessProcess([Diagnostics.Process]$Process) {
+    $script:trackedProcesses += $Process
+    return $Process
+}
+function Get-ProcessTreeIds([int]$RootProcessId) {
+    $processIds = New-Object 'System.Collections.Generic.List[int]'
+    $pending = New-Object 'System.Collections.Generic.Queue[int]'
+    $pending.Enqueue($RootProcessId)
+    while ($pending.Count -gt 0) {
+        $parentProcessId = $pending.Dequeue()
+        foreach ($child in @(Get-CimInstance Win32_Process -Filter "ParentProcessId = $parentProcessId" -ErrorAction SilentlyContinue)) {
+            $childProcessId = [int]$child.ProcessId
+            $processIds.Add($childProcessId)
+            $pending.Enqueue($childProcessId)
+        }
+    }
+    return $processIds.ToArray()
+}
+function Stop-HarnessProcessTree([Diagnostics.Process]$Process) {
+    if ($Process.HasExited) { return }
+    $processIds = @(Get-ProcessTreeIds $Process.Id) + $Process.Id
+    foreach ($processId in ($processIds | Sort-Object -Descending -Unique)) {
+        Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+    }
 }
 function Invoke-Captured([string]$Name, [string]$FilePath, [string[]]$Arguments, [int]$TimeoutSeconds) {
     $stdout = Join-Path $bundle "$Name.stdout.log"
     $stderr = Join-Path $bundle "$Name.stderr.log"
-    $process = Start-Process -FilePath $FilePath -ArgumentList $Arguments -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    $process = Register-HarnessProcess (Start-Process -FilePath $FilePath -ArgumentList $Arguments -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr)
     $timedOut = -not $process.WaitForExit($TimeoutSeconds * 1000)
-    if ($timedOut) { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue; $process.WaitForExit() }
+    if ($timedOut) { Stop-HarnessProcessTree $process }
     [pscustomobject]@{ name = $Name; exitCode = if ($timedOut) { $null } else { $process.ExitCode }; timedOut = $timedOut; stdout = $stdout; stderr = $stderr }
 }
 function Get-DataPlaneState {
@@ -76,12 +110,12 @@ function Invoke-WebProbes {
 function Invoke-RecommendedMatrix([string]$FilePath) {
     $stdout = Join-Path $bundle 'recommended.stdout.log'
     $stderr = Join-Path $bundle 'recommended.stderr.log'
-    $process = Start-Process -FilePath $FilePath -ArgumentList '--cli','--profile','rec',"--run-duration=$($ProfileSeconds)s" -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    $process = Register-HarnessProcess (Start-Process -FilePath $FilePath -ArgumentList '--cli','--profile','rec',"--run-duration=$($ProfileSeconds)s" -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr)
     Start-Sleep -Seconds ([Math]::Min(10, $ProfileSeconds))
     $activeState = Get-NetworkSnapshot
     $probes = @(Invoke-WebProbes)
     $timedOut = -not $process.WaitForExit(($ProfileSeconds + 35) * 1000)
-    if ($timedOut) { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue; $process.WaitForExit() }
+    if ($timedOut) { Stop-HarnessProcessTree $process }
     [pscustomobject]@{ exitCode=if($timedOut){$null}else{$process.ExitCode}; timedOut=$timedOut; activeState=$activeState; probes=$probes; stdout=$stdout; stderr=$stderr }
 }
 
@@ -92,11 +126,10 @@ function Invoke-LauncherSmoke([string]$LauncherPath) {
     $stdout = Join-Path $bundle "$(Split-Path $LauncherPath -Leaf).stdout.log"
     $stderr = Join-Path $bundle "$(Split-Path $LauncherPath -Leaf).stderr.log"
     $command = "`"$LauncherPath`""
-    $process = Start-Process -FilePath $env:ComSpec -ArgumentList '/d','/c',$command -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    $process = Register-HarnessProcess (Start-Process -FilePath $env:ComSpec -ArgumentList '/d','/c',$command -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr)
     Start-Sleep -Seconds 8
-    $engineStarted = @(Get-Process Unbound,winws2 -ErrorAction SilentlyContinue | Select-Object ProcessName,Id)
-    Get-Process winws2 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-    Get-Process Unbound -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    $engineStarted = @(Get-ProcessTreeIds $process.Id | ForEach-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue } | Where-Object { $_.ProcessName -in 'Unbound','winws2' } | Select-Object ProcessName,Id)
+    Stop-HarnessProcessTree $process
     $process.WaitForExit(10000) | Out-Null
     [pscustomobject]@{ name=(Split-Path $LauncherPath -Leaf); started=($engineStarted.Count -gt 0); launcherExitCode=if ($process.HasExited) {$process.ExitCode} else {$null}; stdout=$stdout; stderr=$stderr }
 }
@@ -110,23 +143,24 @@ function Invoke-LauncherSmoke([string]$LauncherPath) {
     foreach ($line in Get-Content $hashes) { if ($line -match '^([0-9a-fA-F]{64})\s\s(.+)$') { $file = Join-Path $CandidateDirectory $matches[2]; if (-not (Test-Path $file) -or (Get-FileHash $file -Algorithm SHA256).Hash -ne $matches[1]) { $hashFailures += $matches[2] } } }
     if ($hashFailures) { throw "Bundle hash verification failed: $($hashFailures -join ', ')" }
     $results.bundleHashVerification = 'PASS'
-    Show-LocalStatus 'TURN HAPP OFF NOW. The local worker is independent of OMP and keeps writing evidence.' 'UNBOUND v0.6.9 acceptance'
+    Show-LocalStatus 'The local worker is independent of OMP and keeps writing evidence while it waits for a clean data plane.' 'UNBOUND v0.6.9 acceptance'
     $results.executableSha256 = (Get-FileHash $exe -Algorithm SHA256).Hash
     $results.executableVersion = (& $exe --version | Out-String).Trim()
     $results.archiveSha256 = if ($ArchivePath -and (Test-Path $ArchivePath -PathType Leaf)) { (Get-FileHash $ArchivePath -Algorithm SHA256).Hash } else { $null }
     $results.preCleanSnapshot = Get-NetworkSnapshot
     $results.stages += [pscustomobject]@{ name='PREPARED'; status='PASS'; at=(Get-Date).ToString('o') }
-    Write-ProgressLine 'PREPARED. Turn Happ OFF now. The harness is waiting locally; no OMP connection is required.'
+    Write-ProgressLine 'PREPARED. The local worker is waiting for a clean data plane; no OMP connection is required.'
     Save-Results
     $deadline = (Get-Date).AddSeconds($CleanWaitSeconds)
     do { $clean = Get-DataPlaneState; if ($clean.clean) { break }; Start-Sleep -Seconds 2 } while ((Get-Date) -lt $deadline)
     $results.cleanDataPlane = $clean
-    if (-not $clean.clean) { throw "Timed out waiting for Happ data plane to be off after $CleanWaitSeconds seconds." }
+    if (-not $clean.clean) { throw "Timed out waiting for a clean data plane after $CleanWaitSeconds seconds." }
     $results.cleanNetworkSnapshot = Get-NetworkSnapshot
     $results.stages += [pscustomobject]@{ name='CLEAN_WINDOW'; status='PASS'; at=(Get-Date).ToString('o') }
     Save-Results
+    $dnsTargets = @('www.youtube.com','discord.com','store.steampowered.com','www.cloudflare.com')
     $results.dnsBaseline = @(
-        foreach ($target in 'www.youtube.com','discord.com','store.steampowered.com','www.cloudflare.com') {
+        foreach ($target in $dnsTargets) {
             $watch = [Diagnostics.Stopwatch]::StartNew()
             try {
                 $records = @(Resolve-DnsName -Name $target -ErrorAction Stop | Where-Object { $_.Type -in 'A','AAAA' } | Select-Object Name,Type,IPAddress,Server)
@@ -157,19 +191,24 @@ function Invoke-LauncherSmoke([string]$LauncherPath) {
 } catch {
     $results.status = 'FAILED'; $results.failure = $_.Exception.ToString(); Write-ProgressLine "FAILED: $($_.Exception.Message)"
 } finally {
-    Get-Process winws2 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-    Get-Process Unbound -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    foreach ($process in $trackedProcesses) {
+        Stop-HarnessProcessTree $process
+    }
     $results.cleanupSnapshot = Get-NetworkSnapshot
     $results.finishedAt = (Get-Date).ToString('o')
-    $results | ConvertTo-Json -Depth 10 | Set-Content $resultPath -Encoding utf8
-    if ((Test-Path $SshKeyPath) -and (Get-Command ssh.exe -ErrorAction SilentlyContinue) -and (Get-Command scp.exe -ErrorAction SilentlyContinue)) {
+    Save-Results
+    if ($SshKeyPath -and (Test-Path $SshKeyPath -PathType Leaf) -and (Get-Command ssh.exe -ErrorAction SilentlyContinue) -and (Get-Command scp.exe -ErrorAction SilentlyContinue)) {
         $remote = "unbound-acceptance/v0.6.9/$timestamp"
-        & ssh.exe -i $SshKeyPath -o BatchMode=yes -o ConnectTimeout=10 $LogSink "mkdir -p '$remote'" 2>&1 | Tee-Object -FilePath (Join-Path $bundle 'log-sink.log') -Append
-        & scp.exe -i $SshKeyPath -o BatchMode=yes -o ConnectTimeout=10 -r $bundle "$LogSink`:$remote/" 2>&1 | Tee-Object -FilePath (Join-Path $bundle 'log-sink.log') -Append
+        try {
+            & ssh.exe -i $SshKeyPath -o BatchMode=yes -o ConnectTimeout=10 $LogSink "mkdir -p '$remote'" 2>&1 | Tee-Object -FilePath (Join-Path $bundle 'log-sink.log') -Append
+            & scp.exe -i $SshKeyPath -o BatchMode=yes -o ConnectTimeout=10 -r $bundle "$LogSink`:$remote/" 2>&1 | Tee-Object -FilePath (Join-Path $bundle 'log-sink.log') -Append
+        } catch {
+            Write-ProgressLine "LOG_SINK_FAILED: $($_.Exception.Message)"
+        }
     }
     Write-ProgressLine "ACCEPTANCE $($results.status). Local bundle: $bundle"
     Write-Host "ACCEPTANCE $($results.status)" -ForegroundColor Green
-    Write-Host 'SAFE TO RE-ENABLE HAPP' -ForegroundColor Green
-    Show-LocalStatus "ACCEPTANCE $($results.status)`nSAFE TO RE-ENABLE HAPP" 'UNBOUND v0.6.9 acceptance'
+    Write-Host 'Acceptance evidence is available in the local bundle.' -ForegroundColor Green
+    Show-LocalStatus "ACCEPTANCE $($results.status)`nEvidence is available in the local bundle." 'UNBOUND v0.6.9 acceptance'
 }
 if ($results.status -ne 'COMPLETE') { exit 1 }
