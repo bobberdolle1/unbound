@@ -421,11 +421,15 @@ func runHeadlessMode(profileName string, runAutoTune bool, debugMode bool, runDu
 				category = "AUTOTUNE_LIFECYCLE_FAILURE"
 			}
 			payload, _ := json.Marshal(map[string]any{
-				"completed":      false,
-				"cancelled":      false,
-				"profiles_total": len(allProfiles),
-				"error_category": category,
-				"error":          err.Error(),
+				"completed":                false,
+				"cancelled":                result != nil && result.Cancelled,
+				"profiles_total":           len(allProfiles),
+				"profiles_attempted":       autoTuneCount(result, func(r *engine.AutoTuneResult) int { return r.ProfilesAttempted }),
+				"profiles_completed":       autoTuneCount(result, func(r *engine.AutoTuneResult) int { return r.ProfilesCompleted }),
+				"profiles_failed_to_start": autoTuneCount(result, func(r *engine.AutoTuneResult) int { return r.ProfilesFailedToStart }),
+				"lifecycle_failures":       autoTuneCount(result, func(r *engine.AutoTuneResult) int { return r.LifecycleFailures }),
+				"error_category":           category,
+				"error":                    err.Error(),
 			})
 			fmt.Printf("AUTOTUNE_RESULT_JSON=%s\n", payload)
 			log.Fatalf("AutoTune failed: %v", err)
@@ -593,6 +597,13 @@ func runHeadlessMode(profileName string, runAutoTune bool, debugMode bool, runDu
 	fmt.Println("✓ Engine stopped")
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 }
+func autoTuneCount(result *engine.AutoTuneResult, get func(*engine.AutoTuneResult) int) int {
+	if result == nil {
+		return 0
+	}
+	return get(result)
+}
+
 func resolveProfileAlias(available []string, input string) string {
 	inputLower := strings.ToLower(strings.TrimSpace(input))
 	if inputLower == "" {
