@@ -261,6 +261,36 @@ func RunAutoTuneV2WithProgress(ctx context.Context, provider providers.BypassPro
 	return RunAutoTuneV3(ctx, provider, profiles, progressFn, DefaultAutoTuneOptions())
 }
 
+type autoTuneProfileOwner interface {
+	CurrentProfile() string
+}
+
+func validateAutoTuneProviderRunning(provider providers.BypassProvider, profileName string) error {
+	if provider.GetStatus() != providers.StatusRunning {
+		return fmt.Errorf("provider status is %s, want RUNNING", provider.GetStatus())
+	}
+	if owner, ok := provider.(autoTuneProfileOwner); ok && owner.CurrentProfile() != profileName {
+		return fmt.Errorf("provider profile is %q, want %q", owner.CurrentProfile(), profileName)
+	}
+	return nil
+}
+
+func validateAutoTuneProviderStopped(provider providers.BypassProvider) error {
+	if provider.GetStatus() != providers.StatusStopped {
+		return fmt.Errorf("provider status is %s, want STOPPED", provider.GetStatus())
+	}
+	if owner, ok := provider.(autoTuneProfileOwner); ok && owner.CurrentProfile() != "" {
+		return fmt.Errorf("provider profile is %q after stop", owner.CurrentProfile())
+	}
+	return nil
+}
+
+func autoTuneLifecycleError(execution *AutoTuneResult, operation string, err error) (*AutoTuneResult, error) {
+	execution.LifecycleFailures++
+	execution.ErrorCategory = "AUTOTUNE_LIFECYCLE_FAILURE"
+	return execution, fmt.Errorf("%s: %s: %w", execution.ErrorCategory, operation, err)
+}
+
 func RunAutoTuneV3(ctx context.Context, provider providers.BypassProvider, profiles []Profile, progressFn AutoTuneProgressFn, options AutoTuneOptions) (*AutoTuneResult, error) {
 	if provider == nil {
 		return nil, fmt.Errorf("bypass provider is not available")
@@ -289,9 +319,10 @@ func RunAutoTuneV3(ctx context.Context, provider providers.BypassProvider, profi
 	logger.Infof("AutoTune", "AutoTune V3: %d profiles, %d verified TLS targets", len(profiles), len(options.Targets))
 	execution := AutoTuneResult{ProfilesTotal: len(profiles)}
 	if err := provider.Stop(); err != nil {
-		execution.LifecycleFailures++
-		execution.ErrorCategory = "AUTOTUNE_LIFECYCLE_FAILURE"
-		return &execution, fmt.Errorf("%s: establish clean baseline: %w", execution.ErrorCategory, err)
+		return autoTuneLifecycleError(&execution, "establish clean baseline", err)
+	}
+	if err := validateAutoTuneProviderStopped(provider); err != nil {
+		return autoTuneLifecycleError(&execution, "validate clean baseline", err)
 	}
 	if progressFn != nil {
 		progressFn(0, len(profiles), "Baseline", 0, len(options.Targets), "Проверяем соединение без обхода...")
@@ -345,21 +376,28 @@ func RunAutoTuneV3(ctx context.Context, provider providers.BypassProvider, profi
 		execution.ProfilesAttempted++
 		if err := provider.Start(ctx, profile.Name); err != nil {
 			execution.ProfilesFailedToStart++
-			execution.LifecycleFailures++
-			execution.ErrorCategory = "AUTOTUNE_LIFECYCLE_FAILURE"
 			logger.Errorf("AutoTune", "Profile %s lifecycle start failure: %v", profile.Name, err)
-			return &execution, fmt.Errorf("%s: start %q: %w", execution.ErrorCategory, profile.Name, err)
+			return autoTuneLifecycleError(&execution, fmt.Sprintf("start %q", profile.Name), err)
+		}
+		if err := validateAutoTuneProviderRunning(provider, profile.Name); err != nil {
+			_ = provider.Stop()
+			return autoTuneLifecycleError(&execution, fmt.Sprintf("validate start %q", profile.Name), err)
 		}
 
 		if err := waitAutoTune(ctx, options.StabilizationDelay); err != nil {
 			_ = provider.Stop()
 			return nil, err
 		}
+		if err := validateAutoTuneProviderRunning(provider, profile.Name); err != nil {
+			_ = provider.Stop()
+			return autoTuneLifecycleError(&execution, fmt.Sprintf("validate active %q", profile.Name), err)
+		}
 		statuses := runAutoTuneProbes(ctx, options)
 		if stopErr := provider.Stop(); stopErr != nil {
-			execution.LifecycleFailures++
-			execution.ErrorCategory = "AUTOTUNE_LIFECYCLE_FAILURE"
-			return &execution, fmt.Errorf("%s: stop %q: %w", execution.ErrorCategory, profile.Name, stopErr)
+			return autoTuneLifecycleError(&execution, fmt.Sprintf("stop %q", profile.Name), stopErr)
+		}
+		if err := validateAutoTuneProviderStopped(provider); err != nil {
+			return autoTuneLifecycleError(&execution, fmt.Sprintf("validate stop %q", profile.Name), err)
 		}
 		execution.ProfilesCompleted++
 		if err := ctx.Err(); err != nil {
