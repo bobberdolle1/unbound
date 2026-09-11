@@ -1,6 +1,6 @@
 cask "unbound" do
   version "0.6.8"
-  sha256 "71812288a520f86b356f8d23feecfc715c30995f57600fca4ca0fbb0a8bfa639"
+  sha256 "d431bc1738a356691c7ec14fcbd3baea05d7497262177aee5bd2cbfe19b0ded1"
 
   url "https://github.com/bobberdolle1/unbound/releases/download/v#{version}/unbound-v#{version}-macOS-Installer.pkg"
   name "UNBOUND"
