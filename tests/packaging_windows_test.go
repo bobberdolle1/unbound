@@ -109,21 +109,23 @@ func TestWindowsPackagingArchive(t *testing.T) {
 	defer archive.Close()
 
 	requiredFiles := map[string]bool{
-		"Unbound.exe":                 false,
-		"README.md":                   false,
-		"CHANGELOG.md":                false,
-		"LICENSE":                     false,
-		"ZAPRET2_LICENSE.txt":         false,
-		"ZAPRET_LICENSE.txt":          false,
-		"ENGINE_PROVENANCE.json":      false,
-		"verify_uac_acceptance.ps1":   false,
-		"general_recommended.cmd":     false,
-		"general_autotune.cmd":        false,
-		"general_universal.cmd":       false,
-		"general_alt1_multisplit.cmd": false,
-		"general_alt2_fake_tls.cmd":   false,
-		"service_control.cmd":         false,
-		"BUNDLE_SHA256SUMS.txt":       false,
+		"Unbound.exe":                           false,
+		"README.md":                             false,
+		"CHANGELOG.md":                          false,
+		"LICENSE":                               false,
+		"ZAPRET2_LICENSE.txt":                   false,
+		"ZAPRET_LICENSE.txt":                    false,
+		"ENGINE_PROVENANCE.json":                false,
+		"verify_uac_acceptance.ps1":             false,
+		"run_offline_physical_acceptance.ps1":   false,
+		"start_offline_physical_acceptance.ps1": false,
+		"general_recommended.cmd":               false,
+		"general_autotune.cmd":                  false,
+		"general_universal.cmd":                 false,
+		"general_alt1_multisplit.cmd":           false,
+		"general_alt2_fake_tls.cmd":             false,
+		"service_control.cmd":                   false,
+		"BUNDLE_SHA256SUMS.txt":                 false,
 	}
 	for _, file := range archive.File {
 		if _, required := requiredFiles[file.Name]; required {

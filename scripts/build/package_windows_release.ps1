@@ -34,6 +34,8 @@ Copy-Item (Join-Path $ProjectRoot "engine\third_party\ZAPRET2_LICENSE.txt") $Bun
 Copy-Item (Join-Path $ProjectRoot "engine\third_party\ZAPRET_LICENSE.txt") $Bundle
 Copy-Item (Join-Path $ProjectRoot "engine\ENGINE_PROVENANCE.json") $Bundle
 Copy-Item (Join-Path $ProjectRoot "scripts\windows\verify_uac_acceptance.ps1") $Bundle
+Copy-Item (Join-Path $ProjectRoot "scripts\windows\run_offline_physical_acceptance.ps1") $Bundle
+Copy-Item (Join-Path $ProjectRoot "scripts\windows\start_offline_physical_acceptance.ps1") $Bundle
 Copy-Item (Join-Path $ProjectRoot "scripts\control_windows\*") $Bundle
 
 Get-ChildItem $Bundle -File | Sort-Object Name | ForEach-Object {
@@ -46,7 +48,7 @@ $SmokeDir = Join-Path ([System.IO.Path]::GetTempPath()) "unbound-package-smoke-$
 try {
     Expand-Archive -Path $Archive -DestinationPath $SmokeDir -Force
     $RequiredFiles = @(
-        "unbound.exe",
+        "Unbound.exe",
         "README.md",
         "CHANGELOG.md",
         "LICENSE",
@@ -54,6 +56,8 @@ try {
         "ZAPRET_LICENSE.txt",
         "ENGINE_PROVENANCE.json",
         "verify_uac_acceptance.ps1",
+        "run_offline_physical_acceptance.ps1",
+        "start_offline_physical_acceptance.ps1",
         "general_recommended.cmd",
         "general_autotune.cmd",
         "general_universal.cmd",
