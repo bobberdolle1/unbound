@@ -153,6 +153,16 @@ function Test-AutoTuneTerminalResult([object]$Captured) {
     return [pscustomobject]@{ status='PASS'; error=$null; report=$report }
 }
 
+function Get-AcceptanceVerdict([object[]]$Stages) {
+    $requiredStages = @('CLEAN_WINDOW','KERNEL','RECOMMENDED_FIELD','DOCTOR','CONCURRENT_START','AUTOTUNE','LAUNCHERS','CLEANUP')
+    foreach ($stageName in $requiredStages) {
+        if (@($Stages | Where-Object { $_.name -eq $stageName -and $_.status -eq 'PASS' }).Count -ne 1) {
+            return 'FAIL'
+        }
+    }
+    return 'PASS'
+}
+
 function Invoke-HarmlessSmoke {
     $resolvedCandidateDirectory = (Resolve-Path $CandidateDirectory -ErrorAction Stop).Path
     $results.worker = [ordered]@{
@@ -299,11 +309,7 @@ function Invoke-LauncherSmoke([string]$LauncherPath) {
     )
     Save-Results
     $results.execution_state = 'COMPLETE'
-    $requiredStages = @('CLEAN_WINDOW','KERNEL','RECOMMENDED_FIELD','DOCTOR','CONCURRENT_START','AUTOTUNE','LAUNCHERS','CLEANUP')
-    $stagePasses = foreach ($stageName in $requiredStages) {
-        @($results.stages | Where-Object { $_.name -eq $stageName -and $_.status -eq 'PASS' }).Count -eq 1
-    }
-    $results.acceptance_verdict = if ($stagePasses -notcontains $false) { 'PASS' } else { 'FAIL' }
+    $results.acceptance_verdict = Get-AcceptanceVerdict $results.stages
 } catch {
     $results.execution_state = 'FAILED'
     $results.acceptance_verdict = 'FAIL'
