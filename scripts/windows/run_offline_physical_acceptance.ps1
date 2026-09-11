@@ -202,7 +202,7 @@ function Invoke-HarmlessSmoke {
         'StatusWindow' {
             Save-AcceptanceStatus 'CLEAN WINDOW DETECTED' 'STATUS SMOKE: ACCEPTANCE RUNNING — DO NOT ENABLE HAPP'
             Start-Sleep -Seconds $SmokeSleepSeconds
-            Save-AcceptanceStatus 'ACCEPTANCE COMPLETE' "CLEANUP COMPLETE`nSAFE TO RE-ENABLE HAPP" $true
+            Save-AcceptanceStatus 'ACCEPTANCE PASSED' "CLEANUP COMPLETE`nSAFE TO RE-ENABLE HAPP" $true
             $results.stages += [pscustomobject]@{ name = 'STATUS_WINDOW_RUNTIME'; status = 'PASS'; at = (Get-Date).ToString('o') }
             Write-ProgressLine 'STATUS_WINDOW_RUNTIME=PASS'
         }
