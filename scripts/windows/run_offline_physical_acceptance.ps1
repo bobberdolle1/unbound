@@ -203,7 +203,6 @@ function Invoke-LauncherSmoke([string]$LauncherPath) {
     foreach ($line in Get-Content $hashes) { if ($line -match '^([0-9a-fA-F]{64})\s\s(.+)$') { $file = Join-Path $CandidateDirectory $matches[2]; if (-not (Test-Path $file) -or (Get-FileHash $file -Algorithm SHA256).Hash -ne $matches[1]) { $hashFailures += $matches[2] } } }
     if ($hashFailures) { throw "Bundle hash verification failed: $($hashFailures -join ', ')" }
     $results.bundleHashVerification = 'PASS'
-    Show-LocalStatus 'The local worker is independent of OMP and keeps writing evidence while it waits for a clean data plane.' 'UNBOUND v0.6.9 acceptance'
     $results.executableSha256 = (Get-FileHash $exe -Algorithm SHA256).Hash
     $results.executableVersion = (& $exe --version | Out-String).Trim()
     $results.archiveSha256 = if ($ArchivePath -and (Test-Path $ArchivePath -PathType Leaf)) { (Get-FileHash $ArchivePath -Algorithm SHA256).Hash } else { $null }
@@ -259,6 +258,7 @@ function Invoke-LauncherSmoke([string]$LauncherPath) {
     $results.ownedChildrenAliveAfterCleanup = @(
         $trackedProcesses | Where-Object { -not $_.HasExited }
     ).Count
+    Write-ProgressLine 'CLEANUP COMPLETE. SAFE TO RE-ENABLE HAPP.'
     $results.cleanupSnapshot = Get-NetworkSnapshot
     $results.finishedAt = (Get-Date).ToString('o')
     Save-Results
@@ -276,7 +276,7 @@ function Invoke-LauncherSmoke([string]$LauncherPath) {
     Write-ProgressLine "ACCEPTANCE $($results.status). Local bundle: $bundle"
     Write-Host "ACCEPTANCE $($results.status)" -ForegroundColor Green
     Write-Host 'Acceptance evidence is available in the local bundle.' -ForegroundColor Green
-    if ($SmokeMode -eq 'Acceptance' -or $SimulateNotificationFailure) {
+    if ($SimulateNotificationFailure) {
         Show-LocalStatus "ACCEPTANCE $($results.status)`nEvidence is available in the local bundle." 'UNBOUND v0.6.9 acceptance'
     }
 }
