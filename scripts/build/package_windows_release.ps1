@@ -37,6 +37,8 @@ Copy-Item (Join-Path $ProjectRoot "scripts\windows\verify_uac_acceptance.ps1") $
 Copy-Item (Join-Path $ProjectRoot "scripts\windows\run_offline_physical_acceptance.ps1") $Bundle
 Copy-Item (Join-Path $ProjectRoot "scripts\windows\start_offline_physical_acceptance.ps1") $Bundle
 Copy-Item (Join-Path $ProjectRoot "scripts\windows\show_offline_acceptance_status.ps1") $Bundle
+Copy-Item (Join-Path $ProjectRoot "scripts\windows\run_privileged_preflight.ps1") $Bundle
+Copy-Item (Join-Path $ProjectRoot "scripts\windows\start_privileged_preflight.ps1") $Bundle
 Copy-Item (Join-Path $ProjectRoot "scripts\control_windows\*") $Bundle
 
 Get-ChildItem $Bundle -File | Sort-Object Name | ForEach-Object {
@@ -60,6 +62,8 @@ try {
         "run_offline_physical_acceptance.ps1",
         "start_offline_physical_acceptance.ps1",
         "show_offline_acceptance_status.ps1",
+        "run_privileged_preflight.ps1",
+        "start_privileged_preflight.ps1",
         "general_recommended.cmd",
         "general_autotune.cmd",
         "general_universal.cmd",
