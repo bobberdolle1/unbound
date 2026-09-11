@@ -10,7 +10,7 @@ param(
     [string]$SshKeyPath,
     [string]$CandidateCommit,
     [string]$ArchivePath,
-    [ValidateSet('Acceptance', 'DetachedWorker', 'ForcedFailure', 'DnsBaseline')] [string]$SmokeMode = 'Acceptance',
+    [ValidateSet('Acceptance', 'DetachedWorker', 'ForcedFailure', 'DnsBaseline', 'StatusWindow')] [string]$SmokeMode = 'Acceptance',
     [ValidateRange(1, 60)] [int]$SmokeSleepSeconds = 3,
     [switch]$SimulateNotificationFailure,
     [switch]$SimulateLogSinkFailure
@@ -22,9 +22,12 @@ $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $bundle = Join-Path $OutputRoot "v0.6.9-$timestamp-$SmokeMode-$([Guid]::NewGuid().ToString('N'))"
 $logPath = Join-Path $bundle 'progress.log'
 $resultPath = Join-Path $bundle 'result.json'
+$statusPath = Join-Path $bundle 'status.json'
+$statusEventLogPath = Join-Path $bundle 'status-window.log'
 New-Item -ItemType Directory -Force -Path $bundle | Out-Null
 
 $trackedProcesses = @()
+$statusWindowProcess = $null
 
 function Write-ProgressLine([string]$Message) {
     $line = "$(Get-Date -Format o) $Message"
@@ -42,6 +45,29 @@ function Show-LocalStatus([string]$Message, [string]$Title) {
         Add-Type -AssemblyName System.Windows.Forms
         [void][Windows.Forms.MessageBox]::Show($Message, $Title, [Windows.Forms.MessageBoxButtons]::OK, [Windows.Forms.MessageBoxIcon]::Information)
     } catch {
+        Write-ProgressLine "LOCAL_NOTIFICATION_FAILED: $($_.Exception.Message)"
+    }
+}
+function Save-AcceptanceStatus([string]$Headline, [string]$Detail, [bool]$Terminal = $false) {
+    $temporaryStatusPath = "$statusPath.tmp"
+    [ordered]@{
+        headline = $Headline
+        detail = $Detail
+        terminal = $Terminal
+        updatedAt = (Get-Date).ToString('o')
+    } | ConvertTo-Json | Set-Content $temporaryStatusPath -Encoding utf8
+    Move-Item -Path $temporaryStatusPath -Destination $statusPath -Force
+}
+function Start-AcceptanceStatusWindow {
+    try {
+        if ($SimulateNotificationFailure) { throw 'Simulated notification failure.' }
+        $statusScript = Join-Path $PSScriptRoot 'show_offline_acceptance_status.ps1'
+        if (-not (Test-Path $statusScript -PathType Leaf)) { throw "Status window script missing: $statusScript" }
+        $script:statusWindowProcess = Start-Process -FilePath powershell.exe -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $statusScript, '-StatusPath', $statusPath, '-EventLogPath', $statusEventLogPath -PassThru
+        $results.statusWindow = [ordered]@{ processId = $statusWindowProcess.Id; statusPath = $statusPath; eventLogPath = $statusEventLogPath }
+        Write-ProgressLine "LOCAL_STATUS_WINDOW_STARTED: pid=$($statusWindowProcess.Id)"
+    } catch {
+        $results.statusWindowError = $_.Exception.Message
         Write-ProgressLine "LOCAL_NOTIFICATION_FAILED: $($_.Exception.Message)"
     }
 }
@@ -159,6 +185,13 @@ function Invoke-HarmlessSmoke {
             $results.stages += [pscustomobject]@{ name = 'DNS_HARNESS_RUNTIME'; status = 'PASS'; at = (Get-Date).ToString('o') }
             Write-ProgressLine 'DNS_HARNESS_RUNTIME=PASS'
         }
+        'StatusWindow' {
+            Save-AcceptanceStatus 'CLEAN WINDOW DETECTED' 'STATUS SMOKE: ACCEPTANCE RUNNING — DO NOT ENABLE HAPP'
+            Start-Sleep -Seconds $SmokeSleepSeconds
+            Save-AcceptanceStatus 'ACCEPTANCE COMPLETE' "CLEANUP COMPLETE`nSAFE TO RE-ENABLE HAPP" $true
+            $results.stages += [pscustomobject]@{ name = 'STATUS_WINDOW_RUNTIME'; status = 'PASS'; at = (Get-Date).ToString('o') }
+            Write-ProgressLine 'STATUS_WINDOW_RUNTIME=PASS'
+        }
     }
 }
 
@@ -176,6 +209,10 @@ function Invoke-RecommendedMatrix([string]$FilePath) {
 
 $results = [ordered]@{ version='0.6.9'; mode=$SmokeMode; startedAt=(Get-Date).ToString('o'); candidateDirectory=$CandidateDirectory; candidateCommit=$CandidateCommit; archivePath=$ArchivePath; stages=@(); status='RUNNING' }
 try {
+    if ($SmokeMode -in 'Acceptance', 'StatusWindow') {
+        Start-AcceptanceStatusWindow
+        Save-AcceptanceStatus 'ACCEPTANCE WORKER STARTED' 'Waiting for the local clean data plane.'
+    }
     if ($SmokeMode -ne 'Acceptance') {
         Invoke-HarmlessSmoke
         $results.status = 'COMPLETE'
@@ -216,6 +253,7 @@ function Invoke-LauncherSmoke([string]$LauncherPath) {
     if (-not $clean.clean) { throw "Timed out waiting for a clean data plane after $CleanWaitSeconds seconds." }
     $results.cleanNetworkSnapshot = Get-NetworkSnapshot
     $results.stages += [pscustomobject]@{ name='CLEAN_WINDOW'; status='PASS'; at=(Get-Date).ToString('o') }
+    Save-AcceptanceStatus 'CLEAN WINDOW DETECTED' 'ACCEPTANCE RUNNING — DO NOT ENABLE HAPP'
     Save-Results
     $dnsTargets = @('www.youtube.com','discord.com','store.steampowered.com','www.cloudflare.com')
     $results.dnsBaseline = @(
@@ -258,7 +296,12 @@ function Invoke-LauncherSmoke([string]$LauncherPath) {
     $results.ownedChildrenAliveAfterCleanup = @(
         $trackedProcesses | Where-Object { -not $_.HasExited }
     ).Count
-    Write-ProgressLine 'CLEANUP COMPLETE. SAFE TO RE-ENABLE HAPP.'
+    if ($statusWindowProcess -and $statusWindowProcess.HasExited) {
+        $results.statusWindowExitedBeforeTerminal = $true
+        Write-ProgressLine 'LOCAL_NOTIFICATION_FAILED: Status window exited before terminal acceptance status.'
+    }
+    $finalHeadline = if ($results.status -eq 'COMPLETE') { 'ACCEPTANCE COMPLETE' } else { 'ACCEPTANCE FAILED' }
+    Save-AcceptanceStatus $finalHeadline "CLEANUP COMPLETE`nSAFE TO RE-ENABLE HAPP" $true
     $results.cleanupSnapshot = Get-NetworkSnapshot
     $results.finishedAt = (Get-Date).ToString('o')
     Save-Results

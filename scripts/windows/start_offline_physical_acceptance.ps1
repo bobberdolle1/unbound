@@ -4,7 +4,7 @@ param(
  [Parameter(Mandatory)][string]$CandidateDirectory,
  [Parameter(Mandatory)][string]$CandidateCommit,
  [Parameter(Mandatory)][string]$ArchivePath,
- [ValidateSet('Acceptance', 'DetachedWorker', 'ForcedFailure', 'DnsBaseline')] [string]$SmokeMode = 'Acceptance',
+ [ValidateSet('Acceptance', 'DetachedWorker', 'ForcedFailure', 'DnsBaseline', 'StatusWindow')] [string]$SmokeMode = 'Acceptance',
  [string]$OutputRoot,
  [ValidateRange(1, 60)] [int]$SmokeSleepSeconds = 3,
  [switch]$SimulateNotificationFailure,

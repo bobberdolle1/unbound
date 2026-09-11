@@ -36,6 +36,7 @@ Copy-Item (Join-Path $ProjectRoot "engine\ENGINE_PROVENANCE.json") $Bundle
 Copy-Item (Join-Path $ProjectRoot "scripts\windows\verify_uac_acceptance.ps1") $Bundle
 Copy-Item (Join-Path $ProjectRoot "scripts\windows\run_offline_physical_acceptance.ps1") $Bundle
 Copy-Item (Join-Path $ProjectRoot "scripts\windows\start_offline_physical_acceptance.ps1") $Bundle
+Copy-Item (Join-Path $ProjectRoot "scripts\windows\show_offline_acceptance_status.ps1") $Bundle
 Copy-Item (Join-Path $ProjectRoot "scripts\control_windows\*") $Bundle
 
 Get-ChildItem $Bundle -File | Sort-Object Name | ForEach-Object {
@@ -58,6 +59,7 @@ try {
         "verify_uac_acceptance.ps1",
         "run_offline_physical_acceptance.ps1",
         "start_offline_physical_acceptance.ps1",
+        "show_offline_acceptance_status.ps1",
         "general_recommended.cmd",
         "general_autotune.cmd",
         "general_universal.cmd",
