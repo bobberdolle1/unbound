@@ -65,6 +65,15 @@ func TestWindowsPackagingLaunchers(t *testing.T) {
 			t.Errorf("Launcher %s does not reference Unbound.exe", launcherName)
 		}
 
+		// 3. A synchronous launcher must propagate its child failure rather
+		// than pause or turn it into a successful cmd.exe exit.
+		if !strings.Contains(strings.ToLower(content), "exit /b %errorlevel%") {
+			t.Errorf("Launcher %s does not propagate the child exit code", launcherName)
+		}
+		if strings.Contains(strings.ToLower(content), "pause") {
+			t.Errorf("Launcher %s pauses instead of returning a scriptable failure", launcherName)
+		}
+
 		// 3. Must reference the expected CLI mode or profile alias
 		if !strings.Contains(content, expectedArg) {
 			t.Errorf("Launcher %s missing expected argument %q", launcherName, expectedArg)

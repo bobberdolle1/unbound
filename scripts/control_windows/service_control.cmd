@@ -15,7 +15,8 @@ if exist "%~dp0Unbound.exe" (
     "%~dp0..\Unbound.exe" --control
 ) else if exist "%~dp0..\..\build\bin\Unbound.exe" (
     "%~dp0..\..\build\bin\Unbound.exe" --control
-) else (
+ ) else (
     echo [!] Ошибка: unbound.exe не найден!
-    pause
+    exit /b 1
 )
+exit /b %errorlevel%

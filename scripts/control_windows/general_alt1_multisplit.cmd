@@ -17,7 +17,8 @@ if exist "%~dp0Unbound.exe" (
     "%~dp0..\Unbound.exe" --cli --profile alt1
 ) else if exist "%~dp0..\..\build\bin\Unbound.exe" (
     "%~dp0..\..\build\bin\Unbound.exe" --cli --profile alt1
-) else (
+ ) else (
     echo [!] Ошибка: Unbound.exe не найден!
-    pause
+    exit /b 1
 )
+exit /b %errorlevel%
