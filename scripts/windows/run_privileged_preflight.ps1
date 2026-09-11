@@ -20,8 +20,12 @@ function Invoke-Captured([string]$Name, [string[]]$Arguments, [int]$TimeoutSecon
     $stderr = Join-Path $bundle "$Name.stderr.log"
     $process = Start-Process -FilePath $exe -ArgumentList $Arguments -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
     $timedOut = -not $process.WaitForExit($TimeoutSeconds * 1000)
-    if ($timedOut) { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue }
-    [pscustomobject]@{ name=$Name; exitCode=if($timedOut){$null}else{$process.ExitCode}; timedOut=$timedOut; stdout=$stdout; stderr=$stderr }
+    if ($timedOut) {
+        Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+        return [pscustomobject]@{ name=$Name; exitCode=$null; timedOut=$true; stdout=$stdout; stderr=$stderr }
+    }
+    $process.Refresh()
+    [pscustomobject]@{ name=$Name; exitCode=$process.ExitCode; timedOut=$false; stdout=$stdout; stderr=$stderr }
 }
 
 function Get-ProcessTreeIds([int]$RootProcessId) {
@@ -73,9 +77,12 @@ foreach ($engine in $profileSets.PSObject.Properties) {
         $maxWinws = [Math]::Max($maxWinws, $active.Count)
         $aliveAtStart = $owned.Count -eq 1 -and $null -ne (Get-Process -Id $owned[0] -ErrorAction SilentlyContinue)
         $timedOut = -not $process.WaitForExit(($ProfileSeconds + 35) * 1000)
-        if ($timedOut) { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue }
+        if ($timedOut) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+        } else {
+            $process.Refresh()
+        }
         $aliveAfterStop = if ($owned.Count -eq 1) { $null -ne (Get-Process -Id $owned[0] -ErrorAction SilentlyContinue) } else { $true }
-        $result.profiles += [pscustomobject]@{ engine=$engine.Name; profile=$profile; processId=$process.Id; winwsPid=if($owned.Count -eq 1){$owned[0]}else{$null}; aliveAtStart=$aliveAtStart; aliveAfterStop=$aliveAfterStop; exitCode=if($timedOut){$null}else{$process.ExitCode}; timedOut=$timedOut; stdout=$stdout; stderr=$stderr }
         if ($timedOut -or $process.ExitCode -ne 0 -or -not $aliveAtStart -or $aliveAfterStop -or $active.Count -ne 1) { throw "PROFILE_LIFECYCLE_FAILED: $profile" }
     }
 }
