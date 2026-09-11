@@ -652,7 +652,6 @@ func (e *ZapretMacOSProvider) Start(ctx context.Context, profileName string) err
 
 	e.setStatusLocked(StatusStarting)
 
-
 	// tpws args: run in SOCKS5 proxy mode on tpwsPort, then DPI desync flags.
 	args := append([]string{"--socks", "--port=" + tpwsPort}, profile.Args...)
 

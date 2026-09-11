@@ -168,33 +168,14 @@ jobs:
             throw "Windows profile catalog is empty"
           }
 
-      - name: Package
+      - name: Package and inspect archive
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $dist = "release/unbound-v${env:VERSION}-windows-amd64"
-          New-Item -ItemType Directory -Force -Path $dist | Out-Null
-          Copy-Item "build/bin/unbound.exe" $dist
-          Copy-Item "README.md" "$dist/README.md"
-          Copy-Item "LICENSE" "$dist/LICENSE"
-          Copy-Item "engine/third_party/ZAPRET2_LICENSE.txt" "$dist/ZAPRET2_LICENSE.txt"
-          Copy-Item "engine/third_party/ZAPRET_LICENSE.txt" "$dist/ZAPRET_LICENSE.txt"
-          Copy-Item "engine/ENGINE_PROVENANCE.json" "$dist/ENGINE_PROVENANCE.json"
-          Copy-Item "scripts/control_windows/*" $dist
-          Get-ChildItem $dist -File | Sort-Object Name | ForEach-Object {
-            "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
-          } | Set-Content "$dist/BUNDLE_SHA256SUMS.txt" -Encoding ascii
-          Compress-Archive -Path "$dist/*" -DestinationPath "$dist.zip" -Force
-          $smoke = Join-Path $env:RUNNER_TEMP "unbound-release-smoke"
-          Expand-Archive "$dist.zip" $smoke -Force
-          if (
-            -not (Test-Path "$smoke/unbound.exe") -or
-            -not (Test-Path "$smoke/ZAPRET2_LICENSE.txt") -or
-            -not (Test-Path "$smoke/ZAPRET_LICENSE.txt") -or
-            -not (Test-Path "$smoke/general_autotune.cmd")
-          ) {
-            throw "Windows archive is missing required runtime, licence, or control files"
-          }
+          & scripts/build/package_windows_release.ps1 -Version $env:VERSION
+          $archive = "release/unbound-v${env:VERSION}-windows-amd64.zip"
+          $env:UNBOUND_WINDOWS_ARCHIVE = (Resolve-Path $archive)
+          go test ./tests -run TestWindowsPackagingArchive -count=1
 
       - uses: actions/upload-artifact@v4
         with:

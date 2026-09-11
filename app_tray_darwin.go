@@ -31,6 +31,7 @@ var (
 	globalAppRef   *App
 	globalAppRefMu sync.RWMutex
 )
+
 func setGlobalApp(a *App) {
 	globalAppRefMu.Lock()
 	globalAppRef = a

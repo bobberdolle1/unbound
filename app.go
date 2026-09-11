@@ -1111,7 +1111,7 @@ func (a *App) CancelAutoTune() {
 
 func (a *App) GetLivePing() map[string]interface{} {
 	if a.manager.GetStatus() != providers.StatusRunning {
-		return map[string]interface{}{"active": true, "latency": 0, "status": "disconnected", "services": map[string]int64{}}
+		return map[string]interface{}{"active": true, "latency": 0, "status": "disconnected", "services": map[string]int64{}, "serviceStatus": map[string]string{}}
 	}
 	targets := []struct{ Name, URL string }{
 		{"YouTube", "https://www.youtube.com"},
@@ -1119,55 +1119,69 @@ func (a *App) GetLivePing() map[string]interface{} {
 		{"Instagram", "https://www.instagram.com"},
 	}
 
-	var minLatency time.Duration = -1
-	services := make(map[string]int64)
-	var mu sync.Mutex
+	ce := engine.NewConnectivityEngine(4 * time.Second)
+	results := make([]engine.ProbeResult, len(targets))
 	var wg sync.WaitGroup
-
-	for _, t := range targets {
+	for i, target := range targets {
 		wg.Add(1)
-		go func(name, url string) {
+		go func(index int, name, url string) {
 			defer wg.Done()
 			ctx, cancel := context.WithTimeout(a.ctx, 4*time.Second)
 			defer cancel()
-			lat, err := engine.SimplePing(ctx, url)
-			if err == nil {
-				mu.Lock()
-				services[name] = lat.Milliseconds()
-				if minLatency == -1 || lat < minLatency {
-					minLatency = lat
-				}
-				mu.Unlock()
+			result := ce.ProbeTLS(ctx, url)
+			result.Name = name
+			results[index] = result
+		}(i, target.Name, target.URL)
+	}
+	wg.Wait()
+
+	latency, status, services, serviceStatus := summarizeLivePingResults(results)
+	return map[string]interface{}{
+		"active":        true,
+		"latency":       latency,
+		"status":        status,
+		"services":      services,
+		"serviceStatus": serviceStatus,
+	}
+}
+
+func summarizeLivePingResults(results []engine.ProbeResult) (int64, string, map[string]int64, map[string]string) {
+	services := make(map[string]int64, len(results))
+	serviceStatus := make(map[string]string, len(results))
+	var minLatency time.Duration = -1
+	failureClasses := make(map[engine.FailureClass]bool)
+
+	for _, result := range results {
+		if result.Status == engine.StatusPass {
+			services[result.Name] = result.Latency.Milliseconds()
+			serviceStatus[result.Name] = "ok"
+			if minLatency == -1 || result.Latency < minLatency {
+				minLatency = result.Latency
 			}
-		}(t.Name, t.URL)
-	}
-
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
-
-	copyServices := func() map[string]int64 {
-		mu.Lock()
-		defer mu.Unlock()
-		cp := make(map[string]int64, len(services))
-		for k, v := range services {
-			cp[k] = v
+			continue
 		}
-		return cp
-	}
 
-	select {
-	case <-done:
-		resServices := copyServices()
-		if minLatency == -1 {
-			return map[string]interface{}{"active": true, "latency": 0, "status": "blocked", "services": resServices}
-		}
-		return map[string]interface{}{"active": true, "latency": minLatency.Milliseconds(), "status": "ok", "services": resServices}
-	case <-time.After(4500 * time.Millisecond):
-		return map[string]interface{}{"active": true, "latency": 0, "status": "blocked", "services": copyServices()}
+		serviceStatus[result.Name] = string(result.Class)
+		failureClasses[result.Class] = true
 	}
+	if minLatency >= 0 {
+		return minLatency.Milliseconds(), "ok", services, serviceStatus
+	}
+	if len(failureClasses) == 1 {
+		for class := range failureClasses {
+			switch class {
+			case engine.FailDNS:
+				return 0, "dns_failure", services, serviceStatus
+			case engine.FailConnectTimeout:
+				return 0, "connect_timeout", services, serviceStatus
+			case engine.FailTLS:
+				return 0, "tls_failure", services, serviceStatus
+			case engine.FailHTTPStatus:
+				return 0, "http_failure", services, serviceStatus
+			}
+		}
+	}
+	return 0, "unreachable", services, serviceStatus
 }
 
 func (a *App) GetAppVersion() string {

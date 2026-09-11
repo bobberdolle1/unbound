@@ -129,6 +129,10 @@ check_assets() {
 }
 
 # ── Go ───────────────────────────────────────────────────────────────────────
+# These gates intentionally use Git's tracked file set. `npm ci` creates
+# frontend/node_modules, and developers may retain historical worktrees or
+# release archives locally; none of those generated/untracked files are
+# repository source and must not alter a release verdict.
 check_go() {
     step "Go"
     if ! have go; then
@@ -143,18 +147,49 @@ check_go() {
         return
     fi
 
-    local unformatted
-    unformatted="$(gofmt -l . 2>/dev/null | grep -v '^frontend/' || true)"
-    if [ -n "$unformatted" ]; then
-        fail "gofmt: these files need formatting"
-        printf '%s\n' "$unformatted" | sed 's/^/      /'
-    else
-        ok "gofmt"
+    local -a go_files=()
+    local -a go_packages=()
+    local -a cross_packages=()
+    local -A seen_packages=()
+    local file dir pkg
+    while IFS= read -r file; do
+        go_files+=("$file")
+        dir="$(dirname "$file")"
+        if [ "$dir" = "." ]; then
+            pkg="."
+        else
+            pkg="./$dir"
+        fi
+        if [ -z "${seen_packages[$pkg]+x}" ]; then
+            seen_packages["$pkg"]=1
+            go_packages+=("$pkg")
+            case "$pkg" in
+                ./engine|./engine/*) cross_packages+=("$pkg") ;;
+            esac
+        fi
+    done < <(git ls-files -- '*.go')
+
+    if [ "${#go_files[@]}" -eq 0 ]; then
+        fail "no tracked Go files found"
+        return
     fi
 
-    run "go vet (host)"  go vet ./...
-    run "go test -race"  go test -race ./...
+    local unformatted
+    unformatted="$(gofmt -l "${go_files[@]}" 2>/dev/null || true)"
+    if [ -n "$unformatted" ]; then
+        fail "gofmt: these tracked files need formatting"
+        printf '%s\n' "$unformatted" | sed 's/^/      /'
+    else
+        ok "gofmt (tracked Go files)"
+    fi
 
+    run "go vet (tracked packages)"  go vet "${go_packages[@]}"
+    if [ "$(go env CGO_ENABLED)" = "1" ]; then
+        run "go test -race (tracked packages)" go test -race "${go_packages[@]}"
+    else
+        warn "race detector skipped (cgo disabled); running regular tracked-package tests"
+        run "go test (tracked packages)" go test "${go_packages[@]}"
+    fi
     # The firewall rules are otherwise only compared as strings, which cannot
     # catch a spec the kernel rejects. These tests hand the generated rules to
     # the real iptables/nft, in a chain nothing jumps to, so no packet is ever
@@ -170,9 +205,9 @@ check_go() {
     # host-only vet will not catch it: the whole reason CI grew a cross-compile
     # matrix is that five files once referenced a Windows-only symbol with no
     # build constraint and broke every non-Windows build.
-    step "Cross-platform vet"
+    step "Cross-platform engine vet"
     for goos in linux darwin windows; do
-        run "GOOS=$goos go vet ./..." env GOOS="$goos" go vet ./...
+        run "GOOS=$goos go vet (tracked engine packages)" env GOOS="$goos" go vet "${cross_packages[@]}"
     done
 
     if [ "$QUICK" -eq 1 ]; then

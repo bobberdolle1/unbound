@@ -13,9 +13,9 @@
 
 SHELL := /usr/bin/env bash
 
-# Keep in step with the newest CHANGELOG entry; release builds pass this to
-# -ldflags so the binary stops reporting a stale version.
-VERSION ?= 0.6.7
+# `wails.json` is the canonical release-version source. Node is already
+# required by both build and gui through the frontend build.
+VERSION ?= $(shell node -p "require('./wails.json').info.productVersion")
 LDFLAGS := -s -w -X unbound/engine.Version=$(VERSION)
 
 GOOS_HOST := $(shell go env GOOS 2>/dev/null)

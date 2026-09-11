@@ -260,3 +260,29 @@ func TestExecuteAcceptanceProbeFailures(t *testing.T) {
 		}
 	})
 }
+
+func TestSummarizeLivePingResultsClassifiesDNSFailure(t *testing.T) {
+	latency, status, services, serviceStatus := summarizeLivePingResults([]engine.ProbeResult{
+		{Name: "YouTube", Status: engine.StatusFail, Class: engine.FailDNS},
+		{Name: "Discord", Status: engine.StatusFail, Class: engine.FailDNS},
+	})
+	if latency != 0 || status != "dns_failure" {
+		t.Fatalf("DNS-only failures = (%d, %q), want (0, dns_failure)", latency, status)
+	}
+	if len(services) != 0 || serviceStatus["YouTube"] != string(engine.FailDNS) {
+		t.Fatalf("DNS failure diagnostics = services:%v statuses:%v", services, serviceStatus)
+	}
+}
+
+func TestSummarizeLivePingResultsPreservesSuccessfulService(t *testing.T) {
+	latency, status, services, serviceStatus := summarizeLivePingResults([]engine.ProbeResult{
+		{Name: "YouTube", Status: engine.StatusFail, Class: engine.FailDNS},
+		{Name: "Discord", Status: engine.StatusPass, Latency: 120 * time.Millisecond},
+	})
+	if latency != 120 || status != "ok" {
+		t.Fatalf("mixed results = (%d, %q), want (120, ok)", latency, status)
+	}
+	if services["Discord"] != 120 || serviceStatus["YouTube"] != string(engine.FailDNS) {
+		t.Fatalf("mixed diagnostics = services:%v statuses:%v", services, serviceStatus)
+	}
+}

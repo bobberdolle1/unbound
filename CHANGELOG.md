@@ -3,6 +3,15 @@
 Все значимые изменения проекта документируются в этом файле.
 
 
+## [0.6.9] - 2026-09-11
+### Windows release-correctness hotfix
+
+#### Fixed
+
+- Windows release bundle now includes `CHANGELOG.md` and the elevated `verify_uac_acceptance.ps1` acceptance script.
+- Build entrypoints derive their release version from `wails.json`; release validation rejects visible-version drift.
+- Formatted the affected Go sources without behavioral changes.
+
 ## [0.6.8] - 2026-09-11
 ### macOS SOCKS lifecycle and reproducible packaging
 

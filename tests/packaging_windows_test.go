@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/zip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -91,6 +92,47 @@ func TestWindowsPackagingLaunchers(t *testing.T) {
 				t.Errorf("Launcher %s uses alias %q which does not match any current engine profiles: %v",
 					launcherName, expectedArg, availableProfiles)
 			}
+		}
+	}
+}
+
+func TestWindowsPackagingArchive(t *testing.T) {
+	archivePath := os.Getenv("UNBOUND_WINDOWS_ARCHIVE")
+	if archivePath == "" {
+		t.Skip("set UNBOUND_WINDOWS_ARCHIVE to validate a staged Windows release archive")
+	}
+
+	archive, err := zip.OpenReader(archivePath)
+	if err != nil {
+		t.Fatalf("open Windows release archive: %v", err)
+	}
+	defer archive.Close()
+
+	requiredFiles := map[string]bool{
+		"Unbound.exe":                 false,
+		"README.md":                   false,
+		"CHANGELOG.md":                false,
+		"LICENSE":                     false,
+		"ZAPRET2_LICENSE.txt":         false,
+		"ZAPRET_LICENSE.txt":          false,
+		"ENGINE_PROVENANCE.json":      false,
+		"verify_uac_acceptance.ps1":   false,
+		"general_recommended.cmd":     false,
+		"general_autotune.cmd":        false,
+		"general_universal.cmd":       false,
+		"general_alt1_multisplit.cmd": false,
+		"general_alt2_fake_tls.cmd":   false,
+		"service_control.cmd":         false,
+		"BUNDLE_SHA256SUMS.txt":       false,
+	}
+	for _, file := range archive.File {
+		if _, required := requiredFiles[file.Name]; required {
+			requiredFiles[file.Name] = true
+		}
+	}
+	for name, found := range requiredFiles {
+		if !found {
+			t.Errorf("staged Windows archive missing %s", name)
 		}
 	}
 }

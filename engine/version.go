@@ -8,13 +8,13 @@ package engine
 // and the tray tooltip reported a version that had not existed for two
 // releases.
 //
-// Release builds override this at link time:
+// Release builds override this at link time. `wails.json` is the canonical
+// release-version source and build entrypoints pass it through `-ldflags`.
 //
-//	go build -ldflags="-X unbound/engine.Version=0.2.1"
+//	go build -ldflags="-X unbound/engine.Version=0.6.9"
 //
-// Keep the default in step with the newest CHANGELOG entry so plain
-// `go build` and `wails build` still report something truthful.
-var Version = "0.6.8"
+// Keep this fallback in sync so direct Go and Wails builds remain truthful.
+var Version = "0.6.9"
 
 // StrategiesVersion is the single source of truth for the strategy catalog schema/version.
 const StrategiesVersion = "2026.09.04"
