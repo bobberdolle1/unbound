@@ -14,3 +14,9 @@
 4. For macOS, obtain the SHA-256 of the published PKG and submit a follow-up Cask metadata PR on `master`.
 
 No placeholder Cask hash, copied prior-release artifact, or retroactive release-asset replacement is permitted.
+
+## v0.6.9 platform policy
+
+- Windows may be published only from the exact source commit that passed its physical acceptance.
+- macOS may be built and accepted only from the immutable v0.6.9 tag.
+- Linux remains experimental. The `nfqws2`/NFQUEUE runtime and cleanup passed physical verification, but no repeatable release-grade YouTube + Discord strategy was found; no Linux binary asset is published for v0.6.9. The evidence record is [`linux-v0.6.9-acceptance.md`](linux-v0.6.9-acceptance.md).

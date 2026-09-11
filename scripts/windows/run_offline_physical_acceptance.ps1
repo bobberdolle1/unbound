@@ -9,14 +9,18 @@ param(
     [string]$LogSink = 'bobpc@192.168.0.236',
     [string]$SshKeyPath,
     [string]$CandidateCommit,
-    [string]$ArchivePath
+    [string]$ArchivePath,
+    [ValidateSet('Acceptance', 'DetachedWorker', 'ForcedFailure', 'DnsBaseline')] [string]$SmokeMode = 'Acceptance',
+    [ValidateRange(1, 60)] [int]$SmokeSleepSeconds = 3,
+    [switch]$SimulateNotificationFailure,
+    [switch]$SimulateLogSinkFailure
 )
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$bundle = Join-Path $OutputRoot "v0.6.9-$timestamp"
-$logPath = Join-Path $bundle 'harness.log'
+$bundle = Join-Path $OutputRoot "v0.6.9-$timestamp-$SmokeMode-$([Guid]::NewGuid().ToString('N'))"
+$logPath = Join-Path $bundle 'progress.log'
 $resultPath = Join-Path $bundle 'result.json'
 New-Item -ItemType Directory -Force -Path $bundle | Out-Null
 
@@ -24,7 +28,8 @@ $trackedProcesses = @()
 
 function Write-ProgressLine([string]$Message) {
     $line = "$(Get-Date -Format o) $Message"
-    $line | Tee-Object -FilePath $logPath -Append
+    Add-Content -Path $logPath -Value $line -Encoding utf8
+    Write-Host $line
 }
 function Save-Results {
     $temporaryResultPath = "$resultPath.tmp"
@@ -33,6 +38,7 @@ function Save-Results {
 }
 function Show-LocalStatus([string]$Message, [string]$Title) {
     try {
+        if ($SimulateNotificationFailure) { throw 'Simulated notification failure.' }
         Add-Type -AssemblyName System.Windows.Forms
         [void][Windows.Forms.MessageBox]::Show($Message, $Title, [Windows.Forms.MessageBoxButtons]::OK, [Windows.Forms.MessageBoxIcon]::Information)
     } catch {
@@ -107,6 +113,55 @@ function Invoke-WebProbes {
     }
 }
 
+function Invoke-HarmlessSmoke {
+    $resolvedCandidateDirectory = (Resolve-Path $CandidateDirectory -ErrorAction Stop).Path
+    $results.worker = [ordered]@{
+        processId = $PID
+        workingDirectory = (Get-Location).Path
+        expectedWorkingDirectory = $resolvedCandidateDirectory
+        resultEncoding = 'UTF-8'
+        progressEncoding = 'UTF-8'
+    }
+    if ($results.worker.workingDirectory -ne $resolvedCandidateDirectory) {
+        throw "Worker current directory mismatch: expected $resolvedCandidateDirectory, got $($results.worker.workingDirectory)"
+    }
+
+    $results.stages += [pscustomobject]@{ name = 'WORKER_READY'; status = 'PASS'; at = (Get-Date).ToString('o') }
+    Write-ProgressLine "WORKER_READY mode=$SmokeMode"
+    Save-Results
+
+    switch ($SmokeMode) {
+        'DetachedWorker' {
+            Start-Sleep -Seconds $SmokeSleepSeconds
+            $results.stages += [pscustomobject]@{ name = 'DETACHED_WORKER_RUNTIME'; status = 'PASS'; at = (Get-Date).ToString('o') }
+            Write-ProgressLine 'DETACHED_WORKER_RUNTIME=PASS'
+        }
+        'ForcedFailure' {
+            $child = Register-HarnessProcess (Start-Process -FilePath powershell.exe -ArgumentList '-NoProfile', '-Command', 'Start-Sleep -Seconds 30' -PassThru)
+            $results.ownedChildProcessId = $child.Id
+            $results.stages += [pscustomobject]@{ name = 'FORCED_SMOKE'; status = 'RUNNING'; at = (Get-Date).ToString('o') }
+            Save-Results
+            throw 'FORCED_SMOKE_FAILURE: intentional worker exception'
+        }
+        'DnsBaseline' {
+            $dnsTargets = @('www.youtube.com','discord.com','store.steampowered.com','www.cloudflare.com')
+            $results.dnsBaseline = @(
+                foreach ($target in $dnsTargets) {
+                    $watch = [Diagnostics.Stopwatch]::StartNew()
+                    try {
+                        $records = @(Resolve-DnsName -Name $target -ErrorAction Stop | Where-Object { $_.Type -in 'A','AAAA' } | Select-Object Name,Type,IPAddress,Server)
+                        [pscustomobject]@{ name=$target; records=$records; latencyMs=$watch.ElapsedMilliseconds; error=$null; category='PASS' }
+                    } catch {
+                        [pscustomobject]@{ name=$target; records=@(); latencyMs=$watch.ElapsedMilliseconds; error=$_.Exception.Message; category='DNS_ERROR' }
+                    }
+                }
+            )
+            $results.stages += [pscustomobject]@{ name = 'DNS_HARNESS_RUNTIME'; status = 'PASS'; at = (Get-Date).ToString('o') }
+            Write-ProgressLine 'DNS_HARNESS_RUNTIME=PASS'
+        }
+    }
+}
+
 function Invoke-RecommendedMatrix([string]$FilePath) {
     $stdout = Join-Path $bundle 'recommended.stdout.log'
     $stderr = Join-Path $bundle 'recommended.stderr.log'
@@ -119,8 +174,13 @@ function Invoke-RecommendedMatrix([string]$FilePath) {
     [pscustomobject]@{ exitCode=if($timedOut){$null}else{$process.ExitCode}; timedOut=$timedOut; activeState=$activeState; probes=$probes; stdout=$stdout; stderr=$stderr }
 }
 
-$results = [ordered]@{ version='0.6.9'; startedAt=(Get-Date).ToString('o'); candidateDirectory=$CandidateDirectory; candidateCommit=$CandidateCommit; archivePath=$ArchivePath; stages=@(); status='RUNNING' }
+$results = [ordered]@{ version='0.6.9'; mode=$SmokeMode; startedAt=(Get-Date).ToString('o'); candidateDirectory=$CandidateDirectory; candidateCommit=$CandidateCommit; archivePath=$ArchivePath; stages=@(); status='RUNNING' }
 try {
+    if ($SmokeMode -ne 'Acceptance') {
+        Invoke-HarmlessSmoke
+        $results.status = 'COMPLETE'
+        return
+    }
     $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 function Invoke-LauncherSmoke([string]$LauncherPath) {
     $stdout = Join-Path $bundle "$(Split-Path $LauncherPath -Leaf).stdout.log"
@@ -189,15 +249,22 @@ function Invoke-LauncherSmoke([string]$LauncherPath) {
     Save-Results
     $results.status = 'COMPLETE'
 } catch {
-    $results.status = 'FAILED'; $results.failure = $_.Exception.ToString(); Write-ProgressLine "FAILED: $($_.Exception.Message)"
+    $results.status = 'FAILED'
+    $results.failure = [ordered]@{ stage = if ($SmokeMode -eq 'ForcedFailure') { 'FORCED_SMOKE' } else { 'HARNESS' }; error = $_.Exception.Message }
+    Write-ProgressLine "FAILED: $($_.Exception.Message)"
 } finally {
     foreach ($process in $trackedProcesses) {
         Stop-HarnessProcessTree $process
     }
+    $results.ownedChildrenAliveAfterCleanup = @(
+        $trackedProcesses | Where-Object { -not $_.HasExited }
+    ).Count
     $results.cleanupSnapshot = Get-NetworkSnapshot
     $results.finishedAt = (Get-Date).ToString('o')
     Save-Results
-    if ($SshKeyPath -and (Test-Path $SshKeyPath -PathType Leaf) -and (Get-Command ssh.exe -ErrorAction SilentlyContinue) -and (Get-Command scp.exe -ErrorAction SilentlyContinue)) {
+    if ($SimulateLogSinkFailure) {
+        Write-ProgressLine 'LOG_SINK_FAILED: Simulated log sink failure.'
+    } elseif ($SshKeyPath -and (Test-Path $SshKeyPath -PathType Leaf) -and (Get-Command ssh.exe -ErrorAction SilentlyContinue) -and (Get-Command scp.exe -ErrorAction SilentlyContinue)) {
         $remote = "unbound-acceptance/v0.6.9/$timestamp"
         try {
             & ssh.exe -i $SshKeyPath -o BatchMode=yes -o ConnectTimeout=10 $LogSink "mkdir -p '$remote'" 2>&1 | Tee-Object -FilePath (Join-Path $bundle 'log-sink.log') -Append
@@ -209,6 +276,8 @@ function Invoke-LauncherSmoke([string]$LauncherPath) {
     Write-ProgressLine "ACCEPTANCE $($results.status). Local bundle: $bundle"
     Write-Host "ACCEPTANCE $($results.status)" -ForegroundColor Green
     Write-Host 'Acceptance evidence is available in the local bundle.' -ForegroundColor Green
-    Show-LocalStatus "ACCEPTANCE $($results.status)`nEvidence is available in the local bundle." 'UNBOUND v0.6.9 acceptance'
+    if ($SmokeMode -eq 'Acceptance' -or $SimulateNotificationFailure) {
+        Show-LocalStatus "ACCEPTANCE $($results.status)`nEvidence is available in the local bundle." 'UNBOUND v0.6.9 acceptance'
+    }
 }
 if ($results.status -ne 'COMPLETE') { exit 1 }
