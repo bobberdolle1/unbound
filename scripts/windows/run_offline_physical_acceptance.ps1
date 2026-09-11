@@ -139,6 +139,20 @@ function Invoke-WebProbes {
     }
 }
 
+function Test-AutoTuneTerminalResult([object]$Captured) {
+    if ($Captured.timedOut -or $Captured.exitCode -ne 0) { return [pscustomobject]@{ status='FAIL'; error='AUTOTUNE_PROCESS_EXIT' } }
+    if (-not (Test-Path $Captured.stdout -PathType Leaf)) { return [pscustomobject]@{ status='FAIL'; error='AUTOTUNE_TERMINAL_JSON_MISSING' } }
+    $records = @([regex]::Matches([IO.File]::ReadAllText($Captured.stdout, [Text.Encoding]::UTF8), '(?m)^AUTOTUNE_RESULT_JSON=(.+)\r?$'))
+    if ($records.Count -ne 1) { return [pscustomobject]@{ status='FAIL'; error='AUTOTUNE_TERMINAL_JSON_COUNT' } }
+    try { $report = $records[0].Groups[1].Value | ConvertFrom-Json -ErrorAction Stop } catch { return [pscustomobject]@{ status='FAIL'; error='AUTOTUNE_TERMINAL_JSON_MALFORMED' } }
+    foreach ($field in 'completed','cancelled','lifecycle_failures','profiles_total','profiles_attempted','profiles_completed','profiles_failed_to_start','winner','winner_score','baseline') {
+        if ($report.PSObject.Properties.Name -notcontains $field) { return [pscustomobject]@{ status='FAIL'; error="AUTOTUNE_TERMINAL_JSON_MISSING_$field" } }
+    }
+    if (-not $report.completed -or $report.cancelled -or $report.lifecycle_failures -ne 0) { return [pscustomobject]@{ status='FAIL'; error='AUTOTUNE_TERMINAL_JSON_FAILURE' } }
+    if ($report.profiles_total -lt $report.profiles_attempted -or $report.profiles_attempted -ne $report.profiles_completed -or $report.profiles_failed_to_start -ne 0 -or [string]::IsNullOrWhiteSpace($report.winner)) { return [pscustomobject]@{ status='FAIL'; error='AUTOTUNE_TERMINAL_JSON_INCOHERENT' } }
+    return [pscustomobject]@{ status='PASS'; error=$null; report=$report }
+}
+
 function Invoke-HarmlessSmoke {
     $resolvedCandidateDirectory = (Resolve-Path $CandidateDirectory -ErrorAction Stop).Path
     $results.worker = [ordered]@{
@@ -207,7 +221,7 @@ function Invoke-RecommendedMatrix([string]$FilePath) {
     [pscustomobject]@{ exitCode=if($timedOut){$null}else{$process.ExitCode}; timedOut=$timedOut; activeState=$activeState; probes=$probes; stdout=$stdout; stderr=$stderr }
 }
 
-$results = [ordered]@{ version='0.6.9'; mode=$SmokeMode; startedAt=(Get-Date).ToString('o'); candidateDirectory=$CandidateDirectory; candidateCommit=$CandidateCommit; archivePath=$ArchivePath; stages=@(); status='RUNNING' }
+$results = [ordered]@{ version='0.6.9'; mode=$SmokeMode; startedAt=(Get-Date).ToString('o'); candidateDirectory=$CandidateDirectory; candidateCommit=$CandidateCommit; archivePath=$ArchivePath; stages=@(); execution_state='RUNNING'; acceptance_verdict='INVALID' }
 try {
     if ($SmokeMode -in 'Acceptance', 'StatusWindow') {
         Start-AcceptanceStatusWindow
@@ -215,7 +229,7 @@ try {
     }
     if ($SmokeMode -ne 'Acceptance') {
         Invoke-HarmlessSmoke
-        $results.status = 'COMPLETE'
+        $results.execution_state = 'COMPLETE'
         return
     }
     $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -272,10 +286,10 @@ function Invoke-LauncherSmoke([string]$LauncherPath) {
     $results.kernelAcceptance = Invoke-Captured 'kernel-acceptance' $exe @('--acceptance-test') 90
     Save-Results
     $results.elevatedDoctor = Invoke-Captured 'doctor' $exe @('--test') 90
-    Save-Results
-    $results.recommended = Invoke-RecommendedMatrix $exe
-    Save-Results
     $results.autoTune = Invoke-Captured 'autotune' $exe @('--cli','--autotune',"--run-duration=$($ProfileSeconds)s") $AutoTuneSeconds
+    $autoTuneStage = Test-AutoTuneTerminalResult $results.autoTune
+    $results.stages += [pscustomobject]@{ name='AUTOTUNE'; status=$autoTuneStage.status; error=$autoTuneStage.error; at=(Get-Date).ToString('o') }
+    if ($autoTuneStage.status -ne 'PASS') { throw "AutoTune acceptance failed closed: $($autoTuneStage.error)" }
     Save-Results
     $results.launcherSmoke = @(
         foreach ($launcher in 'general_recommended.cmd','general_autotune.cmd','general_universal.cmd','general_alt1_multisplit.cmd','general_alt2_fake_tls.cmd','service_control.cmd') {
@@ -284,9 +298,15 @@ function Invoke-LauncherSmoke([string]$LauncherPath) {
         }
     )
     Save-Results
-    $results.status = 'COMPLETE'
+    $results.execution_state = 'COMPLETE'
+    $requiredStages = @('CLEAN_WINDOW','KERNEL','RECOMMENDED_FIELD','DOCTOR','CONCURRENT_START','AUTOTUNE','LAUNCHERS','CLEANUP')
+    $stagePasses = foreach ($stageName in $requiredStages) {
+        @($results.stages | Where-Object { $_.name -eq $stageName -and $_.status -eq 'PASS' }).Count -eq 1
+    }
+    $results.acceptance_verdict = if ($stagePasses -notcontains $false) { 'PASS' } else { 'FAIL' }
 } catch {
-    $results.status = 'FAILED'
+    $results.execution_state = 'FAILED'
+    $results.acceptance_verdict = 'FAIL'
     $results.failure = [ordered]@{ stage = if ($SmokeMode -eq 'ForcedFailure') { 'FORCED_SMOKE' } else { 'HARNESS' }; error = $_.Exception.Message }
     Write-ProgressLine "FAILED: $($_.Exception.Message)"
 } finally {
@@ -300,27 +320,18 @@ function Invoke-LauncherSmoke([string]$LauncherPath) {
         $results.statusWindowExitedBeforeTerminal = $true
         Write-ProgressLine 'LOCAL_NOTIFICATION_FAILED: Status window exited before terminal acceptance status.'
     }
-    $finalHeadline = if ($results.status -eq 'COMPLETE') { 'ACCEPTANCE COMPLETE' } else { 'ACCEPTANCE FAILED' }
-    Save-AcceptanceStatus $finalHeadline "CLEANUP COMPLETE`nSAFE TO RE-ENABLE HAPP" $true
+    $failedStage = @($results.stages | Where-Object { $_.status -ne 'PASS' } | Select-Object -First 1).name
+    $finalHeadline = if ($results.acceptance_verdict -eq 'PASS') { 'ACCEPTANCE PASSED' } else { 'ACCEPTANCE FAILED' }
+    $finalDetail = if ($results.acceptance_verdict -eq 'PASS') { "CLEANUP COMPLETE`nSAFE TO RE-ENABLE HAPP" } else { "Failed stage: $failedStage`nCLEANUP COMPLETE`nSAFE TO RE-ENABLE HAPP" }
+    Save-AcceptanceStatus $finalHeadline $finalDetail $true
     $results.cleanupSnapshot = Get-NetworkSnapshot
     $results.finishedAt = (Get-Date).ToString('o')
     Save-Results
-    if ($SimulateLogSinkFailure) {
-        Write-ProgressLine 'LOG_SINK_FAILED: Simulated log sink failure.'
-    } elseif ($SshKeyPath -and (Test-Path $SshKeyPath -PathType Leaf) -and (Get-Command ssh.exe -ErrorAction SilentlyContinue) -and (Get-Command scp.exe -ErrorAction SilentlyContinue)) {
-        $remote = "unbound-acceptance/v0.6.9/$timestamp"
-        try {
-            & ssh.exe -i $SshKeyPath -o BatchMode=yes -o ConnectTimeout=10 $LogSink "mkdir -p '$remote'" 2>&1 | Tee-Object -FilePath (Join-Path $bundle 'log-sink.log') -Append
-            & scp.exe -i $SshKeyPath -o BatchMode=yes -o ConnectTimeout=10 -r $bundle "$LogSink`:$remote/" 2>&1 | Tee-Object -FilePath (Join-Path $bundle 'log-sink.log') -Append
-        } catch {
-            Write-ProgressLine "LOG_SINK_FAILED: $($_.Exception.Message)"
-        }
-    }
-    Write-ProgressLine "ACCEPTANCE $($results.status). Local bundle: $bundle"
-    Write-Host "ACCEPTANCE $($results.status)" -ForegroundColor Green
+    Write-ProgressLine "ACCEPTANCE $($results.acceptance_verdict). Local bundle: $bundle"
+    Write-Host "ACCEPTANCE $($results.acceptance_verdict)" -ForegroundColor Green
     Write-Host 'Acceptance evidence is available in the local bundle.' -ForegroundColor Green
     if ($SimulateNotificationFailure) {
-        Show-LocalStatus "ACCEPTANCE $($results.status)`nEvidence is available in the local bundle." 'UNBOUND v0.6.9 acceptance'
+        Show-LocalStatus "ACCEPTANCE $($results.acceptance_verdict)`nEvidence is available in the local bundle." 'UNBOUND v0.6.9 acceptance'
     }
 }
-if ($results.status -ne 'COMPLETE') { exit 1 }
+if ($results.acceptance_verdict -ne 'PASS') { exit 1 }
