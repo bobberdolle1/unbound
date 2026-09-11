@@ -40,6 +40,7 @@ function Invoke-Captured([string]$Name, [string[]]$Arguments, [int]$TimeoutSecon
     [IO.File]::WriteAllText($stderr, $stderrTask.Result)
     $capturedExitCode = $process.ExitCode
     if ($null -eq $capturedExitCode) { throw "PROCESS_EXIT_CODE_MISSING: $Name" }
+    [IO.File]::WriteAllText((Join-Path $bundle "$Name.exit-debug.txt"), "value=[$capturedExitCode] type=$($capturedExitCode.GetType().FullName)")
     $exitCodeValue = [string]($capturedExitCode)
     $capture = [pscustomobject]@{ name=$Name; timedOut=$false; stdout=$stdout; stderr=$stderr }
     $capture | Add-Member -NotePropertyName exitCode -NotePropertyValue $exitCodeValue
