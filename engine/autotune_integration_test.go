@@ -12,10 +12,12 @@ import (
 )
 
 type fakeAutoTuneProvider struct {
-	mu      sync.Mutex
-	active  string
-	starts  []string
-	stopCnt int
+	mu       sync.Mutex
+	active   string
+	starts   []string
+	stopCnt  int
+	startErr error
+	stopErr  error
 }
 
 func (p *fakeAutoTuneProvider) Name() string                   { return "fake" }
@@ -24,6 +26,9 @@ func (p *fakeAutoTuneProvider) GetProfiles() []string          { return []string
 func (p *fakeAutoTuneProvider) Start(_ context.Context, profile string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.startErr != nil {
+		return p.startErr
+	}
 	p.active = profile
 	p.starts = append(p.starts, profile)
 	return nil
@@ -31,8 +36,11 @@ func (p *fakeAutoTuneProvider) Start(_ context.Context, profile string) error {
 func (p *fakeAutoTuneProvider) Stop() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.active = ""
 	p.stopCnt++
+	if p.stopErr != nil {
+		return p.stopErr
+	}
+	p.active = ""
 	return nil
 }
 func (p *fakeAutoTuneProvider) GetStatus() providers.Status {
@@ -112,6 +120,32 @@ func TestAutoTuneV3RejectsConnectivityRegression(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "AUTOTUNE_LIFECYCLE_FAILURE") {
 		t.Fatalf("ordinary strategy regression became lifecycle failure: %v", err)
+	}
+}
+
+func TestAutoTuneV3AbortsOnLifecycleStartFailure(t *testing.T) {
+	provider := &fakeAutoTuneProvider{startErr: errors.New("another profile () started while this one (First) was in progress")}
+	options := AutoTuneOptions{
+		Targets: []Target{{Name: "target", URL: "https://target.test", Priority: 1}},
+		Probe: func(_ context.Context, _ string) (ProbeResult, error) {
+			if provider.CurrentProfile() != "" {
+				t.Fatal("profile probe ran after lifecycle start failure")
+			}
+			return ProbeResult{Success: true, CertValid: true}, nil
+		},
+		ProbeTimeout: time.Second,
+		MinimumOK:    1,
+	}
+
+	result, err := RunAutoTuneV3(context.Background(), provider, []Profile{{Name: "First"}, {Name: "Second"}}, nil, options)
+	if err == nil || result == nil {
+		t.Fatalf("lifecycle failure did not return structured failure: result=%+v err=%v", result, err)
+	}
+	if result.Completed || result.ErrorCategory != "AUTOTUNE_LIFECYCLE_FAILURE" || result.LifecycleFailures != 1 || result.ProfilesAttempted != 1 || result.ProfilesFailedToStart != 1 {
+		t.Fatalf("invalid lifecycle failure report: %+v", result)
+	}
+	if !strings.Contains(err.Error(), "AUTOTUNE_LIFECYCLE_FAILURE") {
+		t.Fatalf("lifecycle category missing from error: %v", err)
 	}
 }
 
