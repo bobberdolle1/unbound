@@ -130,12 +130,12 @@ foreach ($line in Get-Content $manifest) {
 }
 
 $result = [ordered]@{ candidateCommit=$CandidateCommit; archivePath=$ArchivePath; executableVersion=(& $exe --version | Out-String).Trim(); startedAt=(Get-Date).ToString('o'); stages=@(); profiles=@() }
-$kernel = Invoke-Captured 'kernel' @('--acceptance-test') 90
+$kernel = @(Invoke-Captured 'kernel' @('--acceptance-test') 90 | Select-Object -Last 1)[0]
 $result.kernel = $kernel
 if ($kernel.timedOut -or $kernel.exitCode -ne 0) { throw "KERNEL_FAILED: timedOut=$($kernel.timedOut) exitCode=$($kernel.exitCode)" }
 $result.stages += [pscustomobject]@{ name='KERNEL'; status='PASS' }
 
-$catalog = Invoke-Captured 'profiles' @('--list-profiles','--json') 30
+$catalog = @(Invoke-Captured 'profiles' @('--list-profiles','--json') 30 | Select-Object -Last 1)[0]
 if ($catalog.timedOut -or $catalog.exitCode -ne 0) { throw 'PROFILE_CATALOG_FAILED' }
 $profileSets = Get-Content $catalog.stdout -Raw | ConvertFrom-Json
 $maxWinws = 0
@@ -168,14 +168,12 @@ $result.runningEmptyProfile = $runningEmptyProfile
 $result.finalWinws2 = @(Get-Process winws2 -ErrorAction SilentlyContinue).Count
 if ($maxWinws -ne 1 -or $startConflicts -ne 0 -or $runningEmptyProfile -ne 0 -or $result.finalWinws2 -ne 0) { throw 'OWNERSHIP_METRICS_FAILED' }
 $result.stages += [pscustomobject]@{ name='OWNERSHIP'; status='PASS' }
-
-$autotune = Invoke-Captured 'autotune' @('--cli','--autotune') $AutoTuneSeconds
+$autotune = @(Invoke-Captured 'autotune' @('--cli','--autotune') $AutoTuneSeconds | Select-Object -Last 1)[0]
 $result.autotune = $autotune
 $autoTuneError = Test-AutoTuneTerminalResult $autotune
 if ($autoTuneError) { throw "AUTOTUNE_FAILED: $autoTuneError" }
 $result.stages += [pscustomobject]@{ name='AUTOTUNE'; status='PASS' }
-
-$result.doctor = Invoke-Captured 'doctor' @('--test') 90
+$result.doctor = @(Invoke-Captured 'doctor' @('--test') 90 | Select-Object -Last 1)[0]
 $result.stages += [pscustomobject]@{ name='DOCTOR'; status=if($result.doctor.exitCode -eq 0 -and -not $result.doctor.timedOut){'PASS'}else{'FAIL'} }
 if ($result.stages[-1].status -ne 'PASS') { throw 'DOCTOR_FAILED' }
 
