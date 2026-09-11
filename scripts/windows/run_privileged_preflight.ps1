@@ -15,6 +15,21 @@ $ArchivePath = (Resolve-Path $ArchivePath).Path
 $bundle = [IO.Path]::GetFullPath($BundleDirectory)
 New-Item -ItemType Directory -Force -Path $bundle | Out-Null
 
+function Invoke-Captured([string]$Name, [string[]]$Arguments, [int]$TimeoutSeconds) {
+    $stdout = Join-Path $bundle "$Name.stdout.log"
+    $stderr = Join-Path $bundle "$Name.stderr.log"
+    $process = Start-Process -FilePath $exe -ArgumentList $Arguments -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    $timedOut = -not $process.WaitForExit($TimeoutSeconds * 1000)
+    if ($timedOut) {
+        Stop-TrackedProcessTree $process
+        return [pscustomobject]@{ name=$Name; exitCode=$null; timedOut=$true; stdout=$stdout; stderr=$stderr }
+    }
+    $process.WaitForExit()
+    $process.Refresh()
+    $exitCode = [int]$process.ExitCode
+    return [pscustomobject]@{ name=$Name; exitCode=$exitCode; timedOut=$false; stdout=$stdout; stderr=$stderr }
+}
+
 trap {
     $errorText = ($_ | Out-String).Trim()
     $failure = [ordered]@{
