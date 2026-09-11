@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -108,6 +109,9 @@ func TestAutoTuneV3RejectsConnectivityRegression(t *testing.T) {
 	result, err := RunAutoTuneV3(context.Background(), provider, []Profile{{Name: "Regressive"}}, nil, options)
 	if err == nil || result != nil {
 		t.Fatalf("regressive profile accepted: result=%+v err=%v", result, err)
+	}
+	if strings.Contains(err.Error(), "AUTOTUNE_LIFECYCLE_FAILURE") {
+		t.Fatalf("ordinary strategy regression became lifecycle failure: %v", err)
 	}
 }
 
