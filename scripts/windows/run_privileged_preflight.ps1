@@ -42,6 +42,39 @@ function Get-ProcessTreeIds([int]$RootProcessId) {
     return $ids.ToArray()
 }
 
+function Stop-TrackedProcessTree([Diagnostics.Process]$Process) {
+    foreach ($id in @(Get-ProcessTreeIds $Process.Id | Sort-Object -Descending)) {
+        Stop-Process -Id $id -Force -ErrorAction SilentlyContinue
+    }
+    Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
+    $Process.WaitForExit(10000) | Out-Null
+}
+
+function Test-AutoTuneTerminalResult([pscustomobject]$Capture) {
+    if ($Capture.timedOut) { return 'PROCESS_TIMEOUT' }
+    if ($Capture.exitCode -ne 0) { return "PROCESS_EXIT_$($Capture.exitCode)" }
+    $records = @([regex]::Matches((Get-Content $Capture.stdout -Raw), '(?m)^AUTOTUNE_RESULT_JSON=(.+)\r?$'))
+    if ($records.Count -ne 1) { return 'AUTOTUNE_RESULT_COUNT_INVALID' }
+    try { $result = $records[0].Groups[1].Value | ConvertFrom-Json -ErrorAction Stop } catch { return 'AUTOTUNE_RESULT_MALFORMED' }
+    if (-not $result.completed -or $result.cancelled -or $result.lifecycle_failures -ne 0) { return 'AUTOTUNE_RESULT_FAILED' }
+    if ($result.profiles_attempted -ne $result.profiles_total -or $result.profiles_completed -ne $result.profiles_total -or $result.profiles_failed_to_start -ne 0) { return 'AUTOTUNE_RESULT_INCOMPLETE' }
+    return $null
+}
+
+function Invoke-LauncherSmoke([string]$LauncherPath) {
+    $name = Split-Path $LauncherPath -Leaf
+    $stdout = Join-Path $bundle "$name.stdout.log"
+    $stderr = Join-Path $bundle "$name.stderr.log"
+    $process = Start-Process -FilePath $env:ComSpec -ArgumentList '/d','/c',"`"$LauncherPath`"" -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    try {
+        Start-Sleep -Seconds 8
+        $started = @(Get-ProcessTreeIds $process.Id | ForEach-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue } | Where-Object { $_.ProcessName -in 'Unbound','winws2' }).Count -gt 0
+        return [pscustomobject]@{ name=$name; started=$started; stdout=$stdout; stderr=$stderr }
+    } finally {
+        Stop-TrackedProcessTree $process
+    }
+}
+
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin) { throw 'ELEVATION_REQUIRED' }
 if (-not (Test-Path $exe -PathType Leaf)) { throw "Missing candidate executable: $exe" }
@@ -65,6 +98,8 @@ $catalog = Invoke-Captured 'profiles' @('--list-profiles','--json') 30
 if ($catalog.timedOut -or $catalog.exitCode -ne 0) { throw 'PROFILE_CATALOG_FAILED' }
 $profileSets = Get-Content $catalog.stdout -Raw | ConvertFrom-Json
 $maxWinws = 0
+$startConflicts = 0
+$runningEmptyProfile = 0
 foreach ($engine in $profileSets.PSObject.Properties) {
     foreach ($profile in @($engine.Value)) {
         $name = "profile-$([Guid]::NewGuid().ToString('N'))"
@@ -76,30 +111,42 @@ foreach ($engine in $profileSets.PSObject.Properties) {
         $active = @(Get-Process winws2 -ErrorAction SilentlyContinue)
         $maxWinws = [Math]::Max($maxWinws, $active.Count)
         $aliveAtStart = $owned.Count -eq 1 -and $null -ne (Get-Process -Id $owned[0] -ErrorAction SilentlyContinue)
+        if ($owned.Count -ne 1 -or -not $aliveAtStart -or $active.Count -ne 1) { $startConflicts++ }
         $timedOut = -not $process.WaitForExit(($ProfileSeconds + 35) * 1000)
-        if ($timedOut) {
-            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
-        } else {
-            $process.Refresh()
-        }
+        if ($timedOut) { Stop-TrackedProcessTree $process } else { $process.Refresh() }
         $aliveAfterStop = if ($owned.Count -eq 1) { $null -ne (Get-Process -Id $owned[0] -ErrorAction SilentlyContinue) } else { $true }
-        if ($timedOut -or $process.ExitCode -ne 0 -or -not $aliveAtStart -or $aliveAfterStop -or $active.Count -ne 1) { throw "PROFILE_LIFECYCLE_FAILED: $profile" }
+        if ($timedOut -or $process.ExitCode -ne 0 -or $aliveAfterStop) { $startConflicts++ }
+        $emptyProfile = Select-String -Path $stdout -Pattern 'Profile:\s*$' -Quiet
+        if ($emptyProfile) { $runningEmptyProfile++ }
+        $result.profiles += [pscustomobject]@{ engine=$engine.Name; profile=$profile; processId=$process.Id; winws2Pid=if($owned.Count -eq 1){$owned[0]}else{$null}; aliveAtStart=$aliveAtStart; aliveAfterStop=$aliveAfterStop; timedOut=$timedOut; exitCode=if($process.HasExited){$process.ExitCode}else{$null}; emptyProfile=$emptyProfile; stdout=$stdout; stderr=$stderr }
     }
 }
 $result.maxConcurrentWinws2 = $maxWinws
+$result.startConflicts = $startConflicts
+$result.runningEmptyProfile = $runningEmptyProfile
 $result.finalWinws2 = @(Get-Process winws2 -ErrorAction SilentlyContinue).Count
-if ($maxWinws -ne 1 -or $result.finalWinws2 -ne 0) { throw 'OWNERSHIP_METRICS_FAILED' }
+if ($maxWinws -ne 1 -or $startConflicts -ne 0 -or $runningEmptyProfile -ne 0 -or $result.finalWinws2 -ne 0) { throw 'OWNERSHIP_METRICS_FAILED' }
 $result.stages += [pscustomobject]@{ name='OWNERSHIP'; status='PASS' }
 
 $autotune = Invoke-Captured 'autotune' @('--cli','--autotune') $AutoTuneSeconds
 $result.autotune = $autotune
-$records = @([regex]::Matches((Get-Content $autotune.stdout -Raw), '(?m)^AUTOTUNE_RESULT_JSON=(.+)\r?$'))
-if ($autotune.timedOut -or $autotune.exitCode -ne 0 -or $records.Count -ne 1) { throw 'AUTOTUNE_FAILED' }
+$autoTuneError = Test-AutoTuneTerminalResult $autotune
+if ($autoTuneError) { throw "AUTOTUNE_FAILED: $autoTuneError" }
 $result.stages += [pscustomobject]@{ name='AUTOTUNE'; status='PASS' }
 
 $result.doctor = Invoke-Captured 'doctor' @('--test') 90
 $result.stages += [pscustomobject]@{ name='DOCTOR'; status=if($result.doctor.exitCode -eq 0 -and -not $result.doctor.timedOut){'PASS'}else{'FAIL'} }
 if ($result.stages[-1].status -ne 'PASS') { throw 'DOCTOR_FAILED' }
+
+$result.launchers = @(
+    foreach ($launcher in 'general_recommended.cmd','general_autotune.cmd','general_universal.cmd','general_alt1_multisplit.cmd','general_alt2_fake_tls.cmd','service_control.cmd') {
+        $path = Join-Path $CandidateDirectory $launcher
+        if (-not (Test-Path $path -PathType Leaf)) { [pscustomobject]@{ name=$launcher; started=$false; error='MISSING' } } else { Invoke-LauncherSmoke $path }
+    }
+)
+$result.finalWinws2AfterLaunchers = @(Get-Process winws2 -ErrorAction SilentlyContinue).Count
+if (@($result.launchers | Where-Object { -not $_.started }).Count -ne 0 -or $result.finalWinws2AfterLaunchers -ne 0) { throw 'LAUNCHER_LIFECYCLE_FAILED' }
+$result.stages += [pscustomobject]@{ name='LAUNCHERS'; status='PASS' }
 $result.finishedAt = (Get-Date).ToString('o')
 $result | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $bundle 'result.json') -Encoding utf8
 Write-Output "PRIVILEGED_PREFLIGHT_PASS bundle=$bundle"
