@@ -74,10 +74,13 @@ func extractAssets() (*AssetPaths, error) {
 	binDir := filepath.Join(workspace.stagingDir, "core_bin")
 	luaDir := filepath.Join(workspace.stagingDir, "lua_scripts")
 	listDir := filepath.Join(workspace.stagingDir, "lists")
-	for _, dir := range []string{binDir, luaDir, listDir} {
+	for _, dir := range []string{binDir, listDir} {
 		if err := os.MkdirAll(dir, 0700); err != nil {
 			return nil, fmt.Errorf("create runtime asset directory: %w", err)
 		}
+	}
+	if err := os.MkdirAll(luaDir, 0755); err != nil {
+		return nil, fmt.Errorf("create runtime Lua directory: %w", err)
 	}
 
 	extracted := make(map[string]string)
@@ -100,7 +103,11 @@ func extractAssets() (*AssetPaths, error) {
 			}
 			targetPath := filepath.Join(targetDir, entry.Name())
 			expectedHash := sha256Hex(data)
-			if err := writeFileAtomicVerified(targetPath, data, 0700, expectedHash); err != nil {
+			mode := os.FileMode(0700)
+			if sourcePrefix == "lua_scripts" {
+				mode = 0644
+			}
+			if err := writeFileAtomicVerified(targetPath, data, mode, expectedHash); err != nil {
 				return fmt.Errorf("extract %s: %w", sourcePath, err)
 			}
 			extracted[targetPath] = expectedHash
