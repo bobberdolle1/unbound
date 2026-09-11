@@ -132,6 +132,7 @@ foreach ($line in Get-Content $manifest) {
 $result = [ordered]@{ candidateCommit=$CandidateCommit; archivePath=$ArchivePath; executableVersion=(& $exe --version | Out-String).Trim(); startedAt=(Get-Date).ToString('o'); stages=@(); profiles=@() }
 $kernel = @(Invoke-Captured 'kernel' @('--acceptance-test') 90 | Select-Object -Last 1)[0]
 $result.kernel = $kernel
+$kernel | ConvertTo-Json -Depth 4 | Set-Content -Path (Join-Path $bundle 'kernel.capture.json') -Encoding utf8
 if ($kernel.timedOut -or $kernel.exitCode -ne 0) { throw "KERNEL_FAILED: timedOut=$($kernel.timedOut) exitCode=$($kernel.exitCode)" }
 $result.stages += [pscustomobject]@{ name='KERNEL'; status='PASS' }
 
