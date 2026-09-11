@@ -42,8 +42,16 @@ do {
             $alive = $null -ne (Get-Process -Id $ready.pid -ErrorAction SilentlyContinue)
             if ($ready.admin -eq $true -and $alive -and $ready.candidate_commit -eq $CandidateCommit -and $ready.candidate_exe_sha256 -eq $expectedHash) {
                 Write-Output "ELEVATED_HANDSHAKE_VERIFIED processId=$($ready.pid) bundle=$bundle"
-                [pscustomobject]@{ worker=$worker; processId=$ready.pid; bundle=$bundle; startedAt=$ready.started_at }
-                exit 0
+                if (-not $process.WaitForExit(1800000)) { throw 'ELEVATED_PREFLIGHT_TIMEOUT' }
+                $process.Refresh()
+                $resultPath = Join-Path $bundle 'result.json'
+                if ($process.ExitCode -ne 0 -or -not (Test-Path $resultPath -PathType Leaf)) { throw "ELEVATED_PREFLIGHT_FAILED: exitCode=$($process.ExitCode) bundle=$bundle" }
+                $result = Get-Content $resultPath -Raw | ConvertFrom-Json -ErrorAction Stop
+                if ($result.stages -and (@($result.stages | Where-Object { $_.status -ne 'PASS' }).Count -eq 0)) {
+                    Write-Output "PRIVILEGED_PREFLIGHT_VERIFIED bundle=$bundle"
+                    exit 0
+                }
+                throw "ELEVATED_PREFLIGHT_FAILED: result=$resultPath"
             }
             throw 'ELEVATED_HANDSHAKE_IDENTITY_MISMATCH'
         } catch {
