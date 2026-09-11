@@ -4,6 +4,7 @@ param(
     [Parameter(Mandatory)] [string]$CandidateDirectory,
     [Parameter(Mandatory)] [string]$CandidateCommit,
     [Parameter(Mandatory)] [string]$ArchivePath,
+    [Parameter(Mandatory)] [string]$BundleDirectory,
     [int]$ProfileSeconds = 6,
     [int]$AutoTuneSeconds = 300
 )
@@ -11,7 +12,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $CandidateDirectory = (Resolve-Path $CandidateDirectory).Path
 $ArchivePath = (Resolve-Path $ArchivePath).Path
-$bundle = Join-Path ([Environment]::GetFolderPath('MyDocuments')) "UnboundAcceptance\preflight-$([Guid]::NewGuid().ToString('N'))"
+$bundle = [IO.Path]::GetFullPath($BundleDirectory)
 New-Item -ItemType Directory -Force -Path $bundle | Out-Null
 $exe = Join-Path $CandidateDirectory 'Unbound.exe'
 
@@ -78,6 +79,17 @@ function Invoke-LauncherSmoke([string]$LauncherPath) {
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin) { throw 'ELEVATION_REQUIRED' }
 if (-not (Test-Path $exe -PathType Leaf)) { throw "Missing candidate executable: $exe" }
+$candidateExeSha256 = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
+$readyPath = Join-Path $bundle 'elevated-ready.json'
+$readyTempPath = Join-Path $bundle ".elevated-ready-$PID.tmp"
+[ordered]@{
+    admin = $true
+    pid = $PID
+    started_at = (Get-Date).ToString('o')
+    candidate_commit = $CandidateCommit
+    candidate_exe_sha256 = $candidateExeSha256
+} | ConvertTo-Json | Set-Content -Path $readyTempPath -Encoding utf8
+Move-Item -Path $readyTempPath -Destination $readyPath -Force
 
 $manifest = Join-Path $CandidateDirectory 'BUNDLE_SHA256SUMS.txt'
 if (-not (Test-Path $manifest -PathType Leaf)) { throw 'Missing candidate manifest.' }
