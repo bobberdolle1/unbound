@@ -41,7 +41,9 @@ function Invoke-Captured([string]$Name, [string[]]$Arguments, [int]$TimeoutSecon
     $capturedExitCode = $process.ExitCode
     if ($null -eq $capturedExitCode) { throw "PROCESS_EXIT_CODE_MISSING: $Name" }
     $exitCodeValue = [string]($capturedExitCode)
-    return [pscustomobject]@{ name=$Name; exitCode=$exitCodeValue; timedOut=$false; stdout=$stdout; stderr=$stderr }
+    $capture = [pscustomobject]@{ name=$Name; timedOut=$false; stdout=$stdout; stderr=$stderr }
+    $capture | Add-Member -NotePropertyName exitCode -NotePropertyValue $exitCodeValue
+    return $capture
 }
 
 trap {
