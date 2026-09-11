@@ -17,7 +17,7 @@ function Import-HarnessFunctions([string[]]$Names) {
 
 Describe 'offline physical acceptance harness helpers' {
     BeforeAll {
-        Import-HarnessFunctions @('Save-Results', 'Get-ProcessTreeIds', 'Stop-HarnessProcessTree', 'Test-AutoTuneTerminalResult')
+        Import-HarnessFunctions @('Save-Results', 'Get-ProcessTreeIds', 'Stop-HarnessProcessTree', 'Test-AutoTuneTerminalResult', 'Get-CapturedStageResult')
     }
 
     It 'persists the latest complete JSON result without leaving a temporary file' {
@@ -67,11 +67,18 @@ Describe 'offline physical acceptance harness helpers' {
         }
     }
 
+    It 'fails kernel and doctor stages on process failure or timeout' {
+        (Get-CapturedStageResult 'KERNEL' ([pscustomobject]@{ timedOut=$false; exitCode=0 })).status | Should Be 'PASS'
+        (Get-CapturedStageResult 'DOCTOR' ([pscustomobject]@{ timedOut=$false; exitCode=1 })).status | Should Be 'FAIL'
+        (Get-CapturedStageResult 'DOCTOR' ([pscustomobject]@{ timedOut=$true; exitCode=$null })).error | Should Be 'PROCESS_TIMEOUT'
+    }
+
     It 'fails closed unless every required acceptance stage passes exactly once' {
         Import-HarnessFunctions @('Get-AcceptanceVerdict')
         $required = @('CLEAN_WINDOW','KERNEL','RECOMMENDED_FIELD','DOCTOR','CONCURRENT_START','AUTOTUNE','LAUNCHERS','CLEANUP')
         $passing = @($required | ForEach-Object { [pscustomobject]@{ name=$_; status='PASS' } })
         (Get-AcceptanceVerdict $passing) | Should Be 'PASS'
+        (Get-AcceptanceVerdict @($passing + [pscustomobject]@{ name='DOCTOR'; status='FAIL' })) | Should Be 'FAIL'
         (Get-AcceptanceVerdict @($passing | Where-Object name -ne 'CLEANUP')) | Should Be 'FAIL'
         (Get-AcceptanceVerdict @($passing + [pscustomobject]@{ name='AUTOTUNE'; status='PASS' })) | Should Be 'FAIL'
         $doctorFailure = @($passing | ForEach-Object { [pscustomobject]@{ name=$_.name; status=$_.status } })

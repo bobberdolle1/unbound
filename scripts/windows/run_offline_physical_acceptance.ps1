@@ -156,11 +156,37 @@ function Test-AutoTuneTerminalResult([object]$Captured) {
 function Get-AcceptanceVerdict([object[]]$Stages) {
     $requiredStages = @('CLEAN_WINDOW','KERNEL','RECOMMENDED_FIELD','DOCTOR','CONCURRENT_START','AUTOTUNE','LAUNCHERS','CLEANUP')
     foreach ($stageName in $requiredStages) {
-        if (@($Stages | Where-Object { $_.name -eq $stageName -and $_.status -eq 'PASS' }).Count -ne 1) {
+        $stageRecords = @($Stages | Where-Object { $_.name -eq $stageName })
+        if ($stageRecords.Count -ne 1 -or $stageRecords[0].status -ne 'PASS') {
             return 'FAIL'
         }
     }
     return 'PASS'
+}
+function Get-CapturedStageResult([string]$Name, [object]$Captured) {
+    if ($Captured.timedOut) {
+        return [pscustomobject]@{ name=$Name; status='FAIL'; error='PROCESS_TIMEOUT'; at=(Get-Date).ToString('o') }
+    }
+    if ($Captured.exitCode -ne 0) {
+        return [pscustomobject]@{ name=$Name; status='FAIL'; error="PROCESS_EXIT_$($Captured.exitCode)"; at=(Get-Date).ToString('o') }
+    }
+    return [pscustomobject]@{ name=$Name; status='PASS'; error=$null; at=(Get-Date).ToString('o') }
+}
+
+function Get-RecommendedStageResult([object]$Run) {
+    if ($Run.timedOut) {
+        return [pscustomobject]@{ name='RECOMMENDED_FIELD'; status='FAIL'; error='PROCESS_TIMEOUT'; at=(Get-Date).ToString('o') }
+    }
+    if ($Run.exitCode -ne 0) {
+        return [pscustomobject]@{ name='RECOMMENDED_FIELD'; status='FAIL'; error="PROCESS_EXIT_$($Run.exitCode)"; at=(Get-Date).ToString('o') }
+    }
+    if (@($Run.probes | Where-Object { -not $_.ok }).Count -ne 0) {
+        return [pscustomobject]@{ name='RECOMMENDED_FIELD'; status='FAIL'; error='WEB_PROBE_FAILED'; at=(Get-Date).ToString('o') }
+    }
+    if (@($Run.activeState.processes | Where-Object { $_.ProcessName -eq 'winws2' }).Count -ne 1) {
+        return [pscustomobject]@{ name='RECOMMENDED_FIELD'; status='FAIL'; error='WINWS2_OWNERSHIP_INVALID'; at=(Get-Date).ToString('o') }
+    }
+    return [pscustomobject]@{ name='RECOMMENDED_FIELD'; status='PASS'; error=$null; at=(Get-Date).ToString('o') }
 }
 
 function Invoke-HarmlessSmoke {
@@ -226,9 +252,53 @@ function Invoke-RecommendedMatrix([string]$FilePath) {
     Start-Sleep -Seconds ([Math]::Min(10, $ProfileSeconds))
     $activeState = Get-NetworkSnapshot
     $probes = @(Invoke-WebProbes)
+
     $timedOut = -not $process.WaitForExit(($ProfileSeconds + 35) * 1000)
     if ($timedOut) { Stop-HarnessProcessTree $process }
     [pscustomobject]@{ exitCode=if($timedOut){$null}else{$process.ExitCode}; timedOut=$timedOut; activeState=$activeState; probes=$probes; stdout=$stdout; stderr=$stderr }
+}
+function Invoke-ProfileOwnershipSmoke([string]$FilePath, [int]$DurationSeconds) {
+    $catalog = Invoke-Captured 'profile-catalog' $FilePath @('--list-profiles','--json') 30
+    if ($catalog.timedOut -or $catalog.exitCode -ne 0) {
+        return [pscustomobject]@{ status='FAIL'; error='PROFILE_CATALOG_UNAVAILABLE'; records=@(); maxConcurrentWinws2=$null; startConflicts=$null; runningEmptyProfile=$null; finalWinws2=$null }
+    }
+    try { $profileSets = Get-Content $catalog.stdout -Raw | ConvertFrom-Json -ErrorAction Stop } catch {
+        return [pscustomobject]@{ status='FAIL'; error='PROFILE_CATALOG_MALFORMED'; records=@(); maxConcurrentWinws2=$null; startConflicts=$null; runningEmptyProfile=$null; finalWinws2=$null }
+    }
+    if (@(Get-Process winws2 -ErrorAction SilentlyContinue).Count -ne 0) {
+        return [pscustomobject]@{ status='FAIL'; error='PREEXISTING_WINWS2'; records=@(); maxConcurrentWinws2=$null; startConflicts=$null; runningEmptyProfile=$null; finalWinws2=@(Get-Process winws2 -ErrorAction SilentlyContinue).Count }
+    }
+
+    $records = @()
+    $maxConcurrentWinws2 = 0
+    $startConflicts = 0
+    $runningEmptyProfile = 0
+    foreach ($engine in $profileSets.PSObject.Properties) {
+        foreach ($profile in @($engine.Value)) {
+            $stdout = Join-Path $bundle "ownership-$([Guid]::NewGuid().ToString('N')).stdout.log"
+            $stderr = Join-Path $bundle "ownership-$([Guid]::NewGuid().ToString('N')).stderr.log"
+            $process = Register-HarnessProcess (Start-Process -FilePath $FilePath -ArgumentList '--cli','--profile',$profile,"--run-duration=$($DurationSeconds)s" -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr)
+            Start-Sleep -Seconds 2
+            $ownedPids = @(Get-ProcessTreeIds $process.Id | ForEach-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue } | Where-Object { $_.ProcessName -eq 'winws2' } | Select-Object -ExpandProperty Id)
+            $activeWinws2 = @(Get-Process winws2 -ErrorAction SilentlyContinue)
+            $maxConcurrentWinws2 = [Math]::Max($maxConcurrentWinws2, $activeWinws2.Count)
+            if ($ownedPids.Count -ne 1) { $startConflicts++ }
+            $pid = if ($ownedPids.Count -eq 1) { $ownedPids[0] } else { $null }
+            $aliveAfterStart = if ($pid) { $null -ne (Get-Process -Id $pid -ErrorAction SilentlyContinue) } else { $false }
+            if (-not $aliveAfterStart) { $startConflicts++ }
+            $process.WaitForExit(($DurationSeconds + 35) * 1000) | Out-Null
+            if (-not $process.HasExited) { Stop-HarnessProcessTree $process; $startConflicts++ }
+            $aliveAfterStop = if ($pid) { $null -ne (Get-Process -Id $pid -ErrorAction SilentlyContinue) } else { $true }
+            if ($aliveAfterStop) { $startConflicts++ }
+            $emptyProfile = (Select-String -Path $stdout -Pattern 'Profile:\s*$' -Quiet)
+            if ($emptyProfile) { $runningEmptyProfile++ }
+            $records += [pscustomobject]@{ engine=$engine.Name; profile=$profile; processId=$process.Id; winws2Pid=$pid; aliveAfterStart=$aliveAfterStart; aliveAfterStop=$aliveAfterStop; launcherExitCode=if($process.HasExited){$process.ExitCode}else{$null}; stdout=$stdout; stderr=$stderr }
+        }
+    }
+    $finalWinws2 = @(Get-Process winws2 -ErrorAction SilentlyContinue).Count
+    $status = if ($records.Count -gt 0 -and $maxConcurrentWinws2 -eq 1 -and $startConflicts -eq 0 -and $runningEmptyProfile -eq 0 -and $finalWinws2 -eq 0) { 'PASS' } else { 'FAIL' }
+    $error = if ($status -eq 'PASS') { $null } else { 'OWNERSHIP_LIFECYCLE_FAILED' }
+    return [pscustomobject]@{ status=$status; error=$error; records=$records; maxConcurrentWinws2=$maxConcurrentWinws2; startConflicts=$startConflicts; runningEmptyProfile=$runningEmptyProfile; finalWinws2=$finalWinws2 }
 }
 
 $results = [ordered]@{ version='0.6.9'; mode=$SmokeMode; startedAt=(Get-Date).ToString('o'); candidateDirectory=$CandidateDirectory; candidateCommit=$CandidateCommit; archivePath=$ArchivePath; stages=@(); execution_state='RUNNING'; acceptance_verdict='INVALID' }
@@ -292,10 +362,18 @@ function Invoke-LauncherSmoke([string]$LauncherPath) {
         }
     )
     $results.cleanWebBaseline = @(Invoke-WebProbes)
-    Save-Results
     $results.kernelAcceptance = Invoke-Captured 'kernel-acceptance' $exe @('--acceptance-test') 90
-    Save-Results
+    $results.stages += Get-CapturedStageResult 'KERNEL' $results.kernelAcceptance
+    if ($results.stages[-1].status -ne 'PASS') { throw "Kernel acceptance failed closed: $($results.stages[-1].error)" }
+    $results.ownershipSmoke = Invoke-ProfileOwnershipSmoke $exe ([Math]::Min($ProfileSeconds, 10))
+    $results.stages += [pscustomobject]@{ name='CONCURRENT_START'; status=$results.ownershipSmoke.status; error=$results.ownershipSmoke.error; at=(Get-Date).ToString('o') }
+    if ($results.stages[-1].status -ne 'PASS') { throw "Profile ownership acceptance failed closed: $($results.stages[-1].error)" }
+    $results.recommendedField = Invoke-RecommendedMatrix $exe
+    $results.stages += Get-RecommendedStageResult $results.recommendedField
+    if ($results.stages[-1].status -ne 'PASS') { throw "Recommended field acceptance failed closed: $($results.stages[-1].error)" }
     $results.elevatedDoctor = Invoke-Captured 'doctor' $exe @('--test') 90
+    $results.stages += Get-CapturedStageResult 'DOCTOR' $results.elevatedDoctor
+    if ($results.stages[-1].status -ne 'PASS') { throw "Doctor acceptance failed closed: $($results.stages[-1].error)" }
     $results.autoTune = Invoke-Captured 'autotune' $exe @('--cli','--autotune',"--run-duration=$($ProfileSeconds)s") $AutoTuneSeconds
     $autoTuneStage = Test-AutoTuneTerminalResult $results.autoTune
     $results.stages += [pscustomobject]@{ name='AUTOTUNE'; status=$autoTuneStage.status; error=$autoTuneStage.error; at=(Get-Date).ToString('o') }
@@ -307,9 +385,14 @@ function Invoke-LauncherSmoke([string]$LauncherPath) {
             if (-not (Test-Path $path -PathType Leaf)) { [pscustomobject]@{ name=$launcher; started=$false; failure='MISSING' } } else { Invoke-LauncherSmoke $path }
         }
     )
+    if (@($results.launcherSmoke | Where-Object { -not $_.started }).Count -ne 0) {
+        $results.stages += [pscustomobject]@{ name='LAUNCHERS'; status='FAIL'; error='LAUNCHER_START_FAILED'; at=(Get-Date).ToString('o') }
+        throw 'Launcher acceptance failed closed.'
+    }
+    $results.stages += [pscustomobject]@{ name='LAUNCHERS'; status='PASS'; error=$null; at=(Get-Date).ToString('o') }
     Save-Results
     $results.execution_state = 'COMPLETE'
-    $results.acceptance_verdict = Get-AcceptanceVerdict $results.stages
+    $results.acceptance_verdict = 'INVALID'
 } catch {
     $results.execution_state = 'FAILED'
     $results.acceptance_verdict = 'FAIL'
@@ -318,6 +401,7 @@ function Invoke-LauncherSmoke([string]$LauncherPath) {
 } finally {
     foreach ($process in $trackedProcesses) {
         Stop-HarnessProcessTree $process
+        $process.WaitForExit(10000) | Out-Null
     }
     $results.ownedChildrenAliveAfterCleanup = @(
         $trackedProcesses | Where-Object { -not $_.HasExited }
@@ -326,11 +410,18 @@ function Invoke-LauncherSmoke([string]$LauncherPath) {
         $results.statusWindowExitedBeforeTerminal = $true
         Write-ProgressLine 'LOCAL_NOTIFICATION_FAILED: Status window exited before terminal acceptance status.'
     }
+    $results.cleanupSnapshot = Get-NetworkSnapshot
+    $cleanupWinws = @($results.cleanupSnapshot.processes | Where-Object { $_.ProcessName -eq 'winws2' }).Count
+    $cleanupStatus = if ($results.ownedChildrenAliveAfterCleanup -eq 0 -and $cleanupWinws -eq 0) { 'PASS' } else { 'FAIL' }
+    $cleanupError = if ($cleanupStatus -eq 'PASS') { $null } else { 'OWNED_PROCESS_OR_WINWS2_REMAINS' }
+    $results.stages += [pscustomobject]@{ name='CLEANUP'; status=$cleanupStatus; error=$cleanupError; at=(Get-Date).ToString('o') }
+    if ($results.execution_state -eq 'COMPLETE') {
+        $results.acceptance_verdict = Get-AcceptanceVerdict $results.stages
+    }
     $failedStage = @($results.stages | Where-Object { $_.status -ne 'PASS' } | Select-Object -First 1).name
     $finalHeadline = if ($results.acceptance_verdict -eq 'PASS') { 'ACCEPTANCE PASSED' } else { 'ACCEPTANCE FAILED' }
     $finalDetail = if ($results.acceptance_verdict -eq 'PASS') { "CLEANUP COMPLETE`nSAFE TO RE-ENABLE HAPP" } else { "Failed stage: $failedStage`nCLEANUP COMPLETE`nSAFE TO RE-ENABLE HAPP" }
     Save-AcceptanceStatus $finalHeadline $finalDetail $true
-    $results.cleanupSnapshot = Get-NetworkSnapshot
     $results.finishedAt = (Get-Date).ToString('o')
     Save-Results
     Write-ProgressLine "ACCEPTANCE $($results.acceptance_verdict). Local bundle: $bundle"

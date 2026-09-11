@@ -5,10 +5,13 @@ package providers
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -617,6 +620,53 @@ func (e *ZapretMacOSProvider) anchorIsReferenced() bool {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+
+// SocksPortInUseError identifies a listener collision before tpws is started.
+// OwnerPID is zero when macOS cannot disclose the owning process.
+type SocksPortInUseError struct {
+	Code     string
+	Port     int
+	OwnerPID int
+}
+
+func (e *SocksPortInUseError) Error() string {
+	if e.OwnerPID != 0 {
+		return fmt.Sprintf("%s: port %d is already in use (owner PID %d)", e.Code, e.Port, e.OwnerPID)
+	}
+	return fmt.Sprintf("%s: port %d is already in use", e.Code, e.Port)
+}
+
+func checkTpwsPortAvailable(port string) error {
+	listener, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", port))
+	if err == nil {
+		return listener.Close()
+	}
+	if !errors.Is(err, syscall.EADDRINUSE) {
+		return err
+	}
+	portNumber, parseErr := strconv.Atoi(port)
+	if parseErr != nil {
+		return err
+	}
+	return &SocksPortInUseError{
+		Code:     "SOCKS_PORT_IN_USE",
+		Port:     portNumber,
+		OwnerPID: listeningProcessPID(port),
+	}
+}
+
+func listeningProcessPID(port string) int {
+	out, err := exec.Command("lsof", "-nP", "-t", "-iTCP:"+port, "-sTCP:LISTEN").Output()
+	if err != nil {
+		return 0
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(strings.SplitN(string(out), "\n", 2)[0]))
+	if err != nil || pid <= 0 {
+		return 0
+	}
+	return pid
+}
+
 // Lifecycle
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -670,6 +720,13 @@ func (e *ZapretMacOSProvider) Start(ctx context.Context, profileName string) err
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		cancel()
+		e.setStatusLocked(StatusError)
+		return err
+	}
+
+	if err := checkTpwsPortAvailable(tpwsPort); err != nil {
+		cancel()
+		e.addLogLocked("Ошибка запуска tpws: " + err.Error())
 		e.setStatusLocked(StatusError)
 		return err
 	}

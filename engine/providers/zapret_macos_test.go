@@ -3,6 +3,9 @@
 package providers
 
 import (
+	"errors"
+	"net"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -163,5 +166,26 @@ func TestMacOSProviderResolveProfileAliases(t *testing.T) {
 		if len(prof.Args) != len(expectedProf.Args) {
 			t.Errorf("resolveProfile(%q) did not match %q args length (%d != %d)", alias, expectedName, len(prof.Args), len(expectedProf.Args))
 		}
+	}
+}
+
+func TestCheckTpwsPortAvailableReportsActionableCollision(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer listener.Close()
+
+	port := strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)
+	err = checkTpwsPortAvailable(port)
+	var collision *SocksPortInUseError
+	if !errors.As(err, &collision) {
+		t.Fatalf("checkTpwsPortAvailable() error = %v, want SocksPortInUseError", err)
+	}
+	if collision.Code != "SOCKS_PORT_IN_USE" {
+		t.Errorf("collision code = %q, want SOCKS_PORT_IN_USE", collision.Code)
+	}
+	if collision.Port != listener.Addr().(*net.TCPAddr).Port {
+		t.Errorf("collision port = %d, want %d", collision.Port, listener.Addr().(*net.TCPAddr).Port)
 	}
 }
