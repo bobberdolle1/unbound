@@ -66,4 +66,16 @@ Describe 'offline physical acceptance harness helpers' {
             $result.status | Should Be $case.expected
         }
     }
+
+    It 'fails closed unless every required acceptance stage passes exactly once' {
+        Import-HarnessFunctions @('Get-AcceptanceVerdict')
+        $required = @('CLEAN_WINDOW','KERNEL','RECOMMENDED_FIELD','DOCTOR','CONCURRENT_START','AUTOTUNE','LAUNCHERS','CLEANUP')
+        $passing = @($required | ForEach-Object { [pscustomobject]@{ name=$_; status='PASS' } })
+        (Get-AcceptanceVerdict $passing) | Should Be 'PASS'
+        (Get-AcceptanceVerdict @($passing | Where-Object name -ne 'CLEANUP')) | Should Be 'FAIL'
+        (Get-AcceptanceVerdict @($passing + [pscustomobject]@{ name='AUTOTUNE'; status='PASS' })) | Should Be 'FAIL'
+        $doctorFailure = @($passing | ForEach-Object { [pscustomobject]@{ name=$_.name; status=$_.status } })
+        ($doctorFailure | Where-Object name -eq 'DOCTOR').status = 'FAIL'
+        (Get-AcceptanceVerdict $doctorFailure) | Should Be 'FAIL'
+    }
 }
