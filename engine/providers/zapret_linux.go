@@ -114,17 +114,17 @@ var builtinProfiles = map[string]linuxProfile{
 			"--lua-desync=fake:blob=quic_google:repeats=8",
 		},
 	},
-	"Targeted HTTPS (YouTube + Discord)": {
+	"Standard HTTPS/QUIC": {
 		Filters: []packetFilter{
 			{Proto: "tcp", Ports: "443", HandshakeOnly: true},
+			{Proto: "udp", Ports: "443"},
 		},
 		Args: []string{
-			"--filter-tcp=443", "--payload=tls_client_hello",
-			"--hostlist-domains=youtube.com,www.youtube.com,ytimg.com,googlevideo.com",
-			"--lua-desync=multidisorder:pos=midsld", "--new",
-			"--filter-tcp=443", "--payload=tls_client_hello",
-			"--hostlist-domains=discord.com,gateway.discord.gg",
-			"--lua-desync=multidisorder:pos=1,sniext+1,host+1,midsld-2,midsld,midsld+2,endhost-1",
+			"--filter-tcp=443", "--payload=tls_client_hello", "--out-range=-d8",
+			"--lua-desync=fake:blob=fake_default_tls:tcp_md5",
+			"--lua-desync=multisplit:pos=1", "--new",
+			"--filter-udp=443", "--payload=quic_initial",
+			"--lua-desync=fake:blob=quic_google:repeats=6",
 		},
 	},
 	"HTTP + HTTPS Split": {
@@ -147,7 +147,7 @@ var profileOrder = []string{
 	"Discord Voice Optimized",
 	"YouTube QUIC Aggressive",
 	"Telegram API Bypass",
-	"Targeted HTTPS (YouTube + Discord)",
+	"Standard HTTPS/QUIC",
 	"HTTP + HTTPS Split",
 }
 
