@@ -125,7 +125,17 @@ function Invoke-LauncherSmoke([string]$LauncherPath) {
     $results.cleanNetworkSnapshot = Get-NetworkSnapshot
     $results.stages += [pscustomobject]@{ name='CLEAN_WINDOW'; status='PASS'; at=(Get-Date).ToString('o') }
     Save-Results
-    $results.dnsBaseline = @(Resolve-DnsName www.youtube.com,discord.com,store.steampowered.com -Type A -ErrorAction Continue | Select-Object Name,Type,IPAddress)
+    $results.dnsBaseline = @(
+        foreach ($target in 'www.youtube.com','discord.com','store.steampowered.com','www.cloudflare.com') {
+            $watch = [Diagnostics.Stopwatch]::StartNew()
+            try {
+                $records = @(Resolve-DnsName -Name $target -ErrorAction Stop | Where-Object { $_.Type -in 'A','AAAA' } | Select-Object Name,Type,IPAddress,Server)
+                [pscustomobject]@{ name=$target; records=$records; latencyMs=$watch.ElapsedMilliseconds; error=$null; category='PASS' }
+            } catch {
+                [pscustomobject]@{ name=$target; records=@(); latencyMs=$watch.ElapsedMilliseconds; error=$_.Exception.Message; category='DNS_ERROR' }
+            }
+        }
+    )
     $results.cleanWebBaseline = @(Invoke-WebProbes)
     Save-Results
     $results.kernelAcceptance = Invoke-Captured 'kernel-acceptance' $exe @('--acceptance-test') 90
