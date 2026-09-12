@@ -162,9 +162,13 @@ foreach ($engine in $profileSets.PSObject.Properties) {
         $stderr = Join-Path $bundle "$name.stderr.log"
         Write-Host "[2/6] WINWS2 LIFECYCLE: $profile"
         $process = Start-Process -FilePath $exe -ArgumentList '--cli',"`"--profile=$profile`"","--run-duration=$($ProfileSeconds)s" -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
-        Start-Sleep -Seconds 2
-        $owned = @(Get-ProcessTreeIds $process.Id | ForEach-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue } | Where-Object { $_.ProcessName -eq 'winws2' } | Select-Object -ExpandProperty Id)
-        $active = @(Get-Process winws2 -ErrorAction SilentlyContinue)
+        $readyDeadline = (Get-Date).AddSeconds(10)
+        do {
+            $owned = @(Get-ProcessTreeIds $process.Id | ForEach-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue } | Where-Object { $_.ProcessName -eq 'winws2' } | Select-Object -ExpandProperty Id)
+            $active = @(Get-Process winws2 -ErrorAction SilentlyContinue)
+            if ($owned.Count -eq 1 -and $active.Count -eq 1) { break }
+            Start-Sleep -Milliseconds 200
+        } while ((Get-Date) -lt $readyDeadline)
         $maxWinws = [Math]::Max($maxWinws, $active.Count)
         $aliveAtStart = $owned.Count -eq 1 -and $null -ne (Get-Process -Id $owned[0] -ErrorAction SilentlyContinue)
         if ($owned.Count -ne 1 -or -not $aliveAtStart -or $active.Count -ne 1) { $startConflicts++ }
