@@ -344,7 +344,10 @@ function Invoke-LauncherSmoke([string]$LauncherPath) {
     $deadline = (Get-Date).AddSeconds($CleanWaitSeconds)
     do { $clean = Get-DataPlaneState; if ($clean.clean) { break }; Start-Sleep -Seconds 2 } while ((Get-Date) -lt $deadline)
     $results.cleanDataPlane = $clean
-    if (-not $clean.clean) { throw "Timed out waiting for a clean data plane after $CleanWaitSeconds seconds." }
+    if (-not $clean.clean) {
+        $results.stages += [pscustomobject]@{ name='CLEAN_WINDOW'; status='FAIL'; error='DATA_PLANE_NOT_CLEAN'; at=(Get-Date).ToString('o') }
+        throw "Timed out waiting for a clean data plane after $CleanWaitSeconds seconds."
+    }
     $results.cleanNetworkSnapshot = Get-NetworkSnapshot
     $results.stages += [pscustomobject]@{ name='CLEAN_WINDOW'; status='PASS'; at=(Get-Date).ToString('o') }
     Save-AcceptanceStatus 'CLEAN WINDOW DETECTED' 'ACCEPTANCE RUNNING — DO NOT ENABLE HAPP'
