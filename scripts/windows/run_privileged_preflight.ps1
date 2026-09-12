@@ -159,7 +159,7 @@ foreach ($engine in $profileSets.PSObject.Properties) {
         $stdout = Join-Path $bundle "$name.stdout.log"
         $stderr = Join-Path $bundle "$name.stderr.log"
         Write-Host "[2/6] WINWS2 LIFECYCLE: $profile"
-        $process = Start-Process -FilePath $exe -ArgumentList '--cli','--profile',$profile,"--run-duration=$($ProfileSeconds)s" -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+        $process = Start-Process -FilePath $exe -ArgumentList '--cli',"`"--profile=$profile`"","--run-duration=$($ProfileSeconds)s" -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
         Start-Sleep -Seconds 2
         $owned = @(Get-ProcessTreeIds $process.Id | ForEach-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue } | Where-Object { $_.ProcessName -eq 'winws2' } | Select-Object -ExpandProperty Id)
         $active = @(Get-Process winws2 -ErrorAction SilentlyContinue)
