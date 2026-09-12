@@ -5,7 +5,7 @@ param(
     [string]$OutputRoot = (Join-Path $env:USERPROFILE 'Documents\UnboundAcceptance'),
     [int]$CleanWaitSeconds = 600,
     [int]$ProfileSeconds = 45,
-    [int]$AutoTuneSeconds = 180,
+    [int]$AutoTuneSeconds = 420,
     [string]$LogSink = 'bobpc@192.168.0.236',
     [string]$SshKeyPath,
     [string]$CandidateCommit,

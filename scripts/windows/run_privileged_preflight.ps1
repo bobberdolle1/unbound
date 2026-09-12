@@ -6,7 +6,7 @@ param(
     [Parameter(Mandatory)] [string]$ArchivePath,
     [Parameter(Mandatory)] [string]$BundleDirectory,
     [int]$ProfileSeconds = 6,
-    [int]$AutoTuneSeconds = 300
+    [int]$AutoTuneSeconds = 420
 )
 
 $ErrorActionPreference = 'Stop'
@@ -188,7 +188,7 @@ $result.finalWinws2 = @(Get-Process winws2 -ErrorAction SilentlyContinue).Count
 Write-Host '[3/6] AUTOTUNE'
 if ($maxWinws -ne 1 -or $startConflicts -ne 0 -or $runningEmptyProfile -ne 0 -or $result.finalWinws2 -ne 0) { throw 'OWNERSHIP_METRICS_FAILED' }
 $result.stages += [pscustomobject]@{ name='OWNERSHIP'; status='PASS' }
-$autotune = @(Invoke-Captured 'autotune' @('--cli','--autotune') $AutoTuneSeconds | Select-Object -Last 1)[0]
+$autotune = @(Invoke-Captured 'autotune' @('--cli','--autotune',"--run-duration=$($ProfileSeconds)s") $AutoTuneSeconds | Select-Object -Last 1)[0]
 $result.autotune = $autotune
 $autoTuneError = Test-AutoTuneTerminalResult $autotune
 if ($autoTuneError) { throw "AUTOTUNE_FAILED: $autoTuneError" }
