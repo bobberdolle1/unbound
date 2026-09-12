@@ -167,8 +167,12 @@ foreach ($engine in $profileSets.PSObject.Properties) {
         $aliveAtStart = $owned.Count -eq 1 -and $null -ne (Get-Process -Id $owned[0] -ErrorAction SilentlyContinue)
         if ($owned.Count -ne 1 -or -not $aliveAtStart -or $active.Count -ne 1) { $startConflicts++ }
         $timedOut = -not $process.WaitForExit(($ProfileSeconds + 120) * 1000)
-        if (-not $timedOut) { $process.Refresh() }
-        $exitCode = if ($timedOut) { $null } else { $process.ExitCode }
+        if (-not $timedOut) {
+            $process.WaitForExit()
+            $exitCode = [int]$process.ExitCode
+        } else {
+            $exitCode = $null
+        }
         $aliveAfterStop = if ($owned.Count -eq 1) { $null -ne (Get-Process -Id $owned[0] -ErrorAction SilentlyContinue) } else { $true }
         if ($timedOut -or $exitCode -ne 0 -or $aliveAfterStop) { $startConflicts++ }
         $emptyProfile = Select-String -Path $stdout -Pattern 'Profile:\s*$' -Quiet
