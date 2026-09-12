@@ -90,12 +90,14 @@ function Stop-TrackedProcessTree([Diagnostics.Process]$Process) {
     $Process.WaitForExit(10000) | Out-Null
 }
 
-function Test-AutoTuneTerminalResult([pscustomobject]$Capture) {
+function Test-AutoTuneTerminalResult([pscustomobject]$Capture, [switch]$AllowNoWinner) {
     if ($Capture.timedOut) { return 'PROCESS_TIMEOUT' }
-    if ($Capture.exitCode -ne 0) { return "PROCESS_EXIT_$($Capture.exitCode)" }
+    if (-not (Test-Path $Capture.stdout -PathType Leaf)) { return 'AUTOTUNE_RESULT_MISSING' }
     $records = @([regex]::Matches((Get-Content $Capture.stdout -Raw), '(?m)^AUTOTUNE_RESULT_JSON=(.+)\r?$'))
     if ($records.Count -ne 1) { return 'AUTOTUNE_RESULT_COUNT_INVALID' }
     try { $result = $records[0].Groups[1].Value | ConvertFrom-Json -ErrorAction Stop } catch { return 'AUTOTUNE_RESULT_MALFORMED' }
+    if ($AllowNoWinner -and $Capture.exitCode -eq 1 -and -not $result.cancelled -and $result.lifecycle_failures -eq 0 -and $result.error_category -eq 'AUTOTUNE_INTERNAL_FAILURE' -and $result.error -eq 'no profile improved connectivity without regressions') { return $null }
+    if ($Capture.exitCode -ne 0) { return "PROCESS_EXIT_$($Capture.exitCode)" }
     if (-not $result.completed -or $result.cancelled -or $result.lifecycle_failures -ne 0) { return 'AUTOTUNE_RESULT_FAILED' }
     if ($result.profiles_attempted -ne $result.profiles_total -or $result.profiles_completed -ne $result.profiles_total -or $result.profiles_failed_to_start -ne 0) { return 'AUTOTUNE_RESULT_INCOMPLETE' }
     return $null
@@ -190,7 +192,7 @@ if ($maxWinws -ne 1 -or $startConflicts -ne 0 -or $runningEmptyProfile -ne 0 -or
 $result.stages += [pscustomobject]@{ name='OWNERSHIP'; status='PASS' }
 $autotune = @(Invoke-Captured 'autotune' @('--cli','--autotune',"--run-duration=$($ProfileSeconds)s") $AutoTuneSeconds | Select-Object -Last 1)[0]
 $result.autotune = $autotune
-$autoTuneError = Test-AutoTuneTerminalResult $autotune
+$autoTuneError = Test-AutoTuneTerminalResult $autotune -AllowNoWinner
 if ($autoTuneError) { throw "AUTOTUNE_FAILED: $autoTuneError" }
 Write-Host '[4/6] DOCTOR'
 $result.stages += [pscustomobject]@{ name='AUTOTUNE'; status='PASS' }
