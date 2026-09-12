@@ -167,11 +167,13 @@ foreach ($engine in $profileSets.PSObject.Properties) {
         $aliveAtStart = $owned.Count -eq 1 -and $null -ne (Get-Process -Id $owned[0] -ErrorAction SilentlyContinue)
         if ($owned.Count -ne 1 -or -not $aliveAtStart -or $active.Count -ne 1) { $startConflicts++ }
         $timedOut = -not $process.WaitForExit(($ProfileSeconds + 120) * 1000)
+        if (-not $timedOut) { $process.Refresh() }
+        $exitCode = if ($timedOut) { $null } else { $process.ExitCode }
         $aliveAfterStop = if ($owned.Count -eq 1) { $null -ne (Get-Process -Id $owned[0] -ErrorAction SilentlyContinue) } else { $true }
-        if ($timedOut -or $process.ExitCode -ne 0 -or $aliveAfterStop) { $startConflicts++ }
+        if ($timedOut -or $exitCode -ne 0 -or $aliveAfterStop) { $startConflicts++ }
         $emptyProfile = Select-String -Path $stdout -Pattern 'Profile:\s*$' -Quiet
         if ($emptyProfile) { $runningEmptyProfile++ }
-        $result.profiles += [pscustomobject]@{ engine=$engine.Name; profile=$profile; processId=$process.Id; winws2Pid=if($owned.Count -eq 1){$owned[0]}else{$null}; aliveAtStart=$aliveAtStart; aliveAfterStop=$aliveAfterStop; timedOut=$timedOut; exitCode=if($process.HasExited){$process.ExitCode}else{$null}; emptyProfile=$emptyProfile; stdout=$stdout; stderr=$stderr }
+        $result.profiles += [pscustomobject]@{ engine=$engine.Name; profile=$profile; processId=$process.Id; winws2Pid=if($owned.Count -eq 1){$owned[0]}else{$null}; aliveAtStart=$aliveAtStart; aliveAfterStop=$aliveAfterStop; timedOut=$timedOut; exitCode=$exitCode; emptyProfile=$emptyProfile; stdout=$stdout; stderr=$stderr }
         $result | ConvertTo-Json -Depth 8 | Set-Content -Path (Join-Path $bundle 'progress.json') -Encoding utf8
     }
 }
