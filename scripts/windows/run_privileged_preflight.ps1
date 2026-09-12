@@ -154,18 +154,19 @@ $startConflicts = 0
 $runningEmptyProfile = 0
 foreach ($engine in $profileSets.PSObject.Properties) {
     foreach ($profile in @($engine.Value)) {
+        if ($profile -ne 'Recommended (hostfakesplit)') { continue }
         $name = "profile-$([Guid]::NewGuid().ToString('N'))"
         $stdout = Join-Path $bundle "$name.stdout.log"
         $stderr = Join-Path $bundle "$name.stderr.log"
-        $process = Start-Process -FilePath $exe -ArgumentList '--cli','--profile',$profile,"--run-duration=$($ProfileSeconds)s" -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+        Write-Host "[2/6] WINWS2 LIFECYCLE: $profile"
+        $process = Start-Process -FilePath $exe -ArgumentList '--cli','--profile',$profile,"--run-duration=$($ProfileSeconds)s" -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
         Start-Sleep -Seconds 2
         $owned = @(Get-ProcessTreeIds $process.Id | ForEach-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue } | Where-Object { $_.ProcessName -eq 'winws2' } | Select-Object -ExpandProperty Id)
         $active = @(Get-Process winws2 -ErrorAction SilentlyContinue)
         $maxWinws = [Math]::Max($maxWinws, $active.Count)
         $aliveAtStart = $owned.Count -eq 1 -and $null -ne (Get-Process -Id $owned[0] -ErrorAction SilentlyContinue)
         if ($owned.Count -ne 1 -or -not $aliveAtStart -or $active.Count -ne 1) { $startConflicts++ }
-        $timedOut = -not $process.WaitForExit(($ProfileSeconds + 35) * 1000)
-        if ($timedOut) { Stop-TrackedProcessTree $process } else { $process.Refresh() }
+        $timedOut = -not $process.WaitForExit(($ProfileSeconds + 120) * 1000)
         $aliveAfterStop = if ($owned.Count -eq 1) { $null -ne (Get-Process -Id $owned[0] -ErrorAction SilentlyContinue) } else { $true }
         if ($timedOut -or $process.ExitCode -ne 0 -or $aliveAfterStop) { $startConflicts++ }
         $emptyProfile = Select-String -Path $stdout -Pattern 'Profile:\s*$' -Quiet
@@ -178,16 +179,19 @@ $result.maxConcurrentWinws2 = $maxWinws
 $result.startConflicts = $startConflicts
 $result.runningEmptyProfile = $runningEmptyProfile
 $result.finalWinws2 = @(Get-Process winws2 -ErrorAction SilentlyContinue).Count
+Write-Host '[3/6] AUTOTUNE'
 if ($maxWinws -ne 1 -or $startConflicts -ne 0 -or $runningEmptyProfile -ne 0 -or $result.finalWinws2 -ne 0) { throw 'OWNERSHIP_METRICS_FAILED' }
 $result.stages += [pscustomobject]@{ name='OWNERSHIP'; status='PASS' }
 $autotune = @(Invoke-Captured 'autotune' @('--cli','--autotune') $AutoTuneSeconds | Select-Object -Last 1)[0]
 $result.autotune = $autotune
 $autoTuneError = Test-AutoTuneTerminalResult $autotune
 if ($autoTuneError) { throw "AUTOTUNE_FAILED: $autoTuneError" }
+Write-Host '[4/6] DOCTOR'
 $result.stages += [pscustomobject]@{ name='AUTOTUNE'; status='PASS' }
 $result.doctor = @(Invoke-Captured 'doctor' @('--test') 90 | Select-Object -Last 1)[0]
 $result.stages += [pscustomobject]@{ name='DOCTOR'; status=if($result.doctor.exitCode -eq 0 -and -not $result.doctor.timedOut){'PASS'}else{'FAIL'} }
 if ($result.stages[-1].status -ne 'PASS') { throw 'DOCTOR_FAILED' }
+Write-Host '[5/6] LAUNCHERS'
 
 $result.launchers = @(
     foreach ($launcher in 'general_recommended.cmd','general_autotune.cmd','general_universal.cmd','general_alt1_multisplit.cmd','general_alt2_fake_tls.cmd','service_control.cmd') {

@@ -23,11 +23,13 @@ foreach ($line in Get-Content $manifestPath) {
 $evidenceRoot = Join-Path ([Environment]::GetFolderPath('MyDocuments')) "UnboundAcceptance\\final-v0.6.9-$([Guid]::NewGuid().ToString('N'))"
 New-Item -ItemType Directory -Path $evidenceRoot -Force | Out-Null
 $preflightBundle = Join-Path $evidenceRoot 'privileged-preflight'
+Write-Host '[1/6] PRIVILEGED PREFLIGHT STARTING' -ForegroundColor Cyan
 & (Join-Path $root 'run_privileged_preflight.ps1') -CandidateDirectory $root -CandidateCommit $candidate.candidate_commit -ArchivePath $root -BundleDirectory $preflightBundle
 if ($LASTEXITCODE -ne 0) { throw "PRIVILEGED_PREFLIGHT_FAILED evidence=$preflightBundle" }
 Write-Host 'PRIVILEGED PREFLIGHT PASSED' -ForegroundColor Green
 Write-Host 'NOW TURN HAPP OFF' -ForegroundColor Yellow
 Write-Host 'DO NOT CLOSE THIS WINDOW' -ForegroundColor Yellow
+Write-Host '[6/6] CLEAN-WINDOW ACCEPTANCE STARTING' -ForegroundColor Cyan
 & (Join-Path $root 'run_offline_physical_acceptance.ps1') -CandidateDirectory $root -CandidateCommit $candidate.candidate_commit -ArchivePath $root -OutputRoot $evidenceRoot
 $exitCode = $LASTEXITCODE
 $acceptance = Get-ChildItem $evidenceRoot -Directory | Where-Object { $_.Name -like '*-Acceptance-*' } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
