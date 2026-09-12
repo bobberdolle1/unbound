@@ -39,6 +39,13 @@ Copy-Item (Join-Path $ProjectRoot "scripts\windows\start_offline_physical_accept
 Copy-Item (Join-Path $ProjectRoot "scripts\windows\show_offline_acceptance_status.ps1") $Bundle
 Copy-Item (Join-Path $ProjectRoot "scripts\windows\run_privileged_preflight.ps1") $Bundle
 Copy-Item (Join-Path $ProjectRoot "scripts\windows\start_privileged_preflight.ps1") $Bundle
+Copy-Item (Join-Path $ProjectRoot "scripts\windows\final_acceptance_v0.6.9.ps1") $Bundle
+Copy-Item (Join-Path $ProjectRoot "scripts\windows\final_acceptance_v0.6.9.cmd") $Bundle
+[ordered]@{
+    candidate_commit = (git -C $ProjectRoot rev-parse HEAD).Trim()
+    version = $Version
+    exe_sha256 = (Get-FileHash (Join-Path $Bundle 'Unbound.exe') -Algorithm SHA256).Hash.ToLower()
+} | ConvertTo-Json | Set-Content (Join-Path $Bundle 'CANDIDATE.json') -Encoding utf8
 Copy-Item (Join-Path $ProjectRoot "scripts\control_windows\*") $Bundle
 
 Get-ChildItem $Bundle -File | Sort-Object Name | ForEach-Object {
@@ -70,6 +77,9 @@ try {
         "general_alt1_multisplit.cmd",
         "general_alt2_fake_tls.cmd",
         "service_control.cmd",
+        "final_acceptance_v0.6.9.ps1",
+        "final_acceptance_v0.6.9.cmd",
+        "CANDIDATE.json",
         "BUNDLE_SHA256SUMS.txt"
     )
     $Missing = $RequiredFiles | Where-Object { -not (Test-Path (Join-Path $SmokeDir $_) -PathType Leaf) }

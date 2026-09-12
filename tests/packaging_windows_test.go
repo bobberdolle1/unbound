@@ -134,6 +134,9 @@ func TestWindowsPackagingArchive(t *testing.T) {
 		"general_alt1_multisplit.cmd":           false,
 		"general_alt2_fake_tls.cmd":             false,
 		"service_control.cmd":                   false,
+		"final_acceptance_v0.6.9.ps1":           false,
+		"final_acceptance_v0.6.9.cmd":           false,
+		"CANDIDATE.json":                        false,
 		"BUNDLE_SHA256SUMS.txt":                 false,
 	}
 	for _, file := range archive.File {
