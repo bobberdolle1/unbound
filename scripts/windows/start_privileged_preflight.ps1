@@ -55,7 +55,7 @@ do {
             }
             throw 'ELEVATED_HANDSHAKE_IDENTITY_MISMATCH'
         } catch {
-            if ($_.Exception.Message -eq 'ELEVATED_HANDSHAKE_IDENTITY_MISMATCH') { throw }
+            throw "ELEVATED_HANDSHAKE_OR_PREFLIGHT_FAILED: $($_.Exception.Message)"
         }
     }
     Start-Sleep -Milliseconds 250

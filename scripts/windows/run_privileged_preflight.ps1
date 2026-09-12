@@ -48,14 +48,20 @@ function Invoke-Captured([string]$Name, [string[]]$Arguments, [int]$TimeoutSecon
 
 trap {
     $errorText = ($_ | Out-String).Trim()
-    $failure = [ordered]@{
-        candidateCommit = $CandidateCommit
-        candidateDirectory = $CandidateDirectory
-        status = 'FAIL'
-        error = $errorText
-        failedAt = (Get-Date).ToString('o')
+    if (Test-Path variable:result) {
+        $result.status = 'FAIL'
+        $result.error = $errorText
+        $result.failedAt = (Get-Date).ToString('o')
+        $result | ConvertTo-Json -Depth 8 | Set-Content -Path (Join-Path $bundle 'result.json') -Encoding utf8
+    } else {
+        [ordered]@{
+            candidateCommit = $CandidateCommit
+            candidateDirectory = $CandidateDirectory
+            status = 'FAIL'
+            error = $errorText
+            failedAt = (Get-Date).ToString('o')
+        } | ConvertTo-Json | Set-Content -Path (Join-Path $bundle 'result.json') -Encoding utf8
     }
-    $failure | ConvertTo-Json | Set-Content -Path (Join-Path $bundle 'result.json') -Encoding utf8
     $errorText | Set-Content -Path (Join-Path $bundle 'controller.error.log') -Encoding utf8
     exit 1
 }
@@ -165,6 +171,7 @@ foreach ($engine in $profileSets.PSObject.Properties) {
         $emptyProfile = Select-String -Path $stdout -Pattern 'Profile:\s*$' -Quiet
         if ($emptyProfile) { $runningEmptyProfile++ }
         $result.profiles += [pscustomobject]@{ engine=$engine.Name; profile=$profile; processId=$process.Id; winws2Pid=if($owned.Count -eq 1){$owned[0]}else{$null}; aliveAtStart=$aliveAtStart; aliveAfterStop=$aliveAfterStop; timedOut=$timedOut; exitCode=if($process.HasExited){$process.ExitCode}else{$null}; emptyProfile=$emptyProfile; stdout=$stdout; stderr=$stderr }
+        $result | ConvertTo-Json -Depth 8 | Set-Content -Path (Join-Path $bundle 'progress.json') -Encoding utf8
     }
 }
 $result.maxConcurrentWinws2 = $maxWinws
