@@ -283,22 +283,31 @@ function Invoke-ProfileOwnershipSmoke([string]$FilePath, [int]$DurationSeconds) 
         foreach ($profile in @($engine.Value)) {
             $stdout = Join-Path $bundle "ownership-$([Guid]::NewGuid().ToString('N')).stdout.log"
             $stderr = Join-Path $bundle "ownership-$([Guid]::NewGuid().ToString('N')).stderr.log"
-            $process = Register-HarnessProcess (Start-Process -FilePath $FilePath -ArgumentList '--cli','--profile',$profile,"--run-duration=$($DurationSeconds)s" -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr)
-            Start-Sleep -Seconds 2
-            $ownedPids = @(Get-ProcessTreeIds $process.Id | ForEach-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue } | Where-Object { $_.ProcessName -eq 'winws2' } | Select-Object -ExpandProperty Id)
-            $activeWinws2 = @(Get-Process winws2 -ErrorAction SilentlyContinue)
+            $process = Register-HarnessProcess (Start-Process -FilePath $FilePath -ArgumentList '--cli',"`"--profile=$profile`"","--run-duration=$($DurationSeconds)s" -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr)
+            $readyDeadline = (Get-Date).AddSeconds(10)
+            do {
+                $ownedPids = @(Get-ProcessTreeIds $process.Id | ForEach-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue } | Where-Object { $_.ProcessName -eq 'winws2' } | Select-Object -ExpandProperty Id)
+                $activeWinws2 = @(Get-Process winws2 -ErrorAction SilentlyContinue)
+                if ($ownedPids.Count -eq 1 -and $activeWinws2.Count -eq 1) { break }
+                Start-Sleep -Milliseconds 200
+            } while ((Get-Date) -lt $readyDeadline)
             $maxConcurrentWinws2 = [Math]::Max($maxConcurrentWinws2, $activeWinws2.Count)
             if ($ownedPids.Count -ne 1) { $startConflicts++ }
-            $pid = if ($ownedPids.Count -eq 1) { $ownedPids[0] } else { $null }
-            $aliveAfterStart = if ($pid) { $null -ne (Get-Process -Id $pid -ErrorAction SilentlyContinue) } else { $false }
+            $winwsPid = if ($ownedPids.Count -eq 1) { $ownedPids[0] } else { $null }
+            $aliveAfterStart = if ($winwsPid) { $null -ne (Get-Process -Id $winwsPid -ErrorAction SilentlyContinue) } else { $false }
             if (-not $aliveAfterStart) { $startConflicts++ }
-            $process.WaitForExit(($DurationSeconds + 35) * 1000) | Out-Null
-            if (-not $process.HasExited) { Stop-HarnessProcessTree $process; $startConflicts++ }
-            $aliveAfterStop = if ($pid) { $null -ne (Get-Process -Id $pid -ErrorAction SilentlyContinue) } else { $true }
+            $timedOut = -not $process.WaitForExit(($DurationSeconds + 35) * 1000)
+            if ($timedOut) {
+                Stop-HarnessProcessTree $process
+                $startConflicts++
+            } else {
+                $process.WaitForExit()
+            }
+            $aliveAfterStop = if ($winwsPid) { $null -ne (Get-Process -Id $winwsPid -ErrorAction SilentlyContinue) } else { $true }
             if ($aliveAfterStop) { $startConflicts++ }
             $emptyProfile = (Select-String -Path $stdout -Pattern 'Profile:\s*$' -Quiet)
             if ($emptyProfile) { $runningEmptyProfile++ }
-            $records += [pscustomobject]@{ engine=$engine.Name; profile=$profile; processId=$process.Id; winws2Pid=$pid; aliveAfterStart=$aliveAfterStart; aliveAfterStop=$aliveAfterStop; launcherExitCode=if($process.HasExited){$process.ExitCode}else{$null}; stdout=$stdout; stderr=$stderr }
+            $records += [pscustomobject]@{ engine=$engine.Name; profile=$profile; processId=$process.Id; winws2Pid=$winwsPid; aliveAfterStart=$aliveAfterStart; aliveAfterStop=$aliveAfterStop; launcherExitCode=if($process.HasExited){$process.ExitCode}else{$null}; stdout=$stdout; stderr=$stderr }
         }
     }
     $finalWinws2 = @(Get-Process winws2 -ErrorAction SilentlyContinue).Count
