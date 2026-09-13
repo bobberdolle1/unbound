@@ -17,7 +17,7 @@ function Import-HarnessFunctions([string[]]$Names) {
 
 Describe 'offline physical acceptance harness helpers' {
     BeforeAll {
-        Import-HarnessFunctions @('Save-Results', 'Get-ProcessTreeIds', 'Stop-HarnessProcessTree', 'Test-AutoTuneTerminalResult', 'Get-CapturedStageResult')
+        Import-HarnessFunctions @('Save-Results', 'Get-ProcessTreeIds', 'Stop-HarnessProcessTree', 'Register-HarnessProcess', 'Invoke-Captured', 'Test-AutoTuneTerminalResult', 'Get-CapturedStageResult')
     }
 
     It 'persists the latest complete JSON result without leaving a temporary file' {
@@ -65,6 +65,16 @@ Describe 'offline physical acceptance harness helpers' {
             $result = Test-AutoTuneTerminalResult ([pscustomobject]@{ timedOut=$false; exitCode=0; stdout=$stdout })
             $result.status | Should Be $case.expected
         }
+    }
+
+    It 'captures a completed process exit code without a stale process state' {
+        $bundle = $TestDrive
+        $trackedProcesses = @()
+
+        $capture = Invoke-Captured 'exit-zero' $env:ComSpec @('/d','/c','exit 0') 5
+
+        $capture.timedOut | Should Be $false
+        $capture.exitCode | Should Be 0
     }
 
     It 'fails kernel and doctor stages on process failure or timeout' {

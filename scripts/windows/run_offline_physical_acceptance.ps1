@@ -101,8 +101,14 @@ function Invoke-Captured([string]$Name, [string]$FilePath, [string[]]$Arguments,
     $stderr = Join-Path $bundle "$Name.stderr.log"
     $process = Register-HarnessProcess (Start-Process -FilePath $FilePath -ArgumentList $Arguments -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr)
     $timedOut = -not $process.WaitForExit($TimeoutSeconds * 1000)
-    if ($timedOut) { Stop-HarnessProcessTree $process }
-    [pscustomobject]@{ name = $Name; exitCode = if ($timedOut) { $null } else { $process.ExitCode }; timedOut = $timedOut; stdout = $stdout; stderr = $stderr }
+    if ($timedOut) {
+        Stop-HarnessProcessTree $process
+        $exitCode = $null
+    } else {
+        $process.WaitForExit()
+        $exitCode = [int]$process.ExitCode
+    }
+    [pscustomobject]@{ name = $Name; exitCode = $exitCode; timedOut = $timedOut; stdout = $stdout; stderr = $stderr }
 }
 function Get-DataPlaneState {
     $proxy = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
