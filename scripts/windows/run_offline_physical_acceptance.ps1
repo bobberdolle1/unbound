@@ -260,8 +260,14 @@ function Invoke-RecommendedMatrix([string]$FilePath) {
     $probes = @(Invoke-WebProbes)
 
     $timedOut = -not $process.WaitForExit(($ProfileSeconds + 35) * 1000)
-    if ($timedOut) { Stop-HarnessProcessTree $process }
-    [pscustomobject]@{ exitCode=if($timedOut){$null}else{$process.ExitCode}; timedOut=$timedOut; activeState=$activeState; probes=$probes; stdout=$stdout; stderr=$stderr }
+    if ($timedOut) {
+        Stop-HarnessProcessTree $process
+        $exitCode = $null
+    } else {
+        $process.WaitForExit()
+        $exitCode = [int]$process.ExitCode
+    }
+    [pscustomobject]@{ exitCode=$exitCode; timedOut=$timedOut; activeState=$activeState; probes=$probes; stdout=$stdout; stderr=$stderr }
 }
 function Invoke-ProfileOwnershipSmoke([string]$FilePath, [int]$DurationSeconds) {
     $catalog = Invoke-Captured 'profile-catalog' $FilePath @('--list-profiles','--json') 30
