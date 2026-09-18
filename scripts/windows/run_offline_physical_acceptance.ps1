@@ -113,7 +113,7 @@ function Invoke-Captured([string]$Name, [string]$FilePath, [string[]]$Arguments,
 function Get-DataPlaneState {
     $proxy = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
     $processes = @(Get-Process xray, 'sing-box' -ErrorAction SilentlyContinue | Select-Object ProcessName,Id)
-    $tunnel = @(Get-NetAdapter -Name 'happ-tun' -ErrorAction SilentlyContinue | Select-Object Name,Status,ifIndex)
+    $tunnel = @(Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Name -like 'happ-*' } | Select-Object Name,Status,ifIndex)
     $tunnelIndices = @($tunnel | Select-Object -ExpandProperty ifIndex)
     $tunnelDefaultRoutes = @(Get-NetRoute -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.DestinationPrefix -eq '0.0.0.0/0' -and $_.ifIndex -in $tunnelIndices } | Select-Object DestinationPrefix,InterfaceAlias,NextHop,RouteMetric,ifIndex)
     [pscustomobject]@{ xrayOrSingBox = $processes; proxyEnabled = [bool]$proxy.ProxyEnable; proxyServer = $proxy.ProxyServer; happTunnel = $tunnel; happTunnelDefaultRoutes = $tunnelDefaultRoutes; clean = ($processes.Count -eq 0 -and -not [bool]$proxy.ProxyEnable -and $tunnelDefaultRoutes.Count -eq 0) }
