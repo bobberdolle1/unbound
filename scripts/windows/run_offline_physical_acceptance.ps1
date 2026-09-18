@@ -122,7 +122,7 @@ function Get-NetworkSnapshot {
     [pscustomobject]@{
         timestamp = (Get-Date).ToString('o')
         adapters = @(Get-NetAdapter | Select-Object Name,InterfaceDescription,Status,ifIndex,HardwareInterface,Virtual)
-        ipConfiguration = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceIndex,IPv4Address,IPv4DefaultGateway,DnsServer)
+        ipConfiguration = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceIndex,@{Name='IPv4Address';Expression={$_.IPv4Address.IPAddress}},@{Name='IPv4DefaultGateway';Expression={$_.IPv4DefaultGateway.NextHop}},@{Name='DnsServer';Expression={$_.DnsServer.ServerAddresses}})
         defaultRoutes = @(Get-NetRoute -AddressFamily IPv4 | Where-Object DestinationPrefix -eq '0.0.0.0/0' | Select-Object InterfaceAlias,InterfaceIndex,NextHop,RouteMetric,ifMetric)
         dns = @(Get-DnsClientServerAddress | Select-Object InterfaceAlias,InterfaceIndex,AddressFamily,ServerAddresses)
         processes = @(Get-Process Happ,xray,'sing-box',winws2,Unbound -ErrorAction SilentlyContinue | Select-Object ProcessName,Id)
@@ -254,11 +254,17 @@ function Invoke-HarmlessSmoke {
 function Invoke-RecommendedMatrix([string]$FilePath) {
     $stdout = Join-Path $bundle 'recommended.stdout.log'
     $stderr = Join-Path $bundle 'recommended.stderr.log'
+    Write-ProgressLine "  - Starting Recommended profile (run duration: ${ProfileSeconds}s)..."
     $process = Register-HarnessProcess (Start-Process -FilePath $FilePath -ArgumentList '--cli','--profile','rec',"--run-duration=$($ProfileSeconds)s" -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr)
     Start-Sleep -Seconds ([Math]::Min(10, $ProfileSeconds))
+    Write-ProgressLine "  - Running web probes (Cloudflare, YouTube, Discord, Steam)..."
     $activeState = Get-NetworkSnapshot
     $probes = @(Invoke-WebProbes)
-
+    foreach ($pr in $probes) {
+        $pStatus = if ($pr.ok) { "OK ($($pr.httpStatus), $($pr.elapsedMs)ms)" } else { "FAIL ($($pr.error))" }
+        Write-ProgressLine "    * $($pr.name): $pStatus"
+    }
+    Write-ProgressLine "  - Waiting for profile to finish run duration..."
     $timedOut = -not $process.WaitForExit(($ProfileSeconds + 35) * 1000)
     if ($timedOut) {
         Stop-HarnessProcessTree $process
@@ -285,8 +291,12 @@ function Invoke-ProfileOwnershipSmoke([string]$FilePath, [int]$DurationSeconds) 
     $maxConcurrentWinws2 = 0
     $startConflicts = 0
     $runningEmptyProfile = 0
+    $totalProfiles = @(foreach ($eng in $profileSets.PSObject.Properties) { foreach ($p in @($eng.Value)) { $p } }).Count
+    $profileIndex = 0
     foreach ($engine in $profileSets.PSObject.Properties) {
         foreach ($profile in @($engine.Value)) {
+            $profileIndex++
+            Write-ProgressLine "  [$profileIndex/$totalProfiles] Testing profile: $profile"
             $stdout = Join-Path $bundle "ownership-$([Guid]::NewGuid().ToString('N')).stdout.log"
             $stderr = Join-Path $bundle "ownership-$([Guid]::NewGuid().ToString('N')).stderr.log"
             $process = Register-HarnessProcess (Start-Process -FilePath $FilePath -ArgumentList '--cli',"`"--profile=$profile`"","--run-duration=$($DurationSeconds)s" -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr)
@@ -335,8 +345,10 @@ try {
     }
     $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 function Invoke-LauncherSmoke([string]$LauncherPath) {
-    $stdout = Join-Path $bundle "$(Split-Path $LauncherPath -Leaf).stdout.log"
-    $stderr = Join-Path $bundle "$(Split-Path $LauncherPath -Leaf).stderr.log"
+    $name = Split-Path $LauncherPath -Leaf
+    Write-ProgressLine "  [Launcher] Testing: $name"
+    $stdout = Join-Path $bundle "$name.stdout.log"
+    $stderr = Join-Path $bundle "$name.stderr.log"
     $command = "`"$LauncherPath`""
     $process = Register-HarnessProcess (Start-Process -FilePath $env:ComSpec -ArgumentList '/d','/c',$command -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr)
     Start-Sleep -Seconds 8
@@ -385,24 +397,35 @@ function Invoke-LauncherSmoke([string]$LauncherPath) {
             }
         }
     )
+    Write-ProgressLine '[1/6] Running Kernel acceptance...'
     $results.cleanWebBaseline = @(Invoke-WebProbes)
     $results.kernelAcceptance = Invoke-Captured 'kernel-acceptance' $exe @('--acceptance-test') 90
     $results.stages += Get-CapturedStageResult 'KERNEL' $results.kernelAcceptance
     if ($results.stages[-1].status -ne 'PASS') { throw "Kernel acceptance failed closed: $($results.stages[-1].error)" }
+    Write-ProgressLine 'KERNEL PASSED'
+    Write-ProgressLine '[2/6] Running 14-profile lifecycle checks...'
     $results.ownershipSmoke = Invoke-ProfileOwnershipSmoke $exe ([Math]::Min($ProfileSeconds, 10))
     $results.stages += [pscustomobject]@{ name='CONCURRENT_START'; status=$results.ownershipSmoke.status; error=$results.ownershipSmoke.error; at=(Get-Date).ToString('o') }
     if ($results.stages[-1].status -ne 'PASS') { throw "Profile ownership acceptance failed closed: $($results.stages[-1].error)" }
+    Write-ProgressLine 'CONCURRENT_START PASSED'
+    Write-ProgressLine '[3/6] Running Recommended profile field probe...'
     $results.recommendedField = Invoke-RecommendedMatrix $exe
     $results.stages += Get-RecommendedStageResult $results.recommendedField
     if ($results.stages[-1].status -ne 'PASS') { throw "Recommended field acceptance failed closed: $($results.stages[-1].error)" }
+    Write-ProgressLine 'RECOMMENDED_FIELD PASSED'
+    Write-ProgressLine '[4/6] Running Doctor diagnostic probe...'
     $results.elevatedDoctor = Invoke-Captured 'doctor' $exe @('--test') 90
     $results.stages += Get-CapturedStageResult 'DOCTOR' $results.elevatedDoctor
     if ($results.stages[-1].status -ne 'PASS') { throw "Doctor acceptance failed closed: $($results.stages[-1].error)" }
+    Write-ProgressLine 'DOCTOR PASSED'
+    Write-ProgressLine '[5/6] Running AutoTune benchmark...'
     $results.autoTune = Invoke-Captured 'autotune' $exe @('--cli','--autotune',"--run-duration=$($ProfileSeconds)s") $AutoTuneSeconds
     $autoTuneStage = Test-AutoTuneTerminalResult $results.autoTune
     $results.stages += [pscustomobject]@{ name='AUTOTUNE'; status=$autoTuneStage.status; error=$autoTuneStage.error; at=(Get-Date).ToString('o') }
     if ($autoTuneStage.status -ne 'PASS') { throw "AutoTune acceptance failed closed: $($autoTuneStage.error)" }
+    Write-ProgressLine 'AUTOTUNE PASSED'
     Save-Results
+    Write-ProgressLine '[6/6] Running Launchers smoke...'
     $results.launcherSmoke = @(
         foreach ($launcher in 'general_recommended.cmd','general_autotune.cmd','general_universal.cmd','general_alt1_multisplit.cmd','general_alt2_fake_tls.cmd','service_control.cmd') {
             $path = Join-Path $CandidateDirectory $launcher
@@ -414,6 +437,7 @@ function Invoke-LauncherSmoke([string]$LauncherPath) {
         throw 'Launcher acceptance failed closed.'
     }
     $results.stages += [pscustomobject]@{ name='LAUNCHERS'; status='PASS'; error=$null; at=(Get-Date).ToString('o') }
+    Write-ProgressLine 'LAUNCHERS PASSED'
     Save-Results
     $results.execution_state = 'COMPLETE'
     $results.acceptance_verdict = 'INVALID'
