@@ -3,6 +3,19 @@
 Все значимые изменения проекта документируются в этом файле.
 
 
+## [0.6.9] - 2026-09-11
+### Windows release-correctness hotfix
+
+#### Fixed
+
+- Windows release bundle now includes `CHANGELOG.md` and the elevated `verify_uac_acceptance.ps1` acceptance script.
+- Build entrypoints derive their release version from `wails.json`; release validation rejects visible-version drift.
+- Formatted the affected Go sources without behavioral changes.
+
+#### Linux release scope
+
+- Linux remains experimental. The `nfqws2`/NFQUEUE runtime and owned-firewall cleanup were physically verified, but no repeatable release-grade YouTube + Discord strategy was found on the physical Linux acceptance host. No Linux binary is published for v0.6.9; see [`docs/release/linux-v0.6.9-acceptance.md`](docs/release/linux-v0.6.9-acceptance.md).
+
 ## [0.6.8] - 2026-09-11
 ### macOS SOCKS lifecycle and reproducible packaging
 

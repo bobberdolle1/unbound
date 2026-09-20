@@ -38,6 +38,9 @@ type Zapret2WindowsProvider struct {
 	status               Status
 	logs                 []string
 	cmd                  *exec.Cmd
+	processDone          chan struct{}
+	ownedPID             int
+	lifecycleOperation   uint64
 	mu                   sync.Mutex
 	logMu                sync.Mutex
 	startStopMu          sync.Mutex
@@ -55,6 +58,42 @@ type Zapret2WindowsProvider struct {
 	onLogAdd             func(string)
 	logFile              *os.File
 	engineReady          chan bool
+	commandFactory       func(string, ...string) *exec.Cmd
+	pidAlive             func(int) bool
+	terminateTree        func(int) error
+	stopTimeout          time.Duration
+	syncHostlists        func() error
+	checkPrivileges      func() (bool, error)
+	versionProbe         func(string) string
+}
+
+func (e *Zapret2WindowsProvider) logLifecycleLocked(operation, event string) {
+	cmdState := "nil"
+	if e.cmd != nil {
+		cmdState = "set"
+	}
+	e.addLog(fmt.Sprintf(
+		"[LIFECYCLE] at=%s op=%s status=%s profile=%q pid=%d cmd=%s event=%s",
+		time.Now().Format(time.RFC3339Nano),
+		operation,
+		e.status,
+		e.currentProfile,
+		e.ownedPID,
+		cmdState,
+		event,
+	))
+}
+
+func (e *Zapret2WindowsProvider) setStoppedLocked(operation string) {
+	e.cmd = nil
+	e.processDone = nil
+	e.ownedPID = 0
+	e.currentProfile = ""
+	e.status = StatusStopped
+	e.logLifecycleLocked(operation, "transition=STOPPED")
+	if e.onStatusChange != nil {
+		e.onStatusChange(e.status)
+	}
 }
 
 func NewZapret2WindowsProvider(binPath, luaDir, listDir, expectedEngineSHA256 string, debugMode bool, gameFilter bool) *Zapret2WindowsProvider {
@@ -66,7 +105,7 @@ func NewZapret2WindowsProvider(binPath, luaDir, listDir, expectedEngineSHA256 st
 		logFile, _ = os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	}
 
-	return &Zapret2WindowsProvider{
+	provider := &Zapret2WindowsProvider{
 		status:               StatusStopped,
 		binPath:              binPath,
 		luaDir:               luaDir,
@@ -78,7 +117,15 @@ func NewZapret2WindowsProvider(binPath, luaDir, listDir, expectedEngineSHA256 st
 		logs:                 []string{"Zapret 2 Engine (Windows) initialized."},
 		logFile:              logFile,
 		engineReady:          make(chan bool, 1),
+		commandFactory:       exec.Command,
+		pidAlive:             isWindowsPIDAlive,
+		terminateTree:        terminateWindowsProcessTree,
+		stopTimeout:          time.Second,
+		syncHostlists:        SyncHostlists,
+		versionProbe:         engineVersion,
 	}
+	provider.checkPrivileges = provider.CheckPrivileges
+	return provider
 }
 
 func (e *Zapret2WindowsProvider) SetStatusCallback(cb func(Status)) {
@@ -205,29 +252,37 @@ func (e *Zapret2WindowsProvider) getProfileArgsLocked(profileName string) ([]str
 }
 
 func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	// Serialize full start/stop cycles. Concurrency safety: e.mu guards the
 	// state fields, but it is dropped while SyncHostlists performs network
 	// I/O below — without startStopMu two concurrent Starts could both pass
-	// the "already running" check and spawn two winws2.exe processes.
+	// the ownership check and spawn two winws2.exe processes.
 	e.startStopMu.Lock()
 	defer e.startStopMu.Unlock()
 
 	e.mu.Lock()
-	hasPriv, err := e.CheckPrivileges()
+	hasPriv, err := e.checkPrivileges()
 	if err != nil || !hasPriv {
 		e.mu.Unlock()
 		return fmt.Errorf("administrator privileges required")
 	}
 
-	if e.status == StatusRunning && e.currentProfile == profileName {
+	if e.ownedPID > 0 && e.pidAlive(e.ownedPID) {
+		if e.status == StatusRunning && e.currentProfile == profileName {
+			e.mu.Unlock()
+			return nil
+		}
+		oldProfile := e.currentProfile
 		e.mu.Unlock()
-		return nil
-	}
-
-	if e.status == StatusRunning {
-		e.mu.Unlock()
-		e.stopLocked()
+		if err := e.stopLocked(); err != nil {
+			return fmt.Errorf("stop owned profile %q before start %q: %w", oldProfile, profileName, err)
+		}
 		e.mu.Lock()
+	} else if e.cmd != nil || e.processDone != nil || e.ownedPID != 0 || e.currentProfile != "" {
+		e.setStoppedLocked("start-reconcile")
 	}
 
 	args, err := e.getProfileArgsLocked(profileName)
@@ -239,25 +294,27 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 
 	// Sync hostlist files from remote sources with fallback. Runs outside
 	// e.mu so Stop()/GetStatus() are never blocked behind network timeouts.
-	if err := SyncHostlists(); err != nil {
+	if err := e.syncHostlists(); err != nil {
 		e.addLog(fmt.Sprintf("Предупреждение синхронизации списков: %v", err))
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.killedManually = false
 
-	// State may have changed while hostlist sync ran outside the lock.
-	// If the same profile already started successfully, this is a no-op.
-	// If a *different* profile started, surface a clear conflict error.
-	if e.status == StatusRunning {
-		if e.currentProfile == profileName {
+	if e.ownedPID > 0 && e.pidAlive(e.ownedPID) {
+		if e.status == StatusRunning && e.currentProfile == profileName {
 			return nil
 		}
-		return fmt.Errorf("another profile (%s) started while this one (%s) was in progress", e.currentProfile, profileName)
+		return fmt.Errorf("owned process PID %d is still alive while starting profile %q", e.ownedPID, profileName)
+	}
+	if e.cmd != nil || e.processDone != nil || e.ownedPID != 0 || e.currentProfile != "" {
+		e.setStoppedLocked("start-reconcile")
 	}
 
-	e.status = StatusStarting
 	winwsPath := filepath.Join(e.binPath, "winws2.exe")
 
 	// Refuse to execute anything that does not match the pinned checksum.
@@ -266,50 +323,64 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 		return fmt.Errorf("refusing to execute unverified winws2: %w", err)
 	}
 
-	// Log full command for debugging
+	// Log full command for debugging.
 	cmdLine := winwsPath + " " + strings.Join(args, " ")
 	e.addLog(fmt.Sprintf("[CMD] %s", cmdLine))
-	e.addLog("[VER] " + engineVersion(winwsPath))
+	e.addLog("[VER] " + e.versionProbe(winwsPath))
 	WriteLog(fmt.Sprintf("Starting winws2 with profile '%s': %s", profileName, cmdLine))
 
-	e.cmd = exec.Command(winwsPath, args...)
-	e.cmd.Dir = e.binPath
-	e.cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	cmd := e.commandFactory(winwsPath, args...)
+	cmd.Dir = e.binPath
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		e.status = StatusError
+		return fmt.Errorf("create winws2 stdout pipe: %w", err)
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		e.status = StatusError
+		return fmt.Errorf("create winws2 stderr pipe: %w", err)
+	}
 
-	stdout, _ := e.cmd.StdoutPipe()
-	stderr, _ := e.cmd.StderrPipe()
-
-	if err := e.cmd.Start(); err != nil {
+	e.status = StatusStarting
+	if err := cmd.Start(); err != nil {
 		e.status = StatusError
 		return err
 	}
-	startedCmd := e.cmd
-	e.addLog(fmt.Sprintf("[PID] %d", startedCmd.Process.Pid))
-	WriteLog(fmt.Sprintf("winws2 started, PID %d", startedCmd.Process.Pid))
+	startedPID := cmd.Process.Pid
+	processDone := make(chan struct{})
+	e.cmd = cmd
+	e.processDone = processDone
+	e.ownedPID = startedPID
+	e.currentProfile = profileName
+	e.status = StatusRunning
+	e.addLog(fmt.Sprintf("[PID] %d", startedPID))
+	WriteLog(fmt.Sprintf("winws2 started, PID %d", startedPID))
+	e.logLifecycleLocked("start", fmt.Sprintf("exit profile=%q", profileName))
 
 	var wg sync.WaitGroup
-
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		e.streamLogs(stdout, "STDOUT")
 	}()
-
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		e.streamLogs(stderr, "STDERR")
 	}()
 
-	e.status = StatusRunning
-	e.currentProfile = profileName
-
-	go func(cmd *exec.Cmd) {
+	go func(cmd *exec.Cmd, pid int, done chan struct{}) {
+		defer close(done)
+		e.mu.Lock()
+		e.logLifecycleLocked("wait", fmt.Sprintf("enter pid=%d", pid))
+		e.mu.Unlock()
 		waitErr := cmd.Wait()
 		wg.Wait()
 		e.mu.Lock()
 		defer e.mu.Unlock()
-		if e.cmd == cmd && e.currentProfile == profileName {
+		if e.cmd == cmd && e.ownedPID == pid && e.currentProfile == profileName {
 			exitCode := 0
 			reason := "exited normally"
 			if waitErr != nil {
@@ -321,22 +392,18 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 				}
 			}
 			if e.killedManually {
-				e.addLog(fmt.Sprintf("[EXIT] PID %d stopped by user (code %d)", cmd.Process.Pid, exitCode))
+				e.addLog(fmt.Sprintf("[EXIT] PID %d stopped by user (code %d)", pid, exitCode))
 			} else if exitCode == 3221225794 || uint32(exitCode) == 0xc0000142 {
-				e.addLog(fmt.Sprintf("[EXIT] PID %d terminated by anti-cheat conflict (code 0xc0000142 STATUS_DLL_INIT_FAILED: game anti-cheat blocked cygwin memory mapping)", cmd.Process.Pid))
-				WriteLog(fmt.Sprintf("winws2 PID %d terminated by anti-cheat conflict: code 0xc0000142 STATUS_DLL_INIT_FAILED (BattlEye/EAC blocked cygwin1.dll)", cmd.Process.Pid))
+				e.addLog(fmt.Sprintf("[EXIT] PID %d terminated by anti-cheat conflict (code 0xc0000142 STATUS_DLL_INIT_FAILED: game anti-cheat blocked cygwin memory mapping)", pid))
+				WriteLog(fmt.Sprintf("winws2 PID %d terminated by anti-cheat conflict: code 0xc0000142 STATUS_DLL_INIT_FAILED (BattlEye/EAC blocked cygwin1.dll)", pid))
 			} else {
-				e.addLog(fmt.Sprintf("[EXIT] PID %d terminated unexpectedly (code %d, %s)", cmd.Process.Pid, exitCode, reason))
-				WriteLog(fmt.Sprintf("winws2 PID %d terminated unexpectedly: code %d, %s", cmd.Process.Pid, exitCode, reason))
+				e.addLog(fmt.Sprintf("[EXIT] PID %d terminated unexpectedly (code %d, %s)", pid, exitCode, reason))
+				WriteLog(fmt.Sprintf("winws2 PID %d terminated unexpectedly: code %d, %s", pid, exitCode, reason))
 			}
-			e.cmd = nil
-			e.currentProfile = ""
-			e.status = StatusStopped
-			if e.onStatusChange != nil {
-				e.onStatusChange(e.status)
-			}
+			e.setStoppedLocked("wait")
 		}
-	}(startedCmd)
+		e.logLifecycleLocked("wait", fmt.Sprintf("exit pid=%d", pid))
+	}(cmd, startedPID, processDone)
 
 	return nil
 }
@@ -408,63 +475,86 @@ func isWindowsPIDAlive(pid int) bool {
 	if pid <= 0 {
 		return false
 	}
-	cmd := exec.Command("tasklist.exe", "/FI", fmt.Sprintf("PID eq %d", pid), "/NH")
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
-	out, err := cmd.Output()
+	handle, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
 	if err != nil {
 		return false
 	}
-	return strings.Contains(string(out), fmt.Sprintf("%d", pid))
+	defer windows.CloseHandle(handle)
+	var exitCode uint32
+	if err := windows.GetExitCodeProcess(handle, &exitCode); err != nil {
+		return false
+	}
+	return exitCode == 259 // STILL_ACTIVE
+}
+
+func terminateWindowsProcessTree(pid int) error {
+	killCmd := exec.Command("taskkill.exe", "/F", "/T", "/PID", fmt.Sprintf("%d", pid))
+	killCmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
+	return killCmd.Run()
 }
 
 func (e *Zapret2WindowsProvider) stopLocked() error {
 	e.mu.Lock()
-	defer e.mu.Unlock()
+	e.lifecycleOperation++
+	operation := fmt.Sprintf("stop-%d", e.lifecycleOperation)
+	e.logLifecycleLocked(operation, "enter")
+	cmd := e.cmd
+	done := e.processDone
+	pid := e.ownedPID
+	if cmd == nil || cmd.Process == nil {
+		e.setStoppedLocked(operation)
+		e.mu.Unlock()
+		return nil
+	}
+	e.killedManually = true
+	e.status = StatusStopping
+	e.logLifecycleLocked(operation, fmt.Sprintf("transition=STOPPING pid=%d", pid))
+	e.mu.Unlock()
 
-	if e.cmd != nil && e.cmd.Process != nil {
-		e.killedManually = true
-		pid := e.cmd.Process.Pid
-		e.addLog(fmt.Sprintf("[STOP] terminating winws2 process (PID=%d)", pid))
-
-		killCmd := exec.Command("taskkill.exe", "/F", "/T", "/PID", fmt.Sprintf("%d", pid))
-		killCmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
-		if killErr := killCmd.Run(); killErr != nil {
-			e.addLog(fmt.Sprintf("[STOP] taskkill PID %d returned: %v", pid, killErr))
-		}
-
-		// Bounded poll to verify that owned PID has actually terminated
-		exited := false
-		for i := 0; i < 20; i++ {
-			time.Sleep(50 * time.Millisecond)
-			if !isWindowsPIDAlive(pid) {
-				exited = true
-				break
-			}
-		}
-
-		if !exited {
-			e.status = StatusError
-			e.addLog(fmt.Sprintf("[ERROR] process PID %d failed to terminate within timeout", pid))
-			return fmt.Errorf("process PID %d failed to terminate after taskkill", pid)
-		}
-
-		e.addLog(fmt.Sprintf("[STOP] process PID %d verified terminated and handles released", pid))
-		e.cmd = nil
-
-		// Attempt graceful WinDivert driver service stop so anti-cheats don't flag orphaned driver
-		scCmd := exec.Command("sc", "stop", "WinDivert")
-		scCmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
-		_ = scCmd.Run()
+	if killErr := e.terminateTree(pid); killErr != nil && e.pidAlive(pid) {
+		e.mu.Lock()
+		e.status = StatusError
+		e.logLifecycleLocked(operation, fmt.Sprintf("terminate-error=%v", killErr))
+		e.mu.Unlock()
+		return fmt.Errorf("terminate owned process PID %d: %w", pid, killErr)
 	}
 
+	deadline := time.NewTimer(e.stopTimeout)
+	defer deadline.Stop()
+	select {
+	case <-done:
+	case <-deadline.C:
+		e.mu.Lock()
+		e.status = StatusError
+		e.logLifecycleLocked(operation, fmt.Sprintf("wait-timeout pid=%d", pid))
+		e.mu.Unlock()
+		return fmt.Errorf("owned process PID %d did not complete its reaper within %s", pid, e.stopTimeout)
+	}
+
+	if e.pidAlive(pid) {
+		e.mu.Lock()
+		e.status = StatusError
+		e.logLifecycleLocked(operation, fmt.Sprintf("pid-still-alive=%d", pid))
+		e.mu.Unlock()
+		return fmt.Errorf("owned process PID %d remained alive after reaper completion", pid)
+	}
+
+	scCmd := exec.Command("sc", "stop", "WinDivert")
+	scCmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
+	_ = scCmd.Run()
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.status != StatusStopped || e.cmd != nil || e.currentProfile != "" || e.ownedPID != 0 {
+		e.status = StatusError
+		e.logLifecycleLocked(operation, "invariant-violation-after-stop")
+		return fmt.Errorf("provider lifecycle invariant violated after stop")
+	}
 	if e.logFile != nil {
 		e.logFile.Close()
 		e.logFile = nil
 	}
-	e.currentProfile = ""
-	if e.onStatusChange != nil {
-		e.onStatusChange(e.status)
-	}
+	e.logLifecycleLocked(operation, "exit")
 	return nil
 }
 

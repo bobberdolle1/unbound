@@ -18,9 +18,9 @@ func prepareAssetRuntime() (*assetRuntimeWorkspace, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create private runtime directory: %w", err)
 	}
-	if err := os.Chmod(dir, 0700); err != nil {
+	if err := os.Chmod(dir, 0711); err != nil {
 		_ = os.RemoveAll(dir)
-		return nil, fmt.Errorf("protect private runtime directory: %w", err)
+		return nil, fmt.Errorf("prepare traversable runtime directory: %w", err)
 	}
 	return &assetRuntimeWorkspace{
 		stagingDir: dir,

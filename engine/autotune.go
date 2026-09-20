@@ -13,22 +13,30 @@ import (
 )
 
 type AutoTuneResult struct {
-	ProfileName        string
-	Success            bool
-	Score              int
-	Latency            time.Duration
-	Results            map[string]TargetStatus
-	Baseline           map[string]TargetStatus
-	RecoveredTargets   int
-	RegressedTargets   int
-	BaselineAvailable  int
-	Aggressiveness     int
-	Explanation        string
-	AlternativeProfile string
-	FailedTargets      []string
-	SkippedProfiles    map[string]string
-	RequirementsMet    bool
-	CapabilityWarnings []string
+	ProfileName           string                  `json:"winner"`
+	Success               bool                    `json:"success"`
+	Score                 int                     `json:"winner_score"`
+	Latency               time.Duration           `json:"latency"`
+	Results               map[string]TargetStatus `json:"results"`
+	Baseline              map[string]TargetStatus `json:"baseline"`
+	RecoveredTargets      int                     `json:"recovered_targets"`
+	RegressedTargets      int                     `json:"regressed_targets"`
+	BaselineAvailable     int                     `json:"baseline_available"`
+	Aggressiveness        int                     `json:"aggressiveness"`
+	Explanation           string                  `json:"explanation"`
+	AlternativeProfile    string                  `json:"alternative_profile"`
+	FailedTargets         []string                `json:"failed_targets"`
+	SkippedProfiles       map[string]string       `json:"skipped_profiles"`
+	RequirementsMet       bool                    `json:"requirements_met"`
+	CapabilityWarnings    []string                `json:"capability_warnings"`
+	Completed             bool                    `json:"completed"`
+	Cancelled             bool                    `json:"cancelled"`
+	ProfilesTotal         int                     `json:"profiles_total"`
+	ProfilesAttempted     int                     `json:"profiles_attempted"`
+	ProfilesCompleted     int                     `json:"profiles_completed"`
+	ProfilesFailedToStart int                     `json:"profiles_failed_to_start"`
+	LifecycleFailures     int                     `json:"lifecycle_failures"`
+	ErrorCategory         string                  `json:"error_category,omitempty"`
 }
 
 type TargetStatus struct {
@@ -253,6 +261,36 @@ func RunAutoTuneV2WithProgress(ctx context.Context, provider providers.BypassPro
 	return RunAutoTuneV3(ctx, provider, profiles, progressFn, DefaultAutoTuneOptions())
 }
 
+type autoTuneProfileOwner interface {
+	CurrentProfile() string
+}
+
+func validateAutoTuneProviderRunning(provider providers.BypassProvider, profileName string) error {
+	if provider.GetStatus() != providers.StatusRunning {
+		return fmt.Errorf("provider status is %s, want RUNNING", provider.GetStatus())
+	}
+	if owner, ok := provider.(autoTuneProfileOwner); ok && owner.CurrentProfile() != profileName {
+		return fmt.Errorf("provider profile is %q, want %q", owner.CurrentProfile(), profileName)
+	}
+	return nil
+}
+
+func validateAutoTuneProviderStopped(provider providers.BypassProvider) error {
+	if provider.GetStatus() != providers.StatusStopped {
+		return fmt.Errorf("provider status is %s, want STOPPED", provider.GetStatus())
+	}
+	if owner, ok := provider.(autoTuneProfileOwner); ok && owner.CurrentProfile() != "" {
+		return fmt.Errorf("provider profile is %q after stop", owner.CurrentProfile())
+	}
+	return nil
+}
+
+func autoTuneLifecycleError(execution *AutoTuneResult, operation string, err error) (*AutoTuneResult, error) {
+	execution.LifecycleFailures++
+	execution.ErrorCategory = "AUTOTUNE_LIFECYCLE_FAILURE"
+	return execution, fmt.Errorf("%s: %s: %w", execution.ErrorCategory, operation, err)
+}
+
 func RunAutoTuneV3(ctx context.Context, provider providers.BypassProvider, profiles []Profile, progressFn AutoTuneProgressFn, options AutoTuneOptions) (*AutoTuneResult, error) {
 	if provider == nil {
 		return nil, fmt.Errorf("bypass provider is not available")
@@ -279,9 +317,12 @@ func RunAutoTuneV3(ctx context.Context, provider providers.BypassProvider, profi
 	logger := GetLogger()
 	notifMgr := GetNotificationManager()
 	logger.Infof("AutoTune", "AutoTune V3: %d profiles, %d verified TLS targets", len(profiles), len(options.Targets))
-
+	execution := AutoTuneResult{ProfilesTotal: len(profiles)}
 	if err := provider.Stop(); err != nil {
-		return nil, fmt.Errorf("establish clean baseline: %w", err)
+		return autoTuneLifecycleError(&execution, "establish clean baseline", err)
+	}
+	if err := validateAutoTuneProviderStopped(provider); err != nil {
+		return autoTuneLifecycleError(&execution, "validate clean baseline", err)
 	}
 	if progressFn != nil {
 		progressFn(0, len(profiles), "Baseline", 0, len(options.Targets), "Проверяем соединение без обхода...")
@@ -305,6 +346,7 @@ func RunAutoTuneV3(ctx context.Context, provider providers.BypassProvider, profi
 	var runnerUp *AutoTuneResult
 	var bestPartial *AutoTuneResult
 	skippedProfiles := make(map[string]string)
+	execution.Baseline = baseline
 	timestampsActive := true
 	if options.TCPTimestampsActive != nil {
 		timestampsActive = *options.TCPTimestampsActive
@@ -331,28 +373,33 @@ func RunAutoTuneV3(ctx context.Context, provider providers.BypassProvider, profi
 			progressFn(step, len(profiles), profile.Name, 0, len(options.Targets), fmt.Sprintf("Тестируем [%d/%d]: %s...", step, len(profiles), profile.Name))
 		}
 		logger.Infof("AutoTune", "[%d/%d] Starting %s", step, len(profiles), profile.Name)
-
+		execution.ProfilesAttempted++
 		if err := provider.Start(ctx, profile.Name); err != nil {
-			logger.Warnf("AutoTune", "Profile %s failed to start: %v", profile.Name, err)
-			if progressFn != nil {
-				progressFn(step, len(profiles), profile.Name, 0, len(options.Targets), fmt.Sprintf("Ошибка запуска %s: %v", profile.Name, err))
-			}
-			continue
+			execution.ProfilesFailedToStart++
+			logger.Errorf("AutoTune", "Profile %s lifecycle start failure: %v", profile.Name, err)
+			return autoTuneLifecycleError(&execution, fmt.Sprintf("start %q", profile.Name), err)
+		}
+		if err := validateAutoTuneProviderRunning(provider, profile.Name); err != nil {
+			_ = provider.Stop()
+			return autoTuneLifecycleError(&execution, fmt.Sprintf("validate start %q", profile.Name), err)
 		}
 
 		if err := waitAutoTune(ctx, options.StabilizationDelay); err != nil {
 			_ = provider.Stop()
 			return nil, err
 		}
+		if err := validateAutoTuneProviderRunning(provider, profile.Name); err != nil {
+			_ = provider.Stop()
+			return autoTuneLifecycleError(&execution, fmt.Sprintf("validate active %q", profile.Name), err)
+		}
 		statuses := runAutoTuneProbes(ctx, options)
-		stopErr := provider.Stop()
-		if err := waitAutoTune(ctx, options.CleanupDelay); err != nil {
-			return nil, err
+		if stopErr := provider.Stop(); stopErr != nil {
+			return autoTuneLifecycleError(&execution, fmt.Sprintf("stop %q", profile.Name), stopErr)
 		}
-		if stopErr != nil {
-			logger.Warnf("AutoTune", "Profile %s did not stop cleanly: %v", profile.Name, stopErr)
-			continue
+		if err := validateAutoTuneProviderStopped(provider); err != nil {
+			return autoTuneLifecycleError(&execution, fmt.Sprintf("validate stop %q", profile.Name), err)
 		}
+		execution.ProfilesCompleted++
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -400,6 +447,12 @@ func RunAutoTuneV3(ctx context.Context, provider providers.BypassProvider, profi
 			logger.Infof("AutoTune", "Best working profile selected: %s (score=%d, %d/%d OK)",
 				bestPartial.ProfileName, bestPartial.Score, countStatusesOK(bestPartial.Results), len(options.Targets))
 			notifMgr.Success("AutoTune завершён", fmt.Sprintf("Лучший профиль: %s", bestPartial.ProfileName))
+			bestPartial.Completed = true
+			bestPartial.ProfilesTotal = execution.ProfilesTotal
+			bestPartial.ProfilesAttempted = execution.ProfilesAttempted
+			bestPartial.ProfilesCompleted = execution.ProfilesCompleted
+			bestPartial.ProfilesFailedToStart = execution.ProfilesFailedToStart
+			bestPartial.LifecycleFailures = execution.LifecycleFailures
 			return bestPartial, nil
 		}
 		logger.Error("AutoTune", "No profile improved connectivity without regressions")
@@ -417,6 +470,12 @@ func RunAutoTuneV3(ctx context.Context, provider providers.BypassProvider, profi
 	bestResult.BaselineAvailable = baselineAvailable
 	logger.Infof("AutoTune", "Winner: %s (score=%d, recovered=%d, latency=%dms)", bestResult.ProfileName, bestResult.Score, bestResult.RecoveredTargets, bestResult.Latency.Milliseconds())
 	notifMgr.Success("AutoTune завершён", fmt.Sprintf("Лучший профиль: %s", bestResult.ProfileName))
+	bestResult.Completed = true
+	bestResult.ProfilesTotal = execution.ProfilesTotal
+	bestResult.ProfilesAttempted = execution.ProfilesAttempted
+	bestResult.ProfilesCompleted = execution.ProfilesCompleted
+	bestResult.ProfilesFailedToStart = execution.ProfilesFailedToStart
+	bestResult.LifecycleFailures = execution.LifecycleFailures
 	return bestResult, nil
 }
 

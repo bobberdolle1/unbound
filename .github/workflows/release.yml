@@ -1,9 +1,9 @@
 # ============================================================================
 # UNBOUND — Release packaging
 # ============================================================================
-# Builds and packages every shipped target. Correctness checks live in ci.yml;
-# this workflow only runs on tags and manual dispatch so a routine push does
-# not spend half an hour building APKs.
+# Builds and packages only the targets shipped by the release policy.
+# Correctness checks live in ci.yml; this workflow only runs on tags and manual
+# dispatch so a routine push does not spend half an hour building artifacts.
 #
 # Fixed from the previous main.yml, which could not complete:
 #   - GO_VERSION was 1.23 while go.mod requires 1.25
@@ -168,33 +168,14 @@ jobs:
             throw "Windows profile catalog is empty"
           }
 
-      - name: Package
+      - name: Package and inspect archive
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $dist = "release/unbound-v${env:VERSION}-windows-amd64"
-          New-Item -ItemType Directory -Force -Path $dist | Out-Null
-          Copy-Item "build/bin/unbound.exe" $dist
-          Copy-Item "README.md" "$dist/README.md"
-          Copy-Item "LICENSE" "$dist/LICENSE"
-          Copy-Item "engine/third_party/ZAPRET2_LICENSE.txt" "$dist/ZAPRET2_LICENSE.txt"
-          Copy-Item "engine/third_party/ZAPRET_LICENSE.txt" "$dist/ZAPRET_LICENSE.txt"
-          Copy-Item "engine/ENGINE_PROVENANCE.json" "$dist/ENGINE_PROVENANCE.json"
-          Copy-Item "scripts/control_windows/*" $dist
-          Get-ChildItem $dist -File | Sort-Object Name | ForEach-Object {
-            "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
-          } | Set-Content "$dist/BUNDLE_SHA256SUMS.txt" -Encoding ascii
-          Compress-Archive -Path "$dist/*" -DestinationPath "$dist.zip" -Force
-          $smoke = Join-Path $env:RUNNER_TEMP "unbound-release-smoke"
-          Expand-Archive "$dist.zip" $smoke -Force
-          if (
-            -not (Test-Path "$smoke/unbound.exe") -or
-            -not (Test-Path "$smoke/ZAPRET2_LICENSE.txt") -or
-            -not (Test-Path "$smoke/ZAPRET_LICENSE.txt") -or
-            -not (Test-Path "$smoke/general_autotune.cmd")
-          ) {
-            throw "Windows archive is missing required runtime, licence, or control files"
-          }
+          & scripts/build/package_windows_release.ps1 -Version $env:VERSION
+          $archive = "release/unbound-v${env:VERSION}-windows-amd64.zip"
+          $env:UNBOUND_WINDOWS_ARCHIVE = (Resolve-Path $archive)
+          go test ./tests -run TestWindowsPackagingArchive -count=1
 
       - uses: actions/upload-artifact@v4
         with:
@@ -203,100 +184,6 @@ jobs:
           retention-days: 30
 
   # ───────────────────────────────────────────────────────────────────────────
-  build-linux:
-    name: Linux (CLI)
-    runs-on: ubuntu-latest
-    needs: [resolve-version, verify]
-    env:
-      VERSION: ${{ needs.resolve-version.outputs.version }}
-    strategy:
-      matrix:
-        include:
-          - goarch: amd64
-          - goarch: arm64
-    steps:
-
-      - uses: docker/setup-qemu-action@v3
-        if: matrix.goarch == 'arm64'
-        with:
-          platforms: arm64
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: true
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      # main.go embeds frontend/dist, so this has to happen before go build
-      # even for the headless CLI binary.
-      - name: Build frontend
-        working-directory: frontend
-        run: |
-          npm ci
-          npm run build
-
-      - name: Build binary
-        env:
-          GOOS: linux
-          GOARCH: ${{ matrix.goarch }}
-          GOMIPS: softfloat
-          CGO_ENABLED: 0
-        run: |
-          set -euo pipefail
-          mkdir -p build/bin
-          # `-o` names a single output file, so it takes exactly one package.
-          # The previous `go build -o build/bin/unbound-linux ./...` was a hard
-          # error and this job never produced a binary.
-          go build -trimpath \
-            -ldflags="-s -w -X unbound/engine.Version=${VERSION}" \
-            -o "build/bin/unbound-linux-${GOARCH}" .
-
-      - name: Package and smoke-test
-        run: |
-          set -euo pipefail
-          dist="release/unbound-v${VERSION}-linux-${{ matrix.goarch }}"
-          mkdir -p "$dist"
-          cp "build/bin/unbound-linux-${{ matrix.goarch }}" "$dist/unbound"
-          chmod +x "$dist/unbound"
-          cp README.md LICENSE "$dist/"
-          cp engine/third_party/ZAPRET2_LICENSE.txt "$dist/"
-          cp engine/third_party/ZAPRET_LICENSE.txt "$dist/"
-          cp engine/ENGINE_PROVENANCE.json "$dist/"
-          cp scripts/control_linux/*.sh "$dist/"
-          cat > "$dist/run-unbound.sh" <<'SCRIPT'
-          #!/usr/bin/env sh
-          set -eu
-          HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-          exec "$HERE/unbound" --control "$@"
-          SCRIPT
-          chmod +x "$dist/"*.sh
-          (
-            cd "$dist"
-            find . -maxdepth 1 -type f ! -name BUNDLE_SHA256SUMS.txt -exec sha256sum {} \; | sort -k2 > BUNDLE_SHA256SUMS.txt
-          )
-          tar -czf "${dist}.tar.gz" -C release "$(basename "$dist")"
-
-          smoke="$(mktemp -d)"
-          tar -xzf "${dist}.tar.gz" -C "$smoke"
-          root="$smoke/$(basename "$dist")"
-          test -x "$root/unbound"
-          test -f "$root/ZAPRET2_LICENSE.txt"
-          test -f "$root/ZAPRET_LICENSE.txt"
-          test -x "$root/general_autotune.sh"
-          "$root/unbound" --version | grep -F "$VERSION"
-          "$root/unbound" --list-profiles --json | jq -e 'to_entries | (length > 0 and all(.[]; (.value | length > 0)))'
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: unbound-linux-${{ matrix.goarch }}
-          path: release/*.tar.gz
-          retention-days: 30
 
   # ───────────────────────────────────────────────────────────────────────────
   build-macos:
@@ -340,13 +227,11 @@ jobs:
       - resolve-version
       - verify
       - build-windows
-      - build-linux
       - build-macos
     if: >-
       always() &&
       needs.verify.result == 'success' &&
       needs.build-windows.result == 'success' &&
-      needs.build-linux.result == 'success' &&
       needs.build-macos.result == 'success' &&
       (github.ref_type == 'tag' ||
        (github.event_name == 'workflow_dispatch' && inputs.release))
@@ -400,7 +285,6 @@ jobs:
           body: ${{ steps.notes.outputs.body }}
           files: |
             artifacts/**/*.zip
-            artifacts/**/*.tar.gz
             artifacts/**/*.dmg
             artifacts/**/*.pkg
             artifacts/SHA256SUMS.txt

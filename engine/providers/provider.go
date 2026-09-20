@@ -11,6 +11,7 @@ const (
 	StatusStopped  Status = "Stopped"
 	StatusStarting Status = "Starting"
 	StatusRunning  Status = "Running"
+	StatusStopping Status = "Stopping"
 	StatusError    Status = "Error"
 )
 

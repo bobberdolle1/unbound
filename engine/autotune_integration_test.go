@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -11,10 +12,15 @@ import (
 )
 
 type fakeAutoTuneProvider struct {
-	mu      sync.Mutex
-	active  string
-	starts  []string
-	stopCnt int
+	mu            sync.Mutex
+	active        string
+	starts        []string
+	stopCnt       int
+	startErr      error
+	stopErr       error
+	stopErrOnCall int
+	stopDelay     time.Duration
+	onStart       func(string)
 }
 
 func (p *fakeAutoTuneProvider) Name() string                   { return "fake" }
@@ -22,16 +28,36 @@ func (p *fakeAutoTuneProvider) CheckPrivileges() (bool, error) { return true, ni
 func (p *fakeAutoTuneProvider) GetProfiles() []string          { return []string{"First", "Best"} }
 func (p *fakeAutoTuneProvider) Start(_ context.Context, profile string) error {
 	p.mu.Lock()
-	defer p.mu.Unlock()
+	if p.startErr != nil {
+		p.mu.Unlock()
+		return p.startErr
+	}
 	p.active = profile
 	p.starts = append(p.starts, profile)
+	onStart := p.onStart
+	p.mu.Unlock()
+	if onStart != nil {
+		onStart(profile)
+	}
 	return nil
 }
 func (p *fakeAutoTuneProvider) Stop() error {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.active = ""
 	p.stopCnt++
+	stopCnt := p.stopCnt
+	stopErr := p.stopErr
+	stopErrOnCall := p.stopErrOnCall
+	stopDelay := p.stopDelay
+	p.mu.Unlock()
+	if stopDelay > 0 {
+		time.Sleep(stopDelay)
+	}
+	if stopErr != nil && (stopErrOnCall == 0 || stopErrOnCall == stopCnt) {
+		return stopErr
+	}
+	p.mu.Lock()
+	p.active = ""
+	p.mu.Unlock()
 	return nil
 }
 func (p *fakeAutoTuneProvider) GetStatus() providers.Status {
@@ -109,6 +135,35 @@ func TestAutoTuneV3RejectsConnectivityRegression(t *testing.T) {
 	if err == nil || result != nil {
 		t.Fatalf("regressive profile accepted: result=%+v err=%v", result, err)
 	}
+	if strings.Contains(err.Error(), "AUTOTUNE_LIFECYCLE_FAILURE") {
+		t.Fatalf("ordinary strategy regression became lifecycle failure: %v", err)
+	}
+}
+
+func TestAutoTuneV3AbortsOnLifecycleStartFailure(t *testing.T) {
+	provider := &fakeAutoTuneProvider{startErr: errors.New("another profile () started while this one (First) was in progress")}
+	options := AutoTuneOptions{
+		Targets: []Target{{Name: "target", URL: "https://target.test", Priority: 1}},
+		Probe: func(_ context.Context, _ string) (ProbeResult, error) {
+			if provider.CurrentProfile() != "" {
+				t.Fatal("profile probe ran after lifecycle start failure")
+			}
+			return ProbeResult{Success: true, CertValid: true}, nil
+		},
+		ProbeTimeout: time.Second,
+		MinimumOK:    1,
+	}
+
+	result, err := RunAutoTuneV3(context.Background(), provider, []Profile{{Name: "First"}, {Name: "Second"}}, nil, options)
+	if err == nil || result == nil {
+		t.Fatalf("lifecycle failure did not return structured failure: result=%+v err=%v", result, err)
+	}
+	if result.Completed || result.ErrorCategory != "AUTOTUNE_LIFECYCLE_FAILURE" || result.LifecycleFailures != 1 || result.ProfilesAttempted != 1 || result.ProfilesFailedToStart != 1 {
+		t.Fatalf("invalid lifecycle failure report: %+v", result)
+	}
+	if !strings.Contains(err.Error(), "AUTOTUNE_LIFECYCLE_FAILURE") {
+		t.Fatalf("lifecycle category missing from error: %v", err)
+	}
 }
 
 func TestAutoTuneV3CancellationStopsActiveProvider(t *testing.T) {
@@ -144,5 +199,103 @@ func TestAutoTuneV3CancellationStopsActiveProvider(t *testing.T) {
 	}
 	if provider.GetStatus() != providers.StatusStopped {
 		t.Fatal("provider remained active after cancellation")
+	}
+}
+func lifecycleTestOptions(provider *fakeAutoTuneProvider) AutoTuneOptions {
+	return AutoTuneOptions{
+		Targets: []Target{{Name: "blocked", URL: "https://blocked.test", Priority: 1}},
+		Probe: func(_ context.Context, _ string) (ProbeResult, error) {
+			if provider.CurrentProfile() == "" {
+				return ProbeResult{Error: "blocked"}, errors.New("blocked")
+			}
+			return ProbeResult{Success: true, CertValid: true}, nil
+		},
+		ProbeTimeout: time.Second,
+		MinimumOK:    1,
+	}
+}
+
+func requireAutoTuneLifecycleFailure(t *testing.T, result *AutoTuneResult, err error) {
+	t.Helper()
+	if err == nil || result == nil {
+		t.Fatalf("lifecycle failure did not return structured failure: result=%+v err=%v", result, err)
+	}
+	if result.Completed || result.ProfileName != "" || result.ErrorCategory != "AUTOTUNE_LIFECYCLE_FAILURE" || result.LifecycleFailures != 1 {
+		t.Fatalf("invalid lifecycle failure report: %+v", result)
+	}
+}
+
+func TestAutoTuneV3DelayedStopCompletes(t *testing.T) {
+	provider := &fakeAutoTuneProvider{stopDelay: 20 * time.Millisecond}
+	result, err := RunAutoTuneV3(context.Background(), provider, []Profile{{Name: "Profile"}}, nil, lifecycleTestOptions(provider))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Completed || result.LifecycleFailures != 0 || provider.GetStatus() != providers.StatusStopped {
+		t.Fatalf("delayed Stop did not complete cleanly: result=%+v status=%s", result, provider.GetStatus())
+	}
+}
+
+func TestAutoTuneV3StopTimeoutAborts(t *testing.T) {
+	provider := &fakeAutoTuneProvider{stopErr: errors.New("owned process did not stop"), stopErrOnCall: 2}
+	result, err := RunAutoTuneV3(context.Background(), provider, []Profile{{Name: "Profile"}}, nil, lifecycleTestOptions(provider))
+	requireAutoTuneLifecycleFailure(t, result, err)
+	if result.ProfilesAttempted != 1 || result.ProfilesCompleted != 0 {
+		t.Fatalf("stop failure counts are incoherent: %+v", result)
+	}
+}
+
+func TestAutoTuneV3UnexpectedExitAborts(t *testing.T) {
+	provider := &fakeAutoTuneProvider{}
+	started := make(chan struct{})
+	exitNow := make(chan struct{})
+	provider.onStart = func(string) {
+		close(started)
+		go func() {
+			<-exitNow
+			provider.mu.Lock()
+			provider.active = ""
+			provider.mu.Unlock()
+		}()
+	}
+	options := lifecycleTestOptions(provider)
+	options.StabilizationDelay = time.Second
+	done := make(chan struct {
+		result *AutoTuneResult
+		err    error
+	}, 1)
+	go func() {
+		result, err := RunAutoTuneV3(context.Background(), provider, []Profile{{Name: "Profile"}}, nil, options)
+		done <- struct {
+			result *AutoTuneResult
+			err    error
+		}{result, err}
+	}()
+	<-started
+	close(exitNow)
+	outcome := <-done
+	requireAutoTuneLifecycleFailure(t, outcome.result, outcome.err)
+}
+
+func TestAutoTuneV3CorruptProviderStateAborts(t *testing.T) {
+	provider := &fakeAutoTuneProvider{}
+	provider.onStart = func(string) {
+		provider.mu.Lock()
+		provider.active = ""
+		provider.mu.Unlock()
+	}
+	result, err := RunAutoTuneV3(context.Background(), provider, []Profile{{Name: "Profile"}}, nil, lifecycleTestOptions(provider))
+	requireAutoTuneLifecycleFailure(t, result, err)
+}
+
+func TestAutoTuneV3ProbeFailureRemainsBenchmarkFailure(t *testing.T) {
+	provider := &fakeAutoTuneProvider{}
+	options := lifecycleTestOptions(provider)
+	options.Probe = func(context.Context, string) (ProbeResult, error) {
+		return ProbeResult{Error: "probe failed"}, errors.New("probe failed")
+	}
+	result, err := RunAutoTuneV3(context.Background(), provider, []Profile{{Name: "Profile"}}, nil, options)
+	if err == nil || result != nil || strings.Contains(err.Error(), "AUTOTUNE_LIFECYCLE_FAILURE") {
+		t.Fatalf("probe failure classification changed: result=%+v err=%v", result, err)
 	}
 }

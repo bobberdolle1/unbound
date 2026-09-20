@@ -5,10 +5,13 @@ package providers
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -585,6 +588,30 @@ func preparePfConfPatch() (bool, string, error) {
 	return true, tmpPath, nil
 }
 
+// removeLegacyUnboundPFDeclarations removes only exact historical anchor
+// declarations. It is pure so a future privileged migration can first back up,
+// validate, and atomically replace /etc/pf.conf without rewriting unrelated
+// configuration.
+func removeLegacyUnboundPFDeclarations(content []byte) ([]byte, error) {
+	const (
+		rdrDeclaration    = `rdr-anchor "com.unbound.zapret"`
+		anchorDeclaration = `anchor "com.unbound.zapret"`
+	)
+	var out strings.Builder
+	for _, line := range strings.SplitAfter(string(content), "\n") {
+		trimmed := strings.TrimSpace(strings.TrimSuffix(line, "\n"))
+		switch trimmed {
+		case rdrDeclaration, anchorDeclaration:
+			continue
+		}
+		if strings.Contains(trimmed, pfAnchorName) {
+			return nil, fmt.Errorf("unexpected %s declaration: %q", pfAnchorName, trimmed)
+		}
+		out.WriteString(line)
+	}
+	return []byte(out.String()), nil
+}
+
 // sendMacOSNotification displays a native macOS desktop notification toast.
 func sendMacOSNotification(title, message string) {
 	escapedTitle := strings.ReplaceAll(title, `"`, `\"`)
@@ -617,6 +644,53 @@ func (e *ZapretMacOSProvider) anchorIsReferenced() bool {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+
+// SocksPortInUseError identifies a listener collision before tpws is started.
+// OwnerPID is zero when macOS cannot disclose the owning process.
+type SocksPortInUseError struct {
+	Code     string
+	Port     int
+	OwnerPID int
+}
+
+func (e *SocksPortInUseError) Error() string {
+	if e.OwnerPID != 0 {
+		return fmt.Sprintf("%s: port %d is already in use (owner PID %d)", e.Code, e.Port, e.OwnerPID)
+	}
+	return fmt.Sprintf("%s: port %d is already in use", e.Code, e.Port)
+}
+
+func checkTpwsPortAvailable(port string) error {
+	listener, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", port))
+	if err == nil {
+		return listener.Close()
+	}
+	if !errors.Is(err, syscall.EADDRINUSE) {
+		return err
+	}
+	portNumber, parseErr := strconv.Atoi(port)
+	if parseErr != nil {
+		return err
+	}
+	return &SocksPortInUseError{
+		Code:     "SOCKS_PORT_IN_USE",
+		Port:     portNumber,
+		OwnerPID: listeningProcessPID(port),
+	}
+}
+
+func listeningProcessPID(port string) int {
+	out, err := exec.Command("lsof", "-nP", "-t", "-iTCP:"+port, "-sTCP:LISTEN").Output()
+	if err != nil {
+		return 0
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(strings.SplitN(string(out), "\n", 2)[0]))
+	if err != nil || pid <= 0 {
+		return 0
+	}
+	return pid
+}
+
 // Lifecycle
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -652,7 +726,6 @@ func (e *ZapretMacOSProvider) Start(ctx context.Context, profileName string) err
 
 	e.setStatusLocked(StatusStarting)
 
-
 	// tpws args: run in SOCKS5 proxy mode on tpwsPort, then DPI desync flags.
 	args := append([]string{"--socks", "--port=" + tpwsPort}, profile.Args...)
 
@@ -675,6 +748,13 @@ func (e *ZapretMacOSProvider) Start(ctx context.Context, profileName string) err
 		return err
 	}
 
+	if err := checkTpwsPortAvailable(tpwsPort); err != nil {
+		cancel()
+		e.addLogLocked("Ошибка запуска tpws: " + err.Error())
+		e.setStatusLocked(StatusError)
+		return err
+	}
+
 	if err := cmd.Start(); err != nil {
 		cancel()
 		e.addLogLocked("Ошибка запуска tpws: " + err.Error())
@@ -692,20 +772,6 @@ func (e *ZapretMacOSProvider) Start(ctx context.Context, profileName string) err
 	e.modifiedServices = enableSystemSocks(tpwsPort)
 	if len(e.modifiedServices) > 0 {
 		e.addLogLocked(fmt.Sprintf("Системный SOCKS5 прокси включен для: %s (127.0.0.1:%s)", strings.Join(e.modifiedServices, ", "), tpwsPort))
-	}
-
-	// SOCKS mode does not use transparent PF redirection. For profiles that
-	// deliberately force HTTP/3-capable clients back to TCP, PF blocks only
-	// UDP/443; every other profile leaves unrelated UDP untouched.
-	if profile.BlockQUIC {
-		quicBlockRule := []string{"block drop out quick proto udp to port 443"}
-		go func() {
-			if pfErr := e.loadPfAnchor(quicBlockRule); pfErr == nil {
-				e.mu.Lock()
-				e.anchorLoaded = true
-				e.mu.Unlock()
-			}
-		}()
 	}
 
 	go e.pipeToLogs(stdout, "")

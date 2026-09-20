@@ -2,10 +2,10 @@
 
 <img src="./build/logo.svg" alt="UNBOUND Logo" width="120" />
 
-# UNBOUND `v0.6.8`
+# UNBOUND `v0.6.9`
 **Локальный настольный оркестратор десинхронизации L3/L4 трафика для macOS, Windows и Linux.**
 
-[![Version](https://img.shields.io/badge/Version-v0.6.8-08090b?style=for-the-badge&logo=rocket)](#)
+[![Version](https://img.shields.io/badge/Version-v0.6.9-08090b?style=for-the-badge&logo=rocket)](#)
 [![Design](https://img.shields.io/badge/Design-Precision_Monochrome-10b981?style=for-the-badge)](#)
 [![Security](https://img.shields.io/badge/Security-SHA256_pinned-10b981?style=for-the-badge&logo=shield)](SECURITY.md)
 [![License](https://img.shields.io/badge/License-GPL--3.0-blue?style=for-the-badge)](LICENSE)
@@ -76,8 +76,8 @@
 | **Windows 11 x64 (`windows/amd64`)** | `WinDivert` + Zapret 2 `winws2.exe` | ✅ Runtime & Network Verified |
 | **macOS Apple Silicon (`darwin/arm64`)** | `pf` redirect + Zapret `dvtws` / `tpws` | ✅ Runtime Verified |
 | **macOS Intel (`darwin/amd64`)** | `pf` redirect + Zapret `dvtws` / `tpws` | ⚠️ Not Tested |
-| **Linux amd64 (`linux/amd64`)** | `NFQUEUE` + `nftables` / `iptables` + `nfqws2` | 🟡 Experimental (Docker Build & Headless Smoke Verified, Desktop Pending) |
-| **Linux arm64 (`linux/arm64`)** | `NFQUEUE` + `nftables` / `iptables` + `nfqws2` | ⚠️ Not Tested |
+| **Linux amd64 (`linux/amd64`)** | `NFQUEUE` + `nftables` / `iptables` + `nfqws2` | 🟡 Experimental; lifecycle/NFQUEUE/cleanup verified, no v0.6.9 binary asset |
+| **Linux arm64 (`linux/arm64`)** | `NFQUEUE` + `nftables` / `iptables` + `nfqws2` | 🟡 Experimental; no v0.6.9 binary asset |
 
 ## ⚡ Как работает движок
 
@@ -133,9 +133,9 @@ cd unbound
 # 2. Сборка фронтенда
 cd frontend && npm ci && npm run build && cd ..
 
-go build -trimpath -ldflags="-s -w -X unbound/engine.Version=0.6.8" -o build/bin/unbound .
+go build -trimpath -ldflags="-s -w -X unbound/engine.Version=0.6.9" -o build/bin/unbound .
 # 4. Сборка Wails GUI
-wails build -clean -ldflags "-X unbound/engine.Version=0.6.8"
+wails build -clean -ldflags "-X unbound/engine.Version=0.6.9"
 ---
 
 ## ⚖️ Лицензия & Отказы

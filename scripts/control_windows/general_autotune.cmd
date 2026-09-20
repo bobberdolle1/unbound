@@ -9,13 +9,13 @@ if %errorLevel% neq 0 (
 )
 
 cd /d "%~dp0"
-if exist "%~dp0Unbound.exe" (
-    "%~dp0Unbound.exe" --autotune
-) else if exist "%~dp0..\Unbound.exe" (
-    "%~dp0..\Unbound.exe" --autotune
-) else if exist "%~dp0..\..\build\bin\Unbound.exe" (
-    "%~dp0..\..\build\bin\Unbound.exe" --autotune
-) else (
+set "UNBOUND_EXE="
+if exist "%~dp0Unbound.exe" set "UNBOUND_EXE=%~dp0Unbound.exe"
+if not defined UNBOUND_EXE if exist "%~dp0..\Unbound.exe" set "UNBOUND_EXE=%~dp0..\Unbound.exe"
+if not defined UNBOUND_EXE if exist "%~dp0..\..\build\bin\Unbound.exe" set "UNBOUND_EXE=%~dp0..\..\build\bin\Unbound.exe"
+if not defined UNBOUND_EXE (
     echo [!] Ошибка: unbound.exe не найден!
-    pause
+    exit /b 1
 )
+"%UNBOUND_EXE%" --autotune
+exit /b %errorlevel%

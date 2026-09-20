@@ -52,6 +52,7 @@ func isDarwinLocalSocksListening() bool {
 	_ = conn.Close()
 	return true
 }
+
 // ConnectivityEngine runs bounded, typed network probes with cancellation and retries.
 type ConnectivityEngine struct {
 	Timeout            time.Duration
