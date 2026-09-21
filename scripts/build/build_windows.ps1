@@ -23,7 +23,7 @@ try {
         "build",
         "-clean",
         "-o", "unbound.exe",
-        "-ldflags", "-X unbound/engine.Version=$Version"
+        "-ldflags", "-H windowsgui -X unbound/engine.Version=$Version"
     )
     if ($DebugBuild) {
         $WailsArgs += "-debug"

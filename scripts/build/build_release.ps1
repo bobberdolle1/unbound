@@ -34,7 +34,7 @@ Write-Host "[2/3] Building via Wails..." -ForegroundColor Yellow
 Push-Location $PROJECT_ROOT
 try {
     $goExe = (Get-Command go).Source
-    & wails build -clean -compiler="$goExe" -o unbound.exe -ldflags "-X unbound/engine.Version=$VERSION"
+    & wails build -clean -compiler="$goExe" -o unbound.exe -ldflags "-H windowsgui -X unbound/engine.Version=$VERSION"
     if ($LASTEXITCODE -ne 0) { throw "wails build failed." }
     Write-Host "OK: Wails build completed." -ForegroundColor Green
 } finally {
