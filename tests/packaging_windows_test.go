@@ -2,6 +2,8 @@ package main
 
 import (
 	"archive/zip"
+	"debug/pe"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -149,4 +151,72 @@ func TestWindowsPackagingArchive(t *testing.T) {
 			t.Errorf("staged Windows archive missing %s", name)
 		}
 	}
+}
+
+func TestWindowsPackagingArchiveUsesGUISubsystem(t *testing.T) {
+	archivePath := os.Getenv("UNBOUND_WINDOWS_ARCHIVE")
+	if archivePath == "" {
+		t.Skip("set UNBOUND_WINDOWS_ARCHIVE to validate a staged Windows release archive")
+	}
+
+	archive, err := zip.OpenReader(archivePath)
+	if err != nil {
+		t.Fatalf("open Windows release archive: %v", err)
+	}
+	defer archive.Close()
+
+	for _, file := range archive.File {
+		if file.Name != "Unbound.exe" {
+			continue
+		}
+
+		contents, err := file.Open()
+		if err != nil {
+			t.Fatalf("open Unbound.exe in staged archive: %v", err)
+		}
+		temporaryPath := filepath.Join(t.TempDir(), "Unbound.exe")
+		temporaryExecutable, err := os.Create(temporaryPath)
+		if err != nil {
+			contents.Close()
+			t.Fatalf("create temporary Unbound.exe: %v", err)
+		}
+		if _, err := io.Copy(temporaryExecutable, contents); err != nil {
+			temporaryExecutable.Close()
+			contents.Close()
+			t.Fatalf("extract temporary Unbound.exe: %v", err)
+		}
+		if err := temporaryExecutable.Close(); err != nil {
+			contents.Close()
+			t.Fatalf("close temporary Unbound.exe: %v", err)
+		}
+		if err := contents.Close(); err != nil {
+			t.Fatalf("close Unbound.exe in staged archive: %v", err)
+		}
+		executable, err := pe.Open(temporaryPath)
+		if err != nil {
+			t.Fatalf("parse Unbound.exe PE headers: %v", err)
+		}
+		if executable.OptionalHeader == nil {
+			executable.Close()
+			t.Fatal("Unbound.exe has no PE optional header")
+		}
+		var subsystem uint16
+		switch header := executable.OptionalHeader.(type) {
+		case *pe.OptionalHeader32:
+			subsystem = header.Subsystem
+		case *pe.OptionalHeader64:
+			subsystem = header.Subsystem
+		default:
+			executable.Close()
+			t.Fatalf("Unbound.exe has unexpected optional header type %T", executable.OptionalHeader)
+		}
+		if err := executable.Close(); err != nil {
+			t.Fatalf("close Unbound.exe PE reader: %v", err)
+		}
+		if subsystem != pe.IMAGE_SUBSYSTEM_WINDOWS_GUI {
+			t.Fatalf("Unbound.exe PE subsystem = %d, want Windows GUI (%d)", subsystem, pe.IMAGE_SUBSYSTEM_WINDOWS_GUI)
+		}
+		return
+	}
+	t.Fatal("staged Windows archive has no Unbound.exe")
 }
