@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -18,7 +19,11 @@ func prepareAssetRuntime() (*assetRuntimeWorkspace, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create private runtime directory: %w", err)
 	}
-	if err := os.Chmod(dir, 0711); err != nil {
+	mode := os.FileMode(0700)
+	if runtime.GOOS == "linux" {
+		mode = 0711
+	}
+	if err := os.Chmod(dir, mode); err != nil {
 		_ = os.RemoveAll(dir)
 		return nil, fmt.Errorf("prepare traversable runtime directory: %w", err)
 	}
