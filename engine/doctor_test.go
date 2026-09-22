@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -199,6 +200,31 @@ func TestRunDoctorWithProgressMonotonic(t *testing.T) {
 	}
 	t.Logf("Progress test passed: %d events received, final completed=%d/%d in %v",
 		len(progressEvents), lastEv.Completed, lastEv.Total, res.Duration)
+}
+
+func TestRunDoctorWithProgressSerializesCallbacks(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var inFlight atomic.Int32
+	var maxInFlight atomic.Int32
+	onProgress := func(DoctorProgress) {
+		current := inFlight.Add(1)
+		for observed := maxInFlight.Load(); current > observed; observed = maxInFlight.Load() {
+			if maxInFlight.CompareAndSwap(observed, current) {
+				break
+			}
+		}
+		time.Sleep(time.Millisecond)
+		inFlight.Add(-1)
+	}
+
+	if _, err := RunDoctorWithProgress(ctx, "quick", "Recommended (hostfakesplit)", providers.StatusRunning, onProgress); err != nil {
+		t.Fatalf("RunDoctorWithProgress failed: %v", err)
+	}
+	if got := maxInFlight.Load(); got != 1 {
+		t.Fatalf("concurrent DoctorProgressFn calls: max in flight = %d, want 1", got)
+	}
 }
 
 func TestRunDoctorCancellation(t *testing.T) {
