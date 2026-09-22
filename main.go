@@ -384,6 +384,22 @@ func runHeadlessMode(profileName string, runAutoTune bool, debugMode bool, runDu
 	fmt.Println("🚀 UNBOUND - Headless CLI Mode")
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
+	// On Windows and Linux the engine cannot start without elevation. Check
+	// before extracting assets or refreshing lists so an unprivileged CLI call
+	// fails immediately without network or filesystem side effects.
+	if runtime.GOOS != "darwin" {
+		hasPriv, err := checkAdminPrivileges()
+		if err != nil {
+			log.Fatalf("Failed to check privileges: %v", err)
+		}
+		if !hasPriv {
+			if runtime.GOOS == "windows" {
+				log.Fatal("Administrator privileges required. Run as administrator.")
+			}
+			log.Fatal("Root privileges required. Re-run with sudo.")
+		}
+	}
+
 	// Ensure dynamic lists exist
 	fmt.Println("Checking for updated bypass lists...")
 	if err := engine.EnsureListsExist(); err != nil {
