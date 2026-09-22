@@ -205,6 +205,7 @@ func TestRemoveLegacyUnboundPFDeclarations(t *testing.T) {
 		{name: "absent is no-op", input: "anchor \"com.apple/*\"\n", want: "anchor \"com.apple/*\"\n"},
 		{name: "preserves unrelated anchors", input: "anchor \"com.example.proxy\"\nrdr-anchor \"com.apple/*\"\n", want: "anchor \"com.example.proxy\"\nrdr-anchor \"com.apple/*\"\n"},
 		{name: "preserves similar names", input: "anchor \"com.unbound.zapret2\"\n", want: "anchor \"com.unbound.zapret2\"\n"},
+		{name: "preserves similar suffix names", input: "anchor \"com.unbound.zapret-other\"\n", want: "anchor \"com.unbound.zapret-other\"\n"},
 		{name: "removes duplicates", input: "anchor \"com.unbound.zapret\"\nanchor \"com.unbound.zapret\"\n", want: ""},
 		{name: "fails closed on unexpected declaration", input: "anchor \"com.unbound.zapret\" all\n", wantErr: true},
 	}

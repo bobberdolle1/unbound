@@ -604,7 +604,7 @@ func removeLegacyUnboundPFDeclarations(content []byte) ([]byte, error) {
 		case rdrDeclaration, anchorDeclaration:
 			continue
 		}
-		if strings.Contains(trimmed, pfAnchorName) {
+		if strings.Contains(trimmed, `"`+pfAnchorName+`"`) {
 			return nil, fmt.Errorf("unexpected %s declaration: %q", pfAnchorName, trimmed)
 		}
 		out.WriteString(line)
