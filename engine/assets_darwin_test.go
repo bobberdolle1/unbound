@@ -121,11 +121,6 @@ func TestMacOSTPWSExtractionIsByteIdenticalAndExecutable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExtractAssets: %v", err)
 	}
-	defer func() {
-		if err := CleanupExtractedAssets(); err != nil {
-			t.Errorf("CleanupExtractedAssets: %v", err)
-		}
-	}()
 
 	embedded, err := EmbeddedAssets.ReadFile("core_bin/darwin/tpws")
 	if err != nil {
