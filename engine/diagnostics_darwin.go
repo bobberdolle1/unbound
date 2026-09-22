@@ -44,16 +44,16 @@ func checkAdminPrivilegesMac() DiagnosticResult {
 }
 
 func checkEngineStatusMac() DiagnosticResult {
-	assetsBinDir := ""
-	if configDir, err := GetConfigDir(); err == nil {
-		assetsBinDir = configDir + "/core_bin"
+	assets, err := ExtractAssets()
+	if err != nil {
+		return DiagnosticResult{"Engine Binary", "Error", "Could not extract the verified embedded tpws asset: " + err.Error(), true}
 	}
 
-	binPath, err := providers.ResolveEngineBinary(providers.MacOSEngineBinary, assetsBinDir)
+	binPath, err := providers.ResolveEngineBinary(providers.MacOSEngineBinary, assets.BinDir)
 	if err == nil && binPath != "" {
 		return DiagnosticResult{"Engine Binary", "OK", providers.MacOSEngineBinary + " found at: " + binPath, false}
 	}
-	return DiagnosticResult{"Engine Binary", "Warning", providers.MacOSEngineBinary + " binary not found. Install zapret (e.g., via Homebrew: brew install zapret).", true}
+	return DiagnosticResult{"Engine Binary", "Error", "Verified embedded " + providers.MacOSEngineBinary + " is unavailable: " + err.Error(), true}
 }
 
 func checkPfAnchorStatus() DiagnosticResult {

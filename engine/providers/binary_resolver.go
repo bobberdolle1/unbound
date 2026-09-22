@@ -11,10 +11,10 @@ import (
 
 // Engine binary names per platform.
 //
-// Only Windows embeds its engine (winws2.exe plus the WinDivert driver live in
-// engine/core_bin/windows). Linux uses nfqws against NFQUEUE; macOS uses tpws
-// as a transparent TCP proxy with pf route-to/rdr rules. Both come from the
-// user's package manager, so they are looked up at runtime.
+// Windows and macOS embed their engine assets. The macOS tpws binary is a
+// provenance-pinned Universal build extracted into the private runtime before
+// provider startup. Linux uses nfqws against NFQUEUE and can resolve an
+// externally installed binary when no embedded asset is available.
 //
 // These are declared here, in an untagged file, so code that has to reason
 // about every platform at once - such as the startup validator - can name them.
@@ -65,12 +65,10 @@ var searchPathsByOS = map[string][]string{
 
 // ResolveEngineBinary locates the bypass engine executable.
 //
-// Only the Windows build embeds its engine (winws2.exe and the WinDivert
-// driver live in engine/core_bin/windows). On Linux the nfqws build and on
-// macOS the tpws build are architecture-specific and GPL-licensed, so they are
-// installed by the user's package manager instead of being vendored. Previously
-// nothing looked outside the extracted asset directory, so those platforms
-// could never find an engine no matter how it was installed.
+// The extracted asset directory is the release source of truth. In particular,
+// macOS resolves its verified embedded Universal tpws artifact before portable,
+// PATH, Homebrew, or distribution-prefix fallbacks. The latter locations remain
+// diagnostics and development fallbacks only when an embedded asset is absent.
 //
 // Search order:
 //  1. the extracted asset directory, so a bundled build always wins

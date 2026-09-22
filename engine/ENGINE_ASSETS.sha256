@@ -8,28 +8,29 @@
 # ----------
 #   engine/core_bin/windows/*                 Zapret 2 v1.0.5 Windows x86_64 bundle
 #   engine/core_bin/linux/{amd64,arm64}/*     Zapret 2 v1.0.5 Linux release bundle
+#   engine/core_bin/darwin/tpws               Zapret commit d437963 Universal build
 #   engine/core_bin/windows/goodbyedpi.exe    https://github.com/ValdikSS/GoodbyeDPI
 #   engine/core_bin/*.bin                     fake-packet payloads from Zapret releases
 #   engine/lua_scripts/zapret-{lib,antidpi,auto,obfs,pcap,tests}.lua
 #                                               Zapret 2 v1.0.5; other Lua files are local
 #   engine/windivert.filter/*                 local WinDivert filter presets
 #
-# Zapret 2 snapshot
-# -----------------
-#   Tag:          v1.0.5
-#   Commit:       0b8182d24a887059a628d7266577c4ba8e9b8f2d
-#   Release URL:  https://github.com/bol-van/zapret2/releases/tag/v1.0.5
-#   Source asset: zapret2-v1.0.5.zip
-#   Asset SHA256: d73a4c57dad0f20f473aa62ed950505f0737154c3d9ab8fca717e75f1a21fa69
+# macOS tpws snapshot
+# -------------------
+#   Base tag:     v72.13
+#   Commit:       d437963452674faadfd45adcd62466272b5a2fcd
+#   Source kind:  git_commit
+#   Source URL:   https://github.com/bol-van/zapret/archive/d437963452674faadfd45adcd62466272b5a2fcd.tar.gz
 #
 # Windows binaries, Linux binaries and all six standard Lua files are copied
-# from that one verified release archive. Never update them independently.
+# from their verified release archive. macOS tpws is rebuilt from the pinned
+# commit; complete provenance and build output hashes are in ENGINE_PROVENANCE.json.
 # ============================================================================
 e4d572e6bf6de04c648744cb7271644cb40fd6c79d718e911716d734cbb53841  engine/core_bin/1.bin
 f86d488593a65132c10e7e5b5e02f32ff8e0862988b30bebc6a671c5380f3976  engine/core_bin/2.bin
 d6d63c53bc0e1d97e913a43fc4db34f6558bb807228bf6100e3b6863f0720404  engine/core_bin/3.bin
 936c2bee4cfb80aa3c426b2dcbcc834b3fbcd1adb17172959dc569c73a14275c  engine/core_bin/4.bin
-441524a76f52597a0e5c816d25ed1adfd93e5c34cc56c56e0dc00533929d1761  engine/core_bin/darwin/tpws
+6ec3f467a0ca17dde7a12e1ca3a068de52ae61385886d5ba8faa09ca93fa72b6  engine/core_bin/darwin/tpws
 1f892e567bdd3dfc23e8dc86933b258a67262cb66cbf16bcc3cfa704db604ba0  engine/core_bin/dht_find_node.bin
 b57f6584eb58689ccf81702b44103fa53ea31a5dba00be9c95b4059bad602e77  engine/core_bin/dht_get_peers.bin
 5bacd8cb6bd451f2374e55bc066b632e3c88fb852e3a44f19e6246c04d127be5  engine/core_bin/dtls_clienthello_w3_org.bin

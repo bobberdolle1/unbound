@@ -13,15 +13,15 @@ import (
 // attachConsole is a no-op on macOS: the process already inherits a terminal.
 func attachConsole() {}
 
-// registerHeadlessProvider wires the macOS engine provider for `--cli` mode.
+// registerHeadlessProvider wires the macOS engine provider for --cli mode.
+// assets.BinDir is the private runtime directory populated from the verified
+// embedded Universal tpws asset; ResolveEngineBinary consults it before any
+// portable, PATH, Homebrew, or distribution-prefix diagnostic fallback.
 func registerHeadlessProvider(manager *providers.ProviderManager, assets *engine.AssetPaths, listsDir string, debugMode bool) {
-	// The provider used to be handed assets.BinDir and join "nfqws" onto it,
-	// so only a bundled binary could ever be found - and the macOS build does
-	// not bundle one, making CLI mode unusable on a Homebrew install.
 	binPath, err := providers.ResolveEngineBinary(providers.MacOSEngineBinary, assets.BinDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Ошибка: %v\n", err)
-		fmt.Fprintln(os.Stderr, "Установите zapret (например, brew install zapret) или положите tpws рядом с исполняемым файлом.")
+		fmt.Fprintln(os.Stderr, "Проверенный встроенный tpws недоступен.")
 		os.Exit(1)
 	}
 
