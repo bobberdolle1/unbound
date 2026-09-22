@@ -4,6 +4,7 @@ package engine
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -13,6 +14,9 @@ import (
 func TestBypassRouting(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
+	}
+	if os.Getenv("UNBOUND_RUN_WINDOWS_NETWORK_E2E") != "1" {
+		t.Skip("Set UNBOUND_RUN_WINDOWS_NETWORK_E2E=1 for physical network acceptance")
 	}
 
 	assets, err := ExtractAssets()
@@ -48,7 +52,7 @@ func TestBypassRouting(t *testing.T) {
 		{
 			name:        "GoogleVideo with Universal",
 			profile:     "Universal 2026 (All-in-One)",
-			targetURL:   "https://googlevideo.com",
+			targetURL:   "https://redirector.googlevideo.com",
 			expectOK:    true,
 			description: "GoogleVideo CDN should establish verified TLS",
 		},

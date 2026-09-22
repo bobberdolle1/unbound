@@ -28,7 +28,7 @@ func RunHealthCheck() error {
 	defer provider.Stop()
 
 	time.Sleep(2 * time.Second)
-	for _, targetURL := range []string{"https://googlevideo.com", "https://discord.com"} {
+	for _, targetURL := range []string{"https://redirector.googlevideo.com", "https://discord.com"} {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		result, probeErr := ProbeConnection(ctx, targetURL)
 		cancel()

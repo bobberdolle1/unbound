@@ -36,6 +36,9 @@ func TestE2EBypassMatrix(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping E2E matrix test in short mode")
 	}
+	if os.Getenv("UNBOUND_RUN_WINDOWS_NETWORK_E2E") != "1" {
+		t.Skip("Set UNBOUND_RUN_WINDOWS_NETWORK_E2E=1 for physical network acceptance")
+	}
 
 	// Check privileges
 	cmd := exec.Command("net", "session")
