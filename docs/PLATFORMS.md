@@ -1,6 +1,21 @@
-# 🖥 Поддерживаемые платформы UNBOUND Refresh `v0.2.1`
+# Supported platforms and acceptance matrix
 
-UNBOUND использует разные механизмы обхода на трёх настольных платформах. Профили и возможности не взаимозаменяемы между ОС.
+UNBOUND uses distinct bypass mechanisms on the three desktop platforms. Profiles and capabilities are not interchangeable across operating systems.
+
+## Authoritative physical acceptance matrix
+
+Lab cycle: **2026-09-22–2026-09-23**. Each result used a dedicated lab target, one owned candidate at a time, and before/after cleanup evidence. It records dataplane/lifecycle acceptance, not a guarantee that every service is reachable from every provider edge.
+
+| Target | Runtime path | Physical dataplane | Scope and network context |
+| --- | --- | --- | --- |
+| `windows/amd64` | WinDivert + `winws2.exe` | **PASS** | Dedicated Windows lab. Engine lifecycle and cleanup passed. The YouTube service/strategy case is tracked separately; it does not downgrade platform dataplane acceptance. |
+| `linux/amd64` | NFQUEUE + `nfqws2` | **PASS** | Dedicated Linux lab. NFQUEUE counters advanced and owned firewall rules were restored. |
+| `darwin/arm64` | Universal `tpws --socks` + system SOCKS | **PASS** | macOS 27.0 on Apple M1. Local SOCKS dataplane, lifecycle, and exact proxy-state restoration passed. |
+| `darwin/amd64` | Same Universal `tpws` artifact | **NOT VERIFIED** | Universal x86_64 slice and build are verified, but no physical Intel macOS acceptance was run. |
+
+`PLATFORM_DATAPLANE_READY=YES`
+
+Windows YouTube evidence from 2026-09-22 resolved `www.youtube.com` to Google edge `142.251.152.4:443`: TCP passed, while direct, current Recommended, and exact published v0.6.9 Recommended runs failed at TLS/HTTP. Classification: `CURRENT_NETWORK_EDGE_OR_STRATEGY_MISMATCH`. See [`observatory-handoff.md`](observatory-handoff.md).
 
 | Платформа | Движок / перехват | Релизный формат | Поддерживаемый трафик |
 |-----------|-------------------|-----------------|------------------------|
@@ -43,7 +58,7 @@ UNBOUND использует разные механизмы обхода на �
 ## Целостность и происхождение
 
 - Zapret 2 закреплён на `v1.0.3` (`b78b52c4…`) для Windows/Linux.
-- macOS `tpws` собирается как Universal (`x86_64` + `arm64`) из exact upstream commit [`d437963452674faadfd45adcd62466272b5a2fcd`](https://github.com/bol-van/zapret/commit/d437963452674faadfd45adcd62466272b5a2fcd), следующего за base tag `v72.13`; это не upstream release tag.
+- macOS `tpws` собирается как Universal (`x86_64` + `arm64`) из exact upstream commit [`d437963452674faadfd45adcd62466272b5a2fcd`](https://github.com/bol-van/zapret/commit/d437963452674faadfd45adcd62466272b5a2fcd), следующего за base tag `v72.13`; это не upstream release tag. Причина pin: upstream исправление совместимости macOS resolver stack. Не маркировать как `v72.14`.
 - Полные URL, commit SHA, SHA256 исходного архива и артефакта, лицензии и список вендоренных путей находятся в [`../engine/ENGINE_PROVENANCE.json`](../engine/ENGINE_PROVENANCE.json).
 - Встроенные runtime-ассеты сверяются с [`../engine/ENGINE_ASSETS.sha256`](../engine/ENGINE_ASSETS.sha256) перед привилегированным запуском. Каждый релизный архив содержит `BUNDLE_SHA256SUMS.txt`; GitHub Release содержит `SHA256SUMS.txt`.
 
