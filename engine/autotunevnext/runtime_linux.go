@@ -21,6 +21,7 @@ import (
 
 	"unbound/engine"
 	"unbound/engine/backendcap"
+	"unbound/engine/observatory"
 	"unbound/engine/providers"
 )
 
@@ -499,9 +500,25 @@ func (e *LinuxRuntime) applyRule(ctx context.Context, mode string, spec LinuxNFQ
 
 func (e *LinuxRuntime) verifyRule(ctx context.Context, mode string, spec LinuxNFQueueSpec) error {
 	if mode == "nft" {
-		out, err := e.runner.run(ctx, "nft", "list", "table", spec.nftFamily(), spec.Table)
-		if err != nil || !strings.Contains(out, spec.Marker) || !strings.Contains(out, "queue num "+fmt.Sprint(spec.Queue)) {
-			return fmt.Errorf("owned nft rule is not factually present")
+		out, err := e.runner.run(ctx, "nft", "list", "ruleset")
+		if err != nil {
+			return fmt.Errorf("audit owned nft rule: %w", err)
+		}
+		address := "ip daddr " + spec.Edge.String()
+		if spec.Family == observatory.AddressFamilyIPv6 {
+			address = "ip6 daddr " + spec.Edge.String()
+		}
+		for _, fragment := range []string{
+			"table " + spec.nftFamily() + " " + spec.Table,
+			"hook output",
+			address,
+			"tcp dport " + spec.nftPorts(),
+			"queue num " + fmt.Sprint(spec.Queue),
+			spec.Marker,
+		} {
+			if !strings.Contains(out, fragment) {
+				return fmt.Errorf("owned nft rule is missing %q", fragment)
+			}
 		}
 		return nil
 	}
