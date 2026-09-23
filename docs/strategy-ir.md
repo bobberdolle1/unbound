@@ -2,11 +2,11 @@
 
 ## Boundary
 
-StrategyIR v1 is declarative data for a single traffic-selection and packet-operation chain. It records *what* a strategy means; backend compilers own *how* `winws2`, `nfqws2`, or `tpws` spell that meaning.
+StrategyIR v1 is declarative data for a single traffic-selection and packet-operation chain. It records *what* a strategy means; backend compilers own both engine spelling and executor-owned packet acquisition.
 
-A StrategyIR document never carries `zapret2_args`, `tpws_args`, raw argv, shell, PowerShell, batch, Lua source, Lua function names, filesystem paths, dynamic-library paths, or remote URLs. Existing production profile execution remains unchanged in this release. The compiler is pure and emits a plan only.
+A StrategyIR document never carries `zapret2_args`, `tpws_args`, raw argv, shell, PowerShell, batch, Lua source, Lua function names, filesystem paths, dynamic-library paths, remote URLs, or firewall commands. Existing production profile execution remains unchanged in this release. The compiler is pure and emits structured backend plans only.
 
-`engine/strategyir` owns the schema. `engine/backendcap` owns static backend capability declarations and compilation. Machine environment checks remain in the existing `engine.StrategyRequirements` path; compiler output derives that existing type rather than creating a competing environment model.
+`engine/strategyir` owns the schema. `engine/backendcap` owns static backend capability declarations and compilation. A compiled `Plan` separates `EngineArgv` (engine/profile flags) from `Capture` (typed executor input) and `AssetRefs`. `CapturePlan` carries backend kind, packet transport, direction, IP families, typed TCP/UDP port ranges, and reserved logical raw-capture references—never `nft`, `iptables`, or shell strings. Machine environment checks remain in the existing `engine.StrategyRequirements` path; compiler output derives that existing type rather than creating a competing environment model.
 
 ## Schema v1
 
@@ -22,7 +22,7 @@ Port ranges are inclusive `{ "start": 443, "end": 8443 }`; a singleton has ident
 
 `ANY` is exclusive in both selector sets. Application `QUIC` requires the sole `QUIC` transport, and `QUIC` transport requires the sole `QUIC` application protocol, which compiles as `--payload=quic_initial`. Thus it never becomes generic UDP capture. `HTTP` and `TLS` selectors require the sole `TCP` transport; the exact `{HTTP,TLS}` TCP union is supported. Generic `ANY` is permitted for TCP or UDP but not QUIC. Mixed transport sets, including UDP+QUIC, are invalid in V1 because a single backend payload filter cannot bind distinct L7 discriminators to distinct transports without separate profile sections.
 
-IP-family `ANY` is likewise exclusive: `{ANY,IPv4}` and `{ANY,IPv6}` are invalid rather than redundant identities. Zapret2 compiles IPv4 and IPv6 as `--wf-l3=ipv4` and `--wf-l3=ipv6`; `ANY` compiles as the exact dual-stack `--wf-l3=ipv4,ipv6`. tpws uses the corresponding `--filter-l3=` spellings. A backend that cannot preserve the family scope returns `UNSUPPORTED_IP_FAMILY`.
+IP-family `ANY` is likewise exclusive: `{ANY,IPv4}` and `{ANY,IPv6}` are invalid rather than redundant identities. Zapret2 engine profiles compile IPv4 and IPv6 as `--filter-l3=ipv4` and `--filter-l3=ipv6`; `ANY` compiles as the exact dual-stack `--filter-l3=ipv4,ipv6`. Windows renders the separate WinDivert `CapturePlan` as the corresponding `--wf-l3=` and directional `--wf-tcp-*`/`--wf-udp-*` constructor flags. Linux never renders `--wf-*`: its `CapturePlan` describes NFQUEUE ownership for the existing firewall executor. tpws uses `--filter-l3=` as a valid profile filter. A backend that cannot preserve either engine or capture family scope returns `UNSUPPORTED_IP_FAMILY`.
 
 Zapret2 preserves a non-`ANY` application set as one exact comma-separated payload filter, for example `--payload=http_req,tls_client_hello`. A backend lacking that exact selector semantics returns `UNSUPPORTED_APPLICATION_PROTOCOL`; it never broadens to an unfiltered selector.
 
@@ -66,14 +66,14 @@ Examples of trusted logical payload assets are `tls-clienthello-default`, `tls-g
 
 ## Static BackendCapabilities
 
-Capabilities describe a pinned engine’s static support, not the current machine state:
+Capabilities distinguish engine/profile support from packet acquisition support. `ProfileCapabilities` describes the flags and operations the pinned process can preserve; `CaptureCapabilities` describes the executor-owned acquisition backend, packet transports, directions, and IP families.
 
-| Backend | Provenance | Supported V1 subset |
+| Backend | Profile semantics | Capture capability |
 |---|---|---|
-| `zapret2/windows` | v1.0.5.1 / `a1bca5a85e25ab138e9617a560c262fcf53e969a` | TCP, UDP, QUIC; exact multi-protocol payload filters; IPv4/v6; directional capture; logical host/IP lists; individually gated fake assets/modifiers; typed range cutoff; closed Zapret Lua operation table |
-| `zapret2/linux` | v1.0.5.1 / `a1bca5a85e25ab138e9617a560c262fcf53e969a` | Same semantic operation set; NFQUEUE/firewall ownership remains executor scope |
-| `zapret1-tpws/darwin` | base v72.13 / `d437963452674faadfd45adcd62466272b5a2fcd` | Outbound TCP SOCKS-path split, TLS-record split, disorder, HTTP host case with an `ANY` selector only; preserves IPv4/IPv6 via `--filter-l3`; no UDP/QUIC interception, no host/IP scope, no L7 payload-selector preservation |
-| `unbound-native/*` | no implementation | Unsupported |
+| `zapret2/windows` | v1.0.5.1 / `a1bca5a85e25ab138e9617a560c262fcf53e969a`; TCP, UDP, QUIC; exact multi-protocol payload filters; IPv4/v6; logical host/IP lists; individually gated fake assets/modifiers; typed range cutoff; closed Zapret Lua operation table | `WINDIVERT`; inbound/outbound/both; IPv4/v6; TCP and UDP packet capture. The renderer emits `--wf-*` only for this capture constructor. |
+| `zapret2/linux` | Same pinned nfqws2 profile subset, rendered as `--filter-l3`, `--filter-tcp`/`--filter-udp`, payload/scope/range, then ordered Lua operations | `NFQUEUE`; inbound/outbound/both; IPv4/v6; TCP and UDP packet capture. Firewall/NFQUEUE ownership stays in the existing Linux executor; compiler output contains no firewall commands and no `--wf-*`. |
+| `zapret1-tpws/darwin` | base v72.13 / `d437963452674faadfd45adcd62466272b5a2fcd`; outbound TCP SOCKS-path split, TLS-record split, disorder, HTTP host case with an `ANY` selector only; preserves IPv4/IPv6 via `--filter-l3`; no host/IP scope or L7 payload-selector preservation | `SOCKS_TCP`; outbound IPv4/v6 TCP only. This is the existing runtime SOCKS path, not invented packet capture; UDP/QUIC remains unsupported. |
+| `unbound-native/*` | no implementation | no implementation |
 
 Environment facts such as enabled TCP timestamps, installed assets, privileges, and active IPv6 connectivity are not `BackendCapabilities`. Compiling Zapret2 derives the existing `engine.StrategyRequirements` (`EngineMinVersion`, `LuaModules`, inbound direction, QUIC, IPv6). V1 logical fake payloads are pinned `init_vars.lua` values: compiler capability checks them by logical ID and derives that Lua module, while `FakePayloads` remains reserved for future file-backed assets that the existing environment checker can verify.
 
@@ -81,19 +81,27 @@ Environment facts such as enabled TCP timestamps, installed assets, privileges, 
 
 `Compile(strategy, backend)` returns one of:
 
-- `COMPILED`: deterministic backend argv plan, logical required assets, fingerprint, and derived existing requirements;
+- `COMPILED`: a deterministic `Plan`, logical required assets, fingerprint, and derived existing requirements;
 - `UNSUPPORTED`: no plan, plus typed reasons;
 - `INVALID`: invalid IR, plus `INVALID_IR`.
 
-Typed reasons include `UNSUPPORTED_OPERATION`, `UNSUPPORTED_TRANSPORT`, `UNSUPPORTED_APPLICATION_PROTOCOL`, `UNSUPPORTED_POSITION_ANCHOR`, `UNSUPPORTED_IP_FAMILY`, `UNSUPPORTED_PORT_SCOPE`, `UNSUPPORTED_SCOPE`, `UNSUPPORTED_DIRECTION`, `UNSUPPORTED_FAKE_MODIFIER`, `UNSUPPORTED_CUTOFF`, `MISSING_ASSET`, `ENGINE_VERSION_TOO_OLD`, and `INVALID_IR`.
+`Plan.EngineArgv` contains only process-supported profile filters and ordered operations. For Zapret2 it is `--filter-l3`, transport port filter, optional payload selector, destination scope, optional range, then the `--lua-desync` chain. `Plan.Capture` is separately deterministic typed data:
 
-There is no best-effort translation. The compiler does not drop an operation, change a transport, broaden a protocol/host/IP scope, discard a position, or remove a safety-relevant constraint. For example, an explicit-host strategy compiled for tpws fails `UNSUPPORTED_SCOPE` because the current tpws compiler cannot truthfully preserve that scope. UDP and QUIC strategy requests for tpws are unsupported, not converted to TCP.
+- Windows: `WINDIVERT`; `RenderWindowsCaptureArgv` derives the exact `--wf-l3` and `--wf-tcp-*`/`--wf-udp-*` constructor argv only at the Windows execution boundary.
+- Linux: `NFQUEUE`; `EngineArgv` never contains any `--wf-*` option. The existing provider separately owns nftables/iptables rendering and NFQUEUE lifecycle; `CapturePlan` preserves its required semantics without coupling StrategyIR to that provider implementation.
+- macOS: `SOCKS_TCP`; tpws has only profile filters in `EngineArgv` and remains bound to its existing SOCKS runtime executor.
 
-Logical asset placeholders in plan argv use `${asset:<id>}`. They are not executable paths and must be resolved by trusted product code before any future executor consumes a plan.
+Typed reasons include `UNSUPPORTED_OPERATION`, `UNSUPPORTED_TRANSPORT`, `UNSUPPORTED_APPLICATION_PROTOCOL`, `UNSUPPORTED_POSITION_ANCHOR`, `UNSUPPORTED_IP_FAMILY`, `UNSUPPORTED_PORT_SCOPE`, `UNSUPPORTED_SCOPE`, `UNSUPPORTED_DIRECTION`, `UNSUPPORTED_CAPTURE`, `UNSUPPORTED_FAKE_MODIFIER`, `UNSUPPORTED_CUTOFF`, `MISSING_ASSET`, `ENGINE_VERSION_TOO_OLD`, and `INVALID_IR`.
+
+There is no best-effort translation. The compiler does not drop an operation, change a transport, broaden a protocol/host/IP scope, discard a position, remove a safety-relevant constraint, or erase capture requirements because an engine option is unavailable. For example, an explicit-host strategy compiled for tpws fails `UNSUPPORTED_SCOPE` because the current tpws compiler cannot truthfully preserve that scope. UDP and QUIC strategy requests for tpws are unsupported, not converted to TCP.
+
+Logical asset placeholders in engine argv use `${asset:<id>}`. They are not executable paths and must be resolved by trusted product code before any future executor consumes a plan.
 
 ## Physical parser acceptance
 
-`TestWindowsCompiledRepresentativePlansDryRun` is environment-gated physical parser acceptance for every representative Zapret2 Windows plan. It invokes pinned `winws2.exe --dry-run` and requires `command line parameters verified`. This proves generated argv syntax is accepted by that binary; it does **not** prove packet-processing or profile semantic equivalence. No test in this boundary performs connectivity experiments.
+`TestWindowsCompiledRepresentativePlansDryRun` is environment-gated physical parser acceptance for every representative Zapret2 Windows plan. It renders the structured WinDivert capture plan plus `EngineArgv`, invokes pinned `winws2.exe --dry-run`, and requires `command line parameters verified`.
+
+`TestLinuxCompiledRepresentativePlansDryRun` runs automatically on Linux. It first checks pinned `nfqws2 --help` for `--dry-run`; without that documented parser-only mode it reports `SKIPPED_UNSUPPORTED`. When available, it invokes product-extracted `nfqws2 --dry-run` with representative Linux `EngineArgv` only—never firewall commands or NFQUEUE ownership. These checks prove argv syntax only, not packet-processing or profile semantic equivalence. No test in this boundary performs connectivity experiments.
 
 ## Inventory and shadow migration
 

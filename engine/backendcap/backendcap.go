@@ -28,21 +28,19 @@ type Provenance struct {
 	Commit  string `json:"commit"`
 }
 
-type Capabilities struct {
-	Backend                    Backend                          `json:"backend"`
-	Provenance                 Provenance                       `json:"provenance"`
+// ProfileCapabilities describes filtering and operation semantics accepted by
+// the engine process itself. It intentionally excludes packet acquisition.
+type ProfileCapabilities struct {
 	Transports                 []strategyir.Transport           `json:"transports"`
 	ApplicationProtocols       []strategyir.ApplicationProtocol `json:"application_protocols"`
 	MultiProtocolPayloadFilter bool                             `json:"multi_protocol_payload_filter"`
 	IPFamilies                 []strategyir.IPFamily            `json:"ip_families"`
-	Directions                 []strategyir.Direction           `json:"directions"`
 	Operations                 []strategyir.OperationKind       `json:"operations"`
 	PositionAnchors            []strategyir.PositionAnchor      `json:"position_anchors"`
 	PortRanges                 bool                             `json:"port_ranges"`
 	ManagedHostlists           bool                             `json:"managed_hostlists"`
 	AutoHostlists              bool                             `json:"auto_hostlists"`
 	IPSetReferences            bool                             `json:"ip_set_references"`
-	InboundCapture             bool                             `json:"inbound_capture"`
 	QUIC                       bool                             `json:"quic"`
 	FakePayloads               bool                             `json:"fake_payloads"`
 	FakePayloadRefs            []string                         `json:"fake_payload_refs,omitempty"`
@@ -58,6 +56,37 @@ type Capabilities struct {
 	LuaFunctions               []string                         `json:"lua_functions,omitempty"`
 }
 
+type CaptureBackendKind string
+
+const (
+	CaptureWinDivert CaptureBackendKind = "WINDIVERT"
+	CaptureNFQUEUE   CaptureBackendKind = "NFQUEUE"
+	CaptureSOCKSTCP  CaptureBackendKind = "SOCKS_TCP"
+)
+
+type CaptureTransport string
+
+const (
+	CaptureTransportTCP CaptureTransport = "TCP"
+	CaptureTransportUDP CaptureTransport = "UDP"
+)
+
+// CaptureCapabilities describes the executor-owned packet acquisition path.
+// It is deliberately separate from engine/profile filtering capability.
+type CaptureCapabilities struct {
+	BackendKind CaptureBackendKind     `json:"backend_kind"`
+	Transports  []CaptureTransport     `json:"transports"`
+	Directions  []strategyir.Direction `json:"directions"`
+	IPFamilies  []strategyir.IPFamily  `json:"ip_families"`
+}
+
+type Capabilities struct {
+	Backend    Backend             `json:"backend"`
+	Provenance Provenance          `json:"provenance"`
+	Profile    ProfileCapabilities `json:"profile"`
+	Capture    CaptureCapabilities `json:"capture"`
+}
+
 // Get reports static backend capability, never the current machine environment.
 func Get(backend Backend) Capabilities {
 	zapretOps := []strategyir.OperationKind{
@@ -66,41 +95,58 @@ func Get(backend Backend) Capabilities {
 		strategyir.OperationFakeInjection, strategyir.OperationHostFakeSplit,
 		strategyir.OperationWindowShaping,
 	}
-	zapret := func(backend Backend) Capabilities {
+	zapretProfile := ProfileCapabilities{
+		Transports:                 []strategyir.Transport{strategyir.TransportTCP, strategyir.TransportUDP, strategyir.TransportQUIC},
+		ApplicationProtocols:       []strategyir.ApplicationProtocol{strategyir.ApplicationAny, strategyir.ApplicationHTTP, strategyir.ApplicationTLS, strategyir.ApplicationQUIC},
+		MultiProtocolPayloadFilter: true,
+		IPFamilies:                 []strategyir.IPFamily{strategyir.IPFamilyV4, strategyir.IPFamilyV6},
+		Operations:                 zapretOps,
+		PositionAnchors:            []strategyir.PositionAnchor{strategyir.AnchorHost, strategyir.AnchorEndHost, strategyir.AnchorMidSLD, strategyir.AnchorSNIExt, strategyir.AnchorMethod},
+		PortRanges:                 true, ManagedHostlists: true, AutoHostlists: true, IPSetReferences: true,
+		QUIC: true, FakePayloads: true,
+		FakeRepeat: true, FakeTTL: true, FakeSequenceOffset: true, FakeAcknowledgmentOffset: true, FakeTCPMD5: true, FakeTCPTimestamp: true,
+		RangeDirections: []strategyir.RangeDirection{strategyir.RangeDirectionIn, strategyir.RangeDirectionOut},
+		RangeCounters:   []strategyir.RangeCounter{strategyir.RangeCounterDataPacketNumber, strategyir.RangeCounterRelativeSequence},
+		FakePayloadRefs: []string{"fake-default-udp", "quic-google", "stun-pat", "tls-clienthello-default", "tls-google"},
+		LuaModules:      []string{"zapret-antidpi.lua"},
+		LuaFunctions:    []string{"fake", "hostfakesplit", "multisplit", "multidisorder", "wssize"},
+	}
+	zapret := func(backend Backend, captureKind CaptureBackendKind) Capabilities {
 		return Capabilities{
-			Backend:                    backend,
-			Provenance:                 Provenance{Tag: "v1.0.5.1", Commit: "a1bca5a85e25ab138e9617a560c262fcf53e969a"},
-			Transports:                 []strategyir.Transport{strategyir.TransportTCP, strategyir.TransportUDP, strategyir.TransportQUIC},
-			ApplicationProtocols:       []strategyir.ApplicationProtocol{strategyir.ApplicationAny, strategyir.ApplicationHTTP, strategyir.ApplicationTLS, strategyir.ApplicationQUIC},
-			MultiProtocolPayloadFilter: true,
-			IPFamilies:                 []strategyir.IPFamily{strategyir.IPFamilyV4, strategyir.IPFamilyV6},
-			Directions:                 []strategyir.Direction{strategyir.DirectionOutbound, strategyir.DirectionInbound, strategyir.DirectionBoth},
-			Operations:                 zapretOps,
-			PositionAnchors:            []strategyir.PositionAnchor{strategyir.AnchorHost, strategyir.AnchorEndHost, strategyir.AnchorMidSLD, strategyir.AnchorSNIExt, strategyir.AnchorMethod},
-			PortRanges:                 true, ManagedHostlists: true, AutoHostlists: true, IPSetReferences: true,
-			InboundCapture: true, QUIC: true, FakePayloads: true,
-			FakeRepeat: true, FakeTTL: true, FakeSequenceOffset: true, FakeAcknowledgmentOffset: true, FakeTCPMD5: true, FakeTCPTimestamp: true,
-			RangeDirections: []strategyir.RangeDirection{strategyir.RangeDirectionIn, strategyir.RangeDirectionOut},
-			RangeCounters:   []strategyir.RangeCounter{strategyir.RangeCounterDataPacketNumber, strategyir.RangeCounterRelativeSequence},
-			FakePayloadRefs: []string{"fake-default-udp", "quic-google", "stun-pat", "tls-clienthello-default", "tls-google"},
-			LuaModules:      []string{"zapret-antidpi.lua"},
-			LuaFunctions:    []string{"fake", "hostfakesplit", "multisplit", "multidisorder", "wssize"},
+			Backend:    backend,
+			Provenance: Provenance{Tag: "v1.0.5.1", Commit: "a1bca5a85e25ab138e9617a560c262fcf53e969a"},
+			Profile:    zapretProfile,
+			Capture: CaptureCapabilities{
+				BackendKind: captureKind,
+				Transports:  []CaptureTransport{CaptureTransportTCP, CaptureTransportUDP},
+				Directions:  []strategyir.Direction{strategyir.DirectionOutbound, strategyir.DirectionInbound, strategyir.DirectionBoth},
+				IPFamilies:  []strategyir.IPFamily{strategyir.IPFamilyV4, strategyir.IPFamilyV6},
+			},
 		}
 	}
 	switch backend {
-	case Zapret2Windows, Zapret2Linux:
-		return zapret(backend)
+	case Zapret2Windows:
+		return zapret(backend, CaptureWinDivert)
+	case Zapret2Linux:
+		return zapret(backend, CaptureNFQUEUE)
 	case Zapret1TPWSDarwin:
 		return Capabilities{
-			Backend:              backend,
-			Provenance:           Provenance{BaseTag: "v72.13", Commit: "d437963452674faadfd45adcd62466272b5a2fcd"},
-			Transports:           []strategyir.Transport{strategyir.TransportTCP},
-			ApplicationProtocols: []strategyir.ApplicationProtocol{strategyir.ApplicationAny},
-			IPFamilies:           []strategyir.IPFamily{strategyir.IPFamilyV4, strategyir.IPFamilyV6},
-			Directions:           []strategyir.Direction{strategyir.DirectionOutbound},
-			Operations:           []strategyir.OperationKind{strategyir.OperationSplit, strategyir.OperationMultiSplit, strategyir.OperationDisorder, strategyir.OperationTLSRecordSplit, strategyir.OperationHTTPHostCase},
-			PositionAnchors:      []strategyir.PositionAnchor{strategyir.AnchorMidSLD, strategyir.AnchorMethod},
-			PortRanges:           true,
+			Backend:    backend,
+			Provenance: Provenance{BaseTag: "v72.13", Commit: "d437963452674faadfd45adcd62466272b5a2fcd"},
+			Profile: ProfileCapabilities{
+				Transports:           []strategyir.Transport{strategyir.TransportTCP},
+				ApplicationProtocols: []strategyir.ApplicationProtocol{strategyir.ApplicationAny},
+				IPFamilies:           []strategyir.IPFamily{strategyir.IPFamilyV4, strategyir.IPFamilyV6},
+				Operations:           []strategyir.OperationKind{strategyir.OperationSplit, strategyir.OperationMultiSplit, strategyir.OperationDisorder, strategyir.OperationTLSRecordSplit, strategyir.OperationHTTPHostCase},
+				PositionAnchors:      []strategyir.PositionAnchor{strategyir.AnchorMidSLD, strategyir.AnchorMethod},
+				PortRanges:           true,
+			},
+			Capture: CaptureCapabilities{
+				BackendKind: CaptureSOCKSTCP,
+				Transports:  []CaptureTransport{CaptureTransportTCP},
+				Directions:  []strategyir.Direction{strategyir.DirectionOutbound},
+				IPFamilies:  []strategyir.IPFamily{strategyir.IPFamilyV4, strategyir.IPFamilyV6},
+			},
 		}
 	default:
 		return Capabilities{Backend: backend}
@@ -126,6 +172,7 @@ const (
 	UnsupportedPortScope           ReasonCode = "UNSUPPORTED_PORT_SCOPE"
 	UnsupportedScope               ReasonCode = "UNSUPPORTED_SCOPE"
 	UnsupportedDirection           ReasonCode = "UNSUPPORTED_DIRECTION"
+	UnsupportedCapture             ReasonCode = "UNSUPPORTED_CAPTURE"
 	UnsupportedFakeModifier        ReasonCode = "UNSUPPORTED_FAKE_MODIFIER"
 	UnsupportedCutoff              ReasonCode = "UNSUPPORTED_CUTOFF"
 	MissingAsset                   ReasonCode = "MISSING_ASSET"
@@ -138,10 +185,24 @@ type Reason struct {
 	Detail string     `json:"detail"`
 }
 
+// CapturePlan is structured executor input. It deliberately stores no shell,
+// firewall, or engine option strings.
+type CapturePlan struct {
+	BackendKind    CaptureBackendKind     `json:"backend_kind"`
+	Transport      CaptureTransport       `json:"transport"`
+	Direction      strategyir.Direction   `json:"direction"`
+	IPFamilies     []strategyir.IPFamily  `json:"ip_families"`
+	TCPPorts       []strategyir.PortRange `json:"tcp_ports,omitempty"`
+	UDPPorts       []strategyir.PortRange `json:"udp_ports,omitempty"`
+	RawCaptureRefs []string               `json:"raw_capture_refs,omitempty"`
+}
+
 type Plan struct {
-	// Argv contains backend flags. ${asset:<logical-id>} must be resolved by trusted product code.
-	Argv      []string `json:"argv"`
-	AssetRefs []string `json:"asset_refs,omitempty"`
+	// EngineArgv contains only engine/profile flags. ${asset:<logical-id>} must
+	// be resolved by trusted product code.
+	EngineArgv []string    `json:"engine_argv"`
+	Capture    CapturePlan `json:"capture"`
+	AssetRefs  []string    `json:"asset_refs,omitempty"`
 }
 
 type CompileResult struct {
@@ -181,14 +242,20 @@ func Compile(strategy strategyir.Strategy, backend Backend) CompileResult {
 		result.Unsupported = reasons
 		return result
 	}
-	argv, assets, err := compileArgs(normalized, backend)
+	engineArgv, assets, err := compileArgs(normalized, backend)
 	if err != nil {
 		result.Status = StatusUnsupported
 		result.Unsupported = []Reason{{Code: UnsupportedOperation, Detail: err.Error()}}
 		return result
 	}
+	capture, err := compileCapture(normalized, backend)
+	if err != nil {
+		result.Status = StatusUnsupported
+		result.Unsupported = []Reason{{Code: UnsupportedCapture, Detail: err.Error()}}
+		return result
+	}
 	result.Status = StatusCompiled
-	result.Plan = Plan{Argv: argv, AssetRefs: assets}
+	result.Plan = Plan{EngineArgv: engineArgv, Capture: capture, AssetRefs: assets}
 	result.RequiredAssets = assets
 	result.DerivedRequirements = deriveRequirements(normalized, backend)
 	return result
@@ -201,97 +268,108 @@ func knownBackend(backend Backend) bool {
 func compatibility(strategy strategyir.Strategy, caps Capabilities) []Reason {
 	var reasons []Reason
 	add := func(code ReasonCode, detail string) { reasons = append(reasons, Reason{Code: code, Detail: detail}) }
+	profile := caps.Profile
 	for _, transport := range strategy.Transport {
-		if !has(caps.Transports, transport) {
+		if !has(profile.Transports, transport) {
 			add(UnsupportedTransport, string(transport))
 		}
 	}
+	if !has(caps.Capture.Transports, captureTransportFor(strategy.Transport[0])) {
+		add(UnsupportedCapture, "capture cannot acquire "+string(strategy.Transport[0]))
+	}
 	for _, protocol := range strategy.Selector.ApplicationProtocols {
-		if !has(caps.ApplicationProtocols, protocol) {
+		if !has(profile.ApplicationProtocols, protocol) {
 			add(UnsupportedApplicationProtocol, string(protocol))
 		}
 	}
-	if len(strategy.Selector.ApplicationProtocols) > 1 && !caps.MultiProtocolPayloadFilter {
+	if len(strategy.Selector.ApplicationProtocols) > 1 && !profile.MultiProtocolPayloadFilter {
 		add(UnsupportedApplicationProtocol, "backend cannot preserve multiple application protocols")
 	}
-	if len(strategy.Selector.IPFamilies) == 1 && strategy.Selector.IPFamilies[0] == strategyir.IPFamilyAny {
-		if !has(caps.IPFamilies, strategyir.IPFamilyV4) || !has(caps.IPFamilies, strategyir.IPFamilyV6) {
-			add(UnsupportedIPFamily, "ANY requires IPv4 and IPv6 support")
-		}
-	} else {
-		for _, family := range strategy.Selector.IPFamilies {
-			if !has(caps.IPFamilies, family) {
-				add(UnsupportedIPFamily, string(family))
-			}
-		}
+	if !supportsFamilies(strategy.Selector.IPFamilies, profile.IPFamilies) {
+		add(UnsupportedIPFamily, "engine/profile filter cannot preserve requested IP families")
 	}
-	if !has(caps.Directions, strategy.Selector.Direction) {
+	if !supportsFamilies(strategy.Selector.IPFamilies, caps.Capture.IPFamilies) {
+		add(UnsupportedIPFamily, "capture cannot preserve requested IP families")
+	}
+	if !has(caps.Capture.Directions, strategy.Selector.Direction) {
 		add(UnsupportedDirection, string(strategy.Selector.Direction))
 	}
-	if !caps.PortRanges && (len(strategy.Selector.TCPPorts) > 1 || len(strategy.Selector.UDPPorts) > 1) {
+	if !profile.PortRanges && (len(strategy.Selector.TCPPorts) > 1 || len(strategy.Selector.UDPPorts) > 1) {
 		add(UnsupportedPortScope, "multiple port ranges")
 	}
 	host := strategy.Selector.Scope.Host
-	if (host.Mode == strategyir.HostScopeManagedList && !caps.ManagedHostlists) ||
-		(host.Mode == strategyir.HostScopeAutoHostlist && !caps.AutoHostlists) ||
-		(host.Mode == strategyir.HostScopeIPSetReference && !caps.IPSetReferences) ||
-		(len(strategy.Selector.Scope.IPSetIDs) > 0 && !caps.IPSetReferences) {
+	if (host.Mode == strategyir.HostScopeManagedList && !profile.ManagedHostlists) ||
+		(host.Mode == strategyir.HostScopeAutoHostlist && !profile.AutoHostlists) ||
+		(host.Mode == strategyir.HostScopeIPSetReference && !profile.IPSetReferences) ||
+		(len(strategy.Selector.Scope.IPSetIDs) > 0 && !profile.IPSetReferences) {
 		add(UnsupportedScope, "host/IP logical scope")
 	}
-	if !caps.ManagedHostlists && (host.Mode == strategyir.HostScopeExplicit || len(strategy.Selector.Scope.ExcludeHostListIDs) != 0 || len(strategy.Selector.Scope.ExcludeIPSetIDs) != 0) {
+	if !profile.ManagedHostlists && (host.Mode == strategyir.HostScopeExplicit || len(strategy.Selector.Scope.ExcludeHostListIDs) != 0 || len(strategy.Selector.Scope.ExcludeIPSetIDs) != 0) {
 		add(UnsupportedScope, "backend cannot preserve host/IP scope")
 	}
 	for _, operation := range strategy.Operations {
-		if !has(caps.Operations, operation.Type) {
+		if !has(profile.Operations, operation.Type) {
 			add(UnsupportedOperation, string(operation.Type))
 		}
 		for _, position := range operation.Positions {
-			if position.Anchor != "" && !has(caps.PositionAnchors, position.Anchor) {
+			if position.Anchor != "" && !has(profile.PositionAnchors, position.Anchor) {
 				add(UnsupportedPositionAnchor, string(position.Anchor))
 			}
 		}
-		if operation.PayloadRef != "" && !caps.FakePayloads {
+		if operation.PayloadRef != "" && !profile.FakePayloads {
 			add(MissingAsset, "backend does not accept fake payload assets")
 		}
-		if operation.OverlapPatternRef != "" && !caps.FakePayloads {
+		if operation.OverlapPatternRef != "" && !profile.FakePayloads {
 			add(MissingAsset, "backend does not accept overlap pattern assets")
 		}
-		if operation.PayloadRef != "" && !has(caps.FakePayloadRefs, operation.PayloadRef) {
+		if operation.PayloadRef != "" && !has(profile.FakePayloadRefs, operation.PayloadRef) {
 			add(MissingAsset, operation.PayloadRef)
 		}
-		if operation.OverlapPatternRef != "" && !has(caps.FakePayloadRefs, operation.OverlapPatternRef) {
+		if operation.OverlapPatternRef != "" && !has(profile.FakePayloadRefs, operation.OverlapPatternRef) {
 			add(MissingAsset, operation.OverlapPatternRef)
 		}
 		if operation.Fake != nil {
-			if operation.Fake.Repeat > 0 && !caps.FakeRepeat {
+			if operation.Fake.Repeat > 0 && !profile.FakeRepeat {
 				add(UnsupportedFakeModifier, "repeat")
 			}
-			if operation.Fake.TTL != nil && !caps.FakeTTL {
+			if operation.Fake.TTL != nil && !profile.FakeTTL {
 				add(UnsupportedFakeModifier, "TTL")
 			}
-			if operation.Fake.SequenceOffset != nil && !caps.FakeSequenceOffset {
+			if operation.Fake.SequenceOffset != nil && !profile.FakeSequenceOffset {
 				add(UnsupportedFakeModifier, "sequence offset")
 			}
-			if operation.Fake.AcknowledgmentOffset != nil && !caps.FakeAcknowledgmentOffset {
+			if operation.Fake.AcknowledgmentOffset != nil && !profile.FakeAcknowledgmentOffset {
 				add(UnsupportedFakeModifier, "acknowledgment offset")
 			}
-			if operation.Fake.TCPMD5 && !caps.FakeTCPMD5 {
+			if operation.Fake.TCPMD5 && !profile.FakeTCPMD5 {
 				add(UnsupportedFakeModifier, "TCP MD5")
 			}
-			if operation.Fake.TCPTimestamp && !caps.FakeTCPTimestamp {
+			if operation.Fake.TCPTimestamp && !profile.FakeTCPTimestamp {
 				add(UnsupportedFakeModifier, "TCP timestamp")
 			}
 		}
 	}
 	if strategy.Range != nil {
-		if !has(caps.RangeDirections, strategy.Range.Direction) {
+		if !has(profile.RangeDirections, strategy.Range.Direction) {
 			add(UnsupportedCutoff, "direction "+string(strategy.Range.Direction))
 		}
-		if !has(caps.RangeCounters, strategy.Range.Counter) {
+		if !has(profile.RangeCounters, strategy.Range.Counter) {
 			add(UnsupportedCutoff, "counter "+string(strategy.Range.Counter))
 		}
 	}
 	return dedupeReasons(reasons)
+}
+
+func supportsFamilies(required, available []strategyir.IPFamily) bool {
+	if len(required) == 1 && required[0] == strategyir.IPFamilyAny {
+		return has(available, strategyir.IPFamilyV4) && has(available, strategyir.IPFamilyV6)
+	}
+	for _, family := range required {
+		if !has(available, family) {
+			return false
+		}
+	}
+	return true
 }
 
 func has[T comparable](items []T, item T) bool {
@@ -340,14 +418,12 @@ func compileArgs(strategy strategyir.Strategy, backend Backend) ([]string, []str
 }
 
 func selectorArgs(strategy strategyir.Strategy) []string {
-	args := []string{"--wf-l3=" + familyList(strategy.Selector.IPFamilies)}
+	args := []string{"--filter-l3=" + familyList(strategy.Selector.IPFamilies)}
 	if has(strategy.Transport, strategyir.TransportTCP) {
 		args = append(args, "--filter-tcp="+ports(strategy.Selector.TCPPorts))
-		args = append(args, captureArgs("tcp", strategy.Selector.Direction, ports(strategy.Selector.TCPPorts))...)
 	}
 	if has(strategy.Transport, strategyir.TransportUDP) || has(strategy.Transport, strategyir.TransportQUIC) {
 		args = append(args, "--filter-udp="+ports(strategy.Selector.UDPPorts))
-		args = append(args, captureArgs("udp", strategy.Selector.Direction, ports(strategy.Selector.UDPPorts))...)
 	}
 	if strategy.Selector.ApplicationProtocols[0] != strategyir.ApplicationAny {
 		payloads := make([]string, len(strategy.Selector.ApplicationProtocols))
@@ -358,14 +434,64 @@ func selectorArgs(strategy strategyir.Strategy) []string {
 	}
 	return args
 }
-func captureArgs(proto string, direction strategyir.Direction, portScope string) []string {
-	switch direction {
-	case strategyir.DirectionInbound:
-		return []string{"--wf-" + proto + "-in=" + portScope}
-	case strategyir.DirectionBoth:
-		return []string{"--wf-" + proto + "-in=" + portScope, "--wf-" + proto + "-out=" + portScope}
+
+func compileCapture(strategy strategyir.Strategy, backend Backend) (CapturePlan, error) {
+	kind := CaptureBackendKind("")
+	switch backend {
+	case Zapret2Windows:
+		kind = CaptureWinDivert
+	case Zapret2Linux:
+		kind = CaptureNFQUEUE
+	case Zapret1TPWSDarwin:
+		kind = CaptureSOCKSTCP
 	default:
-		return []string{"--wf-" + proto + "-out=" + portScope}
+		return CapturePlan{}, fmt.Errorf("unsupported capture backend %s", backend)
+	}
+	return CapturePlan{
+		BackendKind: kind,
+		Transport:   captureTransportFor(strategy.Transport[0]),
+		Direction:   strategy.Selector.Direction,
+		IPFamilies:  append([]strategyir.IPFamily(nil), strategy.Selector.IPFamilies...),
+		TCPPorts:    append([]strategyir.PortRange(nil), strategy.Selector.TCPPorts...),
+		UDPPorts:    append([]strategyir.PortRange(nil), strategy.Selector.UDPPorts...),
+	}, nil
+}
+
+func captureTransportFor(transport strategyir.Transport) CaptureTransport {
+	if transport == strategyir.TransportTCP {
+		return CaptureTransportTCP
+	}
+	return CaptureTransportUDP
+}
+
+// RenderWindowsCaptureArgv generates WinDivert constructor options from a
+// structured capture plan. Linux NFQUEUE and macOS SOCKS capture have no
+// engine argv representation.
+func RenderWindowsCaptureArgv(capture CapturePlan) ([]string, error) {
+	if capture.BackendKind != CaptureWinDivert {
+		return nil, fmt.Errorf("capture backend %s does not use WinDivert argv", capture.BackendKind)
+	}
+	args := []string{"--wf-l3=" + familyList(capture.IPFamilies)}
+	var portsForTransport []strategyir.PortRange
+	var proto string
+	switch capture.Transport {
+	case CaptureTransportTCP:
+		portsForTransport, proto = capture.TCPPorts, "tcp"
+	case CaptureTransportUDP:
+		portsForTransport, proto = capture.UDPPorts, "udp"
+	default:
+		return nil, fmt.Errorf("unsupported WinDivert transport %s", capture.Transport)
+	}
+	portScope := ports(portsForTransport)
+	switch capture.Direction {
+	case strategyir.DirectionInbound:
+		return append(args, "--wf-"+proto+"-in="+portScope), nil
+	case strategyir.DirectionBoth:
+		return append(args, "--wf-"+proto+"-in="+portScope, "--wf-"+proto+"-out="+portScope), nil
+	case strategyir.DirectionOutbound:
+		return append(args, "--wf-"+proto+"-out="+portScope), nil
+	default:
+		return nil, fmt.Errorf("unsupported WinDivert direction %s", capture.Direction)
 	}
 }
 func payloadName(protocol strategyir.ApplicationProtocol) string {

@@ -50,8 +50,13 @@ func TestWindowsCompiledRepresentativePlansDryRun(t *testing.T) {
 			if result.Status != StatusCompiled {
 				t.Fatalf("compile: %#v", result)
 			}
+			captureArgs, err := RenderWindowsCaptureArgv(result.Plan.Capture)
+			if err != nil {
+				t.Fatalf("render WinDivert capture argv: %v", err)
+			}
 			args := append([]string{"--dry-run"}, luaInits...)
-			args = append(args, resolveParserAssets(t, result.Plan.Argv)...)
+			args = append(args, captureArgs...)
+			args = append(args, resolveParserAssets(t, result.Plan.EngineArgv)...)
 			cmd := exec.Command(winws, args...)
 			cmd.Dir = filepath.Dir(winws)
 			cmd.Env = append(os.Environ(), "__COMPAT_LAYER=RunAsInvoker")
@@ -71,11 +76,11 @@ func TestWindowsCompiledRepresentativePlansDryRun(t *testing.T) {
 func resolveParserAssets(t *testing.T, argv []string) []string {
 	t.Helper()
 	payloads := map[string]string{
-		"fake-default-udp":       "fake_default_udp",
-		"quic-google":            "quic_google",
+		"fake-default-udp":        "fake_default_udp",
+		"quic-google":             "quic_google",
 		"stun-pat":                "stun_pat",
 		"tls-clienthello-default": "fake_default_tls",
-		"tls-google":             "tls_google",
+		"tls-google":              "tls_google",
 	}
 	logicalDir := t.TempDir()
 	out := append([]string(nil), argv...)
