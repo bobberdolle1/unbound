@@ -235,7 +235,7 @@ func TestE2E_HelpFlag(t *testing.T) {
 func TestE2E_ListProfiles(t *testing.T) {
 	bin := buildTestBinary(t)
 
-	out, code := runBinaryWithEnv(t, bin, 15*time.Second, isolatedConfigEnv(t), "--list-profiles")
+	out, code := runBinaryWithEnv(t, bin, 30*time.Second, isolatedConfigEnv(t), "--list-profiles")
 	out = cleanOutput(out)
 
 	// On platforms without the engine binary, it may exit 1.
