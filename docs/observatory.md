@@ -63,6 +63,18 @@ No `DPI_BLOCK`, `SNI_BLOCK`, `RST_INJECTED`, or allowlist conclusion exists in v
 
 Attempts are sequential and bounded by DNS, connect, TLS, HTTP, and overall timeouts. Context cancellation closes in-flight HTTP reads and produces `CANCELLED` evidence.
 
+## Read-only lab sample
+
+The direct adapter was exercised at commit `3a9c91bc497e39ce7552d4d71940f8c341577a12` on Windows amd64, Linux amd64, and macOS arm64 without starting or stopping a bypass engine.
+
+| Target | Windows amd64 | Linux amd64 | macOS arm64 |
+|---|---|---|---|
+| Cloudflare control (`www.cloudflare.com/cdn-cgi/trace`) | `SUCCESS` | `SUCCESS` | `SUCCESS` |
+| YouTube (`www.youtube.com/generate_204`) | first selected edge: TLS handshake timeout; HTTP `NOT_REACHED` | TLS handshake timeout; HTTP `NOT_REACHED` | TLS handshake timeout; HTTP `NOT_REACHED` |
+| Discord (`discord.com/api/v9/experiments`) | TLS handshake timeout; HTTP `NOT_REACHED` | TLS handshake timeout; HTTP `NOT_REACHED` | TLS handshake timeout; HTTP `NOT_REACHED` |
+
+The resolved YouTube set included historical edge `142.251.152.4`; its current Windows attempt recorded `TCP_CONNECT_TIMEOUT`, then `NOT_REACHED` for TLS and HTTP. These are network observations, not claims about censorship intent or strategy correctness.
+
 ## Privacy and persistence
 
 Observation does not retain response bodies. Captured response headers are allowlisted to `content-type` and `location`; cookies and `Authorization` headers are excluded. Persisted target URLs remove userinfo and query values. Private keys, passwords, and full bodies are never written.
