@@ -11,6 +11,7 @@
 - Match legacy macOS PF ownership exactly; update the Universal `tpws` source to Zapret commit `d437963452674faadfd45adcd62466272b5a2fcd`.
 - Restore every captured macOS SOCKS proxy state transactionally on stop.
 - Add build identity metadata and publish the v0.6.9 release-identity audit.
+- Gate privileged Windows network/AutoTune tests behind `UNBOUND_RUN_WINDOWS_NETWORK_E2E=1`; ordinary `go test ./...` is hermetic.
 
 ## [0.6.9] - 2026-09-11
 ### Windows release-correctness hotfix
