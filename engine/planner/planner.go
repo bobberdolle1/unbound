@@ -4,8 +4,10 @@ package planner
 
 import (
 	"encoding/json"
+	"net/netip"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"unbound/engine"
@@ -52,11 +54,18 @@ type ScopeSnapshot struct {
 	TargetEdgeIPs   []string            `json:"target_edge_ips,omitempty"`
 }
 
+// EvidenceContext identifies concrete properties of the attributed outbound
+// observation. It is caller-supplied evidence, never derived from opaque keys.
+type EvidenceContext struct {
+	AddressFamily observatory.AddressFamily `json:"address_family,omitempty"`
+}
+
 type Request struct {
 	Attribution attribution.AttributionReport `json:"attribution"`
 	Backend     backendcap.Backend            `json:"backend"`
 	Strategies  []strategyir.Strategy         `json:"strategies"`
 	Scope       ScopeSnapshot                 `json:"scope,omitempty"`
+	Evidence    EvidenceContext               `json:"evidence,omitempty"`
 }
 
 type CandidateAssessment struct {
@@ -154,6 +163,31 @@ func assess(strategy strategyir.Strategy, request Request, boundary observatory.
 		candidate.Reasons = []Reason{{Code: "EFFECT_STAGE_MISMATCH", Detail: "Strategy effect and evidence boundary or transport do not match."}}
 		return candidate
 	}
+	if status := matchTargetPort(strategy, request.Attribution.Target.Port); status != selectorMatchOK {
+		if status == selectorMatchUnknown {
+			candidate.Status = StatusInsufficientEvidence
+			candidate.Reasons = []Reason{{Code: "TARGET_PORT_UNKNOWN", Detail: "The attributed target port is missing or invalid."}}
+		} else {
+			candidate.Status = StatusStructurallyInapplicable
+			candidate.Reasons = []Reason{{Code: "TARGET_PORT_MISMATCH", Detail: "Strategy selector port ranges exclude the attributed target port."}}
+		}
+		return candidate
+	}
+	if strategy.Selector.Direction == strategyir.DirectionInbound {
+		candidate.Status = StatusStructurallyInapplicable
+		candidate.Reasons = []Reason{{Code: "TARGET_DIRECTION_MISMATCH", Detail: "Observatory v1 evidence is outbound client traffic."}}
+		return candidate
+	}
+	if status := matchAddressFamily(strategy.Selector.IPFamilies, request.Evidence.AddressFamily); status != selectorMatchOK {
+		if status == selectorMatchUnknown {
+			candidate.Status = StatusInsufficientEvidence
+			candidate.Reasons = []Reason{{Code: "TARGET_IP_FAMILY_UNKNOWN", Detail: "A specific selector family requires a concrete evidence address family."}}
+		} else {
+			candidate.Status = StatusStructurallyInapplicable
+			candidate.Reasons = []Reason{{Code: "TARGET_IP_FAMILY_MISMATCH", Detail: "Strategy selector IP families exclude the attributed evidence family."}}
+		}
+		return candidate
+	}
 	match := MatchTargetScope(strategy.Selector.Scope, request.Attribution.Target.Hostname, request.Scope)
 	if match == scopeUnknown {
 		candidate.Status = StatusTargetScopeUnknown
@@ -248,6 +282,47 @@ const (
 	scopeUnknown
 )
 
+type selectorMatch uint8
+
+const (
+	selectorMatchOK selectorMatch = iota
+	selectorMismatch
+	selectorMatchUnknown
+)
+
+func matchTargetPort(strategy strategyir.Strategy, target string) selectorMatch {
+	port, err := strconv.ParseUint(strings.TrimSpace(target), 10, 16)
+	if err != nil || port == 0 {
+		return selectorMatchUnknown
+	}
+	ranges := strategy.Selector.TCPPorts
+	if strategy.Transport[0] == strategyir.TransportQUIC {
+		ranges = strategy.Selector.UDPPorts
+	}
+	for _, portRange := range ranges {
+		if uint64(portRange.Start) <= port && port <= uint64(portRange.End) {
+			return selectorMatchOK
+		}
+	}
+	return selectorMismatch
+}
+
+func matchAddressFamily(families []strategyir.IPFamily, evidence observatory.AddressFamily) selectorMatch {
+	if slices.Contains(families, strategyir.IPFamilyAny) {
+		return selectorMatchOK
+	}
+	if evidence != observatory.AddressFamilyIPv4 && evidence != observatory.AddressFamilyIPv6 {
+		return selectorMatchUnknown
+	}
+	for _, family := range families {
+		if (family == strategyir.IPFamilyV4 && evidence == observatory.AddressFamilyIPv4) ||
+			(family == strategyir.IPFamilyV6 && evidence == observatory.AddressFamilyIPv6) {
+			return selectorMatchOK
+		}
+	}
+	return selectorMismatch
+}
+
 // MatchTargetScope uses exact hostname or subdomain membership: "example.com"
 // covers example.com and a.example.com. Logical IDs are unknown unless present
 // in ScopeSnapshot; the planner never infers membership from an ID's name.
@@ -256,12 +331,12 @@ func MatchTargetScope(scope strategyir.Scope, hostname string, snapshot ScopeSna
 	if hostname == "" {
 		return scopeUnknown
 	}
-	primary := scopeMatchOK
+	positiveIPSetIDs := append([]string(nil), scope.IPSetIDs...)
 	switch scope.Host.Mode {
 	case strategyir.HostScopeAll:
 	case strategyir.HostScopeExplicit:
 		if !containsHost(scope.Host.Hosts, hostname) {
-			primary = scopeMismatch
+			return scopeMismatch
 		}
 	case strategyir.HostScopeManagedList, strategyir.HostScopeAutoHostlist:
 		members, ok := snapshot.HostListMembers[scope.Host.ID]
@@ -269,56 +344,141 @@ func MatchTargetScope(scope strategyir.Scope, hostname string, snapshot ScopeSna
 			return scopeUnknown
 		}
 		if !containsHost(members, hostname) {
-			primary = scopeMismatch
+			return scopeMismatch
 		}
 	case strategyir.HostScopeIPSetReference:
-		primary = matchesIPSets([]string{scope.Host.ID}, snapshot)
+		positiveIPSetIDs = append(positiveIPSetIDs, scope.Host.ID)
 	default:
 		return scopeUnknown
 	}
-	if primary != scopeMatchOK {
-		return primary
+	if match := matchesIPSetUnion(positiveIPSetIDs, snapshot); match != scopeMatchOK {
+		return match
 	}
-	for _, id := range scope.ExcludeHostListIDs {
-		members, ok := snapshot.HostListMembers[id]
-		if !ok {
-			return scopeUnknown
+	if match := matchesHostExclusions(scope.ExcludeHostListIDs, hostname, snapshot); match != scopeMatchOK {
+		return match
+	}
+	return matchesIPSetExclusions(scope.ExcludeIPSetIDs, snapshot)
+}
+
+// matchesIPSetUnion implements Zapret's repeated --ipset include semantics:
+// at least one known positive set must contain one target-edge address.
+func matchesIPSetUnion(ids []string, snapshot ScopeSnapshot) scopeMatch {
+	ids = uniqueStrings(ids)
+	if len(ids) == 0 {
+		return scopeMatchOK
+	}
+	targets, ok := parseTargetEdgeIPs(snapshot.TargetEdgeIPs)
+	if !ok {
+		return scopeUnknown
+	}
+	unknown := false
+	for _, id := range ids {
+		members, supplied := snapshot.IPSetMembers[id]
+		if !supplied {
+			unknown = true
+			continue
+		}
+		matched, valid := matchesIPSet(members, targets)
+		if matched {
+			return scopeMatchOK
+		}
+		if !valid {
+			unknown = true
+		}
+	}
+	if unknown {
+		return scopeUnknown
+	}
+	return scopeMismatch
+}
+
+func matchesHostExclusions(ids []string, hostname string, snapshot ScopeSnapshot) scopeMatch {
+	unknown := false
+	for _, id := range uniqueStrings(ids) {
+		members, supplied := snapshot.HostListMembers[id]
+		if !supplied {
+			unknown = true
+			continue
 		}
 		if containsHost(members, hostname) {
 			return scopeMismatch
 		}
 	}
-	for _, id := range scope.IPSetIDs {
-		if match := matchesIPSets([]string{id}, snapshot); match != scopeMatchOK {
-			return match
-		}
-	}
-	for _, id := range scope.ExcludeIPSetIDs {
-		members, ok := snapshot.IPSetMembers[id]
-		if !ok || len(snapshot.TargetEdgeIPs) == 0 {
-			return scopeUnknown
-		}
-		if intersects(members, snapshot.TargetEdgeIPs) {
-			return scopeMismatch
-		}
-	}
-	return scopeMatchOK
-}
-func matchesIPSets(ids []string, snapshot ScopeSnapshot) scopeMatch {
-	if len(snapshot.TargetEdgeIPs) == 0 {
+	if unknown {
 		return scopeUnknown
 	}
+	return scopeMatchOK
+}
+
+func matchesIPSetExclusions(ids []string, snapshot ScopeSnapshot) scopeMatch {
+	ids = uniqueStrings(ids)
+	if len(ids) == 0 {
+		return scopeMatchOK
+	}
+	targets, ok := parseTargetEdgeIPs(snapshot.TargetEdgeIPs)
+	if !ok {
+		return scopeUnknown
+	}
+	unknown := false
 	for _, id := range ids {
-		members, ok := snapshot.IPSetMembers[id]
-		if !ok {
-			return scopeUnknown
+		members, supplied := snapshot.IPSetMembers[id]
+		if !supplied {
+			unknown = true
+			continue
 		}
-		if !intersects(members, snapshot.TargetEdgeIPs) {
+		matched, valid := matchesIPSet(members, targets)
+		if matched {
 			return scopeMismatch
 		}
+		if !valid {
+			unknown = true
+		}
+	}
+	if unknown {
+		return scopeUnknown
 	}
 	return scopeMatchOK
 }
+
+func parseTargetEdgeIPs(values []string) ([]netip.Addr, bool) {
+	if len(values) == 0 {
+		return nil, false
+	}
+	addresses := make([]netip.Addr, 0, len(values))
+	for _, value := range values {
+		address, err := netip.ParseAddr(strings.TrimSpace(value))
+		if err != nil {
+			return nil, false
+		}
+		addresses = append(addresses, address)
+	}
+	return addresses, true
+}
+
+func matchesIPSet(members []string, targets []netip.Addr) (matched, valid bool) {
+	for _, member := range members {
+		member = strings.TrimSpace(member)
+		if address, err := netip.ParseAddr(member); err == nil {
+			for _, target := range targets {
+				if address == target {
+					return true, true
+				}
+			}
+			continue
+		}
+		prefix, err := netip.ParsePrefix(member)
+		if err != nil {
+			return false, false
+		}
+		for _, target := range targets {
+			if prefix.Contains(target) {
+				return true, true
+			}
+		}
+	}
+	return false, true
+}
+
 func containsHost(members []string, hostname string) bool {
 	for _, member := range members {
 		member = normalizeHost(member)
@@ -330,18 +490,6 @@ func containsHost(members []string, hostname string) bool {
 }
 func normalizeHost(host string) string {
 	return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
-}
-func intersects(left, right []string) bool {
-	seen := map[string]bool{}
-	for _, value := range left {
-		seen[strings.TrimSpace(value)] = true
-	}
-	for _, value := range right {
-		if seen[strings.TrimSpace(value)] {
-			return true
-		}
-	}
-	return false
 }
 
 func concreteBoundary(report attribution.AttributionReport) (observatory.Stage, observatory.Transport, bool) {

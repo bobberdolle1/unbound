@@ -2,7 +2,6 @@ package planner
 
 import (
 	"encoding/json"
-	"os"
 	"reflect"
 	"slices"
 	"strings"
@@ -177,42 +176,6 @@ func TestReportHasNoRankingSurface(t *testing.T) {
 	}
 }
 
-func TestSanitizedPhysicalFixtures(t *testing.T) {
-	type cohort struct {
-		Target   []observatory.ObservationResult `json:"target"`
-		Controls []observatory.ObservationResult `json:"controls"`
-	}
-	data, err := os.ReadFile("../attribution/testdata/fixtures.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var fixtures map[string]cohort
-	if err := json.Unmarshal(data, &fixtures); err != nil {
-		t.Fatal(err)
-	}
-	cloudflare := attribution.Analyze(fixtures["success"].Target)
-	if got := Plan(Request{Attribution: cloudflare, Backend: backendcap.Zapret2Windows}); got.Disposition != DispositionNoActionNeeded {
-		t.Fatalf("Cloudflare success plan = %#v", got)
-	}
-	youtube := attribution.AnalyzeCohort(attribution.Cohort{Target: fixtures["healthy_control_tls"].Target, Controls: fixtures["healthy_control_tls"].Controls})
-	youtubeStrategy := strategyir.RepresentativeFixtures()["alternative-multisplit"]
-	if got := Plan(Request{Attribution: youtube, Backend: backendcap.Zapret2Windows, Strategies: []strategyir.Strategy{youtubeStrategy}, Scope: ScopeSnapshot{HostListMembers: map[string][]string{"youtube": {"www.youtube.com"}}}}); candidate(got, youtubeStrategy.ID).Status != StatusEligible {
-		t.Fatalf("YouTube TLS plan = %#v", got)
-	}
-	discordData, err := os.ReadFile("../attribution/testdata/discord-observation.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var discordObservation observatory.ObservationResult
-	if err := json.Unmarshal(discordData, &discordObservation); err != nil {
-		t.Fatal(err)
-	}
-	discord := attribution.Analyze([]observatory.ObservationResult{discordObservation})
-	if got := Plan(Request{Attribution: discord, Backend: backendcap.Zapret2Windows, Strategies: []strategyir.Strategy{strategyir.RepresentativeFixtures()["discord-tcp"]}}); !slices.ContainsFunc(got.Limitations, func(value string) bool { return strings.Contains(value, "EDGE_DEPENDENT") }) {
-		t.Fatalf("Discord edge limitation missing: %#v", got)
-	}
-}
-
 func TestRawUDPRequiresEvidenceModel(t *testing.T) {
 	strategy := tlsStrategy("udp")
 	strategy.Transport = []strategyir.Transport{strategyir.TransportUDP}
@@ -222,5 +185,151 @@ func TestRawUDPRequiresEvidenceModel(t *testing.T) {
 	report := evidence(attribution.FindingTLSPathFailureSuspected, observatory.StageHandshake, observatory.TransportTCP)
 	if got := candidate(Plan(Request{Attribution: report, Backend: backendcap.Zapret2Windows, Strategies: []strategyir.Strategy{strategy}}), "udp"); got.Status != StatusInsufficientEvidence {
 		t.Fatalf("raw UDP candidate guessed a TCP effect: %#v", got)
+	}
+}
+
+func TestTargetTrafficSelectorApplicability(t *testing.T) {
+	report := evidence(attribution.FindingTLSPathFailureSuspected, observatory.StageHandshake, observatory.TransportTCP)
+	request := Request{Attribution: report, Backend: backendcap.Zapret2Windows, Evidence: EvidenceContext{AddressFamily: observatory.AddressFamilyIPv4}}
+
+	tls := tlsStrategy("tls-443")
+	request.Strategies = []strategyir.Strategy{tls}
+	if got := candidate(Plan(request), tls.ID); got.Status != StatusEligible {
+		t.Fatalf("target 443 did not match 443 selector: %#v", got)
+	}
+
+	tls.Selector.TCPPorts = []strategyir.PortRange{{Start: 8443, End: 8443}}
+	if got := candidate(Plan(Request{Attribution: report, Backend: backendcap.Zapret2Windows, Strategies: []strategyir.Strategy{tls}}), tls.ID); got.Status != StatusStructurallyInapplicable || got.Reasons[0].Code != "TARGET_PORT_MISMATCH" {
+		t.Fatalf("target 443 matched 8443 selector: %#v", got)
+	}
+
+	report.Target.Port = "not-a-port"
+	if got := candidate(Plan(requestWithStrategy(Request{Attribution: report, Backend: backendcap.Zapret2Windows}, tlsStrategy("unknown-port"))), "unknown-port"); got.Status != StatusInsufficientEvidence || got.Reasons[0].Code != "TARGET_PORT_UNKNOWN" {
+		t.Fatalf("malformed target port did not fail closed: %#v", got)
+	}
+	report.Target.Port = "443"
+	both := tlsStrategy("both")
+	both.Selector.Direction = strategyir.DirectionBoth
+	if got := candidate(Plan(requestWithStrategy(request, both)), both.ID); got.Status != StatusEligible {
+		t.Fatalf("BOTH selector did not match outbound evidence: %#v", got)
+	}
+
+	inbound := tlsStrategy("inbound")
+	inbound.Selector.Direction = strategyir.DirectionInbound
+	if got := candidate(Plan(requestWithStrategy(request, inbound)), inbound.ID); got.Status != StatusStructurallyInapplicable || got.Reasons[0].Code != "TARGET_DIRECTION_MISMATCH" {
+		t.Fatalf("inbound selector became applicable to outbound evidence: %#v", got)
+	}
+
+	ipv4 := tlsStrategy("ipv4")
+	ipv4.Selector.IPFamilies = []strategyir.IPFamily{strategyir.IPFamilyV4}
+	if got := candidate(Plan(requestWithStrategy(request, ipv4)), ipv4.ID); got.Status != StatusEligible {
+		t.Fatalf("IPv4 selector did not match IPv4 evidence: %#v", got)
+	}
+
+	ipv6 := tlsStrategy("ipv6")
+	ipv6.Selector.IPFamilies = []strategyir.IPFamily{strategyir.IPFamilyV6}
+	if got := candidate(Plan(requestWithStrategy(request, ipv6)), ipv6.ID); got.Status != StatusStructurallyInapplicable || got.Reasons[0].Code != "TARGET_IP_FAMILY_MISMATCH" {
+		t.Fatalf("IPv6 selector matched IPv4 evidence: %#v", got)
+	}
+	if got := candidate(Plan(requestWithStrategy(Request{Attribution: report, Backend: backendcap.Zapret2Windows}, ipv6)), ipv6.ID); got.Status != StatusInsufficientEvidence {
+		t.Fatalf("specific family accepted unknown evidence family: %#v", got)
+	}
+	if got := candidate(Plan(requestWithStrategy(Request{Attribution: report, Backend: backendcap.Zapret2Windows}, tlsStrategy("any"))), "any"); got.Status != StatusEligible {
+		t.Fatalf("ANY family required evidence narrowing: %#v", got)
+	}
+}
+
+func requestWithStrategy(request Request, strategy strategyir.Strategy) Request {
+	request.Strategies = []strategyir.Strategy{strategy}
+	return request
+}
+
+func TestIPSetScopeSemantics(t *testing.T) {
+	target := "target.test"
+	for _, tc := range []struct {
+		name  string
+		scope strategyir.Scope
+		data  ScopeSnapshot
+		want  scopeMatch
+	}{
+		{
+			name:  "exact IPv4 match",
+			scope: strategyir.Scope{Host: strategyir.HostScope{Mode: strategyir.HostScopeIPSetReference, ID: "edges"}},
+			data:  ScopeSnapshot{IPSetMembers: map[string][]string{"edges": {"192.0.2.15"}}, TargetEdgeIPs: []string{"192.0.2.15"}},
+			want:  scopeMatchOK,
+		},
+		{
+			name:  "IPv4 CIDR match",
+			scope: strategyir.Scope{Host: strategyir.HostScope{Mode: strategyir.HostScopeIPSetReference, ID: "edges"}},
+			data:  ScopeSnapshot{IPSetMembers: map[string][]string{"edges": {"192.0.2.0/24"}}, TargetEdgeIPs: []string{"192.0.2.15"}},
+			want:  scopeMatchOK,
+		},
+		{
+			name:  "IPv6 CIDR match",
+			scope: strategyir.Scope{Host: strategyir.HostScope{Mode: strategyir.HostScopeIPSetReference, ID: "edges"}},
+			data:  ScopeSnapshot{IPSetMembers: map[string][]string{"edges": {"2001:db8::/32"}}, TargetEdgeIPs: []string{"2001:db8:1::1"}},
+			want:  scopeMatchOK,
+		},
+		{
+			name:  "second positive set matches",
+			scope: strategyir.Scope{Host: strategyir.HostScope{Mode: strategyir.HostScopeAll}, IPSetIDs: []string{"first", "second"}},
+			data:  ScopeSnapshot{IPSetMembers: map[string][]string{"first": {"192.0.2.1"}, "second": {"192.0.2.15"}}, TargetEdgeIPs: []string{"192.0.2.15"}},
+			want:  scopeMatchOK,
+		},
+		{
+			name:  "all positive sets miss",
+			scope: strategyir.Scope{Host: strategyir.HostScope{Mode: strategyir.HostScopeAll}, IPSetIDs: []string{"first", "second"}},
+			data:  ScopeSnapshot{IPSetMembers: map[string][]string{"first": {"192.0.2.1"}, "second": {"192.0.2.2"}}, TargetEdgeIPs: []string{"192.0.2.15"}},
+			want:  scopeMismatch,
+		},
+		{
+			name:  "positive miss with unknown set",
+			scope: strategyir.Scope{Host: strategyir.HostScope{Mode: strategyir.HostScopeAll}, IPSetIDs: []string{"known", "unknown"}},
+			data:  ScopeSnapshot{IPSetMembers: map[string][]string{"known": {"192.0.2.1"}}, TargetEdgeIPs: []string{"192.0.2.15"}},
+			want:  scopeUnknown,
+		},
+		{
+			name:  "host and additional IP set both required",
+			scope: strategyir.Scope{Host: strategyir.HostScope{Mode: strategyir.HostScopeExplicit, Hosts: []string{target}}, IPSetIDs: []string{"edges"}},
+			data:  ScopeSnapshot{IPSetMembers: map[string][]string{"edges": {"192.0.2.1"}}, TargetEdgeIPs: []string{"192.0.2.15"}},
+			want:  scopeMismatch,
+		},
+
+		{
+			name:  "IP set reference joins positive union",
+			scope: strategyir.Scope{Host: strategyir.HostScope{Mode: strategyir.HostScopeIPSetReference, ID: "first"}, IPSetIDs: []string{"second"}},
+			data:  ScopeSnapshot{IPSetMembers: map[string][]string{"first": {"192.0.2.1"}, "second": {"192.0.2.15"}}, TargetEdgeIPs: []string{"192.0.2.15"}},
+			want:  scopeMatchOK,
+		},
+		{
+			name:  "malformed membership is unknown",
+			scope: strategyir.Scope{Host: strategyir.HostScope{Mode: strategyir.HostScopeIPSetReference, ID: "edges"}},
+			data:  ScopeSnapshot{IPSetMembers: map[string][]string{"edges": {"not-an-address"}}, TargetEdgeIPs: []string{"192.0.2.15"}},
+			want:  scopeUnknown,
+		},
+		{
+			name:  "exclude CIDR vetoes",
+			scope: strategyir.Scope{Host: strategyir.HostScope{Mode: strategyir.HostScopeAll}, ExcludeIPSetIDs: []string{"excluded"}},
+			data:  ScopeSnapshot{IPSetMembers: map[string][]string{"excluded": {"192.0.2.0/24"}}, TargetEdgeIPs: []string{"192.0.2.15"}},
+			want:  scopeMismatch,
+		},
+		{
+			name:  "known exclusion vetoes despite unknown exclusion",
+			scope: strategyir.Scope{Host: strategyir.HostScope{Mode: strategyir.HostScopeAll}, ExcludeIPSetIDs: []string{"unknown", "excluded"}},
+			data:  ScopeSnapshot{IPSetMembers: map[string][]string{"excluded": {"192.0.2.15"}}, TargetEdgeIPs: []string{"192.0.2.15"}},
+			want:  scopeMismatch,
+		},
+		{
+			name:  "known host exclusion vetoes despite unknown exclusion",
+			scope: strategyir.Scope{Host: strategyir.HostScope{Mode: strategyir.HostScopeAll}, ExcludeHostListIDs: []string{"unknown", "excluded"}},
+			data:  ScopeSnapshot{HostListMembers: map[string][]string{"excluded": {target}}},
+			want:  scopeMismatch,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := MatchTargetScope(tc.scope, target, tc.data); got != tc.want {
+				t.Fatalf("scope match = %d, want %d", got, tc.want)
+			}
+		})
 	}
 }

@@ -51,7 +51,7 @@ There are no score, rank, winner, best, probability, or expected-success fields.
 
 Planner examines all findings, not only `PrimaryFinding`. A profile/A-B label such as `STILL_FAILING` or an edge-dependent primary finding does not invent a mechanism: a concrete underlying TLS/DNS/TCP boundary is used when present. Edge-dependent and successful-edge counterevidence remains a limitation and never increases confidence.
 
-## Effect adapter and transport
+## Effect adapter and target selector
 
 The conservative adapter maps StrategyIR into `attribution.StrategyCapabilities`; it contains no backend argv or flags.
 
@@ -61,13 +61,21 @@ The conservative adapter maps StrategyIR into `attribution.StrategyCapabilities`
 - DNS, TCP-connect, window-shaping, unknown, and ambiguous effects are never inferred from ClientHello operations.
 - Raw UDP cannot become an evidence-driven candidate because Observatory V1 has no raw-UDP evidence model.
 
-Planner delegates stage and transport comparison to `attribution.CouldStrategyAffectFailure`; it does not recreate contradictory stage logic.
+Planner delegates stage and transport comparison to `attribution.CouldStrategyAffectFailure`; it does not recreate contradictory stage logic. Before backend compilation, Planner also requires every applicable selector dimension to cover the concrete attributed target:
+
+- The target port must parse as a nonzero `uint16`; TCP strategies use `TCPPorts`, QUIC strategies use `UDPPorts`, and a missing or malformed target port is `INSUFFICIENT_EVIDENCE`.
+- Observatory V1 evidence is outbound client traffic. `OUTBOUND` and `BOTH` selectors are compatible; `INBOUND` is `STRUCTURALLY_INAPPLICABLE` with `TARGET_DIRECTION_MISMATCH`. Future inbound Observatory evidence can generalize this contract.
+- `Request.Evidence.AddressFamily` is explicit evidence context, never parsed from `Attribution.NetworkContextKey`. `ANY` strategies accept IPv4 or IPv6; a specific family needs matching concrete evidence. Unknown family evidence is `INSUFFICIENT_EVIDENCE`; a known mismatch is `STRUCTURALLY_INAPPLICABLE`.
 
 ## Target scope snapshots
 
 `ScopeSnapshot` is pure caller data: resolved logical host-list membership, resolved IP-set membership, and observed target-edge IPs. Planner never treats a logical ID such as `youtube` as evidence of membership.
 
 `ALL` matches. Explicit and resolved host-list entries match normalized exact hosts and their subdomains (`example.com` matches `example.com` and `a.example.com`). Managed lists, auto-hostlists, exclusions, and IP sets are `TARGET_SCOPE_UNKNOWN` until the relevant membership is supplied. A known non-match or an exclusion is `TARGET_SCOPE_MISMATCH`. IP-set checks require target-edge IPs.
+
+Positive IP-set IDs use Zapret's repeated `--ipset` union: one known membership match is sufficient; all known misses are a mismatch; an unknown set with no known match is unknown. A host/domain condition and additional positive IP-set IDs are both required. An `IP_SET_REFERENCE` host ID participates in the same positive union. Snapshot entries accept IPv4/IPv6 addresses and CIDRs through `net/netip`; malformed target or membership data is unknown, never a known miss.
+
+Host-list and IP-set exclusions are vetoes. Any known exclusion match wins over missing or unknown exclusion snapshots; only when no exclusion matches does a missing or malformed required exclusion produce `TARGET_SCOPE_UNKNOWN`. Aggregation is independent of logical-ID input order.
 
 ## Backend and environment boundaries
 
