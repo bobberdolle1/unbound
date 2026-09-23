@@ -62,14 +62,24 @@ resolve_version() {
     fi
 }
 
-# go_ldflags injects the resolved version into the binary.
-#
-# resolve_version() already worked out the version (including --version), but
-# nothing passed it to the compiler, so `--version 2.6.0` produced a binary that
-# still reported the value compiled into engine.Version. With Actions
-# unavailable this script is the release path, so the drift would ship.
+# go_ldflags injects source identity at compile time. Packaged binaries do not
+# inspect a .git directory at runtime.
+resolve_build_commit() {
+    git -C "$PROJECT_ROOT" rev-parse --verify HEAD 2>/dev/null || echo "unknown"
+}
+
+resolve_build_dirty() {
+    if [ "$(resolve_build_commit)" = "unknown" ]; then
+        echo "unknown"
+    elif [ -n "$(git -C "$PROJECT_ROOT" status --porcelain --untracked-files=normal)" ]; then
+        echo "true"
+    else
+        echo "false"
+    fi
+}
+
 go_ldflags() {
-    echo "-s -w -X unbound/engine.Version=$(resolve_version)"
+    echo "-s -w -X unbound/engine.Version=$(resolve_version) -X unbound/engine.BuildCommit=$(resolve_build_commit) -X unbound/engine.BuildDirty=$(resolve_build_dirty) -X unbound/engine.BuildChannel=${UNBOUND_BUILD_CHANNEL:-development}"
 }
 
 # ── Prerequisite checks ──────────────────────────────────────────────────────

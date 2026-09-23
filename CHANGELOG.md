@@ -3,6 +3,15 @@
 Все значимые изменения проекта документируются в этом файле.
 
 
+## [0.7.0-dev] - Unreleased
+### Post-v0.6.9 lab consolidation
+
+- Serialize Doctor progress delivery and make headless CLI E2E execution hermetic.
+- Preserve executable and traversable runtime modes on Linux.
+- Match legacy macOS PF ownership exactly; update the Universal `tpws` source to Zapret commit `d437963452674faadfd45adcd62466272b5a2fcd`.
+- Restore every captured macOS SOCKS proxy state transactionally on stop.
+- Add build identity metadata and publish the v0.6.9 release-identity audit.
+
 ## [0.6.9] - 2026-09-11
 ### Windows release-correctness hotfix
 

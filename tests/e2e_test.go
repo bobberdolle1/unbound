@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -182,6 +183,31 @@ func TestE2E_VersionFlag(t *testing.T) {
 	pattern := regexp.MustCompile(`unbound\s+\S+\s+\(\w+/\w+\)`)
 	if !pattern.MatchString(out) {
 		t.Errorf("version output does not match expected format: %s", out)
+	}
+}
+
+func TestE2E_VersionJSON(t *testing.T) {
+	bin := buildTestBinary(t)
+	out, code := runBinary(t, bin, 10*time.Second, "--version", "--json")
+	if code != 0 {
+		t.Fatalf("--version --json exited %d; output: %s", code, out)
+	}
+
+	var identity engine.BuildIdentity
+	if err := json.Unmarshal([]byte(out), &identity); err != nil {
+		t.Fatalf("parse --version --json: %v; output: %s", err, out)
+	}
+	if identity.Version != engine.Version {
+		t.Errorf("version = %q, want %q", identity.Version, engine.Version)
+	}
+	if identity.OS == "" || identity.Arch == "" {
+		t.Errorf("platform identity is incomplete: %+v", identity)
+	}
+	if identity.Channel != "development" && identity.Channel != "release" {
+		t.Errorf("channel = %q", identity.Channel)
+	}
+	if identity.Commit != "unknown" && !regexp.MustCompile(`^[0-9a-f]{7,64}$`).MatchString(identity.Commit) {
+		t.Errorf("commit = %q", identity.Commit)
 	}
 }
 

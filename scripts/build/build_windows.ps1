@@ -1,6 +1,7 @@
 ﻿# UNBOUND — native Windows Wails build.
 # Usage: .\scripts\build\build_windows.ps1 [-DebugBuild]
-# Environment: UNBOUND_VERSION=<override>
+# Environment: UNBOUND_VERSION=<override>, UNBOUND_BUILD_COMMIT=<sha>,
+# UNBOUND_BUILD_DIRTY=true|false|unknown, UNBOUND_BUILD_CHANNEL=development|release
 
 [CmdletBinding()]
 param([switch]$DebugBuild)
@@ -19,11 +20,28 @@ Push-Location $ProjectRoot
 try {
     $ConfigVersion = (Get-Content "wails.json" -Raw | ConvertFrom-Json).info.productVersion
     $Version = if ($env:UNBOUND_VERSION) { $env:UNBOUND_VERSION } else { $ConfigVersion }
+    $BuildCommit = if ($env:UNBOUND_BUILD_COMMIT) {
+        $env:UNBOUND_BUILD_COMMIT
+    } else {
+        $commit = (& git rev-parse --verify HEAD 2>$null | Select-Object -First 1)
+        if ($commit) { $commit.Trim() } else { "unknown" }
+    }
+    $BuildDirty = if ($env:UNBOUND_BUILD_DIRTY) {
+        $env:UNBOUND_BUILD_DIRTY
+    } elseif ($BuildCommit -eq "unknown") {
+        "unknown"
+    } elseif ([string]::IsNullOrWhiteSpace((& git status --porcelain --untracked-files=normal | Out-String))) {
+        "false"
+    } else {
+        "true"
+    }
+    $BuildChannel = if ($env:UNBOUND_BUILD_CHANNEL) { $env:UNBOUND_BUILD_CHANNEL } else { "development" }
+    $LinkerFlags = "-H windowsgui -X unbound/engine.Version=$Version -X unbound/engine.BuildCommit=$BuildCommit -X unbound/engine.BuildDirty=$BuildDirty -X unbound/engine.BuildChannel=$BuildChannel"
     $WailsArgs = @(
         "build",
         "-clean",
         "-o", "unbound.exe",
-        "-ldflags", "-H windowsgui -X unbound/engine.Version=$Version"
+        "-ldflags", $LinkerFlags
     )
     if ($DebugBuild) {
         $WailsArgs += "-debug"

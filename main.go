@@ -79,10 +79,13 @@ func main() {
 	}
 
 	if *showVersion {
+		identity := engine.CurrentBuildIdentity()
 		if *jsonOutput {
-			fmt.Printf("{\"version\":\"%s\",\"os\":\"%s\",\"arch\":\"%s\"}\n", engine.Version, runtime.GOOS, runtime.GOARCH)
+			if err := json.NewEncoder(os.Stdout).Encode(identity); err != nil {
+				log.Fatalf("encode build identity: %v", err)
+			}
 		} else {
-			fmt.Printf("unbound %s (%s/%s)\n", engine.Version, runtime.GOOS, runtime.GOARCH)
+			fmt.Printf("unbound %s (%s/%s)\n", identity.Version, identity.OS, identity.Arch)
 		}
 		return
 	}
