@@ -128,9 +128,31 @@ type FakeModifiers struct {
 	TCPTimestamp         bool `json:"tcp_timestamp,omitempty"`
 }
 
+// RangeDirection selects the traffic direction whose range counter is bounded.
+type RangeDirection string
+
+const (
+	RangeDirectionIn  RangeDirection = "IN"
+	RangeDirectionOut RangeDirection = "OUT"
+)
+
+// RangeCounter names the upstream range counter without exposing its expression syntax.
+type RangeCounter string
+
+const (
+	RangeCounterPacketNumber     RangeCounter = "PACKET_NUMBER"
+	RangeCounterDataPacketNumber RangeCounter = "DATA_PACKET_NUMBER"
+	RangeCounterRelativeSequence RangeCounter = "RELATIVE_SEQUENCE"
+	RangeCounterDataPosition     RangeCounter = "DATA_POSITION"
+)
+
+// Cutoff bounds one typed upstream range counter. Limit is the inclusive terminal
+// counter value; Zapret2 currently spells DATA_PACKET_NUMBER as -d<limit> and
+// RELATIVE_SEQUENCE as -s<limit>.
 type Cutoff struct {
-	PacketCount   *int `json:"packet_count,omitempty"`
-	SequenceBytes *int `json:"sequence_bytes,omitempty"`
+	Direction RangeDirection `json:"direction"`
+	Counter   RangeCounter   `json:"counter"`
+	Limit     int            `json:"limit"`
 }
 
 type WindowShaping struct {
@@ -209,10 +231,19 @@ func Validate(s Strategy) error {
 			return fmt.Errorf("invalid transport %q", transport)
 		}
 	}
+	if containsTransport(s.Transport, TransportTCP) && len(s.Selector.TCPPorts) == 0 {
+		return fmt.Errorf("tcp transport requires tcp_ports")
+	}
+	if (containsTransport(s.Transport, TransportUDP) || containsTransport(s.Transport, TransportQUIC)) && len(s.Selector.UDPPorts) == 0 {
+		return fmt.Errorf("udp or quic transport requires udp_ports")
+	}
 	for _, protocol := range s.Selector.ApplicationProtocols {
 		if protocol != ApplicationAny && protocol != ApplicationHTTP && protocol != ApplicationTLS && protocol != ApplicationQUIC {
 			return fmt.Errorf("invalid application protocol %q", protocol)
 		}
+	}
+	if containsProtocol(s.Selector.ApplicationProtocols, ApplicationAny) && len(s.Selector.ApplicationProtocols) != 1 {
+		return fmt.Errorf("application ANY cannot be combined with other protocols")
 	}
 	for _, family := range s.Selector.IPFamilies {
 		if family != IPFamilyAny && family != IPFamilyV4 && family != IPFamilyV6 {
@@ -299,20 +330,17 @@ func validateOperation(op Operation) error {
 		if (p.Absolute == nil) == (p.Anchor == "") {
 			return fmt.Errorf("position must have exactly one of absolute or anchor")
 		}
-		if p.Absolute != nil && *p.Absolute < 0 {
-			return fmt.Errorf("absolute position must be non-negative")
+		if p.Absolute != nil {
+			if *p.Absolute < 0 {
+				return fmt.Errorf("absolute position must be non-negative")
+			}
+			if p.Offset != 0 {
+				return fmt.Errorf("absolute position cannot carry offset")
+			}
 		}
 		if p.Anchor != "" && p.Anchor != AnchorHost && p.Anchor != AnchorEndHost && p.Anchor != AnchorMidSLD && p.Anchor != AnchorSNIExt && p.Anchor != AnchorMethod {
 			return fmt.Errorf("invalid position anchor %q", p.Anchor)
 		}
-	}
-	if op.Type == OperationSplit || op.Type == OperationMultiSplit || op.Type == OperationMultiDisorder || op.Type == OperationTLSRecordSplit || op.Type == OperationHostFakeSplit {
-		if len(op.Positions) == 0 {
-			return fmt.Errorf("%s requires positions", op.Type)
-		}
-	}
-	if op.Type == OperationFakeInjection && !validateID(op.PayloadRef) {
-		return fmt.Errorf("fake injection requires logical payload_ref")
 	}
 	if op.PayloadRef != "" && !validateID(op.PayloadRef) {
 		return fmt.Errorf("invalid payload_ref")
@@ -333,20 +361,97 @@ func validateOperation(op Operation) error {
 		if op.Fake.TTL != nil && (*op.Fake.TTL < 1 || *op.Fake.TTL > 255) {
 			return fmt.Errorf("ttl must be 1..255")
 		}
+		if op.Fake.Repeat == 0 && op.Fake.TTL == nil && op.Fake.SequenceOffset == nil && op.Fake.AcknowledgmentOffset == nil && !op.Fake.TCPMD5 && !op.Fake.TCPTimestamp {
+			return fmt.Errorf("fake modifiers cannot be empty")
+		}
 	}
-	if op.Window != nil && op.Window.Window < 1 {
-		return fmt.Errorf("window must be positive")
+	if op.Window != nil && (op.Window.Window < 1 || op.Window.Scale < 0) {
+		return fmt.Errorf("window values must be positive")
 	}
 	if op.Cutoff != nil {
-		if op.Cutoff.PacketCount != nil && *op.Cutoff.PacketCount < 1 {
-			return fmt.Errorf("packet_count must be positive")
+		if op.Cutoff.Direction != RangeDirectionIn && op.Cutoff.Direction != RangeDirectionOut {
+			return fmt.Errorf("invalid cutoff direction %q", op.Cutoff.Direction)
 		}
-		if op.Cutoff.SequenceBytes != nil && *op.Cutoff.SequenceBytes < 1 {
-			return fmt.Errorf("sequence_bytes must be positive")
+		switch op.Cutoff.Counter {
+		case RangeCounterPacketNumber, RangeCounterDataPacketNumber, RangeCounterRelativeSequence, RangeCounterDataPosition:
+		default:
+			return fmt.Errorf("invalid cutoff counter %q", op.Cutoff.Counter)
 		}
-		if op.Cutoff.PacketCount != nil && op.Cutoff.SequenceBytes != nil {
-			return fmt.Errorf("cutoff may use one semantic bound")
+		if op.Cutoff.Limit < 1 || op.Cutoff.Limit > 1<<31-1 {
+			return fmt.Errorf("cutoff limit must be 1..2147483647")
 		}
+	}
+	requirePositions := func(exactlyOne bool) error {
+		if len(op.Positions) == 0 || (exactlyOne && len(op.Positions) != 1) {
+			return fmt.Errorf("%s requires %spositions", op.Type, map[bool]string{true: "exactly one ", false: ""}[exactlyOne])
+		}
+		return nil
+	}
+	forbid := func(field, value string, present bool) error {
+		if present {
+			return fmt.Errorf("%s cannot carry %s", op.Type, field)
+		}
+		return nil
+	}
+	switch op.Type {
+	case OperationSplit:
+		if err := requirePositions(true); err != nil {
+			return err
+		}
+	case OperationMultiSplit:
+		if err := requirePositions(false); err != nil {
+			return err
+		}
+		if op.OverlapPatternRef != "" && op.SequenceOverlap == nil {
+			return fmt.Errorf("%s overlap_pattern_ref requires sequence_overlap", op.Type)
+		}
+	case OperationMultiDisorder:
+		if err := requirePositions(false); err != nil {
+			return err
+		}
+	case OperationTLSRecordSplit:
+		if err := requirePositions(false); err != nil {
+			return err
+		}
+	case OperationFakeInjection:
+		if !validateID(op.PayloadRef) {
+			return fmt.Errorf("fake injection requires logical payload_ref")
+		}
+	case OperationHostFakeSplit:
+		if err := requirePositions(false); err != nil {
+			return err
+		}
+	case OperationWindowShaping:
+		if op.Window == nil {
+			return fmt.Errorf("window shaping requires window")
+		}
+	}
+	allowsPositions := op.Type == OperationSplit || op.Type == OperationMultiSplit || op.Type == OperationMultiDisorder || op.Type == OperationTLSRecordSplit || op.Type == OperationHostFakeSplit
+	allowsPayload := op.Type == OperationFakeInjection
+	allowsOverlap := op.Type == OperationMultiSplit
+	allowsFake := op.Type == OperationFakeInjection || op.Type == OperationMultiDisorder || op.Type == OperationHostFakeSplit
+	allowsHostTemplate := op.Type == OperationHostFakeSplit
+	allowsWindow := op.Type == OperationWindowShaping
+	if err := forbid("positions", "", len(op.Positions) != 0 && !allowsPositions); err != nil {
+		return err
+	}
+	if err := forbid("payload_ref", op.PayloadRef, op.PayloadRef != "" && !allowsPayload); err != nil {
+		return err
+	}
+	if err := forbid("sequence_overlap", "", op.SequenceOverlap != nil && !allowsOverlap); err != nil {
+		return err
+	}
+	if err := forbid("overlap_pattern_ref", op.OverlapPatternRef, op.OverlapPatternRef != "" && !allowsOverlap); err != nil {
+		return err
+	}
+	if err := forbid("fake", "", op.Fake != nil && !allowsFake); err != nil {
+		return err
+	}
+	if err := forbid("host_template", op.HostTemplate, op.HostTemplate != "" && !allowsHostTemplate); err != nil {
+		return err
+	}
+	if err := forbid("window", "", op.Window != nil && !allowsWindow); err != nil {
+		return err
 	}
 	return nil
 }
@@ -360,12 +465,21 @@ func containsTransport(transports []Transport, expected Transport) bool {
 	return false
 }
 
+func containsProtocol(protocols []ApplicationProtocol, expected ApplicationProtocol) bool {
+	for _, protocol := range protocols {
+		if protocol == expected {
+			return true
+		}
+	}
+	return false
+}
+
 // Canonicalize normalizes semantic sets without changing operation or position order.
 func Canonicalize(s Strategy) (Strategy, error) {
 	if err := Validate(s); err != nil {
 		return Strategy{}, err
 	}
-	out := s
+	out := cloneStrategy(s)
 	out.Transport = sortedUnique(out.Transport)
 	out.Selector.ApplicationProtocols = sortedUnique(out.Selector.ApplicationProtocols)
 	out.Selector.IPFamilies = sortedUnique(out.Selector.IPFamilies)
@@ -379,6 +493,59 @@ func Canonicalize(s Strategy) (Strategy, error) {
 		out.Operations[index].HostTemplate = strings.ToLower(out.Operations[index].HostTemplate)
 	}
 	return out, nil
+}
+
+func cloneStrategy(s Strategy) Strategy {
+	out := s
+	out.Transport = append([]Transport(nil), s.Transport...)
+	out.Selector.ApplicationProtocols = append([]ApplicationProtocol(nil), s.Selector.ApplicationProtocols...)
+	out.Selector.IPFamilies = append([]IPFamily(nil), s.Selector.IPFamilies...)
+	out.Selector.TCPPorts = append([]PortRange(nil), s.Selector.TCPPorts...)
+	out.Selector.UDPPorts = append([]PortRange(nil), s.Selector.UDPPorts...)
+	out.Selector.Scope.Host.Hosts = append([]string(nil), s.Selector.Scope.Host.Hosts...)
+	out.Selector.Scope.ExcludeHostListIDs = append([]string(nil), s.Selector.Scope.ExcludeHostListIDs...)
+	out.Selector.Scope.IPSetIDs = append([]string(nil), s.Selector.Scope.IPSetIDs...)
+	out.Selector.Scope.ExcludeIPSetIDs = append([]string(nil), s.Selector.Scope.ExcludeIPSetIDs...)
+	out.Operations = make([]Operation, len(s.Operations))
+	for i, op := range s.Operations {
+		out.Operations[i] = op
+		out.Operations[i].Positions = append([]PositionExpr(nil), op.Positions...)
+		for j, position := range op.Positions {
+			if position.Absolute != nil {
+				value := *position.Absolute
+				out.Operations[i].Positions[j].Absolute = &value
+			}
+		}
+		if op.SequenceOverlap != nil {
+			value := *op.SequenceOverlap
+			out.Operations[i].SequenceOverlap = &value
+		}
+		if op.Fake != nil {
+			fake := *op.Fake
+			if op.Fake.TTL != nil {
+				value := *op.Fake.TTL
+				fake.TTL = &value
+			}
+			if op.Fake.SequenceOffset != nil {
+				value := *op.Fake.SequenceOffset
+				fake.SequenceOffset = &value
+			}
+			if op.Fake.AcknowledgmentOffset != nil {
+				value := *op.Fake.AcknowledgmentOffset
+				fake.AcknowledgmentOffset = &value
+			}
+			out.Operations[i].Fake = &fake
+		}
+		if op.Window != nil {
+			window := *op.Window
+			out.Operations[i].Window = &window
+		}
+		if op.Cutoff != nil {
+			cutoff := *op.Cutoff
+			out.Operations[i].Cutoff = &cutoff
+		}
+	}
+	return out
 }
 func sortedUnique[T ~string](in []T) []T {
 	out := append([]T(nil), in...)

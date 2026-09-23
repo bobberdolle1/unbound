@@ -36,7 +36,7 @@ func TestZapretCompilersShadowRepresentativeStrategies(t *testing.T) {
 }
 
 func TestTPWSCompilerAndUnsupportedContract(t *testing.T) {
-	strategy := strategyir.Strategy{SchemaVersion: strategyir.SchemaVersion, ID: "tpws-split", Name: "tpws split", Transport: []strategyir.Transport{strategyir.TransportTCP}, Selector: strategyir.TrafficSelector{ApplicationProtocols: []strategyir.ApplicationProtocol{strategyir.ApplicationTLS}, IPFamilies: []strategyir.IPFamily{strategyir.IPFamilyAny}, Direction: strategyir.DirectionOutbound, TCPPorts: []strategyir.PortRange{{Start: 443, End: 443}}, Scope: strategyir.Scope{Host: strategyir.HostScope{Mode: strategyir.HostScopeAll}}}, Operations: []strategyir.Operation{{Type: strategyir.OperationMultiSplit, Positions: []strategyir.PositionExpr{{Absolute: new(1)}, {Anchor: strategyir.AnchorMidSLD}}}, {Type: strategyir.OperationTLSRecordSplit, Positions: []strategyir.PositionExpr{{Absolute: new(1)}, {Anchor: strategyir.AnchorMidSLD}}}, {Type: strategyir.OperationDisorder}}, Safety: strategyir.SafetyPolicy{Aggressiveness: "LOW", TargetOnly: false}}
+	strategy := strategyir.Strategy{SchemaVersion: strategyir.SchemaVersion, ID: "tpws-split", Name: "tpws split", Transport: []strategyir.Transport{strategyir.TransportTCP}, Selector: strategyir.TrafficSelector{ApplicationProtocols: []strategyir.ApplicationProtocol{strategyir.ApplicationAny}, IPFamilies: []strategyir.IPFamily{strategyir.IPFamilyAny}, Direction: strategyir.DirectionOutbound, TCPPorts: []strategyir.PortRange{{Start: 443, End: 443}}, Scope: strategyir.Scope{Host: strategyir.HostScope{Mode: strategyir.HostScopeAll}}}, Operations: []strategyir.Operation{{Type: strategyir.OperationMultiSplit, Positions: []strategyir.PositionExpr{{Absolute: new(1)}, {Anchor: strategyir.AnchorMidSLD}}}, {Type: strategyir.OperationTLSRecordSplit, Positions: []strategyir.PositionExpr{{Absolute: new(1)}, {Anchor: strategyir.AnchorMidSLD}}}, {Type: strategyir.OperationDisorder}}, Safety: strategyir.SafetyPolicy{Aggressiveness: "LOW"}}
 	result := Compile(strategy, Zapret1TPWSDarwin)
 	if result.Status != StatusCompiled || !contains(result.Plan.Argv, "--tlsrec=1,midsld") || !contains(result.Plan.Argv, "--disorder") {
 		t.Fatalf("tpws compile = %#v", result)
@@ -135,7 +135,7 @@ func hasReason(reasons []Reason, expected ReasonCode) bool {
 
 func TestTPWSNeverBroadensTargetScope(t *testing.T) {
 	result := Compile(strategyir.RepresentativeFixtures()["discord-tcp"], Zapret1TPWSDarwin)
-	if result.Status != StatusUnsupported || !hasReason(result.Unsupported, UnsupportedPortScope) || len(result.Plan.Argv) != 0 {
+	if result.Status != StatusUnsupported || !hasReason(result.Unsupported, UnsupportedScope) || len(result.Plan.Argv) != 0 {
 		t.Fatalf("target scope was not rejected before compilation: %#v", result)
 	}
 }
@@ -147,7 +147,7 @@ func TestTPWSCompilerPreservesHTTPHostCase(t *testing.T) {
 		Name:          "tpws HTTP host case",
 		Transport:     []strategyir.Transport{strategyir.TransportTCP},
 		Selector: strategyir.TrafficSelector{
-			ApplicationProtocols: []strategyir.ApplicationProtocol{strategyir.ApplicationHTTP},
+			ApplicationProtocols: []strategyir.ApplicationProtocol{strategyir.ApplicationAny},
 			IPFamilies:           []strategyir.IPFamily{strategyir.IPFamilyAny},
 			Direction:            strategyir.DirectionOutbound,
 			TCPPorts:             []strategyir.PortRange{{Start: 80, End: 80}},
@@ -159,5 +159,153 @@ func TestTPWSCompilerPreservesHTTPHostCase(t *testing.T) {
 	result := Compile(strategy, Zapret1TPWSDarwin)
 	if result.Status != StatusCompiled || !contains(result.Plan.Argv, "--hostcase") {
 		t.Fatalf("tpws HTTP host case = %#v", result)
+	}
+}
+
+func TestCompilerRejectsMissingPortScopeAsInvalid(t *testing.T) {
+	strategy := strategyir.RepresentativeFixtures()["discord-tcp"]
+	strategy.Selector.TCPPorts = nil
+	result := Compile(strategy, Zapret2Windows)
+	if result.Status != StatusInvalid || !hasReason(result.Unsupported, InvalidIR) || len(result.Plan.Argv) != 0 {
+		t.Fatalf("missing port scope compiled: %#v", result)
+	}
+}
+
+func TestApplicationProtocolCompilationIsExact(t *testing.T) {
+	httpTLS := strategyir.RepresentativeFixtures()["discord-tcp"]
+	httpTLS.Selector.ApplicationProtocols = []strategyir.ApplicationProtocol{strategyir.ApplicationTLS, strategyir.ApplicationHTTP}
+	result := Compile(httpTLS, Zapret2Windows)
+	if result.Status != StatusCompiled || !contains(result.Plan.Argv, "--payload=http_req,tls_client_hello") {
+		t.Fatalf("HTTP+TLS was not compiled exactly: %#v", result)
+	}
+
+	invalid := httpTLS
+	invalid.Selector.ApplicationProtocols = []strategyir.ApplicationProtocol{strategyir.ApplicationAny, strategyir.ApplicationTLS}
+	if result := Compile(invalid, Zapret2Windows); result.Status != StatusInvalid {
+		t.Fatalf("ANY+TLS was not invalid: %#v", result)
+	}
+
+	quic := strategyir.RepresentativeFixtures()["discord-tcp"]
+	quic.Transport = []strategyir.Transport{strategyir.TransportQUIC}
+	quic.Selector.TCPPorts = nil
+	quic.Selector.UDPPorts = []strategyir.PortRange{{Start: 443, End: 443}}
+	quic.Selector.ApplicationProtocols = []strategyir.ApplicationProtocol{strategyir.ApplicationQUIC}
+	result = Compile(quic, Zapret2Windows)
+	if result.Status != StatusCompiled || !contains(result.Plan.Argv, "--filter-udp=443") || !contains(result.Plan.Argv, "--payload=quic_initial") {
+		t.Fatalf("single QUIC protocol was not compiled exactly: %#v", result)
+	}
+
+	if result := Compile(httpTLS, Zapret1TPWSDarwin); result.Status != StatusUnsupported || !hasReason(result.Unsupported, UnsupportedApplicationProtocol) {
+		t.Fatalf("tpws accepted an unpreservable protocol set: %#v", result)
+	}
+}
+
+func TestFakeModifierCapabilitiesAreIndividual(t *testing.T) {
+	cases := []struct {
+		name string
+		set  func(*strategyir.FakeModifiers)
+		off  func(*Capabilities)
+	}{
+		{"repeat", func(f *strategyir.FakeModifiers) { f.Repeat = 1 }, func(c *Capabilities) { c.FakeRepeat = false }},
+		{"ttl", func(f *strategyir.FakeModifiers) { f.TTL = new(1) }, func(c *Capabilities) { c.FakeTTL = false }},
+		{"sequence offset", func(f *strategyir.FakeModifiers) { f.SequenceOffset = new(1) }, func(c *Capabilities) { c.FakeSequenceOffset = false }},
+		{"acknowledgment offset", func(f *strategyir.FakeModifiers) { f.AcknowledgmentOffset = new(1) }, func(c *Capabilities) { c.FakeAcknowledgmentOffset = false }},
+		{"tcp md5", func(f *strategyir.FakeModifiers) { f.TCPMD5 = true }, func(c *Capabilities) { c.FakeTCPMD5 = false }},
+		{"tcp timestamp", func(f *strategyir.FakeModifiers) { f.TCPTimestamp = true }, func(c *Capabilities) { c.FakeTCPTimestamp = false }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			strategy := strategyir.RepresentativeFixtures()["alternative-fake-tls"]
+			strategy.Operations[0].Fake = &strategyir.FakeModifiers{}
+			tc.set(strategy.Operations[0].Fake)
+			caps := Get(Zapret2Windows)
+			tc.off(&caps)
+			if reasons := compatibility(strategy, caps); !hasReason(reasons, UnsupportedFakeModifier) {
+				t.Fatalf("unsupported modifier was accepted: %#v", reasons)
+			}
+		})
+	}
+}
+
+func TestTypedCutoffRangesCompileOrFailClosed(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		strategy strategyir.Strategy
+		expected string
+	}{
+		{"out data packet eight", strategyir.RepresentativeFixtures()["recommended-hostfakesplit"], "--out-range=-d8"},
+		{"out data packet three", strategyir.RepresentativeFixtures()["steam-safe-game-filter"], "--out-range=-d3"},
+		{"in relative sequence 4096", func() strategyir.Strategy {
+			s := strategyir.RepresentativeFixtures()["alternative-multisplit"]
+			s.Operations[0].Cutoff = &strategyir.Cutoff{Direction: strategyir.RangeDirectionIn, Counter: strategyir.RangeCounterRelativeSequence, Limit: 4096}
+			return s
+		}(), "--in-range=-s4096"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result := Compile(tc.strategy, Zapret2Windows)
+			if result.Status != StatusCompiled || !contains(result.Plan.Argv, tc.expected) {
+				t.Fatalf("cutoff was not compiled: %#v", result)
+			}
+		})
+	}
+	unsupported := strategyir.Strategy{
+		SchemaVersion: strategyir.SchemaVersion, ID: "tpws-cutoff", Name: "tpws cutoff",
+		Transport: []strategyir.Transport{strategyir.TransportTCP},
+		Selector: strategyir.TrafficSelector{ApplicationProtocols: []strategyir.ApplicationProtocol{strategyir.ApplicationAny}, IPFamilies: []strategyir.IPFamily{strategyir.IPFamilyAny}, Direction: strategyir.DirectionOutbound, TCPPorts: []strategyir.PortRange{{Start: 443, End: 443}}, Scope: strategyir.Scope{Host: strategyir.HostScope{Mode: strategyir.HostScopeAll}}},
+		Operations: []strategyir.Operation{{Type: strategyir.OperationMultiSplit, Positions: []strategyir.PositionExpr{{Absolute: new(1)}}, Cutoff: &strategyir.Cutoff{Direction: strategyir.RangeDirectionOut, Counter: strategyir.RangeCounterDataPacketNumber, Limit: 8}}},
+		Safety:     strategyir.SafetyPolicy{Aggressiveness: "LOW"},
+	}
+	if result := Compile(unsupported, Zapret1TPWSDarwin); result.Status != StatusUnsupported || !hasReason(result.Unsupported, UnsupportedCutoff) {
+		t.Fatalf("tpws accepted an unpreservable cutoff: %#v", result)
+	}
+}
+
+func TestSplitIsOnePositionMultiSplitSemanticAlias(t *testing.T) {
+	base := strategyir.RepresentativeFixtures()["discord-tcp"]
+	base.Operations = []strategyir.Operation{{Type: strategyir.OperationSplit, Positions: []strategyir.PositionExpr{{Absolute: new(1)}}}}
+	split := Compile(base, Zapret2Windows)
+	base.Operations[0].Type = strategyir.OperationMultiSplit
+	multi := Compile(base, Zapret2Windows)
+	if split.Status != StatusCompiled || multi.Status != StatusCompiled || !slices.Equal(split.Plan.Argv, multi.Plan.Argv) {
+		t.Fatalf("one-position split equivalence changed: %#v %#v", split, multi)
+	}
+}
+
+func TestRepresentativeGoldenSemanticFragments(t *testing.T) {
+	expected := map[string][]string{
+		"recommended-hostfakesplit": {"--filter-tcp=80,443", "--payload=tls_client_hello", "--hostlist=${asset:youtube}", "--hostlist-exclude=${asset:steam-web-exclude}", "--ipset-exclude=${asset:ipset-steam-exclude}", "--lua-desync=hostfakesplit:midhost=midsld:host=ozon.ru:repeats=4:tcp_md5:tcp_ts", "--out-range=-d8"},
+		"alternative-multisplit":   {"--filter-tcp=80,443", "--payload=tls_client_hello", "--hostlist=${asset:youtube}", "--lua-desync=multisplit:pos=2:seqovl=652:seqovl_pattern=${asset:tls-google}", "--out-range=-d8"},
+		"alternative-fake-tls":     {"--filter-tcp=443", "--payload=tls_client_hello", "--lua-desync=fake:blob=${asset:tls-clienthello-default}:repeats=11:tcp_ack=-66000:tcp_ts", "--lua-desync=multidisorder:pos=1,midsld:repeats=11", "--out-range=-d8"},
+		"discord-tcp":              {"--filter-tcp=443,5222-5223,5228", "--payload=tls_client_hello", "--hostlist-domains=discord.com,gateway.discord.gg", "--lua-desync=multisplit:pos=1"},
+		"steam-safe-game-filter":   {"--filter-tcp=1024-65535", "--ipset=${asset:ipset-all}", "--hostlist-exclude=${asset:steam-web-exclude}", "--ipset-exclude=${asset:ipset-exclude}", "--lua-desync=multisplit:pos=1:seqovl=652:seqovl_pattern=${asset:tls-google}", "--out-range=-d3"},
+	}
+	for name, fragments := range expected {
+		t.Run(name, func(t *testing.T) {
+			result := Compile(strategyir.RepresentativeFixtures()[name], Zapret2Windows)
+			if result.Status != StatusCompiled {
+				t.Fatalf("fixture did not compile: %#v", result)
+			}
+			for _, fragment := range fragments {
+				if !contains(result.Plan.Argv, fragment) {
+					t.Fatalf("missing trusted semantic fragment %q in %v", fragment, result.Plan.Argv)
+				}
+			}
+			if name == "discord-tcp" && containsPrefix(result.Plan.Argv, "--out-range=") {
+				t.Fatalf("discord scope gained an untrusted cutoff: %v", result.Plan.Argv)
+			}
+		})
+	}
+}
+
+func TestCatalogCoverageIsDeclaredAndCounted(t *testing.T) {
+	counts := map[strategyir.Coverage]int{}
+	for _, entry := range strategyir.CatalogCoverage() {
+		counts[entry.Coverage]++
+		if entry.Profile == "Saved discovered profiles" && entry.MissingCapability != "opaque legacy argv import is intentionally absent" {
+			t.Fatalf("saved discovered profile coverage implies unsupported parsing behavior: %#v", entry)
+		}
+	}
+	if counts[strategyir.Representable] != 1 || counts[strategyir.PartiallyRepresentable] != 9 || counts[strategyir.Unrepresentable] != 3 {
+		t.Fatalf("catalog coverage counts = %#v", counts)
 	}
 }

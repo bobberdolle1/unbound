@@ -1,6 +1,7 @@
 package strategyir
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -83,5 +84,114 @@ func TestTypedPositionAndPortValidation(t *testing.T) {
 	strategy.Selector.TCPPorts[1] = PortRange{Start: 8443, End: 443}
 	if err := Validate(strategy); err == nil {
 		t.Fatal("invalid port range accepted")
+	}
+}
+
+func TestTransportPortScopesAreMandatory(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		transport []Transport
+		selector  TrafficSelector
+	}{
+		{"tcp", []Transport{TransportTCP}, TrafficSelector{TCPPorts: []PortRange{{Start: 443, End: 443}}}},
+		{"udp", []Transport{TransportUDP}, TrafficSelector{UDPPorts: []PortRange{{Start: 443, End: 443}}}},
+		{"quic", []Transport{TransportQUIC}, TrafficSelector{UDPPorts: []PortRange{{Start: 443, End: 443}}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			strategy := RepresentativeFixtures()["discord-tcp"]
+			strategy.Transport = tc.transport
+			strategy.Selector.TCPPorts = tc.selector.TCPPorts
+			strategy.Selector.UDPPorts = tc.selector.UDPPorts
+			if err := Validate(strategy); err != nil {
+				t.Fatalf("valid %s scope rejected: %v", tc.name, err)
+			}
+			if tc.transport[0] == TransportTCP {
+				strategy.Selector.TCPPorts = nil
+			} else {
+				strategy.Selector.UDPPorts = nil
+			}
+			if err := Validate(strategy); err == nil {
+				t.Fatal("missing transport port scope accepted")
+			}
+		})
+	}
+}
+
+func TestApplicationProtocolSetValidation(t *testing.T) {
+	strategy := RepresentativeFixtures()["discord-tcp"]
+	strategy.Selector.ApplicationProtocols = []ApplicationProtocol{ApplicationHTTP, ApplicationTLS}
+	if err := Validate(strategy); err != nil {
+		t.Fatalf("HTTP+TLS rejected: %v", err)
+	}
+	strategy.Selector.ApplicationProtocols = []ApplicationProtocol{ApplicationAny, ApplicationTLS}
+	if err := Validate(strategy); err == nil {
+		t.Fatal("ANY+TLS accepted")
+	}
+	strategy = RepresentativeFixtures()["discord-tcp"]
+	strategy.Transport = []Transport{TransportQUIC}
+	strategy.Selector.TCPPorts = nil
+	strategy.Selector.UDPPorts = []PortRange{{Start: 443, End: 443}}
+	strategy.Selector.ApplicationProtocols = []ApplicationProtocol{ApplicationQUIC}
+	if err := Validate(strategy); err != nil {
+		t.Fatalf("single QUIC protocol rejected: %v", err)
+	}
+}
+
+func TestStrictOperationUnionAndPositionValidation(t *testing.T) {
+	valid := RepresentativeFixtures()["alternative-multisplit"]
+	cases := []struct {
+		name string
+		op   Operation
+	}{
+		{"split requires one position", Operation{Type: OperationSplit, Positions: []PositionExpr{{Absolute: new(1)}, {Absolute: new(2)}}}},
+		{"multisplit rejects payload", Operation{Type: OperationMultiSplit, Positions: []PositionExpr{{Absolute: new(1)}}, PayloadRef: "tls-google"}},
+		{"multisplit rejects window", Operation{Type: OperationMultiSplit, Positions: []PositionExpr{{Absolute: new(1)}}, Window: &WindowShaping{Window: 1}}},
+		{"fake rejects positions", Operation{Type: OperationFakeInjection, PayloadRef: "tls-google", Positions: []PositionExpr{{Absolute: new(1)}}}},
+		{"window rejects fake", Operation{Type: OperationWindowShaping, Window: &WindowShaping{Window: 1}, Fake: &FakeModifiers{Repeat: 1}}},
+		{"host case rejects modifiers", Operation{Type: OperationHTTPHostCase, Fake: &FakeModifiers{Repeat: 1}}},
+		{"tls record rejects payload", Operation{Type: OperationTLSRecordSplit, Positions: []PositionExpr{{Absolute: new(1)}}, PayloadRef: "tls-google"}},
+		{"absolute rejects offset", Operation{Type: OperationMultiSplit, Positions: []PositionExpr{{Absolute: new(1), Offset: 1}}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			strategy := valid
+			strategy.Operations = []Operation{tc.op}
+			if err := Validate(strategy); err == nil {
+				t.Fatal("invalid operation shape accepted")
+			}
+		})
+	}
+}
+
+func TestCanonicalizationDoesNotMutateInput(t *testing.T) {
+	strategy := RepresentativeFixtures()["recommended-hostfakesplit"]
+	strategy.Selector.Scope.Host.ID = "YouTube"
+	strategy.Selector.Scope.Host.ID = "youtube"
+	strategy.Selector.Scope.ExcludeHostListIDs = []string{"z-list", "a-list"}
+	strategy.Operations[0].HostTemplate = "OZON.RU"
+	before, err := json.Marshal(strategy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, action := range []struct {
+		name string
+		run  func(Strategy) error
+	}{
+		{"canonicalize", func(s Strategy) error { _, err := Canonicalize(s); return err }},
+		{"marshal", func(s Strategy) error { _, err := Marshal(s); return err }},
+		{"fingerprint", func(s Strategy) error { _, err := Fingerprint(s); return err }},
+	} {
+		t.Run(action.name, func(t *testing.T) {
+			if err := action.run(strategy); err != nil {
+				t.Fatal(err)
+			}
+			after, err := json.Marshal(strategy)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(before) != string(after) {
+				t.Fatalf("%s mutated caller-owned strategy", action.name)
+			}
+		})
 	}
 }

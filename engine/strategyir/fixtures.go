@@ -8,21 +8,21 @@ func RepresentativeFixtures() map[string]Strategy {
 			SchemaVersion: SchemaVersion, ID: "recommended-hostfakesplit", Name: "Recommended (hostfakesplit)",
 			Transport:  []Transport{TransportTCP},
 			Selector:   TrafficSelector{ApplicationProtocols: []ApplicationProtocol{ApplicationTLS}, IPFamilies: []IPFamily{IPFamilyV4, IPFamilyV6}, Direction: DirectionOutbound, TCPPorts: []PortRange{{Start: 80, End: 80}, {Start: 443, End: 443}}, Scope: Scope{Host: HostScope{Mode: HostScopeManagedList, ID: "youtube"}, ExcludeHostListIDs: []string{"steam-web-exclude"}, ExcludeIPSetIDs: []string{"ipset-steam-exclude"}}},
-			Operations: []Operation{{Type: OperationHostFakeSplit, Positions: []PositionExpr{{Anchor: AnchorMidSLD}}, HostTemplate: "ozon.ru", Fake: &FakeModifiers{Repeat: 4, TCPMD5: true, TCPTimestamp: true}, Cutoff: &Cutoff{PacketCount: new(8)}}},
+			Operations: []Operation{{Type: OperationHostFakeSplit, Positions: []PositionExpr{{Anchor: AnchorMidSLD}}, HostTemplate: "ozon.ru", Fake: &FakeModifiers{Repeat: 4, TCPMD5: true, TCPTimestamp: true}, Cutoff: &Cutoff{Direction: RangeDirectionOut, Counter: RangeCounterDataPacketNumber, Limit: 8}}},
 			Safety:     SafetyPolicy{Aggressiveness: "LOW", TargetOnly: true}, Metadata: Metadata{Source: "GetProfiles Recommended selected TCP section"},
 		},
 		"alternative-multisplit": {
 			SchemaVersion: SchemaVersion, ID: "alternative-multisplit", Name: "Alternative 1 (multisplit)",
 			Transport:  []Transport{TransportTCP},
 			Selector:   TrafficSelector{ApplicationProtocols: []ApplicationProtocol{ApplicationTLS}, IPFamilies: []IPFamily{IPFamilyAny}, Direction: DirectionOutbound, TCPPorts: []PortRange{{Start: 80, End: 80}, {Start: 443, End: 443}}, Scope: Scope{Host: HostScope{Mode: HostScopeManagedList, ID: "youtube"}}},
-			Operations: []Operation{{Type: OperationMultiSplit, Positions: []PositionExpr{{Absolute: new(2)}}, SequenceOverlap: new(652), OverlapPatternRef: "tls-google", Cutoff: &Cutoff{PacketCount: new(8)}}},
+			Operations: []Operation{{Type: OperationMultiSplit, Positions: []PositionExpr{{Absolute: new(2)}}, SequenceOverlap: new(652), OverlapPatternRef: "tls-google", Cutoff: &Cutoff{Direction: RangeDirectionOut, Counter: RangeCounterDataPacketNumber, Limit: 8}}},
 			Safety:     SafetyPolicy{Aggressiveness: "LOW", TargetOnly: true}, Metadata: Metadata{Source: "GetProfiles Alternative 1 selected TCP section"},
 		},
 		"alternative-fake-tls": {
 			SchemaVersion: SchemaVersion, ID: "alternative-fake-tls", Name: "Alternative 2 (fake TLS)",
 			Transport:  []Transport{TransportTCP},
 			Selector:   TrafficSelector{ApplicationProtocols: []ApplicationProtocol{ApplicationTLS}, IPFamilies: []IPFamily{IPFamilyAny}, Direction: DirectionOutbound, TCPPorts: []PortRange{{Start: 443, End: 443}}, Scope: Scope{Host: HostScope{Mode: HostScopeAll}}},
-			Operations: []Operation{{Type: OperationFakeInjection, PayloadRef: "tls-clienthello-default", Fake: &FakeModifiers{Repeat: 11, AcknowledgmentOffset: new(-66000), TCPTimestamp: true}}, {Type: OperationMultiDisorder, Positions: []PositionExpr{{Absolute: new(1)}, {Anchor: AnchorMidSLD}}, Fake: &FakeModifiers{Repeat: 11}}},
+			Operations: []Operation{{Type: OperationFakeInjection, PayloadRef: "tls-clienthello-default", Fake: &FakeModifiers{Repeat: 11, AcknowledgmentOffset: new(-66000), TCPTimestamp: true}, Cutoff: &Cutoff{Direction: RangeDirectionOut, Counter: RangeCounterDataPacketNumber, Limit: 8}}, {Type: OperationMultiDisorder, Positions: []PositionExpr{{Absolute: new(1)}, {Anchor: AnchorMidSLD}}, Fake: &FakeModifiers{Repeat: 11}}},
 			Safety:     SafetyPolicy{Aggressiveness: "HIGH", TargetOnly: false, MayAffectTLS: true}, Metadata: Metadata{Source: "GetProfiles Alternative 2 selected TCP section"},
 		},
 		"discord-tcp": {
@@ -34,7 +34,7 @@ func RepresentativeFixtures() map[string]Strategy {
 		"steam-safe-game-filter": {
 			SchemaVersion: SchemaVersion, ID: "steam-safe-game-filter", Name: "Games & Steam (Game Filter)", Transport: []Transport{TransportTCP},
 			Selector:   TrafficSelector{ApplicationProtocols: []ApplicationProtocol{ApplicationAny}, IPFamilies: []IPFamily{IPFamilyAny}, Direction: DirectionOutbound, TCPPorts: []PortRange{{Start: 1024, End: 65535}}, Scope: Scope{Host: HostScope{Mode: HostScopeIPSetReference, ID: "ipset-all"}, ExcludeHostListIDs: []string{"steam-web-exclude"}, ExcludeIPSetIDs: []string{"ipset-exclude"}}},
-			Operations: []Operation{{Type: OperationMultiSplit, Positions: []PositionExpr{{Absolute: new(1)}}, SequenceOverlap: new(652), OverlapPatternRef: "tls-google", Cutoff: &Cutoff{PacketCount: new(3)}}},
+			Operations: []Operation{{Type: OperationMultiSplit, Positions: []PositionExpr{{Absolute: new(1)}}, SequenceOverlap: new(652), OverlapPatternRef: "tls-google", Cutoff: &Cutoff{Direction: RangeDirectionOut, Counter: RangeCounterDataPacketNumber, Limit: 3}}},
 			Safety:     SafetyPolicy{Aggressiveness: "MEDIUM", TargetOnly: true, MayAffectSteam: true}, Metadata: Metadata{Source: "GetGamesSteamProfiles game TCP section"},
 		},
 	}
@@ -54,8 +54,8 @@ type LegacyCoverage struct {
 	MissingCapability string   `json:"missing_capability,omitempty"`
 }
 
-// CatalogCoverage is an explicit migration report for the static production corpus.
-// Saved discovered profiles are data-dependent and remain legacy until imported explicitly.
+// CatalogCoverage is a declared migration report for reviewed static source profiles.
+// It does not parse or verify saved/custom profile data.
 func CatalogCoverage() []LegacyCoverage {
 	return []LegacyCoverage{
 		{"Recommended (hostfakesplit)", PartiallyRepresentable, "multi-section capture/raw filter composition"},
