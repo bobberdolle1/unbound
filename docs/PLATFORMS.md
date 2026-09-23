@@ -57,7 +57,7 @@ Windows YouTube evidence from 2026-09-22 resolved `www.youtube.com` to Google ed
 
 ## Целостность и происхождение
 
-- Zapret 2 закреплён на `v1.0.3` (`b78b52c4…`) для Windows/Linux.
+- Zapret2 для Windows/Linux закреплён на [`v1.0.5.1`](https://github.com/bol-van/zapret2/releases/tag/v1.0.5.1), commit [`a1bca5a85e25ab138e9617a560c262fcf53e969a`](https://github.com/bol-van/zapret2/commit/a1bca5a85e25ab138e9617a560c262fcf53e969a).
 - macOS `tpws` собирается как Universal (`x86_64` + `arm64`) из exact upstream commit [`d437963452674faadfd45adcd62466272b5a2fcd`](https://github.com/bol-van/zapret/commit/d437963452674faadfd45adcd62466272b5a2fcd), следующего за base tag `v72.13`; это не upstream release tag. Причина pin: upstream исправление совместимости macOS resolver stack. Не маркировать как `v72.14`.
 - Полные URL, commit SHA, SHA256 исходного архива и артефакта, лицензии и список вендоренных путей находятся в [`../engine/ENGINE_PROVENANCE.json`](../engine/ENGINE_PROVENANCE.json).
 - Встроенные runtime-ассеты сверяются с [`../engine/ENGINE_ASSETS.sha256`](../engine/ENGINE_ASSETS.sha256) перед привилегированным запуском. Каждый релизный архив содержит `BUNDLE_SHA256SUMS.txt`; GitHub Release содержит `SHA256SUMS.txt`.
