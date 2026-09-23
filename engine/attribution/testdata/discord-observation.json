@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "run_id": "discord-windows-physical",
+  "started_at": "2026-03-01T12:00:00Z",
+  "finished_at": "2026-03-01T12:00:03Z",
+  "platform": "windows/amd64",
+  "network_context": {"network_label": "lab-a", "address_family": "ipv4"},
+  "target": {"name": "Discord", "hostname": "discord.com", "port": "443", "requested_protocol": "tcp"},
+  "resolved_addresses": [
+    {"ip": "162.159.137.232", "address_family": "ipv4", "resolver_order": 0},
+    {"ip": "162.159.128.233", "address_family": "ipv4", "resolver_order": 1},
+    {"ip": "162.159.136.232", "address_family": "ipv4", "resolver_order": 2},
+    {"ip": "162.159.135.232", "address_family": "ipv4", "resolver_order": 3},
+    {"ip": "162.159.138.232", "address_family": "ipv4", "resolver_order": 4}
+  ],
+  "primary_attempt_index": 0,
+  "final_boundary": "handshake",
+  "classification": "TLS_HANDSHAKE_TIMEOUT",
+  "attempts": [
+    {"resolved_ip":"162.159.137.232","address_family":"ipv4","transport":"tcp","stages":[{"stage":"resolve","status":"PASS"},{"stage":"connect","status":"PASS"},{"stage":"hello","status":"PASS"},{"stage":"handshake","status":"TIMEOUT","class":"TLS_HANDSHAKE_TIMEOUT"}]},
+    {"resolved_ip":"162.159.128.233","address_family":"ipv4","transport":"tcp","stages":[{"stage":"resolve","status":"PASS"},{"stage":"connect","status":"PASS"},{"stage":"hello","status":"PASS"},{"stage":"handshake","status":"TIMEOUT","class":"TLS_HANDSHAKE_TIMEOUT"}]},
+    {"resolved_ip":"162.159.136.232","address_family":"ipv4","transport":"tcp","stages":[{"stage":"resolve","status":"PASS"},{"stage":"connect","status":"TIMEOUT","class":"TCP_CONNECT_TIMEOUT"}]},
+    {"resolved_ip":"162.159.135.232","address_family":"ipv4","transport":"tcp","stages":[{"stage":"resolve","status":"PASS"},{"stage":"connect","status":"TIMEOUT","class":"TCP_CONNECT_TIMEOUT"}]},
+    {"resolved_ip":"162.159.138.232","address_family":"ipv4","transport":"tcp","stages":[{"stage":"resolve","status":"PASS"},{"stage":"connect","status":"TIMEOUT","class":"TCP_CONNECT_TIMEOUT"}]}
+  ]
+}
