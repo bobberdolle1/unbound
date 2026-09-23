@@ -139,3 +139,25 @@ func TestTPWSNeverBroadensTargetScope(t *testing.T) {
 		t.Fatalf("target scope was not rejected before compilation: %#v", result)
 	}
 }
+
+func TestTPWSCompilerPreservesHTTPHostCase(t *testing.T) {
+	strategy := strategyir.Strategy{
+		SchemaVersion: strategyir.SchemaVersion,
+		ID:            "tpws-http-host-case",
+		Name:          "tpws HTTP host case",
+		Transport:     []strategyir.Transport{strategyir.TransportTCP},
+		Selector: strategyir.TrafficSelector{
+			ApplicationProtocols: []strategyir.ApplicationProtocol{strategyir.ApplicationHTTP},
+			IPFamilies:           []strategyir.IPFamily{strategyir.IPFamilyAny},
+			Direction:            strategyir.DirectionOutbound,
+			TCPPorts:             []strategyir.PortRange{{Start: 80, End: 80}},
+			Scope:                strategyir.Scope{Host: strategyir.HostScope{Mode: strategyir.HostScopeAll}},
+		},
+		Operations: []strategyir.Operation{{Type: strategyir.OperationHTTPHostCase}},
+		Safety:     strategyir.SafetyPolicy{Aggressiveness: "LOW", TargetOnly: false},
+	}
+	result := Compile(strategy, Zapret1TPWSDarwin)
+	if result.Status != StatusCompiled || !contains(result.Plan.Argv, "--hostcase") {
+		t.Fatalf("tpws HTTP host case = %#v", result)
+	}
+}
