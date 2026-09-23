@@ -32,6 +32,22 @@ env:
 
 jobs:
   # ───────────────────────────────────────────────────────────────────────────
+  # Workflow semantics — actionlint rejects invalid Actions contracts before
+  # platform-specific jobs are scheduled.
+  workflow-lint:
+    name: Workflow semantics
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Install pinned actionlint
+        run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+      - name: Lint workflow files
+        run: find .github/workflows -type f \( -name '*.yml' -o -name '*.yaml' \) -print0 | xargs -0 actionlint
+
+  # ───────────────────────────────────────────────────────────────────────────
   # Frontend — must build before Go, which embeds frontend/dist
   # ───────────────────────────────────────────────────────────────────────────
   frontend:

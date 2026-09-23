@@ -6,13 +6,15 @@
 2. Create an **annotated** version tag on that commit. Never retarget, recreate, or force-move it.
 3. Build every published platform artifact once from that tag. A release build injects `version`, `commit`, `dirty=false`, and `channel=release`; it never discovers Git metadata at runtime.
 4. Generate one SHA-256 manifest from those artifacts before publication.
-5. Create a draft GitHub Release, upload the artifacts and the manifest, then publish the completed draft. The workflow refuses an already-existing release for the same tag.
-6. Download the published `SHA256SUMS.txt` and every published artifact; verify every remote digest against the locally generated manifest.
+5. Create a draft GitHub Release, upload the artifacts and manifest, then download and verify every **draft** asset against the local manifest. The workflow refuses any existing release for the tag.
+6. Publish only after draft verification passes; download the published manifest and artifacts again to verify their digests.
 7. Run physical acceptance only with the published artifacts, then record an immutable acceptance manifest with the source commit, artifact digests, platform, date, and network context.
 
 A released binary is never silently replaced under the same version. A binary defect requires a new source commit and a new version/tag.
 
 GitHub immutable releases are available as a repository setting: **Settings → General → Releases → Enable release immutability**. Enable it before the next release. Immutable releases require the draft-upload-publish sequence because assets and metadata become locked at publication. The current v0.6.9 Release API reports `immutable=false`; policy and workflow safeguards apply until the GitHub setting is enabled.
+Manual `workflow_dispatch` runs may build and package a ref, but publication is forbidden unless the workflow runs on an existing annotated tag that passed commit and version gates.
+
 
 ## Build identity
 
