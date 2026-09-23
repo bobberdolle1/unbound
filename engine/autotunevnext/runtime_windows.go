@@ -26,14 +26,15 @@ const windowsCaptureReadyMarker = "windivert initialized. capture is started."
 const windowsStillActive = 259
 
 type WindowsRuntime struct {
-	opts         RuntimeOptions
-	mu           sync.Mutex
-	snapshots    map[string]providerSnapshot
-	nextID       atomic.Uint64
-	active       *windowsCandidate
-	ownedPIDs    map[int]struct{}
-	processAlive func(int) (bool, error)
-	cleanupWait  time.Duration
+	opts          RuntimeOptions
+	mu            sync.Mutex
+	snapshots     map[string]providerSnapshot
+	nextID        atomic.Uint64
+	active        *windowsCandidate
+	ownedPIDs     map[int]struct{}
+	attachProcess func(windows.Handle, int) error
+	processAlive  func(int) (bool, error)
+	cleanupWait   time.Duration
 }
 
 type windowsCandidate struct {
@@ -52,11 +53,12 @@ func NewWindowsRuntime(options RuntimeOptions) (*WindowsRuntime, error) {
 		return nil, fmt.Errorf("Windows vNext runtime needs product provider and assets")
 	}
 	return &WindowsRuntime{
-		opts:         options,
-		snapshots:    make(map[string]providerSnapshot),
-		ownedPIDs:    make(map[int]struct{}),
-		processAlive: windowsProcessAlive,
-		cleanupWait:  10 * time.Second,
+		opts:          options,
+		snapshots:     make(map[string]providerSnapshot),
+		ownedPIDs:     make(map[int]struct{}),
+		attachProcess: attachWindowsProcess,
+		processAlive:  windowsProcessAlive,
+		cleanupWait:   10 * time.Second,
 	}, nil
 }
 
@@ -74,6 +76,9 @@ func (e *WindowsRuntime) Check(_ context.Context, request HostPreflightRequest) 
 	}
 	if request.Capture.BackendKind != backendcap.CaptureWinDivert {
 		return unsupported("UNSUPPORTED_CAPTURE")
+	}
+	if request.Capture.Transport != backendcap.CaptureTransportTCP {
+		return unsupported("UNSUPPORTED_CAPTURE_TRANSPORT")
 	}
 	if e.opts.Provider.GetStatus() == providers.StatusStarting || e.opts.Provider.GetStatus() == providers.StatusStopping {
 		return unsupported("PROVIDER_STATE_UNCERTAIN")
@@ -179,18 +184,6 @@ func (e *WindowsRuntime) Activate(ctx context.Context, candidate ExecutableCandi
 		e.mu.Unlock()
 		return fmt.Errorf("start verified winws2: %w", err)
 	}
-	process, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(cmd.Process.Pid))
-	if err == nil {
-		err = windows.AssignProcessToJobObject(job, process)
-		_ = windows.CloseHandle(process)
-	}
-	if err != nil {
-		_ = cmd.Process.Kill()
-		_ = windows.CloseHandle(job)
-		cancel()
-		e.mu.Unlock()
-		return fmt.Errorf("attach owned winws2 to crash guard job: %w", err)
-	}
 	active := &windowsCandidate{cmd: cmd, done: make(chan struct{}), ready: make(chan struct{}, 1), cancel: cancel, job: job, pid: cmd.Process.Pid}
 	e.active = active
 	e.ownedPIDs[active.pid] = struct{}{}
@@ -198,6 +191,9 @@ func (e *WindowsRuntime) Activate(ctx context.Context, candidate ExecutableCandi
 	go windowsReadReady(stdout, active.ready)
 	go windowsReadReady(stderr, active.ready)
 	go func() { _ = cmd.Wait(); close(active.done) }()
+	if err := e.attachProcess(job, active.pid); err != nil {
+		return e.postStartFailure(ctx, active, fmt.Errorf("attach owned winws2 to crash guard job: %w", err))
+	}
 	e.opts.emit(PhysicalLog{Backend: string(backendcap.Zapret2Windows), StrategyID: candidate.Strategy.ID, Fingerprint: shortFingerprint(candidate.Fingerprint), Edge: candidate.TargetEdge.String(), Phase: "STARTING", PID: active.pid})
 	select {
 	case <-active.ready:
@@ -213,6 +209,15 @@ func (e *WindowsRuntime) Activate(ctx context.Context, candidate ExecutableCandi
 		_ = e.Deactivate(context.Background())
 		return fmt.Errorf("timed out waiting for CAPTURE_READY")
 	}
+}
+
+func (e *WindowsRuntime) postStartFailure(ctx context.Context, _ *windowsCandidate, cause error) error {
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), e.cleanupTimeout())
+	defer cancel()
+	if err := e.Deactivate(cleanupCtx); err != nil {
+		return fmt.Errorf("%w; retain owned startup PID after rollback failure: %v", cause, err)
+	}
+	return cause
 }
 
 func (e *WindowsRuntime) VerifyActive(_ context.Context, _ ExecutableCandidate) error {
@@ -380,6 +385,15 @@ func newKillOnCloseJob() (windows.Handle, error) {
 		return 0, err
 	}
 	return job, nil
+}
+
+func attachWindowsProcess(job windows.Handle, pid int) error {
+	process, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(pid))
+	if err != nil {
+		return err
+	}
+	defer windows.CloseHandle(process)
+	return windows.AssignProcessToJobObject(job, process)
 }
 
 func windowsProcessAlive(pid int) (bool, error) {

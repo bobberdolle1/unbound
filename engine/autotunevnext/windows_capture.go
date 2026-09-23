@@ -23,47 +23,34 @@ func RenderWindowsTargetCapture(capture backendcap.CapturePlan, edge net.IP, fam
 	if !captureIncludesFamily(capture.IPFamilies, family) || familyForIP(edge) != family {
 		return "", fmt.Errorf("selected target edge family is outside compiled capture")
 	}
-	if capture.Direction != strategyir.DirectionOutbound && capture.Direction != strategyir.DirectionInbound && capture.Direction != strategyir.DirectionBoth {
-		return "", fmt.Errorf("unsupported capture direction %s", capture.Direction)
+	if capture.Transport != backendcap.CaptureTransportTCP {
+		return "", fmt.Errorf("physical Windows target guards support TCP only")
 	}
-	var protocol string
-	var ports []strategyir.PortRange
-	switch capture.Transport {
-	case backendcap.CaptureTransportTCP:
-		protocol, ports = "tcp", capture.TCPPorts
-	case backendcap.CaptureTransportUDP:
-		protocol, ports = "udp", capture.UDPPorts
-	default:
-		return "", fmt.Errorf("unsupported capture transport %s", capture.Transport)
-	}
-	if len(ports) == 0 {
+	if len(capture.TCPPorts) == 0 {
 		return "", fmt.Errorf("compiled capture has no ports")
 	}
-	portExpr := make([]string, 0, len(ports))
-	for _, port := range ports {
+	portExpr := make([]string, 0, len(capture.TCPPorts))
+	for _, port := range capture.TCPPorts {
 		if port.Start <= 0 || port.End < port.Start || port.End > 65535 {
 			return "", fmt.Errorf("invalid compiled port range %d-%d", port.Start, port.End)
 		}
 		if port.Start == port.End {
-			portExpr = append(portExpr, fmt.Sprintf("%s.DstPort == %d", protocol, port.Start))
+			portExpr = append(portExpr, fmt.Sprintf("tcp.DstPort == %d", port.Start))
 		} else {
-			portExpr = append(portExpr, fmt.Sprintf("(%s.DstPort >= %d and %s.DstPort <= %d)", protocol, port.Start, protocol, port.End))
+			portExpr = append(portExpr, fmt.Sprintf("(tcp.DstPort >= %d and tcp.DstPort <= %d)", port.Start, port.End))
 		}
 	}
 	addressField := "ip.DstAddr"
 	if family == observatory.AddressFamilyIPv6 {
 		addressField = "ipv6.DstAddr"
 	}
+	// --wf-raw-filter is ANDed with the typed WinDivert constructor. Keep its
+	// semantic direction there; this guard must also admit reverse SYN+ACK,
+	// FIN, and RST traffic for the exact selected TCP endpoint.
 	outbound := fmt.Sprintf("outbound and %s == %s and (%s)", addressField, edge.String(), strings.Join(portExpr, " or "))
-	if capture.Direction == strategyir.DirectionOutbound {
-		return outbound, nil
-	}
 	inboundPorts := strings.ReplaceAll(strings.Join(portExpr, " or "), ".DstPort", ".SrcPort")
 	inboundField := strings.ReplaceAll(addressField, ".DstAddr", ".SrcAddr")
 	inbound := fmt.Sprintf("inbound and %s == %s and (%s)", inboundField, edge.String(), inboundPorts)
-	if capture.Direction == strategyir.DirectionInbound {
-		return inbound, nil
-	}
 	return "(" + outbound + ") or (" + inbound + ")", nil
 }
 

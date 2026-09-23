@@ -20,8 +20,8 @@ func TestRenderWindowsTargetCaptureIsExact(t *testing.T) {
 		family           observatory.AddressFamily
 		capture          backendcap.CapturePlan
 	}{
-		{"ipv4 outbound", "192.0.2.7", "outbound and ip.DstAddr == 192.0.2.7 and (tcp.DstPort == 443 or (tcp.DstPort >= 50000 and tcp.DstPort <= 50010))", observatory.AddressFamilyIPv4, exactCapture(backendcap.CaptureWinDivert, strategyir.IPFamilyV4, strategyir.DirectionOutbound, strategyir.PortRange{Start: 443, End: 443}, strategyir.PortRange{Start: 50000, End: 50010})},
-		{"ipv6 outbound", "2001:db8::7", "outbound and ipv6.DstAddr == 2001:db8::7 and (tcp.DstPort == 443)", observatory.AddressFamilyIPv6, exactCapture(backendcap.CaptureWinDivert, strategyir.IPFamilyV6, strategyir.DirectionOutbound, strategyir.PortRange{Start: 443, End: 443})},
+		{"ipv4 tcp range", "192.0.2.7", "(outbound and ip.DstAddr == 192.0.2.7 and (tcp.DstPort == 443 or (tcp.DstPort >= 50000 and tcp.DstPort <= 50010))) or (inbound and ip.SrcAddr == 192.0.2.7 and (tcp.SrcPort == 443 or (tcp.SrcPort >= 50000 and tcp.SrcPort <= 50010)))", observatory.AddressFamilyIPv4, exactCapture(backendcap.CaptureWinDivert, strategyir.IPFamilyV4, strategyir.DirectionOutbound, strategyir.PortRange{Start: 443, End: 443}, strategyir.PortRange{Start: 50000, End: 50010})},
+		{"ipv6 tcp 443", "2001:db8::7", "(outbound and ipv6.DstAddr == 2001:db8::7 and (tcp.DstPort == 443)) or (inbound and ipv6.SrcAddr == 2001:db8::7 and (tcp.SrcPort == 443))", observatory.AddressFamilyIPv6, exactCapture(backendcap.CaptureWinDivert, strategyir.IPFamilyV6, strategyir.DirectionOutbound, strategyir.PortRange{Start: 443, End: 443})},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -37,6 +37,13 @@ func TestRenderWindowsTargetCaptureIsExact(t *testing.T) {
 	}
 	if _, err := RenderWindowsTargetCapture(capture, nil, observatory.AddressFamilyIPv4); err == nil {
 		t.Fatal("accepted empty target edge")
+	}
+	udp := capture
+	udp.Transport = backendcap.CaptureTransportUDP
+	udp.TCPPorts = nil
+	udp.UDPPorts = []strategyir.PortRange{{Start: 443, End: 443}}
+	if _, err := RenderWindowsTargetCapture(udp, net.ParseIP("192.0.2.7"), observatory.AddressFamilyIPv4); err == nil {
+		t.Fatal("expanded physical target guard to unproven UDP semantics")
 	}
 }
 

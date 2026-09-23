@@ -201,3 +201,58 @@ func TestWindowsDeactivateRetainsOwnershipUntilFactualExit(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestWindowsJobAttachFailureRetainsPostStartOwnership(t *testing.T) {
+	provider := &windowsRuntimeProvider{status: providers.StatusRunning, profile: "original"}
+	runtime, err := NewWindowsRuntime(RuntimeOptions{Provider: provider, Assets: &engine.AssetPaths{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := runtime.Snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := newKillOnCloseJob()
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidateCtx, cancel := context.WithCancel(context.Background())
+	cmd := exec.CommandContext(candidateCtx, "powershell.exe", "-NoProfile", "-Command", "Start-Sleep -Seconds 60")
+	if err := cmd.Start(); err != nil {
+		_ = windows.CloseHandle(job)
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		_ = cmd.Wait()
+		close(done)
+	}()
+	active := &windowsCandidate{cmd: cmd, done: done, ready: make(chan struct{}, 1), cancel: cancel, job: job, pid: cmd.Process.Pid}
+	runtime.active = active
+	runtime.ownedPIDs[active.pid] = struct{}{}
+	runtime.attachProcess = func(windows.Handle, int) error { return errors.New("job assignment rejected") }
+	runtime.processAlive = func(int) (bool, error) { return true, nil }
+	attachErr := runtime.attachProcess(job, active.pid)
+	if attachErr == nil {
+		t.Fatal("injected job attachment failure did not fire")
+	}
+	if err := runtime.postStartFailure(context.Background(), active, attachErr); err == nil {
+		t.Fatal("uncertain post-start cleanup passed")
+	}
+	if runtime.active == nil {
+		t.Fatal("post-start PID ownership disappeared after uncertain cleanup")
+	}
+	if err := runtime.VerifyRestored(context.Background(), snapshot); err == nil {
+		t.Fatal("restoration passed with retained post-start PID")
+	}
+	runtime.processAlive = func(int) (bool, error) { return false, nil }
+	if err := runtime.Restore(context.Background(), snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.active != nil {
+		t.Fatal("factual post-start cleanup did not clear ownership")
+	}
+	if err := runtime.VerifyRestored(context.Background(), snapshot); err != nil {
+		t.Fatal(err)
+	}
+}

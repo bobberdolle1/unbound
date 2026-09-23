@@ -5,12 +5,15 @@ package autotunevnext
 import (
 	"context"
 	"errors"
+	"net"
+	"os/exec"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
 
 	"unbound/engine"
+	"unbound/engine/backendcap"
 	"unbound/engine/observatory"
 	"unbound/engine/providers"
 	"unbound/engine/strategyir"
@@ -35,6 +38,11 @@ func (r *linuxRunnerStub) lookPath(name string) (string, error) {
 	}
 	return "", errors.New("unavailable")
 }
+
+type linuxTestExitError int
+
+func (e linuxTestExitError) Error() string { return "iptables exit" }
+func (e linuxTestExitError) ExitCode() int { return int(e) }
 
 func ownedLinuxSpec() LinuxNFQueueSpec {
 	return LinuxNFQueueSpec{Table: "unbound_autotune_test", Queue: 40000, Marker: linuxOwnershipPrefix + ":test", Edge: []byte{192, 0, 2, 7}, Family: observatory.AddressFamilyIPv4, Ports: []strategyir.PortRange{{Start: 443, End: 443}}}
@@ -65,7 +73,7 @@ func TestLinuxDeactivateRetainsOwnershipUntilProcessAndRuleAreGone(t *testing.T)
 	runner := &linuxRunnerStub{paths: map[string]bool{}}
 	runner.runFn = func(_ string, args []string) (string, error) {
 		if strings.Contains(strings.Join(args, " "), " -C ") {
-			return "", errors.New("absent")
+			return "", linuxTestExitError(1)
 		}
 		return "", nil
 	}
@@ -91,7 +99,7 @@ func TestLinuxDeactivateRetainsOwnershipUntilProcessAndRuleAreGone(t *testing.T)
 			return "delete failed", errors.New("failure")
 		}
 		if strings.Contains(joined, " -C ") {
-			return "", errors.New("absent")
+			return "", linuxTestExitError(1)
 		}
 		return "", nil
 	}
@@ -185,10 +193,16 @@ func TestLinuxRuleDeletionRequiresFactualAbsence(t *testing.T) {
 		}, true},
 		{"iptables absent", "iptables", func(_ string, args []string) (string, error) {
 			if strings.Contains(strings.Join(args, " "), " -C ") {
-				return "", errors.New("absent")
+				return "", linuxTestExitError(1)
 			}
 			return "", nil
 		}, false},
+		{"iptables operational failure", "iptables", func(_ string, args []string) (string, error) {
+			if strings.Contains(strings.Join(args, " "), " -C ") {
+				return "", errors.New("xtables lock")
+			}
+			return "", nil
+		}, true},
 		{"nft listing failure", "nft", func(_ string, args []string) (string, error) {
 			if strings.Contains(strings.Join(args, " "), "list ruleset") {
 				return "", errors.New("audit unavailable")
@@ -205,6 +219,57 @@ func TestLinuxRuleDeletionRequiresFactualAbsence(t *testing.T) {
 				t.Fatalf("err=%v", err)
 			}
 		})
+	}
+}
+
+func TestLinuxStartFailureRollsBackTrackedRule(t *testing.T) {
+	runner := &linuxRunnerStub{paths: map[string]bool{"iptables": true}}
+	deleteFails := false
+	runner.runFn = func(_ string, args []string) (string, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, " -D ") && deleteFails {
+			return "", errors.New("delete failed")
+		}
+		if strings.Contains(joined, " -C ") {
+			return "", linuxTestExitError(1)
+		}
+		return "", nil
+	}
+	runtime := testLinuxRuntime(t, runner)
+	snapshot, err := runtime.Snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime.startProcess = func(context.Context, string, []string, string, *syscall.SysProcAttr) (*exec.Cmd, error) {
+		if runtime.active == nil || !runtime.active.ruleInstalled || runtime.active.processStarted {
+			t.Fatal("installed rule was not tracked before process start")
+		}
+		return nil, errors.New("nfqws start failed")
+	}
+	candidate := ExecutableCandidate{Plan: backendcap.Plan{Capture: exactCapture(backendcap.CaptureNFQUEUE, strategyir.IPFamilyV4, strategyir.DirectionOutbound, strategyir.PortRange{Start: 443, End: 443})}, TargetEdge: net.ParseIP("192.0.2.7"), TargetFamily: observatory.AddressFamilyIPv4}
+	if err := runtime.Activate(context.Background(), candidate); err == nil {
+		t.Fatal("start failure passed")
+	}
+	if runtime.active != nil {
+		t.Fatal("successful startup rollback retained ownership")
+	}
+
+	deleteFails = true
+	if err := runtime.Activate(context.Background(), candidate); err == nil {
+		t.Fatal("rollback failure passed")
+	}
+	if runtime.active == nil || !runtime.active.ruleInstalled || runtime.active.ruleRemoved {
+		t.Fatal("failed startup rollback lost installed-rule ownership")
+	}
+	deleteFails = false
+	if err := runtime.Restore(context.Background(), snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.active != nil {
+		t.Fatal("restore did not retry retained startup rule cleanup")
+	}
+	if err := runtime.VerifyRestored(context.Background(), snapshot); err != nil {
+		t.Fatal(err)
 	}
 }
 

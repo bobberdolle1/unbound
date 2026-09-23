@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -31,6 +32,7 @@ type LinuxRuntime struct {
 	active         *linuxCandidate
 	completed      []linuxOwnedState
 	runner         linuxRunner
+	startProcess   linuxProcessStarter
 	processAlive   func(int) (bool, error)
 	killGroup      func(int, syscall.Signal) error
 	readQueueState func() ([]byte, error)
@@ -40,13 +42,17 @@ type LinuxRuntime struct {
 }
 
 type linuxCandidate struct {
-	cmd      *exec.Cmd
-	done     chan struct{}
-	cancel   context.CancelFunc
-	spec     LinuxNFQueueSpec
-	mode     string
-	pid      int
-	cleaning bool
+	cmd            *exec.Cmd
+	done           chan struct{}
+	cancel         context.CancelFunc
+	spec           LinuxNFQueueSpec
+	mode           string
+	pid            int
+	ruleInstalled  bool
+	processStarted bool
+	processStopped bool
+	ruleRemoved    bool
+	cleaning       bool
 }
 
 type linuxOwnedState struct {
@@ -58,6 +64,15 @@ type linuxOwnedState struct {
 type linuxRunner interface {
 	run(context.Context, string, ...string) (string, error)
 	lookPath(string) (string, error)
+}
+
+type linuxProcessStarter func(context.Context, string, []string, string, *syscall.SysProcAttr) (*exec.Cmd, error)
+
+func execLinuxProcess(ctx context.Context, binary string, args []string, dir string, attributes *syscall.SysProcAttr) (*exec.Cmd, error) {
+	cmd := exec.CommandContext(ctx, binary, args...)
+	cmd.Dir = dir
+	cmd.SysProcAttr = attributes
+	return cmd, cmd.Start()
 }
 
 type execLinuxRunner struct{}
@@ -76,6 +91,7 @@ func NewLinuxRuntime(options RuntimeOptions) (*LinuxRuntime, error) {
 		opts:           options,
 		snapshots:      make(map[string]providerSnapshot),
 		runner:         execLinuxRunner{},
+		startProcess:   execLinuxProcess,
 		processAlive:   linuxProcessAlive,
 		killGroup:      linuxKillGroup,
 		readQueueState: readNFNetlinkQueues,
@@ -99,6 +115,9 @@ func (e *LinuxRuntime) Check(ctx context.Context, request HostPreflightRequest) 
 	}
 	if request.Capture.BackendKind != backendcap.CaptureNFQUEUE {
 		return unsupported("UNSUPPORTED_CAPTURE")
+	}
+	if request.Capture.Transport != backendcap.CaptureTransportTCP {
+		return unsupported("UNSUPPORTED_CAPTURE_TRANSPORT")
 	}
 	if os.Geteuid() != 0 {
 		return unsupported("PRIVILEGES_REQUIRED")
@@ -169,58 +188,69 @@ func (e *LinuxRuntime) Activate(ctx context.Context, candidate ExecutableCandida
 	if err != nil {
 		return err
 	}
-	if err := e.applyRule(ctx, mode, spec); err != nil {
-		return err
-	}
-	cleanupRule := true
-	defer func() {
-		if cleanupRule {
-			_ = e.deleteRule(context.WithoutCancel(ctx), mode, spec)
-		}
-	}()
-	args := append([]string{"--qnum=" + fmt.Sprint(queue)}, trustedLuaInitArgs(e.opts.Assets.LuaDir)...)
-	args = append(args, plan.EngineArgv...)
-	candidateCtx, cancel := candidateExecutionContext(ctx)
-	cmd := exec.CommandContext(candidateCtx, filepath.Join(e.opts.Assets.BinDir, "nfqws2"), args...)
-	cmd.Dir = e.opts.Assets.BinDir
-	cmd.SysProcAttr = linuxCandidateSysProcAttr()
-	if err := cmd.Start(); err != nil {
-		cancel()
-		return fmt.Errorf("start verified nfqws2 after exact rule preparation: %w", err)
-	}
-	active := &linuxCandidate{cmd: cmd, done: make(chan struct{}), cancel: cancel, spec: spec, mode: mode, pid: cmd.Process.Pid}
+	active := &linuxCandidate{done: make(chan struct{}), spec: spec, mode: mode}
 	e.mu.Lock()
 	if e.active != nil {
 		e.mu.Unlock()
-		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
-		cancel()
 		return fmt.Errorf("owned AutoTune candidate is already active")
 	}
 	e.active = active
 	e.mu.Unlock()
-	go func() { _ = cmd.Wait(); close(active.done) }()
+	if err := e.applyRule(ctx, mode, spec); err != nil {
+		e.mu.Lock()
+		if e.active == active {
+			e.active = nil
+		}
+		e.mu.Unlock()
+		return err
+	}
+	active.ruleInstalled = true
+	args := append([]string{"--qnum=" + fmt.Sprint(queue)}, trustedLuaInitArgs(e.opts.Assets.LuaDir)...)
+	args = append(args, plan.EngineArgv...)
+	candidateCtx, cancel := candidateExecutionContext(ctx)
+	active.cancel = cancel
+	cmd, err := e.startProcess(candidateCtx, filepath.Join(e.opts.Assets.BinDir, "nfqws2"), args, e.opts.Assets.BinDir, linuxCandidateSysProcAttr())
+	if err != nil {
+		cancel()
+		return e.activationFailure(ctx, active, fmt.Errorf("start verified nfqws2 after exact rule preparation: %w", err))
+	}
+	active.cmd, active.pid, active.processStarted = cmd, cmd.Process.Pid, true
+	go func() {
+		_ = cmd.Wait()
+		close(active.done)
+	}()
 	// A live process plus an exact, kernel-listed owned rule is the factual
 	// pre-observation capture proof. The active Observatory run drives packets.
 	select {
 	case <-active.done:
-		return fmt.Errorf("nfqws2 exited before capture became usable")
+		active.processStopped = true
+		return e.activationFailure(ctx, active, fmt.Errorf("nfqws2 exited before capture became usable"))
+	case <-ctx.Done():
+		return e.activationFailure(ctx, active, ctx.Err())
 	case <-time.After(150 * time.Millisecond):
 	}
 	if err := e.verifyRule(ctx, mode, spec); err != nil {
-		_ = e.Deactivate(context.WithoutCancel(ctx))
-		return err
+		return e.activationFailure(ctx, active, err)
 	}
-	cleanupRule = false
-	e.opts.emit(PhysicalLog{Backend: string(backendcap.Zapret2Linux), StrategyID: candidate.Strategy.ID, Fingerprint: shortFingerprint(candidate.Fingerprint), Edge: candidate.TargetEdge.String(), Phase: "CAPTURE_READY", PID: cmd.Process.Pid})
+	e.opts.emit(PhysicalLog{Backend: string(backendcap.Zapret2Linux), StrategyID: candidate.Strategy.ID, Fingerprint: shortFingerprint(candidate.Fingerprint), Edge: candidate.TargetEdge.String(), Phase: "CAPTURE_READY", PID: active.pid})
 	return nil
+}
+
+func (e *LinuxRuntime) activationFailure(ctx context.Context, _ *linuxCandidate, cause error) error {
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), e.cleanupTimeout())
+	defer cancel()
+	if err := e.Deactivate(cleanupCtx); err != nil {
+		return fmt.Errorf("%w; retain owned startup state after rollback failure: %v", cause, err)
+	}
+	return cause
 }
 
 func (e *LinuxRuntime) VerifyActive(_ context.Context, _ ExecutableCandidate) error {
 	e.mu.Lock()
 	active := e.active
 	e.mu.Unlock()
-	if active == nil {
-		return fmt.Errorf("no owned candidate to verify")
+	if active == nil || !active.processStarted {
+		return fmt.Errorf("owned nfqws2 is not running")
 	}
 	select {
 	case <-active.done:
@@ -240,35 +270,46 @@ func (e *LinuxRuntime) Deactivate(ctx context.Context) error {
 	active.cleaning = true
 	e.mu.Unlock()
 
-	active.cancel()
-	if err := e.killGroup(active.pid, syscall.SIGTERM); err != nil && err != syscall.ESRCH {
-		return fmt.Errorf("terminate owned nfqws2: %w", err)
+	if active.cancel != nil {
+		active.cancel()
 	}
-	select {
-	case <-active.done:
-	case <-time.After(e.cleanupTimeout()):
-		if err := e.killGroup(active.pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
-			return fmt.Errorf("force terminate owned nfqws2: %w", err)
+	if active.processStarted && !active.processStopped {
+		if err := e.killGroup(active.pid, syscall.SIGTERM); err != nil && err != syscall.ESRCH {
+			return fmt.Errorf("terminate owned nfqws2: %w", err)
 		}
 		select {
 		case <-active.done:
-		case <-time.After(e.forceCleanupTimeout()):
-			return fmt.Errorf("owned nfqws2 PID %d did not exit", active.pid)
+			active.processStopped = true
+		case <-time.After(e.cleanupTimeout()):
+			if err := e.killGroup(active.pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
+				return fmt.Errorf("force terminate owned nfqws2: %w", err)
+			}
+			select {
+			case <-active.done:
+				active.processStopped = true
+			case <-time.After(e.forceCleanupTimeout()):
+				return fmt.Errorf("owned nfqws2 PID %d did not exit", active.pid)
+			}
+		}
+		alive, err := e.processAlive(active.pid)
+		if err != nil {
+			return fmt.Errorf("audit owned nfqws2 PID %d after teardown: %w", active.pid, err)
+		}
+		if alive {
+			return fmt.Errorf("owned nfqws2 PID %d remains alive after teardown", active.pid)
 		}
 	}
-	alive, err := e.processAlive(active.pid)
-	if err != nil {
-		return fmt.Errorf("audit owned nfqws2 PID %d after teardown: %w", active.pid, err)
-	}
-	if alive {
-		return fmt.Errorf("owned nfqws2 PID %d remains alive after teardown", active.pid)
-	}
-	if err := e.deleteRule(context.WithoutCancel(ctx), active.mode, active.spec); err != nil {
-		return fmt.Errorf("delete exact owned NFQUEUE rule: %w", err)
+	if active.ruleInstalled && !active.ruleRemoved {
+		if err := e.deleteRule(context.WithoutCancel(ctx), active.mode, active.spec); err != nil {
+			return fmt.Errorf("delete exact owned NFQUEUE rule: %w", err)
+		}
+		active.ruleRemoved = true
 	}
 	e.mu.Lock()
 	if e.active == active {
-		e.completed = append(e.completed, linuxOwnedState{pid: active.pid, spec: active.spec, mode: active.mode})
+		if active.processStarted {
+			e.completed = append(e.completed, linuxOwnedState{pid: active.pid, spec: active.spec, mode: active.mode})
+		}
 		e.active = nil
 	}
 	e.mu.Unlock()
@@ -492,9 +533,8 @@ func (e *LinuxRuntime) deleteRule(ctx context.Context, mode string, spec LinuxNF
 	if err != nil {
 		return fmt.Errorf("iptables delete owned rule: %s", strings.TrimSpace(out))
 	}
-	parts = spec.iptablesArgs("-C")
-	if out, err := e.runner.run(ctx, parts[0], parts[1:]...); err == nil {
-		return fmt.Errorf("owned iptables rule remains after delete: %s", strings.TrimSpace(out))
+	if err := e.iptablesRuleAbsent(ctx, spec); err != nil {
+		return err
 	}
 	return nil
 }
@@ -510,11 +550,20 @@ func (e *LinuxRuntime) ownedRuleAbsent(ctx context.Context, mode string, spec Li
 		}
 		return nil
 	}
+	return e.iptablesRuleAbsent(ctx, spec)
+}
+
+func (e *LinuxRuntime) iptablesRuleAbsent(ctx context.Context, spec LinuxNFQueueSpec) error {
 	parts := spec.iptablesArgs("-C")
-	if out, err := e.runner.run(ctx, parts[0], parts[1:]...); err == nil {
+	out, err := e.runner.run(ctx, parts[0], parts[1:]...)
+	if err == nil {
 		return fmt.Errorf("owned iptables rule remains active: %s", strings.TrimSpace(out))
 	}
-	return nil
+	var exitCode interface{ ExitCode() int }
+	if errors.As(err, &exitCode) && exitCode.ExitCode() == 1 {
+		return nil
+	}
+	return fmt.Errorf("cannot factually audit owned iptables rule absence: %w", err)
 }
 
 func (e *LinuxRuntime) cleanupTimeout() time.Duration {
