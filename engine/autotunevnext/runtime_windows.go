@@ -38,14 +38,15 @@ type WindowsRuntime struct {
 }
 
 type windowsCandidate struct {
-	cmd       *exec.Cmd
-	done      chan struct{}
-	ready     chan struct{}
-	cancel    context.CancelFunc
-	job       windows.Handle
-	jobClosed bool
-	cleaning  bool
-	pid       int
+	cmd         *exec.Cmd
+	done        chan struct{}
+	ready       chan struct{}
+	cancel      context.CancelFunc
+	job         windows.Handle
+	jobClosed   bool
+	cleaning    bool
+	driverOwned bool
+	pid         int
 }
 
 func NewWindowsRuntime(options RuntimeOptions) (*WindowsRuntime, error) {
@@ -95,6 +96,13 @@ func (e *WindowsRuntime) Check(_ context.Context, request HostPreflightRequest) 
 	}
 	if request.Requirements.TCPTimestamps == engine.TimestampsRequired && !runtimeTimestampsActive() {
 		return unsupported("TCP_TIMESTAMPS_REQUIRED")
+	}
+	driverActive, err := windowsWinDivertRunning()
+	if err != nil {
+		return errored("WINDIVERT_STATE_UNAVAILABLE", err)
+	}
+	if driverActive {
+		return unsupported("WINDIVERT_OWNERSHIP_COLLISION")
 	}
 	e.mu.Lock()
 	active := e.active != nil
@@ -152,6 +160,13 @@ func (e *WindowsRuntime) Activate(ctx context.Context, candidate ExecutableCandi
 	args = append(args, "--wf-raw-filter="+filter)
 	args = append(args, plan.EngineArgv...)
 
+	driverActive, err := windowsWinDivertRunning()
+	if err != nil {
+		return fmt.Errorf("inspect WinDivert ownership before activation: %w", err)
+	}
+	if driverActive {
+		return fmt.Errorf("WinDivert is already active; refusing to claim shared capture state")
+	}
 	e.mu.Lock()
 	if e.active != nil {
 		e.mu.Unlock()
@@ -184,7 +199,7 @@ func (e *WindowsRuntime) Activate(ctx context.Context, candidate ExecutableCandi
 		e.mu.Unlock()
 		return fmt.Errorf("start verified winws2: %w", err)
 	}
-	active := &windowsCandidate{cmd: cmd, done: make(chan struct{}), ready: make(chan struct{}, 1), cancel: cancel, job: job, pid: cmd.Process.Pid}
+	active := &windowsCandidate{cmd: cmd, done: make(chan struct{}), ready: make(chan struct{}, 1), cancel: cancel, job: job, driverOwned: true, pid: cmd.Process.Pid}
 	e.active = active
 	e.ownedPIDs[active.pid] = struct{}{}
 	e.mu.Unlock()
@@ -268,6 +283,11 @@ func (e *WindowsRuntime) Deactivate(_ context.Context) error {
 	}
 	if alive {
 		return fmt.Errorf("owned winws2 PID %d remains alive after teardown", active.pid)
+	}
+	if active.driverOwned {
+		if err := windowsStopWinDivert(e.cleanupTimeout()); err != nil {
+			return fmt.Errorf("stop owned WinDivert driver after owned PID %d exit: %w", active.pid, err)
+		}
 	}
 	e.mu.Lock()
 	if e.active == active {
@@ -410,4 +430,44 @@ func windowsProcessAlive(pid int) (bool, error) {
 		return false, err
 	}
 	return exitCode == windowsStillActive, nil
+}
+
+func windowsWinDivertRunning() (bool, error) {
+	output, err := exec.Command("sc.exe", "query", "WinDivert").CombinedOutput()
+	text := strings.ToUpper(string(output))
+	if strings.Contains(text, "FAILED 1060") || strings.Contains(text, "DOES NOT EXIST") {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("query WinDivert service: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	return strings.Contains(text, "RUNNING"), nil
+}
+
+func windowsStopWinDivert(timeout time.Duration) error {
+	output, err := exec.Command("sc.exe", "stop", "WinDivert").CombinedOutput()
+	if err != nil {
+		running, stateErr := windowsWinDivertRunning()
+		if stateErr != nil {
+			return stateErr
+		}
+		if running {
+			return fmt.Errorf("stop WinDivert service: %w: %s", err, strings.TrimSpace(string(output)))
+		}
+		return nil
+	}
+	deadline := time.Now().Add(timeout)
+	for {
+		running, stateErr := windowsWinDivertRunning()
+		if stateErr != nil {
+			return stateErr
+		}
+		if !running {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("WinDivert service remains active after stop request")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
