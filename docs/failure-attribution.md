@@ -16,17 +16,17 @@ Attribution reports facts as `Finding.kind = FACT` and path interpretations as `
 
 `AttributionReport.schema_version` is `1`. It contains a deterministic `attribution_id`, a creation timestamp derived from the latest input observation completion time, input run IDs, a privacy-minimized target reference, optional network-context key, primary finding, findings, evidence references, counterevidence, limitations, confidence, and applicability.
 
-Evidence references contain only `run_id`, attempt index, and stage. Reports do not copy response bodies, cookies, authorization values, URL queries, userinfo, or native error strings.
+`TargetRef` serializes `scheme` when known, `hostname`, effective `port`, URL `path`, and `requested_protocol`. Endpoint identity uses these fields, so two observations for the same host but different paths are not pooled. It never serializes userinfo, query values, fragments, response bodies, cookies, authorization values, native error strings, or headers.
 
 ## Confidence rules
 
 Confidence is rule-derived; there are no numeric probabilities.
 
-- **LOW** — one relevant target failure, a missing required prerequisite, contradictory completed-path evidence, or a control cohort that does not establish a healthy comparison.
-- **MEDIUM** — the same target boundary repeats across at least two attempts or edges and at least two compatible control attempts complete valid HTTP paths. It is still a suspected path anomaly, not a mechanism claim.
-- **HIGH** — direct factual observations such as completed HTTP, an observed reset, or a controlled A/B differential label. HIGH is not used merely because a timeout repeated.
+- **LOW** — one relevant target failure, missing required prerequisite, heterogeneous target outcomes, incomplete control evidence, or a control cohort that does not establish a clean comparison.
+- **MEDIUM** — the same target boundary repeats across at least two independent compatible target runs; at least two independent compatible control runs complete valid HTTP paths; no compatible control run fails at that boundary; and no target evidence completes HTTP.
+- **HIGH** — direct factual observations such as completed HTTP, an observed reset, same-edge outcome variability, or a same-edge controlled A/B differential. HIGH is not used for suspected path mechanisms.
 
-A valid HTTP response is path-complete. HTTP 4xx/5xx produces the factual `HTTP_APPLICATION_FAILURE_OBSERVED`; it is never reclassified as TLS or transport failure. Redirects are successful path evidence.
+Run identity—not the number of attempts or repeated copies of the same evidence—establishes independence. Duplicate input never raises confidence. A valid HTTP response is path-complete. HTTP 4xx/5xx produces the factual `HTTP_APPLICATION_FAILURE_OBSERVED`; it is never reclassified as TLS or transport failure. Redirects are successful path evidence.
 
 ## Structural applicability
 
@@ -38,26 +38,26 @@ A finding never credits or blames a mechanism that cannot affect its failed boun
 - `QUIC_UNSUPPORTED` produces `INSUFFICIENT_EVIDENCE`; V1 makes no QUIC-path inference.
 - An observed reset produces `TCP_RESET_OBSERVED` or `TLS_RESET_OBSERVED`, never `RST_INJECTED`.
 
-`CouldStrategyAffectFailure(StrategyCapabilities, boundary, transport)` is an optional pure metadata helper for future StrategyIR work. A capability declares affected stages (`DNS`, `CONNECT`, `HELLO`, `HANDSHAKE`, `HTTP`, `QUIC`) and supported transports. The helper only answers structural possibility; it does not score, choose, or run a strategy. For example, a TCP ClientHello capability can affect HELLO/HANDSHAKE but not DNS or QUIC. A DNS capability is not credited for an HTTP-status change merely because it is earlier in the path.
+`CouldStrategyAffectFailure(StrategyCapabilities, boundary, transport)` is an optional pure metadata helper for future StrategyIR work. A capability declares transports (`TCP`, `QUIC`) separately from affected stages (`DNS`, `CONNECT`, `HELLO`, `HANDSHAKE`, `HTTP`). The helper first checks transport applicability, then stage applicability. It only answers structural possibility; it does not score, choose, or run a strategy. For example, TCP ClientHello capability can affect TCP HELLO/HANDSHAKE but not DNS or QUIC; a QUIC handshake capability is the inverse. A DNS capability is not credited for an HTTP-status change merely because it is earlier in the path.
 
 ## Controls, repetition, and edges
 
 Controls are supplied separately from target observations through `Cohort.Controls` or `--attribute-control`. A control is comparable only when platform, network label, address family, optional interface/gateway metadata, and a 30-minute observation window agree. Missing identity or an incompatible comparison is recorded as a limitation rather than silently pooled.
 
-Compatible controls with at least two successful HTTP attempts yield `CONTROL_PATH_HEALTHY`. Repeated target failures at a stage plus that healthy control may raise the target path hypothesis to MEDIUM. If compatible controls fail at the same boundary, V1 emits at most LOW `NETWORK_CONTEXT_FAILURE_SUSPECTED` instead of a target-specific elevation.
+One compatible successful control **run** yields MEDIUM factual `CONTROL_PATH_HEALTHY`; at least two independent successful control runs yield HIGH. Multiple successful edge attempts inside one run do not count as independent runs. If compatible controls fail at the target-relevant boundary, they produce `CONTROL_PATH_DEGRADED` rather than a cleanly healthy cohort and cannot elevate target TLS confidence.
 
-Different resolved IPs with materially different stage outcomes produce LOW `EDGE_DEPENDENT_FAILURE_SUSPECTED`. The per-edge facts remain available by evidence reference. Completed HTTP from another edge is explicit counterevidence and prevents a uniform path claim. Lower-boundary failure on a different edge is retained as edge-specific evidence but does not refute a later-stage finding for edges that reached it.
+Resolved IP plus address family identifies an edge. Across the compatible target cohort, stable materially different outcomes on distinct edges yield LOW `EDGE_DEPENDENT_FAILURE_SUSPECTED`. If one exact edge produces materially different outcomes across independent runs, V1 emits HIGH factual `OUTCOME_VARIABILITY_OBSERVED` and does not attribute the cohort difference to edge identity. Completed HTTP and materially different failure boundaries are counterevidence to a uniform path claim; heterogeneous TLS and TCP outcomes therefore cannot receive the confidence of homogeneous TLS failures.
 
 ## Direct/profile comparisons
 
-Observations with `execution_context.mode` of `direct` and `externally_active_profile` can receive factual differential labels only when target, network context, transport, and time window are comparable. Different resolved sets are recorded as a limitation; they do not prove a profile effect.
+Observations with `execution_context.mode` of `direct` and `externally_active_profile` receive factual differential labels only when endpoint identity, network context, transport, time window, **and an exact resolved IP plus address family** are comparable. Resolver set equality or resolver order alone is not sufficient. When no same-edge pair exists, V1 emits no A/B label and records `same_resolved_edge` as a limitation.
 
-- direct failure + profile success: `FIXED_BY_PROFILE`
-- direct success + profile failure: `BROKEN_BY_PROFILE`
-- both failure: `STILL_FAILING`
-- both success: `REACHABLE_DIRECTLY`
+- same-edge direct failure + profile success: `FIXED_BY_PROFILE`
+- same-edge direct success + profile failure: `BROKEN_BY_PROFILE`
+- same-edge both failure: `STILL_FAILING`
+- same-edge both success: `REACHABLE_DIRECTLY`
 
-These labels describe observed differentials. They do not identify why a profile changed the result. The retained historical Windows YouTube evidence—direct, current Recommended, and published v0.6.9 Recommended all failing—therefore maps to `STILL_FAILING`, not a regression claim or `BROKEN_BY_PROFILE`.
+The primary finding is the same-edge A/B fact when available, but `findings` retain direct-path boundary, edge, control, and counterevidence findings. These labels describe observed differentials only. They do not identify why a profile changed the result. The retained historical Windows YouTube evidence—direct, current Recommended, and published v0.6.9 Recommended all failing—therefore maps to `STILL_FAILING`, not a regression claim or `BROKEN_BY_PROFILE`.
 
 ## CLI
 

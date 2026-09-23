@@ -35,6 +35,7 @@ const (
 	FindingTLSPathFailureSuspected FindingCode = "TLS_PATH_FAILURE_SUSPECTED"
 	FindingHTTPApplicationFailure  FindingCode = "HTTP_APPLICATION_FAILURE_OBSERVED"
 	FindingEdgeDependentFailure    FindingCode = "EDGE_DEPENDENT_FAILURE_SUSPECTED"
+	FindingOutcomeVariability      FindingCode = "OUTCOME_VARIABILITY_OBSERVED"
 	FindingNetworkContextFailure   FindingCode = "NETWORK_CONTEXT_FAILURE_SUSPECTED"
 	FindingControlPathHealthy      FindingCode = "CONTROL_PATH_HEALTHY"
 	FindingControlPathDegraded     FindingCode = "CONTROL_PATH_DEGRADED"
@@ -54,10 +55,14 @@ type EvidenceRef struct {
 	Stage        observatory.Stage `json:"stage"`
 }
 
+// TargetRef deliberately excludes URL userinfo, query values, and fragments.
+// Scheme and path distinguish endpoint contracts that share a host.
 type TargetRef struct {
 	Name              string                `json:"name,omitempty"`
+	Scheme            string                `json:"scheme,omitempty"`
 	Hostname          string                `json:"hostname"`
 	Port              string                `json:"port"`
+	Path              string                `json:"path"`
 	RequestedProtocol observatory.Transport `json:"requested_protocol"`
 }
 
@@ -103,8 +108,7 @@ type Cohort struct {
 	Controls []observatory.ObservationResult
 }
 
-// AffectedStage is deliberately smaller than a future StrategyIR. It only
-// declares the stage a future strategy is structurally capable of affecting.
+// AffectedStage describes a protocol boundary. Transport is modeled separately.
 type AffectedStage string
 
 const (
@@ -113,7 +117,6 @@ const (
 	AffectedStageHello     AffectedStage = "HELLO"
 	AffectedStageHandshake AffectedStage = "HANDSHAKE"
 	AffectedStageHTTP      AffectedStage = "HTTP"
-	AffectedStageQUIC      AffectedStage = "QUIC"
 )
 
 type StrategyCapabilities struct {

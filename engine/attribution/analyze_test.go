@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"unbound/engine/observatory"
 )
@@ -89,14 +90,20 @@ func TestHTTPFailuresAreCompletedApplicationPaths(t *testing.T) {
 }
 
 func TestHealthyControlRaisesRepeatedTLSOnlyToMedium(t *testing.T) {
-	report := reportFor(t, "healthy_control_tls")
+	fixture := loadFixtures(t)["healthy_control_tls"]
+	target := cloneObservation(t, fixture.Target[0], "youtube-windows-repeat", time.Minute)
+	control := cloneObservation(t, fixture.Controls[0], "cloudflare-windows-repeat", 2*time.Minute)
+	report := AnalyzeCohort(Cohort{
+		Target:   append(fixture.Target, target),
+		Controls: append(fixture.Controls, control),
+	})
 	tls := finding(t, report, FindingTLSPathFailureSuspected)
 	if tls.Confidence != ConfidenceMedium {
 		t.Fatalf("TLS confidence = %s, want MEDIUM", tls.Confidence)
 	}
-	control := finding(t, report, FindingControlPathHealthy)
-	if control.Confidence != ConfidenceHigh {
-		t.Fatalf("control confidence = %s", control.Confidence)
+	controlFinding := finding(t, report, FindingControlPathHealthy)
+	if controlFinding.Confidence != ConfidenceHigh {
+		t.Fatalf("control confidence = %s", controlFinding.Confidence)
 	}
 	if strings.Contains(tls.Summary, "DPI") {
 		t.Fatal("control comparison inferred a forbidden DPI mechanism")
@@ -166,7 +173,7 @@ func TestIncompatibleContextsDoNotProduceProfileLabel(t *testing.T) {
 	if hasFinding(report, FindingFixedByProfile) {
 		t.Fatal("incompatible network contexts produced FIXED_BY_PROFILE")
 	}
-	if !containsLimitation(report, "not compared") {
+	if !containsLimitation(report, "outside the compatible") {
 		t.Fatalf("missing incompatibility limitation: %#v", report.Limitations)
 	}
 }
@@ -236,17 +243,28 @@ func TestAnalysisDoesNotMutateObservationEvidence(t *testing.T) {
 
 func TestStructuralApplicability(t *testing.T) {
 	tcpHello := StrategyCapabilities{AffectedStages: []AffectedStage{AffectedStageHello}, Transports: []observatory.Transport{observatory.TransportTCP}}
+	quicHandshake := StrategyCapabilities{AffectedStages: []AffectedStage{AffectedStageHandshake}, Transports: []observatory.Transport{observatory.TransportQUIC}}
+	httpOnly := StrategyCapabilities{AffectedStages: []AffectedStage{AffectedStageHTTP}, Transports: []observatory.Transport{observatory.TransportTCP}}
 	if !CouldStrategyAffectFailure(tcpHello, observatory.StageHandshake, observatory.TransportTCP) {
-		t.Fatal("ClientHello capability must affect TLS handshake")
+		t.Fatal("TCP ClientHello capability must affect TCP handshake")
 	}
 	if CouldStrategyAffectFailure(tcpHello, observatory.StageResolve, observatory.TransportTCP) {
-		t.Fatal("ClientHello capability must not affect DNS")
+		t.Fatal("TCP ClientHello capability must not affect DNS")
 	}
 	if CouldStrategyAffectFailure(tcpHello, observatory.StageHandshake, observatory.TransportQUIC) {
-		t.Fatal("TCP-only capability must not affect QUIC")
+		t.Fatal("TCP-only capability must not affect a QUIC handshake")
 	}
-	if CouldStrategyAffectFailure(StrategyCapabilities{AffectedStages: []AffectedStage{AffectedStageDNS}, Transports: []observatory.Transport{observatory.TransportTCP}}, observatory.StageHTTP, observatory.TransportTCP) {
-		t.Fatal("DNS capability must not be credited for HTTP status")
+	if !CouldStrategyAffectFailure(quicHandshake, observatory.StageHandshake, observatory.TransportQUIC) {
+		t.Fatal("QUIC handshake capability must affect a QUIC handshake")
+	}
+	if CouldStrategyAffectFailure(quicHandshake, observatory.StageHandshake, observatory.TransportTCP) {
+		t.Fatal("QUIC capability must not affect a TCP handshake")
+	}
+	if CouldStrategyAffectFailure(quicHandshake, observatory.StageConnect, observatory.TransportQUIC) {
+		t.Fatal("QUIC unsupported at connect must not imply handshake applicability")
+	}
+	if CouldStrategyAffectFailure(httpOnly, observatory.StageHandshake, observatory.TransportTCP) {
+		t.Fatal("HTTP-only capability must not affect TLS")
 	}
 }
 
@@ -260,6 +278,191 @@ func TestReportJSONRoundTrip(t *testing.T) {
 	if decoded.SchemaVersion != SchemaVersion || decoded.PrimaryFinding.Code != original.PrimaryFinding.Code || len(decoded.EvidenceRefs) == 0 {
 		t.Fatalf("round trip lost report evidence: %#v", decoded)
 	}
+}
+
+func TestTargetIdentityIncludesPrivacySafeEndpointPath(t *testing.T) {
+	left := observatory.ObservationResult{Target: observatory.Target{
+		URL:               "https://user:secret@example.com:443/api/auth?token=one#fragment",
+		Hostname:          "example.com",
+		Port:              "443",
+		RequestedProtocol: observatory.TransportTCP,
+	}}
+	samePath := left
+	samePath.Target.URL = "https://other:credential@example.com/api/auth?token=two#other"
+	differentPath := left
+	differentPath.Target.URL = "https://example.com/generate_204"
+	if !sameTarget(left, samePath) {
+		t.Fatal("same host and path must be the same target")
+	}
+	if sameTarget(left, differentPath) {
+		t.Fatal("different endpoint paths must not be pooled")
+	}
+	ref := targetRef(left.Target)
+	encoded := string(mustJSON(t, ref))
+	if ref.Scheme != "https" || ref.Path != "/api/auth" || strings.Contains(encoded, "secret") || strings.Contains(encoded, "token") || strings.Contains(encoded, "fragment") {
+		t.Fatalf("target reference leaked URL material or lost endpoint identity: %s", encoded)
+	}
+	profile := loadFixtures(t)["profile_fixed"]
+	profile.Target[0].Target.URL = "https://target.test/api/auth"
+	profile.Target[1].Target.URL = "https://target.test/generate_204"
+	if report := Analyze(profile.Target); hasFinding(report, FindingFixedByProfile) {
+		t.Fatal("different endpoint paths produced a profile differential")
+	}
+}
+
+func TestSameEdgeProfileDifferentialRetainsTargetEvidence(t *testing.T) {
+	report := reportFor(t, "profile_fixed")
+	if report.PrimaryFinding.Code != FindingFixedByProfile || report.PrimaryFinding.Confidence != ConfidenceHigh {
+		t.Fatalf("same-edge profile differential = %#v", report.PrimaryFinding)
+	}
+	finding(t, report, FindingTCPPathFailureSuspected)
+}
+
+func TestProfileComparisonRequiresSameResolvedEdge(t *testing.T) {
+	t.Run("same resolved set different selected edge", func(t *testing.T) {
+		fixture := loadFixtures(t)["profile_fixed"]
+		fixture.Target[0].ResolvedAddresses = []observatory.ResolvedAddress{
+			{IP: "192.0.2.40", AddressFamily: observatory.AddressFamilyIPv4},
+			{IP: "192.0.2.41", AddressFamily: observatory.AddressFamilyIPv4},
+		}
+		fixture.Target[1].ResolvedAddresses = append([]observatory.ResolvedAddress(nil), fixture.Target[0].ResolvedAddresses...)
+		fixture.Target[1].Attempts[0].ResolvedIP = "192.0.2.41"
+		report := Analyze(fixture.Target)
+		if hasFinding(report, FindingFixedByProfile) || !containsLimitation(report, "same_resolved_edge") {
+			t.Fatalf("different attempted edge produced A/B claim: %#v", report)
+		}
+	})
+	t.Run("disjoint edge sets", func(t *testing.T) {
+		fixture := loadFixtures(t)["profile_fixed"]
+		fixture.Target[1].Attempts[0].ResolvedIP = "192.0.2.41"
+		report := Analyze(fixture.Target)
+		if hasFinding(report, FindingFixedByProfile) || !containsLimitation(report, "same_resolved_edge") {
+			t.Fatalf("disjoint edges produced A/B claim: %#v", report)
+		}
+	})
+	t.Run("overlap prefers same edge", func(t *testing.T) {
+		fixture := loadFixtures(t)["profile_fixed"]
+		success := cloneObservation(t, fixture.Target[1], "direct-common-edge", 0).Attempts[0]
+		success.ResolvedIP = "192.0.2.41"
+		fixture.Target[0].Attempts = append(fixture.Target[0].Attempts, success)
+		fixture.Target[1].Attempts[0].ResolvedIP = "192.0.2.41"
+		report := Analyze(fixture.Target)
+		if report.PrimaryFinding.Code != FindingReachableDirectly || report.PrimaryFinding.Confidence != ConfidenceHigh {
+			t.Fatalf("overlapping same edge was not selected: %#v", report.PrimaryFinding)
+		}
+	})
+}
+
+func TestIndependentControlsAndDuplicateRuns(t *testing.T) {
+	fixture := loadFixtures(t)["healthy_control_tls"]
+	single := AnalyzeCohort(Cohort{Target: fixture.Target, Controls: fixture.Controls})
+	if got := finding(t, single, FindingTLSPathFailureSuspected).Confidence; got != ConfidenceLow {
+		t.Fatalf("one target run plus one multi-attempt control run = %s, want LOW", got)
+	}
+	if got := finding(t, single, FindingControlPathHealthy).Confidence; got != ConfidenceMedium {
+		t.Fatalf("one independent control run = %s, want MEDIUM", got)
+	}
+	duplicated := AnalyzeCohort(Cohort{
+		Target:   append(append([]observatory.ObservationResult(nil), fixture.Target...), fixture.Target...),
+		Controls: append(append([]observatory.ObservationResult(nil), fixture.Controls...), fixture.Controls...),
+	})
+	if got := finding(t, duplicated, FindingTLSPathFailureSuspected).Confidence; got != ConfidenceLow {
+		t.Fatalf("duplicated run elevated confidence to %s", got)
+	}
+}
+
+func TestDegradedControlsDoNotElevateTarget(t *testing.T) {
+	fixture := loadFixtures(t)["healthy_control_tls"]
+	target := cloneObservation(t, fixture.Target[0], "target-repeat", time.Minute)
+	controlFailure := cloneObservation(t, fixture.Controls[0], "control-failure-a", time.Minute)
+	controlFailure.FinalBoundary = observatory.StageHandshake
+	controlFailure.Classification = observatory.ClassTLSHandshakeTimeout
+	controlFailure.Attempts = append([]observatory.ConnectionAttempt(nil), fixture.Target[0].Attempts[:1]...)
+	controlFailure.Attempts[0].ResolvedIP = "198.51.100.71"
+	controlFailure2 := cloneObservation(t, controlFailure, "control-failure-b", 2*time.Minute)
+	report := AnalyzeCohort(Cohort{Target: append(fixture.Target, target), Controls: []observatory.ObservationResult{controlFailure, controlFailure2}})
+	if hasFinding(report, FindingControlPathHealthy) {
+		t.Fatalf("degraded controls were labeled healthy: %#v", report.Findings)
+	}
+	if hasFinding(report, FindingTLSPathFailureSuspected) && finding(t, report, FindingTLSPathFailureSuspected).Confidence != ConfidenceLow {
+		t.Fatalf("degraded controls elevated target TLS confidence: %#v", report.Findings)
+	}
+}
+
+func TestCrossRunEdgeDependenceAndVariability(t *testing.T) {
+	fixtures := loadFixtures(t)
+	tls := fixtures["tls_timeout"].Target[0]
+	success := fixtures["success"].Target[0]
+	success.Target = tls.Target
+	t.Run("stable edge-specific outcomes", func(t *testing.T) {
+		a1 := cloneObservation(t, tls, "edge-a-1", 0)
+		a2 := cloneObservation(t, tls, "edge-a-2", time.Minute)
+		b1 := cloneObservation(t, success, "edge-b-1", 2*time.Minute)
+		b2 := cloneObservation(t, success, "edge-b-2", 3*time.Minute)
+		for _, observation := range []*observatory.ObservationResult{&a1, &a2} {
+			observation.Attempts[0].ResolvedIP = "192.0.2.50"
+		}
+		for _, observation := range []*observatory.ObservationResult{&b1, &b2} {
+			observation.Attempts[0].ResolvedIP = "192.0.2.51"
+		}
+		report := Analyze([]observatory.ObservationResult{a1, a2, b1, b2})
+		if report.PrimaryFinding.Code != FindingEdgeDependentFailure {
+			t.Fatalf("cross-run edge pattern = %#v", report.PrimaryFinding)
+		}
+	})
+	t.Run("same edge variable outcomes", func(t *testing.T) {
+		failure := cloneObservation(t, tls, "edge-variable-failure", 0)
+		passed := cloneObservation(t, success, "edge-variable-success", time.Minute)
+		failure.Attempts[0].ResolvedIP = "192.0.2.60"
+		passed.Attempts[0].ResolvedIP = "192.0.2.60"
+		report := Analyze([]observatory.ObservationResult{failure, passed})
+		if hasFinding(report, FindingEdgeDependentFailure) {
+			t.Fatalf("variable same edge was misattributed to edge identity: %#v", report.Findings)
+		}
+		if got := finding(t, report, FindingOutcomeVariability); got.Kind != FindingKindFact || got.Confidence != ConfidenceHigh {
+			t.Fatalf("outcome variability finding = %#v", got)
+		}
+	})
+}
+
+func TestHeterogeneousFailuresReduceConfidence(t *testing.T) {
+	fixtures := loadFixtures(t)
+	tls := fixtures["tls_timeout"].Target[0]
+	control := fixtures["success"].Target[0]
+	control.Target = fixtures["healthy_control_tls"].Controls[0].Target
+	controls := []observatory.ObservationResult{
+		cloneObservation(t, control, "healthy-control-a", 0),
+		cloneObservation(t, control, "healthy-control-b", time.Minute),
+	}
+	homogeneous := []observatory.ObservationResult{
+		cloneObservation(t, tls, "tls-a", 0),
+		cloneObservation(t, tls, "tls-b", time.Minute),
+		cloneObservation(t, tls, "tls-c", 2*time.Minute),
+	}
+	if got := finding(t, AnalyzeCohort(Cohort{Target: homogeneous, Controls: controls}), FindingTLSPathFailureSuspected).Confidence; got != ConfidenceMedium {
+		t.Fatalf("independent homogeneous TLS failures = %s, want MEDIUM", got)
+	}
+	tcp := cloneObservation(t, fixtures["tcp_timeout"].Target[0], "tcp-a", 3*time.Minute)
+	tcp.Target = tls.Target
+	tcp2 := cloneObservation(t, tcp, "tcp-b", 4*time.Minute)
+	tcp3 := cloneObservation(t, tcp, "tcp-c", 5*time.Minute)
+	heterogeneous := append(homogeneous, tcp, tcp2, tcp3)
+	tlsFinding := finding(t, AnalyzeCohort(Cohort{Target: heterogeneous, Controls: controls}), FindingTLSPathFailureSuspected)
+	if tlsFinding.Confidence != ConfidenceLow || len(tlsFinding.Counterevidence) == 0 {
+		t.Fatalf("heterogeneous boundaries did not reduce confidence: %#v", tlsFinding)
+	}
+}
+
+func cloneObservation(t *testing.T, source observatory.ObservationResult, runID string, offset time.Duration) observatory.ObservationResult {
+	t.Helper()
+	var clone observatory.ObservationResult
+	if err := json.Unmarshal(mustJSON(t, source), &clone); err != nil {
+		t.Fatal(err)
+	}
+	clone.RunID = runID
+	clone.StartedAt = clone.StartedAt.Add(offset)
+	clone.FinishedAt = clone.FinishedAt.Add(offset)
+	return clone
 }
 
 func hasFinding(report AttributionReport, code FindingCode) bool {

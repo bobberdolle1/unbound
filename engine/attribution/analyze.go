@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -39,7 +40,7 @@ func AnalyzeCohort(cohort Cohort) AttributionReport {
 	targets := make([]observatory.ObservationResult, 0, len(cohort.Target))
 	for _, observation := range cohort.Target {
 		if !sameTarget(target, observation) {
-			report.Limitations = append(report.Limitations, "Observation with a different target was excluded from target-level comparison.")
+			report.Limitations = append(report.Limitations, "Observation with a different endpoint identity was excluded from target-level comparison.")
 			continue
 		}
 		targets = append(targets, observation)
@@ -62,20 +63,22 @@ func AnalyzeCohort(cohort Cohort) AttributionReport {
 		report.Limitations = append(report.Limitations, "Incompatible control observations were not used for target-specific confidence.")
 	}
 	controlFacts := collectFacts(compatibleControls)
-
-	findings := make([]Finding, 0, 5)
-	if control := controlFinding(controlFacts); control != nil {
-		findings = append(findings, *control)
-	}
-
 	base := targetFinding(targetFacts, controlFacts)
 	report.Limitations = append(report.Limitations, findingLimitations(base)...)
+
+	findings := make([]Finding, 0, 6)
+	if control := controlFinding(controlFacts, base.Stage); control != nil {
+		findings = append(findings, *control)
+	}
 	findings = append(findings, base)
-	if edge := edgeFinding(comparableTargets, targetFacts); edge != nil {
+	if variability := outcomeVariabilityFinding(targetFacts); variability != nil {
+		findings = append(findings, *variability)
+	}
+	if edge := edgeFinding(targetFacts); edge != nil {
 		findings = append(findings, *edge)
 	}
 
-	if ab, applicable, limitations := profileFinding(targets); applicable {
+	if ab, applicable, limitations := profileFinding(comparableTargets); applicable {
 		report.Applicability.ProfileComparison = true
 		report.Limitations = append(report.Limitations, limitations...)
 		if ab != nil {
@@ -283,32 +286,34 @@ func targetFinding(facts, controlFacts []attemptFact) Finding {
 		return insufficientFinding("The observed failure does not satisfy an attribution rule.", candidate.boundary, refs(sameFailure(facts, candidate)), []string{"applicable_failure_rule"})
 	}
 	matching := sameFailure(facts, candidate)
-	counter := contradictoryFacts(facts)
+	counter := contradictoryFacts(facts, candidate)
 	met, missing := stagePrerequisites(candidate, matching)
 	if len(missing) > 0 {
 		return insufficientFinding("The failed stage lacks required preceding-stage evidence.", candidate.boundary, refs(matching), missing)
 	}
-	if healthyControlCount(controlFacts) == 0 {
-		if matchingControls := failedAtStage(controlFacts, candidate.boundary); len(matchingControls) > 0 {
-			return Finding{
-				Code:               FindingNetworkContextFailure,
-				Kind:               FindingKindInference,
-				Confidence:         ConfidenceLow,
-				Summary:            "The target and compatible control both failed at the same observed boundary.",
-				Stage:              candidate.boundary,
-				SupportingEvidence: append(refs(matching), refs(matchingControls)...),
-				Counterevidence:    refs(counter),
-				PrerequisitesMet:   append(met, "compatible_control_failure"),
-			}
+	matchingControls := failedAtStage(controlFacts, candidate.boundary)
+	if healthyControlRunCount(controlFacts) == 0 && uniqueRunCount(matchingControls) > 0 {
+		return Finding{
+			Code:               FindingNetworkContextFailure,
+			Kind:               FindingKindInference,
+			Confidence:         ConfidenceLow,
+			Summary:            "The target and compatible control both failed at the same observed boundary.",
+			Stage:              candidate.boundary,
+			SupportingEvidence: append(refs(matching), refs(matchingControls)...),
+			Counterevidence:    refs(counter),
+			PrerequisitesMet:   append(met, "compatible_control_failure"),
 		}
 	}
 	confidence := ConfidenceLow
-	if len(counter) == 0 && len(matching) >= 2 && healthyControlCount(controlFacts) >= 2 {
+	if len(counter) == 0 &&
+		uniqueRunCount(matching) >= 2 &&
+		healthyControlRunCount(controlFacts) >= 2 &&
+		uniqueRunCount(matchingControls) == 0 {
 		confidence = ConfidenceMedium
-		summary += " The boundary repeated across target attempts while compatible controls completed HTTP."
+		summary += " The boundary repeated across independent target runs while independent compatible controls completed HTTP."
 	}
 	if len(counter) > 0 {
-		summary += " Different target outcomes are recorded as counterevidence."
+		summary += " Materially different target outcomes are recorded as counterevidence."
 	}
 	return Finding{
 		Code:                 code,
@@ -416,54 +421,82 @@ func failedAtStage(facts []attemptFact, stage observatory.Stage) []attemptFact {
 	return result
 }
 
-func controlFinding(facts []attemptFact) *Finding {
+func controlFinding(facts []attemptFact, targetStage observatory.Stage) *Finding {
 	healthy := healthyControlFacts(facts)
-	if len(healthy) >= 2 {
-		return &Finding{
-			Code:               FindingControlPathHealthy,
-			Kind:               FindingKindFact,
-			Confidence:         ConfidenceHigh,
-			Summary:            "Compatible control attempts completed valid HTTP paths.",
-			Stage:              observatory.StageHTTP,
-			SupportingEvidence: refs(healthy),
-		}
-	}
-	if len(healthy) == 1 {
-		return &Finding{
-			Code:               FindingControlPathHealthy,
-			Kind:               FindingKindFact,
-			Confidence:         ConfidenceMedium,
-			Summary:            "One compatible control attempt completed a valid HTTP path.",
-			Stage:              observatory.StageHTTP,
-			SupportingEvidence: refs(healthy),
-		}
-	}
-	if len(facts) > 0 {
+	relevantFailures := failedAtStage(facts, targetStage)
+	if uniqueRunCount(relevantFailures) > 0 {
 		return &Finding{
 			Code:               FindingControlPathDegraded,
 			Kind:               FindingKindFact,
 			Confidence:         ConfidenceLow,
-			Summary:            "Compatible control attempts did not establish a healthy HTTP path.",
+			Summary:            "Compatible controls include a failure at the target-relevant boundary and do not establish a cleanly healthy cohort.",
+			Stage:              targetStage,
+			SupportingEvidence: append(refs(healthy), refs(relevantFailures)...),
+		}
+	}
+	switch healthyRuns := healthyControlRunCount(facts); {
+	case healthyRuns >= 2:
+		return &Finding{
+			Code:               FindingControlPathHealthy,
+			Kind:               FindingKindFact,
+			Confidence:         ConfidenceHigh,
+			Summary:            "At least two independent compatible control runs completed valid HTTP paths.",
+			Stage:              observatory.StageHTTP,
+			SupportingEvidence: refs(healthy),
+		}
+	case healthyRuns == 1:
+		return &Finding{
+			Code:               FindingControlPathHealthy,
+			Kind:               FindingKindFact,
+			Confidence:         ConfidenceMedium,
+			Summary:            "One compatible control run completed a valid HTTP path.",
+			Stage:              observatory.StageHTTP,
+			SupportingEvidence: refs(healthy),
+		}
+	case len(facts) > 0:
+		return &Finding{
+			Code:               FindingControlPathDegraded,
+			Kind:               FindingKindFact,
+			Confidence:         ConfidenceLow,
+			Summary:            "Compatible control runs did not establish a healthy HTTP path.",
 			Stage:              deepestFailure(facts).boundary,
 			SupportingEvidence: refs(facts),
 		}
+	default:
+		return nil
 	}
-	return nil
 }
 
-func edgeFinding(observations []observatory.ObservationResult, facts []attemptFact) *Finding {
-	if !hasEdgeDependentOutcomes(observations) {
+func edgeFinding(facts []attemptFact) *Finding {
+	analysis := analyzeEdgeOutcomes(facts)
+	if !analysis.edgeDependent {
 		return nil
 	}
 	return &Finding{
 		Code:               FindingEdgeDependentFailure,
 		Kind:               FindingKindInference,
 		Confidence:         ConfidenceLow,
-		Summary:            "Different resolved edges produced materially different observed stage outcomes.",
+		Summary:            "Distinct resolved edges consistently produced materially different observed stage outcomes.",
 		Stage:              deepestFailure(facts).boundary,
-		SupportingEvidence: refs(facts),
+		SupportingEvidence: refs(analysis.stableFacts),
 		Counterevidence:    refs(successfulFacts(facts)),
-		PrerequisitesMet:   []string{"multiple_resolved_edges", "materially_different_outcomes"},
+		PrerequisitesMet:   []string{"multiple_resolved_edges", "consistent_edge_outcomes", "materially_different_outcomes"},
+	}
+}
+
+func outcomeVariabilityFinding(facts []attemptFact) *Finding {
+	analysis := analyzeEdgeOutcomes(facts)
+	if len(analysis.variableFacts) == 0 {
+		return nil
+	}
+	return &Finding{
+		Code:               FindingOutcomeVariability,
+		Kind:               FindingKindFact,
+		Confidence:         ConfidenceHigh,
+		Summary:            "The same resolved edge produced materially different outcomes across independent runs.",
+		Stage:              deepestFailure(analysis.variableFacts).boundary,
+		SupportingEvidence: refs(analysis.variableFacts),
+		PrerequisitesMet:   []string{"same_edge", "independent_runs", "materially_different_outcomes"},
 	}
 }
 
@@ -483,51 +516,50 @@ func profileFinding(observations []observatory.ObservationResult) (*Finding, boo
 	}
 	sortObservations(direct)
 	sortObservations(profiles)
-	var incompatibilities []string
+	var limitations []string
 	for _, directRun := range direct {
 		for _, profileRun := range profiles {
 			applicable, missing := ProfileComparisonApplicable(directRun, profileRun)
 			if !applicable {
-				incompatibilities = append(incompatibilities, "Direct/profile observations were not compared: "+strings.Join(missing, ", ")+".")
+				limitations = append(limitations, "Direct/profile observations were not compared: "+strings.Join(missing, ", ")+".")
 				continue
 			}
-			directPass := observationSucceeded(directRun)
-			profilePass := observationSucceeded(profileRun)
-			code, summary := profileOutcome(directPass, profilePass)
-			refs := []EvidenceRef{runReference(directRun), runReference(profileRun)}
-			finding := &Finding{
+			pairs := pairedEdgeFacts(directRun, profileRun)
+			if len(pairs) == 0 {
+				limitations = append(limitations, "Direct/profile observations were not compared: same_resolved_edge.")
+				continue
+			}
+			pair := pairs[0]
+			code, summary := profileOutcome(pair.direct.success, pair.profile.success)
+			return &Finding{
 				Code:               code,
 				Kind:               FindingKindFact,
 				Confidence:         ConfidenceHigh,
 				Summary:            summary,
-				Stage:              profileStage(directRun, profileRun),
-				SupportingEvidence: refs,
-				PrerequisitesMet:   []string{"same_target", "compatible_network_context", "same_protocol", "close_time_window"},
-			}
-			if !sameResolvedSet(directRun, profileRun) {
-				incompatibilities = append(incompatibilities, "Comparable direct/profile runs used different resolved edge sets.")
-			}
-			return finding, true, uniqueStrings(incompatibilities)
+				Stage:              profilePairStage(pair),
+				SupportingEvidence: []EvidenceRef{pair.direct.ref, pair.profile.ref},
+				PrerequisitesMet:   []string{"same_target", "compatible_network_context", "same_protocol", "close_time_window", "same_resolved_edge"},
+			}, true, uniqueStrings(limitations)
 		}
 	}
-	return nil, false, uniqueStrings(incompatibilities)
+	return nil, false, uniqueStrings(limitations)
 }
 
 func profileOutcome(directPass, profilePass bool) (FindingCode, string) {
 	switch {
 	case !directPass && profilePass:
-		return FindingFixedByProfile, "Comparable direct evidence failed while the externally active profile evidence succeeded."
+		return FindingFixedByProfile, "Same-edge direct evidence failed while the externally active profile evidence succeeded."
 	case directPass && !profilePass:
-		return FindingBrokenByProfile, "Comparable direct evidence succeeded while the externally active profile evidence failed."
+		return FindingBrokenByProfile, "Same-edge direct evidence succeeded while the externally active profile evidence failed."
 	case !directPass && !profilePass:
-		return FindingStillFailing, "Comparable direct and externally active profile evidence both failed."
+		return FindingStillFailing, "Same-edge direct and externally active profile evidence both failed."
 	default:
-		return FindingReachableDirectly, "Comparable direct and externally active profile evidence both succeeded."
+		return FindingReachableDirectly, "Same-edge direct and externally active profile evidence both succeeded."
 	}
 }
 
-// ProfileComparisonApplicable prevents A/B labels across different targets,
-// network contexts, address families, protocols, or distant runs.
+// ProfileComparisonApplicable prevents A/B labels across different endpoints,
+// network contexts, address families, protocols, time windows, or edges.
 func ProfileComparisonApplicable(direct, profile observatory.ObservationResult) (bool, []string) {
 	var missing []string
 	if !sameTarget(direct, profile) {
@@ -541,6 +573,9 @@ func ProfileComparisonApplicable(direct, profile observatory.ObservationResult) 
 	}
 	if !withinComparableWindow(direct, profile) {
 		missing = append(missing, "close_time_window")
+	}
+	if len(pairedEdgeFacts(direct, profile)) == 0 {
+		missing = append(missing, "same_resolved_edge")
 	}
 	return len(missing) == 0, missing
 }
@@ -676,82 +711,153 @@ func sameTarget(left, right observatory.ObservationResult) bool {
 }
 
 func targetIdentity(target observatory.Target) string {
-	return strings.ToLower(target.Hostname) + ":" + target.Port + ":" + string(target.RequestedProtocol)
+	scheme, hostname, port, path := endpointIdentity(target)
+	return strings.Join([]string{scheme, hostname, port, path, string(target.RequestedProtocol)}, "\x00")
 }
 
 func targetRef(target observatory.Target) TargetRef {
-	return TargetRef{Name: target.Name, Hostname: target.Hostname, Port: target.Port, RequestedProtocol: target.RequestedProtocol}
+	scheme, hostname, port, path := endpointIdentity(target)
+	return TargetRef{
+		Name:              target.Name,
+		Scheme:            scheme,
+		Hostname:          hostname,
+		Port:              port,
+		Path:              path,
+		RequestedProtocol: target.RequestedProtocol,
+	}
 }
 
-func observationSucceeded(observation observatory.ObservationResult) bool {
-	if observation.Classification == observatory.ClassSuccess {
-		return true
-	}
-	for _, fact := range collectFacts([]observatory.ObservationResult{observation}) {
-		if fact.success {
-			return true
+func endpointIdentity(target observatory.Target) (scheme, hostname, port, path string) {
+	hostname = strings.ToLower(strings.TrimSpace(target.Hostname))
+	port = strings.TrimSpace(target.Port)
+	path = "/"
+	parsed, err := url.Parse(strings.TrimSpace(target.URL))
+	if err == nil && parsed != nil {
+		scheme = strings.ToLower(parsed.Scheme)
+		if hostname == "" {
+			hostname = strings.ToLower(parsed.Hostname())
+		}
+		if port == "" {
+			port = parsed.Port()
+		}
+		if parsed.EscapedPath() != "" {
+			path = parsed.EscapedPath()
 		}
 	}
-	return false
-}
-
-func profileStage(direct, profile observatory.ObservationResult) observatory.Stage {
-	if !observationSucceeded(profile) {
-		return profile.FinalBoundary
-	}
-	return direct.FinalBoundary
-}
-
-func sameResolvedSet(left, right observatory.ObservationResult) bool {
-	leftIPs := resolvedIPs(left)
-	rightIPs := resolvedIPs(right)
-	if len(leftIPs) != len(rightIPs) {
-		return false
-	}
-	for index := range leftIPs {
-		if leftIPs[index] != rightIPs[index] {
-			return false
+	if port == "" {
+		switch scheme {
+		case "http":
+			port = "80"
+		case "https":
+			port = "443"
 		}
 	}
-	return true
+	return scheme, hostname, port, path
 }
 
-func resolvedIPs(observation observatory.ObservationResult) []string {
-	ips := make([]string, 0, len(observation.ResolvedAddresses))
-	for _, address := range observation.ResolvedAddresses {
-		ips = append(ips, address.IP)
-	}
-	sort.Strings(ips)
-	return ips
+type edgePair struct {
+	key     string
+	direct  attemptFact
+	profile attemptFact
 }
 
-func hasEdgeDependentOutcomes(observations []observatory.ObservationResult) bool {
-	for _, observation := range observations {
-		facts := collectFacts([]observatory.ObservationResult{observation})
-		outcomes := make(map[string]map[string]struct{})
-		for _, fact := range facts {
-			if fact.resolvedIP == "" {
-				continue
-			}
-			if outcomes[fact.resolvedIP] == nil {
-				outcomes[fact.resolvedIP] = make(map[string]struct{})
-			}
-			outcomes[fact.resolvedIP][factSignature(fact)] = struct{}{}
+func pairedEdgeFacts(direct, profile observatory.ObservationResult) []edgePair {
+	directFacts := factsByEdge(collectFacts([]observatory.ObservationResult{direct}))
+	profileFacts := factsByEdge(collectFacts([]observatory.ObservationResult{profile}))
+	keys := make([]string, 0)
+	for key := range directFacts {
+		if _, ok := profileFacts[key]; ok {
+			keys = append(keys, key)
 		}
-		if len(outcomes) < 2 {
+	}
+	sort.Strings(keys)
+	pairs := make([]edgePair, 0, len(keys))
+	for _, key := range keys {
+		pairs = append(pairs, edgePair{key: key, direct: directFacts[key], profile: profileFacts[key]})
+	}
+	return pairs
+}
+
+func factsByEdge(facts []attemptFact) map[string]attemptFact {
+	result := make(map[string]attemptFact)
+	for _, fact := range facts {
+		key := edgeKey(fact)
+		if key == "" {
 			continue
 		}
-		all := make(map[string]struct{})
-		for _, edgeOutcomes := range outcomes {
-			for outcome := range edgeOutcomes {
-				all[outcome] = struct{}{}
-			}
-		}
-		if len(all) > 1 {
-			return true
+		if _, exists := result[key]; !exists {
+			result[key] = fact
 		}
 	}
-	return false
+	return result
+}
+
+func edgeKey(fact attemptFact) string {
+	if fact.resolvedIP == "" || fact.addressFamily == "" || fact.addressFamily == observatory.AddressFamilyAny {
+		return ""
+	}
+	return fact.resolvedIP + "\x00" + string(fact.addressFamily)
+}
+
+func profilePairStage(pair edgePair) observatory.Stage {
+	if !pair.profile.success {
+		return pair.profile.boundary
+	}
+	return pair.direct.boundary
+}
+
+type edgeOutcomeAnalysis struct {
+	edgeDependent bool
+	stableFacts   []attemptFact
+	variableFacts []attemptFact
+}
+
+func analyzeEdgeOutcomes(facts []attemptFact) edgeOutcomeAnalysis {
+	type record struct {
+		facts      []attemptFact
+		runIDs     map[string]struct{}
+		signatures map[string]struct{}
+	}
+	records := make(map[string]*record)
+	for _, fact := range facts {
+		key := edgeKey(fact)
+		if key == "" {
+			continue
+		}
+		if records[key] == nil {
+			records[key] = &record{runIDs: make(map[string]struct{}), signatures: make(map[string]struct{})}
+		}
+		records[key].facts = append(records[key].facts, fact)
+		records[key].runIDs[fact.ref.RunID] = struct{}{}
+		records[key].signatures[factSignature(fact)] = struct{}{}
+	}
+
+	keys := make([]string, 0, len(records))
+	for key := range records {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	analysis := edgeOutcomeAnalysis{}
+	stableSignatures := make(map[string]struct{})
+	for _, key := range keys {
+		record := records[key]
+		switch len(record.signatures) {
+		case 1:
+			analysis.stableFacts = append(analysis.stableFacts, record.facts...)
+			for signature := range record.signatures {
+				stableSignatures[signature] = struct{}{}
+			}
+		default:
+			if len(record.runIDs) >= 2 {
+				analysis.variableFacts = append(analysis.variableFacts, record.facts...)
+			}
+			// Multiple outcomes on one edge, even inside one run, make the
+			// edge identity insufficient to explain the cohort difference.
+			return analysis
+		}
+	}
+	analysis.edgeDependent = len(analysis.stableFacts) > 0 && len(stableSignatures) > 1 && len(keys) >= 2
+	return analysis
 }
 
 func factSignature(fact attemptFact) string {
@@ -817,7 +923,23 @@ func successfulFacts(facts []attemptFact) []attemptFact {
 }
 
 func healthyControlFacts(facts []attemptFact) []attemptFact { return successfulFacts(facts) }
-func healthyControlCount(facts []attemptFact) int           { return len(healthyControlFacts(facts)) }
+
+func healthyControlRunCount(facts []attemptFact) int {
+	return uniqueRunCount(healthyControlFacts(facts))
+}
+
+func uniqueRunCount(facts []attemptFact) int {
+	runs := make(map[string]struct{})
+	for _, fact := range facts {
+		runID := fact.ref.RunID
+		if runID == "" {
+			// Missing run identity cannot establish independence.
+			runID = "unknown"
+		}
+		runs[runID] = struct{}{}
+	}
+	return len(runs)
+}
 
 func factsWithClass(facts []attemptFact, class observatory.Classification) []attemptFact {
 	var result []attemptFact
@@ -849,10 +971,11 @@ func otherFacts(facts []attemptFact, candidate attemptFact) []attemptFact {
 	return result
 }
 
-func contradictoryFacts(facts []attemptFact) []attemptFact {
+func contradictoryFacts(facts []attemptFact, candidate attemptFact) []attemptFact {
 	var result []attemptFact
+	candidateSignature := factSignature(candidate)
 	for _, fact := range facts {
-		if fact.success || fact.validHTTP {
+		if fact.success || fact.validHTTP || factSignature(fact) != candidateSignature {
 			result = append(result, fact)
 		}
 	}
