@@ -10,6 +10,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -22,20 +24,35 @@ import (
 )
 
 type LinuxRuntime struct {
-	opts      RuntimeOptions
-	mu        sync.Mutex
-	snapshots map[string]providerSnapshot
-	nextID    atomic.Uint64
-	active    *linuxCandidate
-	runner    linuxRunner
+	opts           RuntimeOptions
+	mu             sync.Mutex
+	snapshots      map[string]providerSnapshot
+	nextID         atomic.Uint64
+	active         *linuxCandidate
+	completed      []linuxOwnedState
+	runner         linuxRunner
+	processAlive   func(int) (bool, error)
+	killGroup      func(int, syscall.Signal) error
+	readQueueState func() ([]byte, error)
+	randomBytes    func([]byte) (int, error)
+	cleanupWait    time.Duration
+	forceWait      time.Duration
 }
 
 type linuxCandidate struct {
-	cmd    *exec.Cmd
-	done   chan struct{}
-	cancel context.CancelFunc
-	spec   LinuxNFQueueSpec
-	mode   string
+	cmd      *exec.Cmd
+	done     chan struct{}
+	cancel   context.CancelFunc
+	spec     LinuxNFQueueSpec
+	mode     string
+	pid      int
+	cleaning bool
+}
+
+type linuxOwnedState struct {
+	pid  int
+	spec LinuxNFQueueSpec
+	mode string
 }
 
 type linuxRunner interface {
@@ -55,7 +72,17 @@ func NewLinuxRuntime(options RuntimeOptions) (*LinuxRuntime, error) {
 	if options.Provider == nil || options.Assets == nil {
 		return nil, fmt.Errorf("Linux vNext runtime needs product provider and assets")
 	}
-	return &LinuxRuntime{opts: options, snapshots: make(map[string]providerSnapshot), runner: execLinuxRunner{}}, nil
+	return &LinuxRuntime{
+		opts:           options,
+		snapshots:      make(map[string]providerSnapshot),
+		runner:         execLinuxRunner{},
+		processAlive:   linuxProcessAlive,
+		killGroup:      linuxKillGroup,
+		readQueueState: readNFNetlinkQueues,
+		randomBytes:    rand.Read,
+		cleanupWait:    10 * time.Second,
+		forceWait:      2 * time.Second,
+	}, nil
 }
 
 func (e *LinuxRuntime) Resolve(ctx context.Context, backend backendcap.Backend, ids []string) ([]ResolvedAsset, error) {
@@ -153,15 +180,15 @@ func (e *LinuxRuntime) Activate(ctx context.Context, candidate ExecutableCandida
 	}()
 	args := append([]string{"--qnum=" + fmt.Sprint(queue)}, trustedLuaInitArgs(e.opts.Assets.LuaDir)...)
 	args = append(args, plan.EngineArgv...)
-	candidateCtx, cancel := context.WithTimeout(ctx, physicalCandidateTimeout)
+	candidateCtx, cancel := candidateExecutionContext(ctx)
 	cmd := exec.CommandContext(candidateCtx, filepath.Join(e.opts.Assets.BinDir, "nfqws2"), args...)
 	cmd.Dir = e.opts.Assets.BinDir
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.SysProcAttr = linuxCandidateSysProcAttr()
 	if err := cmd.Start(); err != nil {
 		cancel()
 		return fmt.Errorf("start verified nfqws2 after exact rule preparation: %w", err)
 	}
-	active := &linuxCandidate{cmd: cmd, done: make(chan struct{}), cancel: cancel, spec: spec, mode: mode}
+	active := &linuxCandidate{cmd: cmd, done: make(chan struct{}), cancel: cancel, spec: spec, mode: mode, pid: cmd.Process.Pid}
 	e.mu.Lock()
 	if e.active != nil {
 		e.mu.Unlock()
@@ -206,33 +233,46 @@ func (e *LinuxRuntime) VerifyActive(_ context.Context, _ ExecutableCandidate) er
 func (e *LinuxRuntime) Deactivate(ctx context.Context) error {
 	e.mu.Lock()
 	active := e.active
-	if active != nil {
-		e.active = nil
-	}
-	e.mu.Unlock()
 	if active == nil {
+		e.mu.Unlock()
 		return nil
 	}
+	active.cleaning = true
+	e.mu.Unlock()
+
 	active.cancel()
-	if err := syscall.Kill(-active.cmd.Process.Pid, syscall.SIGTERM); err != nil && err != syscall.ESRCH {
+	if err := e.killGroup(active.pid, syscall.SIGTERM); err != nil && err != syscall.ESRCH {
 		return fmt.Errorf("terminate owned nfqws2: %w", err)
 	}
 	select {
 	case <-active.done:
-	case <-time.After(10 * time.Second):
-		if err := syscall.Kill(-active.cmd.Process.Pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
-			return fmt.Errorf("owned nfqws2 stop timeout: %w", err)
+	case <-time.After(e.cleanupTimeout()):
+		if err := e.killGroup(active.pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
+			return fmt.Errorf("force terminate owned nfqws2: %w", err)
 		}
 		select {
 		case <-active.done:
-		case <-time.After(2 * time.Second):
-			return fmt.Errorf("owned nfqws2 did not exit")
+		case <-time.After(e.forceCleanupTimeout()):
+			return fmt.Errorf("owned nfqws2 PID %d did not exit", active.pid)
 		}
+	}
+	alive, err := e.processAlive(active.pid)
+	if err != nil {
+		return fmt.Errorf("audit owned nfqws2 PID %d after teardown: %w", active.pid, err)
+	}
+	if alive {
+		return fmt.Errorf("owned nfqws2 PID %d remains alive after teardown", active.pid)
 	}
 	if err := e.deleteRule(context.WithoutCancel(ctx), active.mode, active.spec); err != nil {
 		return fmt.Errorf("delete exact owned NFQUEUE rule: %w", err)
 	}
-	e.opts.emit(PhysicalLog{Backend: string(backendcap.Zapret2Linux), Phase: "EXITED", PID: active.cmd.Process.Pid})
+	e.mu.Lock()
+	if e.active == active {
+		e.completed = append(e.completed, linuxOwnedState{pid: active.pid, spec: active.spec, mode: active.mode})
+		e.active = nil
+	}
+	e.mu.Unlock()
+	e.opts.emit(PhysicalLog{Backend: string(backendcap.Zapret2Linux), Phase: "EXITED", PID: active.pid})
 	return nil
 }
 
@@ -256,17 +296,46 @@ func (e *LinuxRuntime) Restore(ctx context.Context, snapshot StateSnapshot) erro
 	return e.opts.Provider.Start(context.WithoutCancel(ctx), state.profile)
 }
 
-func (e *LinuxRuntime) VerifyRestored(_ context.Context, snapshot StateSnapshot) error {
+func (e *LinuxRuntime) VerifyRestored(ctx context.Context, snapshot StateSnapshot) error {
 	state, err := e.snapshot(snapshot)
 	if err != nil {
 		return err
 	}
 	e.mu.Lock()
-	active := e.active != nil
+	active := e.active
+	completed := append([]linuxOwnedState(nil), e.completed...)
 	e.mu.Unlock()
-	if active || e.opts.Provider.GetStatus() != state.status || e.opts.Provider.CurrentProfile() != state.profile {
-		return fmt.Errorf("provider or owned NFQUEUE candidate does not match original snapshot")
+	if active != nil {
+		alive, auditErr := e.processAlive(active.pid)
+		if auditErr != nil {
+			return fmt.Errorf("audit retained owned nfqws2 PID %d: %w", active.pid, auditErr)
+		}
+		if alive {
+			return fmt.Errorf("owned nfqws2 PID %d remains active", active.pid)
+		}
+		if err := e.ownedRuleAbsent(ctx, active.mode, active.spec); err != nil {
+			return err
+		}
+		return fmt.Errorf("owned nfqws2 cleanup remains incomplete")
 	}
+	for _, owned := range completed {
+		alive, auditErr := e.processAlive(owned.pid)
+		if auditErr != nil {
+			return fmt.Errorf("audit retired owned nfqws2 PID %d: %w", owned.pid, auditErr)
+		}
+		if alive {
+			return fmt.Errorf("retired owned nfqws2 PID %d remains active", owned.pid)
+		}
+		if err := e.ownedRuleAbsent(ctx, owned.mode, owned.spec); err != nil {
+			return err
+		}
+	}
+	if e.opts.Provider.GetStatus() != state.status || e.opts.Provider.CurrentProfile() != state.profile {
+		return fmt.Errorf("provider does not match original snapshot")
+	}
+	e.mu.Lock()
+	e.completed = nil
+	e.mu.Unlock()
 	return nil
 }
 
@@ -296,7 +365,31 @@ func (e *LinuxRuntime) firewallListing(ctx context.Context) (string, error) {
 	if mode == "nft" {
 		return e.runner.run(ctx, "nft", "list", "ruleset")
 	}
-	return e.runner.run(ctx, "iptables", "-t", "mangle", "-S")
+	ipv4, err := e.runner.run(ctx, "iptables", "-t", "mangle", "-S")
+	if err != nil {
+		return "", err
+	}
+	if _, err := e.runner.lookPath("ip6tables"); err != nil {
+		return ipv4, nil
+	}
+	ipv6, err := e.runner.run(ctx, "ip6tables", "-t", "mangle", "-S")
+	if err != nil {
+		return "", fmt.Errorf("list ip6tables mangle rules: %w", err)
+	}
+	return ipv4 + "\n" + ipv6, nil
+}
+
+var queueNumberPattern = regexp.MustCompile(`(?:queue\s+num|--queue-num)\s+([0-9]+)`)
+
+func queuesInRuleListing(listing string) map[uint16]struct{} {
+	queues := make(map[uint16]struct{})
+	for _, match := range queueNumberPattern.FindAllStringSubmatch(listing, -1) {
+		value, err := strconv.ParseUint(match[1], 10, 16)
+		if err == nil {
+			queues[uint16(value)] = struct{}{}
+		}
+	}
+	return queues
 }
 
 func (e *LinuxRuntime) allocateOwnership(ctx context.Context, mode string) (uint16, string, string, error) {
@@ -307,16 +400,22 @@ func (e *LinuxRuntime) allocateOwnership(ctx context.Context, mode string) (uint
 	if strings.Contains(listing, linuxOwnershipPrefix) {
 		return 0, "", "", fmt.Errorf("existing AutoTune NFQUEUE ownership collision")
 	}
+	queues := queuesInRuleListing(listing)
+	bound, err := e.readQueueState()
+	if err != nil {
+		return 0, "", "", fmt.Errorf("read nfnetlink queue ownership: %w", err)
+	}
 	for range 16 {
 		var random [3]byte
-		if _, err := rand.Read(random[:]); err != nil {
+		if _, err := e.randomBytes(random[:]); err != nil {
 			return 0, "", "", err
 		}
 		queue := uint16(40000 + (uint16(random[0])<<8|uint16(random[1]))%20000)
-		token := hex.EncodeToString(random[:])
-		if !strings.Contains(listing, fmt.Sprint(queue)) {
-			return queue, "unbound_autotune_" + token, linuxOwnershipPrefix + ":" + token, nil
+		if _, used := queues[queue]; used || nfNetlinkQueueBound(bound, queue) {
+			continue
 		}
+		token := hex.EncodeToString(random[:])
+		return queue, "unbound_autotune_" + token, linuxOwnershipPrefix + ":" + token, nil
 	}
 	return 0, "", "", fmt.Errorf("could not establish an unused owned NFQUEUE number")
 }
@@ -377,10 +476,14 @@ func (e *LinuxRuntime) deleteRule(ctx context.Context, mode string, spec LinuxNF
 	if mode == "nft" {
 		out, err := e.runner.run(ctx, "nft", "delete", "table", spec.nftFamily(), spec.Table)
 		if err != nil {
-			return fmt.Errorf("nft delete owned table: %s", strings.TrimSpace(out))
+			return fmt.Errorf("nft delete owned table: %s: %w", strings.TrimSpace(out), err)
 		}
-		if _, err := e.runner.run(ctx, "nft", "list", "table", spec.nftFamily(), spec.Table); err == nil {
-			return fmt.Errorf("owned nft table remains after delete")
+		listing, err := e.runner.run(ctx, "nft", "list", "ruleset")
+		if err != nil {
+			return fmt.Errorf("audit nft ruleset after owned delete: %w", err)
+		}
+		if strings.Contains(listing, spec.Table) || strings.Contains(listing, spec.Marker) || strings.Contains(listing, "queue num "+fmt.Sprint(spec.Queue)) {
+			return fmt.Errorf("owned nft state remains after delete")
 		}
 		return nil
 	}
@@ -389,5 +492,79 @@ func (e *LinuxRuntime) deleteRule(ctx context.Context, mode string, spec LinuxNF
 	if err != nil {
 		return fmt.Errorf("iptables delete owned rule: %s", strings.TrimSpace(out))
 	}
+	parts = spec.iptablesArgs("-C")
+	if out, err := e.runner.run(ctx, parts[0], parts[1:]...); err == nil {
+		return fmt.Errorf("owned iptables rule remains after delete: %s", strings.TrimSpace(out))
+	}
 	return nil
+}
+
+func (e *LinuxRuntime) ownedRuleAbsent(ctx context.Context, mode string, spec LinuxNFQueueSpec) error {
+	if mode == "nft" {
+		listing, err := e.runner.run(ctx, "nft", "list", "ruleset")
+		if err != nil {
+			return fmt.Errorf("audit nft ruleset for owned absence: %w", err)
+		}
+		if strings.Contains(listing, spec.Table) || strings.Contains(listing, spec.Marker) || strings.Contains(listing, "queue num "+fmt.Sprint(spec.Queue)) {
+			return fmt.Errorf("owned nft state remains active")
+		}
+		return nil
+	}
+	parts := spec.iptablesArgs("-C")
+	if out, err := e.runner.run(ctx, parts[0], parts[1:]...); err == nil {
+		return fmt.Errorf("owned iptables rule remains active: %s", strings.TrimSpace(out))
+	}
+	return nil
+}
+
+func (e *LinuxRuntime) cleanupTimeout() time.Duration {
+	if e.cleanupWait > 0 {
+		return e.cleanupWait
+	}
+	return 10 * time.Second
+}
+
+func (e *LinuxRuntime) forceCleanupTimeout() time.Duration {
+	if e.forceWait > 0 {
+		return e.forceWait
+	}
+	return 2 * time.Second
+}
+
+func linuxKillGroup(pid int, signal syscall.Signal) error {
+	return syscall.Kill(-pid, signal)
+}
+
+func linuxProcessAlive(pid int) (bool, error) {
+	err := syscall.Kill(pid, 0)
+	if err == nil || err == syscall.EPERM {
+		return true, nil
+	}
+	if err == syscall.ESRCH {
+		return false, nil
+	}
+	return false, err
+}
+
+func linuxCandidateSysProcAttr() *syscall.SysProcAttr {
+	return &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGTERM}
+}
+
+func readNFNetlinkQueues() ([]byte, error) {
+	data, err := os.ReadFile("/proc/net/netfilter/nfnetlink_queue")
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	return data, err
+}
+
+func nfNetlinkQueueBound(state []byte, queue uint16) bool {
+	for _, field := range strings.Fields(string(state)) {
+		field = strings.Trim(field, "[](),:")
+		value, err := strconv.ParseUint(field, 0, 16)
+		if err == nil && uint16(value) == queue {
+			return true
+		}
+	}
+	return false
 }

@@ -23,28 +23,41 @@ import (
 
 const windowsCaptureReadyMarker = "windivert initialized. capture is started."
 
+const windowsStillActive = 259
+
 type WindowsRuntime struct {
-	opts      RuntimeOptions
-	mu        sync.Mutex
-	snapshots map[string]providerSnapshot
-	nextID    atomic.Uint64
-	active    *windowsCandidate
+	opts         RuntimeOptions
+	mu           sync.Mutex
+	snapshots    map[string]providerSnapshot
+	nextID       atomic.Uint64
+	active       *windowsCandidate
+	ownedPIDs    map[int]struct{}
+	processAlive func(int) (bool, error)
+	cleanupWait  time.Duration
 }
 
 type windowsCandidate struct {
-	cmd    *exec.Cmd
-	done   chan struct{}
-	ready  chan struct{}
-	cancel context.CancelFunc
-	job    windows.Handle
-	pid    int
+	cmd       *exec.Cmd
+	done      chan struct{}
+	ready     chan struct{}
+	cancel    context.CancelFunc
+	job       windows.Handle
+	jobClosed bool
+	cleaning  bool
+	pid       int
 }
 
 func NewWindowsRuntime(options RuntimeOptions) (*WindowsRuntime, error) {
 	if options.Provider == nil || options.Assets == nil {
 		return nil, fmt.Errorf("Windows vNext runtime needs product provider and assets")
 	}
-	return &WindowsRuntime{opts: options, snapshots: make(map[string]providerSnapshot)}, nil
+	return &WindowsRuntime{
+		opts:         options,
+		snapshots:    make(map[string]providerSnapshot),
+		ownedPIDs:    make(map[int]struct{}),
+		processAlive: windowsProcessAlive,
+		cleanupWait:  10 * time.Second,
+	}, nil
 }
 
 func (e *WindowsRuntime) Resolve(ctx context.Context, backend backendcap.Backend, ids []string) ([]ResolvedAsset, error) {
@@ -139,7 +152,7 @@ func (e *WindowsRuntime) Activate(ctx context.Context, candidate ExecutableCandi
 		e.mu.Unlock()
 		return fmt.Errorf("owned AutoTune candidate is already active")
 	}
-	candidateCtx, cancel := context.WithTimeout(ctx, physicalCandidateTimeout)
+	candidateCtx, cancel := candidateExecutionContext(ctx)
 	cmd := exec.CommandContext(candidateCtx, binary, args...)
 	cmd.Dir = e.opts.Assets.BinDir
 	stdout, err := cmd.StdoutPipe()
@@ -180,6 +193,7 @@ func (e *WindowsRuntime) Activate(ctx context.Context, candidate ExecutableCandi
 	}
 	active := &windowsCandidate{cmd: cmd, done: make(chan struct{}), ready: make(chan struct{}, 1), cancel: cancel, job: job, pid: cmd.Process.Pid}
 	e.active = active
+	e.ownedPIDs[active.pid] = struct{}{}
 	e.mu.Unlock()
 	go windowsReadReady(stdout, active.ready)
 	go windowsReadReady(stderr, active.ready)
@@ -223,17 +237,40 @@ func (e *WindowsRuntime) Deactivate(_ context.Context) error {
 		e.mu.Unlock()
 		return nil
 	}
-	e.active = nil
+	active.cleaning = true
+	closeJob := !active.jobClosed
 	e.mu.Unlock()
+
 	active.cancel()
-	_ = windows.CloseHandle(active.job) // KILL_ON_JOB_CLOSE is the parent-crash guard.
+	if closeJob {
+		if err := windows.CloseHandle(active.job); err != nil {
+			return fmt.Errorf("close owned winws2 crash-guard job: %w", err)
+		}
+		e.mu.Lock()
+		if e.active == active {
+			active.jobClosed = true
+		}
+		e.mu.Unlock()
+	}
 	select {
 	case <-active.done:
-		e.opts.emit(PhysicalLog{Backend: string(backendcap.Zapret2Windows), Phase: "EXITED", PID: active.pid})
-		return nil
-	case <-time.After(10 * time.Second):
+	case <-time.After(e.cleanupTimeout()):
 		return fmt.Errorf("owned winws2 PID %d did not exit after crash-guard teardown", active.pid)
 	}
+	alive, err := e.processAlive(active.pid)
+	if err != nil {
+		return fmt.Errorf("audit owned winws2 PID %d after teardown: %w", active.pid, err)
+	}
+	if alive {
+		return fmt.Errorf("owned winws2 PID %d remains alive after teardown", active.pid)
+	}
+	e.mu.Lock()
+	if e.active == active {
+		e.active = nil
+	}
+	e.mu.Unlock()
+	e.opts.emit(PhysicalLog{Backend: string(backendcap.Zapret2Windows), Phase: "EXITED", PID: active.pid})
+	return nil
 }
 
 func (e *WindowsRuntime) Restore(ctx context.Context, snapshot StateSnapshot) error {
@@ -265,11 +302,37 @@ func (e *WindowsRuntime) VerifyRestored(_ context.Context, snapshot StateSnapsho
 		return err
 	}
 	e.mu.Lock()
-	active := e.active != nil
-	e.mu.Unlock()
-	if active || e.opts.Provider.GetStatus() != state.status || e.opts.Provider.CurrentProfile() != state.profile {
-		return fmt.Errorf("provider or owned candidate does not match original snapshot")
+	active := e.active
+	pids := make([]int, 0, len(e.ownedPIDs))
+	for pid := range e.ownedPIDs {
+		pids = append(pids, pid)
 	}
+	e.mu.Unlock()
+	if active != nil {
+		alive, auditErr := e.processAlive(active.pid)
+		if auditErr != nil {
+			return fmt.Errorf("audit retained owned winws2 PID %d: %w", active.pid, auditErr)
+		}
+		if alive {
+			return fmt.Errorf("owned winws2 PID %d remains active", active.pid)
+		}
+		return fmt.Errorf("owned winws2 cleanup remains incomplete")
+	}
+	for _, pid := range pids {
+		alive, auditErr := e.processAlive(pid)
+		if auditErr != nil {
+			return fmt.Errorf("audit retired owned winws2 PID %d: %w", pid, auditErr)
+		}
+		if alive {
+			return fmt.Errorf("retired owned winws2 PID %d remains active", pid)
+		}
+	}
+	if e.opts.Provider.GetStatus() != state.status || e.opts.Provider.CurrentProfile() != state.profile {
+		return fmt.Errorf("provider does not match original snapshot")
+	}
+	e.mu.Lock()
+	clear(e.ownedPIDs)
+	e.mu.Unlock()
 	e.opts.emit(PhysicalLog{ExperimentID: snapshot.ID, Backend: string(backendcap.Zapret2Windows), Phase: "RESTORE_VERIFIED"})
 	return nil
 }
@@ -284,15 +347,23 @@ func (e *WindowsRuntime) snapshot(snapshot StateSnapshot) (providerSnapshot, err
 	return state, nil
 }
 
+func (e *WindowsRuntime) cleanupTimeout() time.Duration {
+	if e.cleanupWait > 0 {
+		return e.cleanupWait
+	}
+	return 10 * time.Second
+}
+
 func windowsReadReady(reader interface{ Read([]byte) (int, error) }, ready chan<- struct{}) {
 	scanner := bufio.NewScanner(reader)
+	signaled := false
 	for scanner.Scan() {
-		if strings.Contains(strings.ToLower(scanner.Text()), windowsCaptureReadyMarker) {
+		if !signaled && strings.Contains(strings.ToLower(scanner.Text()), windowsCaptureReadyMarker) {
 			select {
 			case ready <- struct{}{}:
 			default:
 			}
-			return
+			signaled = true
 		}
 	}
 }
@@ -309,4 +380,20 @@ func newKillOnCloseJob() (windows.Handle, error) {
 		return 0, err
 	}
 	return job, nil
+}
+
+func windowsProcessAlive(pid int) (bool, error) {
+	process, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
+	if err != nil {
+		if err == windows.ERROR_INVALID_PARAMETER {
+			return false, nil
+		}
+		return false, err
+	}
+	defer windows.CloseHandle(process)
+	var exitCode uint32
+	if err := windows.GetExitCodeProcess(process, &exitCode); err != nil {
+		return false, err
+	}
+	return exitCode == windowsStillActive, nil
 }

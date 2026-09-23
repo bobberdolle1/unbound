@@ -5,6 +5,7 @@ package autotunevnext
 import (
 	"context"
 	"errors"
+	"io"
 	"os/exec"
 	"strings"
 	"testing"
@@ -31,6 +32,33 @@ func TestWindowsCaptureReadinessRequiresCanonicalMarker(t *testing.T) {
 	case <-absent:
 		t.Fatal("noncanonical output passed readiness gate")
 	default:
+	}
+}
+
+func TestWindowsCaptureReaderKeepsDrainingAfterReadiness(t *testing.T) {
+	reader, writer := io.Pipe()
+	ready := make(chan struct{}, 1)
+	drained := make(chan struct{})
+	go func() {
+		windowsReadReady(reader, ready)
+		close(drained)
+	}()
+	go func() {
+		_, _ = io.WriteString(writer, "WinDivert initialized. capture is started.\n")
+		for range 10000 {
+			_, _ = io.WriteString(writer, "diagnostic output that must be drained\n")
+		}
+		_ = writer.Close()
+	}()
+	select {
+	case <-ready:
+	case <-time.After(time.Second):
+		t.Fatal("capture readiness was not observed")
+	}
+	select {
+	case <-drained:
+	case <-time.After(time.Second):
+		t.Fatal("reader returned before draining post-readiness output")
 	}
 }
 
@@ -135,5 +163,41 @@ func TestWindowsCrashGuardKillsOwnedStuckProcess(t *testing.T) {
 	case <-done:
 	default:
 		t.Fatal("owned process remained after job close")
+	}
+}
+
+func TestWindowsDeactivateRetainsOwnershipUntilFactualExit(t *testing.T) {
+	runtime, err := NewWindowsRuntime(RuntimeOptions{Provider: &windowsRuntimeProvider{status: providers.StatusRunning, profile: "original"}, Assets: &engine.AssetPaths{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := runtime.Snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	close(done)
+	runtime.cleanupWait = time.Millisecond
+	runtime.processAlive = func(int) (bool, error) { return true, nil }
+	runtime.active = &windowsCandidate{done: done, cancel: func() {}, jobClosed: true, pid: 4242}
+	runtime.ownedPIDs[4242] = struct{}{}
+	if err := runtime.Deactivate(context.Background()); err == nil {
+		t.Fatal("accepted a still-alive owned process")
+	}
+	if runtime.active == nil {
+		t.Fatal("lost ownership after failed teardown")
+	}
+	if err := runtime.VerifyRestored(context.Background(), snapshot); err == nil {
+		t.Fatal("restoration passed while owned PID remained alive")
+	}
+	runtime.processAlive = func(int) (bool, error) { return false, nil }
+	if err := runtime.Restore(context.Background(), snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.active != nil {
+		t.Fatal("ownership remained after factual process exit")
+	}
+	if err := runtime.VerifyRestored(context.Background(), snapshot); err != nil {
+		t.Fatal(err)
 	}
 }

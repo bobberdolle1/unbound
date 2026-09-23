@@ -1,13 +1,13 @@
 package autotunevnext
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-
 	"unbound/engine"
 	"unbound/engine/providers"
 )
@@ -15,6 +15,12 @@ import (
 type providerSnapshot struct {
 	status  providers.Status
 	profile string
+}
+
+// candidateExecutionContext preserves the caller's deadline. Teardown has a
+// separate bounded timeout, so a valid experiment is never shortened here.
+func candidateExecutionContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithCancel(ctx)
 }
 
 func unsupported(code string) HostPreflightResult {

@@ -52,6 +52,9 @@ func TestLinuxNFQueueRuleIsExactAndOwned(t *testing.T) {
 			t.Fatalf("nft rule missing %q: %s", fragment, script)
 		}
 	}
+	if lines := strings.Count(strings.TrimSpace(script), "\n") + 1; lines != 3 {
+		t.Fatalf("nft owned object must be one three-command batch, got %d lines: %s", lines, script)
+	}
 	args := strings.Join(spec.iptablesArgs("-I"), " ")
 	for _, fragment := range []string{"-d 192.0.2.9", "--dports 443,50000:50010", "--queue-num 40123", "--queue-bypass", linuxOwnershipPrefix + ":abc"} {
 		if !strings.Contains(args, fragment) {

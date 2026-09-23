@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"unbound/engine"
 	"unbound/engine/providers"
@@ -117,5 +116,3 @@ func AcceptanceTLSStrategy(hostname string, family strategyir.IPFamily) (strateg
 	}
 	return strategyir.Canonicalize(candidate)
 }
-
-const physicalCandidateTimeout = 45 * time.Second
