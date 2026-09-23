@@ -512,12 +512,16 @@ func (e *LinuxRuntime) verifyRule(ctx context.Context, mode string, spec LinuxNF
 			"table " + spec.nftFamily() + " " + spec.Table,
 			"hook output",
 			address,
-			"queue num " + fmt.Sprint(spec.Queue),
 			spec.Marker,
 		} {
 			if !strings.Contains(out, fragment) {
 				return fmt.Errorf("owned nft rule is missing %q", fragment)
 			}
+		}
+		queuePresent := strings.Contains(out, "queue num "+fmt.Sprint(spec.Queue)) ||
+			strings.Contains(out, "queue flags bypass to "+fmt.Sprint(spec.Queue))
+		if !queuePresent {
+			return fmt.Errorf("owned nft rule is missing compiled NFQUEUE target")
 		}
 		portExpression := "tcp dport " + spec.nftPorts()
 		portPresent := strings.Contains(out, portExpression)
