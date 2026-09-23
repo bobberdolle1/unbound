@@ -71,9 +71,12 @@ func (f *fakeObserver) Observe(ctx context.Context, _ string, options observator
 }
 
 type fakeExecutor struct {
-	calls                                  []string
-	activateErr, deactivateErr, restoreErr error
-	snapshot                               StateSnapshot
+	calls                                                   []string
+	activateErr, verifyActiveErr, deactivateErr, restoreErr error
+	snapshot                                                StateSnapshot
+	directErrAt                                             int
+	directCalls                                             int
+	deactivateContextCancelled                              bool
 }
 
 func (f *fakeExecutor) Snapshot(context.Context) (StateSnapshot, error) {
@@ -82,6 +85,10 @@ func (f *fakeExecutor) Snapshot(context.Context) (StateSnapshot, error) {
 }
 func (f *fakeExecutor) EstablishDirect(context.Context, StateSnapshot) error {
 	f.calls = append(f.calls, "direct")
+	f.directCalls++
+	if f.directErrAt == f.directCalls {
+		return errors.New("establish direct")
+	}
 	return nil
 }
 func (f *fakeExecutor) Activate(context.Context, ExecutableCandidate) error {
@@ -90,10 +97,11 @@ func (f *fakeExecutor) Activate(context.Context, ExecutableCandidate) error {
 }
 func (f *fakeExecutor) VerifyActive(context.Context, ExecutableCandidate) error {
 	f.calls = append(f.calls, "verify-active")
-	return nil
+	return f.verifyActiveErr
 }
-func (f *fakeExecutor) Deactivate(context.Context) error {
+func (f *fakeExecutor) Deactivate(ctx context.Context) error {
 	f.calls = append(f.calls, "deactivate")
+	f.deactivateContextCancelled = ctx.Err() != nil
 	return f.deactivateErr
 }
 func (f *fakeExecutor) Restore(context.Context, StateSnapshot) error {
@@ -111,10 +119,13 @@ func (p supportedPreflight) Check(context.Context, HostPreflightRequest) HostPre
 	return HostPreflightResult{Status: p.status}
 }
 
-type fakeAssets struct{ err error }
+type fakeAssets struct {
+	err    error
+	assets []ResolvedAsset
+}
 
 func (a fakeAssets) Resolve(context.Context, backendcap.Backend, []string) ([]ResolvedAsset, error) {
-	return nil, a.err
+	return a.assets, a.err
 }
 
 func request(strategies ...strategyir.Strategy) Request {
@@ -207,7 +218,7 @@ func TestPlannerAndPreflightGatesPreventActivation(t *testing.T) {
 			req := request(tc.strategy)
 			req.Backend = tc.backend
 			executor := &fakeExecutor{}
-			result := Run(context.Background(), req, &fakeObserver{results: []observatory.ObservationResult{observation("base", false, "192.0.2.1", "https://blocked.test/")}}, executor, supportedPreflight{tc.preflight}, fakeAssets{tc.assets})
+			result := Run(context.Background(), req, &fakeObserver{results: []observatory.ObservationResult{observation("base", false, "192.0.2.1", "https://blocked.test/")}}, executor, supportedPreflight{tc.preflight}, fakeAssets{err: tc.assets})
 			if slices.Contains(executor.calls, "activate") {
 				t.Fatalf("activated despite gate: %#v", result)
 			}
@@ -304,4 +315,222 @@ func TestCompilerPlannerMismatchFailsClosed(t *testing.T) {
 	if compiled.Status != backendcap.StatusCompiled || experiment.RejectionReasons[0].Code != "COMPILER_PLANNER_MISMATCH" {
 		t.Fatalf("mismatch=%#v", experiment)
 	}
+}
+
+func TestLifecycleFailureStopsLaterCandidatesAndClosesOnce(t *testing.T) {
+	executor := &fakeExecutor{verifyActiveErr: errors.New("verify")}
+	result := Run(context.Background(), request(tlsStrategy("first"), tlsStrategy("second")), &fakeObserver{results: []observatory.ObservationResult{
+		observation("base", false, "192.0.2.1", "https://blocked.test/"),
+		observation("before-first", false, "192.0.2.1", "https://blocked.test/"),
+	}}, executor, supportedPreflight{PreflightSupported}, fakeAssets{})
+	if result.Status != StatusLifecycleFailed || countCalls(executor.calls, "activate") != 1 || countCalls(executor.calls, "deactivate") != 1 {
+		t.Fatalf("lifecycle failure continued or duplicated teardown: result=%#v calls=%v", result, executor.calls)
+	}
+	if len(result.Experiments) != 1 || !result.StateRestored {
+		t.Fatalf("terminal lifecycle restoration=%#v", result)
+	}
+}
+
+func TestDirectReestablishmentFailureIsTerminal(t *testing.T) {
+	executor := &fakeExecutor{directErrAt: 2}
+	result := Run(context.Background(), request(tlsStrategy("first"), tlsStrategy("second")), &fakeObserver{results: []observatory.ObservationResult{
+		observation("base", false, "192.0.2.1", "https://blocked.test/"),
+		observation("before-first", false, "192.0.2.1", "https://blocked.test/"),
+		observation("active-first", true, "192.0.2.1", "https://blocked.test/"),
+	}}, executor, supportedPreflight{PreflightSupported}, fakeAssets{})
+	if result.Status != StatusLifecycleFailed || countCalls(executor.calls, "activate") != 1 || !result.StateRestored {
+		t.Fatalf("direct re-establishment failure was not terminal: result=%#v calls=%v", result, executor.calls)
+	}
+}
+
+func TestCandidateCleanupFailureIsTerminal(t *testing.T) {
+	cases := []struct {
+		name     string
+		executor *fakeExecutor
+		results  []observatory.ObservationResult
+	}{
+		{
+			name:     "active observation failure",
+			executor: &fakeExecutor{deactivateErr: errors.New("deactivate")},
+			results: []observatory.ObservationResult{
+				observation("base", false, "192.0.2.1", "https://blocked.test/"),
+				observation("before", false, "192.0.2.1", "https://blocked.test/"),
+			},
+		},
+		{
+			name:     "active verification failure",
+			executor: &fakeExecutor{verifyActiveErr: errors.New("verify"), deactivateErr: errors.New("deactivate")},
+			results: []observatory.ObservationResult{
+				observation("base", false, "192.0.2.1", "https://blocked.test/"),
+				observation("before", false, "192.0.2.1", "https://blocked.test/"),
+			},
+		},
+		{
+			name:     "pinned edge mismatch",
+			executor: &fakeExecutor{deactivateErr: errors.New("deactivate")},
+			results: []observatory.ObservationResult{
+				observation("base", false, "192.0.2.1", "https://blocked.test/"),
+				observation("before", false, "192.0.2.1", "https://blocked.test/"),
+				observation("active", true, "192.0.2.2", "https://blocked.test/"),
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := Run(context.Background(), request(tlsStrategy("tls")), &fakeObserver{results: tc.results}, tc.executor, supportedPreflight{PreflightSupported}, fakeAssets{})
+			if result.Status != StatusLifecycleFailed || countCalls(tc.executor.calls, "deactivate") != 1 || !result.StateRestored {
+				t.Fatalf("cleanup failure not terminal: result=%#v calls=%v", result, tc.executor.calls)
+			}
+		})
+	}
+}
+
+func TestCancellationUsesUncancelledCleanupAndRestore(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	executor := &fakeExecutor{}
+	observer := &fakeObserver{results: []observatory.ObservationResult{
+		observation("base", false, "192.0.2.1", "https://blocked.test/"),
+		observation("before", false, "192.0.2.1", "https://blocked.test/"),
+	}, errAt: 2, cancel: cancel}
+	result := Run(ctx, request(tlsStrategy("tls")), observer, executor, supportedPreflight{PreflightSupported}, fakeAssets{})
+	if result.Status != StatusCancelled || !result.StateRestored || executor.deactivateContextCancelled || !slices.Contains(executor.calls, "verify-restored") {
+		t.Fatalf("cancelled cleanup did not use independent context: result=%#v calls=%v", result, executor.calls)
+	}
+}
+
+func TestRestoreFailureOverridesLifecycleFailure(t *testing.T) {
+	executor := &fakeExecutor{verifyActiveErr: errors.New("verify"), restoreErr: errors.New("restore")}
+	result := Run(context.Background(), request(tlsStrategy("tls")), &fakeObserver{results: []observatory.ObservationResult{
+		observation("base", false, "192.0.2.1", "https://blocked.test/"),
+		observation("before", false, "192.0.2.1", "https://blocked.test/"),
+	}}, executor, supportedPreflight{PreflightSupported}, fakeAssets{})
+	if result.Status != StatusStateRestoreFailed || result.SelectedStrategyID != "" || result.SelectedFingerprint != "" || result.SelectionReason != "" {
+		t.Fatalf("restore did not override lifecycle failure: %#v", result)
+	}
+}
+
+func TestMaterializeEngineArgvAssetsAndRejectInvalidValues(t *testing.T) {
+	assets := []ResolvedAsset{
+		{ID: "blob", Kind: AssetKindBlobSymbol, EngineValue: "bundle:tls"},
+		{ID: "hosts", Kind: AssetKindHostlistFile, EngineValue: "C:/managed/hosts.txt"},
+		{ID: "ips", Kind: AssetKindIPSetFile, EngineValue: "C:/managed/ips.txt"},
+	}
+	argv, err := MaterializeEngineArgv([]string{
+		"--lua-desync=fake:blob=${asset:blob}",
+		"--hostlist=${asset:hosts}",
+		"--ipset=${asset:ips}",
+	}, assets)
+	if err != nil || !slices.Equal(argv, []string{"--lua-desync=fake:blob=bundle:tls", "--hostlist=C:/managed/hosts.txt", "--ipset=C:/managed/ips.txt"}) {
+		t.Fatalf("materialized argv=%v err=%v", argv, err)
+	}
+	for _, tc := range []struct {
+		name string
+		argv []string
+		set  []ResolvedAsset
+	}{
+		{"missing", []string{"--hostlist=${asset:missing}"}, assets},
+		{"wrong kind", []string{"--hostlist=${asset:blob}"}, assets},
+		{"malformed", []string{"--hostlist=${asset:hosts"}, assets},
+		{"conflicting duplicate", []string{"--hostlist=${asset:hosts}"}, []ResolvedAsset{{ID: "hosts", Kind: AssetKindHostlistFile, EngineValue: "a"}, {ID: "hosts", Kind: AssetKindHostlistFile, EngineValue: "b"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := MaterializeEngineArgv(tc.argv, tc.set); err == nil {
+				t.Fatal("invalid asset materialization succeeded")
+			}
+		})
+	}
+}
+
+func TestExactPlansRejectUnresolvedAssetsAndLinuxCaptureFlags(t *testing.T) {
+	windows := backendcap.Compile(tlsStrategy("tls"), backendcap.Zapret2Windows)
+	linux := backendcap.Compile(tlsStrategy("tls"), backendcap.Zapret2Linux)
+	if _, err := NewWindowsExactPlan(ExecutableCandidate{Plan: backendcap.Plan{EngineArgv: []string{"--hostlist=${asset:hosts}"}, Capture: windows.Plan.Capture}}); err == nil {
+		t.Fatal("Windows exact plan accepted unresolved asset")
+	}
+	if _, err := NewLinuxExactPlan(ExecutableCandidate{Plan: backendcap.Plan{EngineArgv: []string{"--hostlist=${asset:hosts}"}, Capture: linux.Plan.Capture}}); err == nil {
+		t.Fatal("Linux exact plan accepted unresolved asset")
+	}
+	if _, err := NewLinuxExactPlan(ExecutableCandidate{Plan: backendcap.Plan{EngineArgv: []string{"--wf-tcp-out=443"}, Capture: linux.Plan.Capture}}); err == nil {
+		t.Fatal("Linux exact plan accepted capture argv")
+	}
+	wantCapture, err := backendcap.RenderWindowsCaptureArgv(windows.Plan.Capture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := NewWindowsExactPlan(ExecutableCandidate{Plan: windows.Plan})
+	if err != nil || !slices.Equal(plan.CaptureArgv, wantCapture) {
+		t.Fatalf("Windows capture changed: plan=%#v want=%v err=%v", plan, wantCapture, err)
+	}
+}
+
+func TestWrongResolvedAssetKindFailsPreflight(t *testing.T) {
+	strategy := tlsStrategy("asset-kind")
+	strategy.Operations = []strategyir.Operation{{Type: strategyir.OperationFakeInjection, PayloadRef: "tls-clienthello-default"}}
+	result := Run(context.Background(), request(strategy), &fakeObserver{results: []observatory.ObservationResult{
+		observation("base", false, "192.0.2.1", "https://blocked.test/"),
+	}}, &fakeExecutor{}, supportedPreflight{PreflightSupported}, fakeAssets{assets: []ResolvedAsset{{ID: "tls-clienthello-default", Kind: AssetKindHostlistFile, EngineValue: "C:/managed/hosts.txt"}}})
+	if result.Status != StatusPreflightFailed || len(result.Experiments) != 1 || result.Experiments[0].RejectionReasons[0].Code != "INVALID_RESOLVED_ASSET" {
+		t.Fatalf("wrong resolved kind did not fail closed: %#v", result)
+	}
+}
+
+func TestBaselineEdgeIsPlannerScopeAndPinnedPrimaryIsStrict(t *testing.T) {
+	ipset := tlsStrategy("ipset")
+	ipset.Selector.Scope.Host = strategyir.HostScope{Mode: strategyir.HostScopeIPSetReference, ID: "target-set"}
+	req := request(ipset)
+	req.ScopeSnapshot.IPSetMembers = map[string][]string{"target-set": {"192.0.2.0/24"}}
+	result := Run(context.Background(), req, &fakeObserver{results: []observatory.ObservationResult{
+		observation("base", false, "192.0.2.1", "https://blocked.test/"),
+	}}, &fakeExecutor{}, supportedPreflight{PreflightSupported}, fakeAssets{})
+	if got := result.PlannerReport.Candidates[0].Status; got != planner.StatusEligible {
+		t.Fatalf("actual baseline edge did not match IP-set scope: %#v", result.PlannerReport)
+	}
+
+	active := observation("active", true, "192.0.2.1", "https://blocked.test/")
+	secondary := active.Attempts[0]
+	secondary.ResolvedIP = "192.0.2.2"
+	active.Attempts = append(active.Attempts, secondary)
+	strict := Run(context.Background(), request(tlsStrategy("strict")), &fakeObserver{results: []observatory.ObservationResult{
+		observation("base", false, "192.0.2.2", "https://blocked.test/"),
+		observation("before", false, "192.0.2.2", "https://blocked.test/"),
+		active,
+	}}, &fakeExecutor{}, supportedPreflight{PreflightSupported}, fakeAssets{})
+	if strict.Experiments[0].Outcome != OutcomeInconclusive {
+		t.Fatalf("secondary non-primary edge incorrectly satisfied pin: %#v", strict.Experiments[0])
+	}
+}
+
+type sequencePreflight struct{ calls int }
+
+func (p *sequencePreflight) Check(context.Context, HostPreflightRequest) HostPreflightResult {
+	p.calls++
+	if p.calls == 1 {
+		return HostPreflightResult{Status: PreflightUnsupported, Reasons: []Reason{{Code: "HOST_UNSUPPORTED"}}}
+	}
+	return HostPreflightResult{Status: PreflightSupported}
+}
+
+func TestPreflightRejectedCandidateDoesNotConsumeExecutionBudget(t *testing.T) {
+	preflight := &sequencePreflight{}
+	req := request(tlsStrategy("first"), tlsStrategy("second"))
+	req.Policy.MaxCandidates = 1
+	result := Run(context.Background(), req, &fakeObserver{results: []observatory.ObservationResult{
+		observation("base", false, "192.0.2.1", "https://blocked.test/"),
+		observation("before-second", false, "192.0.2.1", "https://blocked.test/"),
+		observation("active-second", true, "192.0.2.1", "https://blocked.test/"),
+		observation("after-second", false, "192.0.2.1", "https://blocked.test/"),
+	}}, &fakeExecutor{}, preflight, fakeAssets{})
+	if len(result.Experiments) != 2 || result.Experiments[0].ExperimentExecuted || !result.Experiments[1].ExperimentExecuted || result.Status != StatusCompletedSelected {
+		t.Fatalf("preflight rejection consumed network budget: %#v", result)
+	}
+}
+
+func countCalls(calls []string, wanted string) int {
+	count := 0
+	for _, call := range calls {
+		if call == wanted {
+			count++
+		}
+	}
+	return count
 }

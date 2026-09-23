@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"sort"
+	"strings"
 	"time"
 
 	"unbound/engine/attribution"
@@ -50,7 +51,8 @@ func Run(ctx context.Context, request Request, observer Observer, executor Execu
 		controlBaselines = append(controlBaselines, controlBaseline{target: control, observation: observation, edge: selectedEdge(observation)})
 	}
 	result.BaselineAttribution = attribution.AnalyzeCohort(attribution.Cohort{Target: []observatory.ObservationResult{baseline}, Controls: observationsFromControls(controlBaselines)})
-	result.PlannerReport = planner.Plan(planner.Request{Attribution: result.BaselineAttribution, Backend: request.Backend, Strategies: request.Strategies, Scope: request.ScopeSnapshot, Evidence: planner.EvidenceContext{AddressFamily: selectedFamily(baseline)}})
+	scope := scopeForBaseline(request.ScopeSnapshot, baseline)
+	result.PlannerReport = planner.Plan(planner.Request{Attribution: result.BaselineAttribution, Backend: request.Backend, Strategies: request.Strategies, Scope: scope, Evidence: planner.EvidenceContext{AddressFamily: selectedFamily(baseline)}})
 	result.Limitations = append(result.Limitations, result.PlannerReport.Limitations...)
 
 	switch result.PlannerReport.Disposition {
@@ -98,19 +100,17 @@ func Run(ctx context.Context, request Request, observer Observer, executor Execu
 		result.Experiments = append(result.Experiments, experiment)
 		if experiment.Outcome == OutcomeLifecycleFailure {
 			result.Status = StatusLifecycleFailed
+			return result
 		}
 		if ctx.Err() != nil {
 			result.Status = StatusCancelled
 			return result
 		}
 	}
-	if result.Status == StatusLifecycleFailed {
-		return result
-	}
 	selectCandidate(&result)
 	if result.SelectedStrategyID != "" {
 		result.Status = StatusCompletedSelected
-	} else if anyPreflightFailure(result.Experiments) {
+	} else if executedCount(result.Experiments) == 0 && anyPreflightFailure(result.Experiments) {
 		result.Status = StatusPreflightFailed
 	} else {
 		result.Status = StatusCompletedNoVerifiedCandidate
@@ -123,6 +123,63 @@ type controlBaseline struct {
 	observation observatory.ObservationResult
 	edge        *net.IP
 }
+
+// candidateSession owns exactly one candidate teardown attempt after Activate
+// has been called, including partial activation failures.
+type candidateSession struct {
+	executor      Executor
+	parent        context.Context
+	activated     bool
+	closed        bool
+	closeErr      error
+	closeReported bool
+}
+
+func newCandidateSession(parent context.Context, executor Executor) *candidateSession {
+	return &candidateSession{parent: parent, executor: executor}
+}
+
+func (s *candidateSession) Activate(ctx context.Context, candidate ExecutableCandidate) error {
+	s.activated = true
+	return s.executor.Activate(ctx, candidate)
+}
+
+func (s *candidateSession) Close() error {
+	if !s.activated {
+		return nil
+	}
+	if s.closed {
+		return s.closeErr
+	}
+	s.closed = true
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(s.parent), 30*time.Second)
+	defer cancel()
+	s.closeErr = s.executor.Deactivate(cleanupCtx)
+	return s.closeErr
+}
+
+func scopeForBaseline(caller planner.ScopeSnapshot, baseline observatory.ObservationResult) planner.ScopeSnapshot {
+	scope := planner.ScopeSnapshot{
+		HostListMembers: cloneScopeMembers(caller.HostListMembers),
+		IPSetMembers:    cloneScopeMembers(caller.IPSetMembers),
+	}
+	if edge := selectedEdge(baseline); edge != nil {
+		scope.TargetEdgeIPs = []string{edge.String()}
+	}
+	return scope
+}
+
+func cloneScopeMembers(source map[string][]string) map[string][]string {
+	if source == nil {
+		return nil
+	}
+	cloned := make(map[string][]string, len(source))
+	for id, members := range source {
+		cloned[id] = append([]string(nil), members...)
+	}
+	return cloned
+}
+
 type candidateInput struct {
 	assessment planner.CandidateAssessment
 	strategy   strategyir.Strategy
@@ -196,9 +253,9 @@ func aggressivenessRank(value string) int {
 	}
 }
 
-func runCandidate(ctx context.Context, request Request, policy Policy, observer Observer, executor Executor, preflight HostPreflight, assets AssetResolver, snapshot StateSnapshot, edge net.IP, controls []controlBaseline, input candidateInput) CandidateExperiment {
+func runCandidate(ctx context.Context, request Request, policy Policy, observer Observer, executor Executor, preflight HostPreflight, assets AssetResolver, snapshot StateSnapshot, edge net.IP, controls []controlBaseline, input candidateInput) (experiment CandidateExperiment) {
 	assessment, strategy := input.assessment, input.strategy
-	experiment := CandidateExperiment{StrategyID: assessment.StrategyID, Fingerprint: assessment.StrategyFingerprint, PlannerStatus: assessment.Status, CompileStatus: assessment.CompileStatus, PreflightStatus: PreflightNotRun, Safety: assessment.Safety}
+	experiment = CandidateExperiment{StrategyID: assessment.StrategyID, Fingerprint: assessment.StrategyFingerprint, PlannerStatus: assessment.Status, CompileStatus: assessment.CompileStatus, PreflightStatus: PreflightNotRun, Safety: assessment.Safety}
 	compiled := backendcap.Compile(strategy, request.Backend)
 	experiment.CompileStatus = compiled.Status
 	if compiled.Status != backendcap.StatusCompiled {
@@ -222,14 +279,21 @@ func runCandidate(ctx context.Context, request Request, policy Policy, observer 
 	resolved, err := assets.Resolve(ctx, request.Backend, compiled.RequiredAssets)
 	if err != nil {
 		experiment.Outcome = OutcomeHostUnsupported
-		experiment.PreflightStatus = PreflightUnsupported
+		experiment.PreflightStatus = PreflightError
 		experiment.RejectionReasons = []Reason{{Code: "MISSING_ASSET", Detail: err.Error()}}
 		return experiment
 	}
 	if !resolvedAssetsCover(compiled.RequiredAssets, resolved) {
 		experiment.Outcome = OutcomeHostUnsupported
-		experiment.PreflightStatus = PreflightUnsupported
-		experiment.RejectionReasons = []Reason{{Code: "MISSING_ASSET", Detail: "resolver did not return every required trusted logical asset"}}
+		experiment.PreflightStatus = PreflightError
+		experiment.RejectionReasons = []Reason{{Code: "INVALID_RESOLVED_ASSET", Detail: "resolver did not return every complete trusted logical asset"}}
+		return experiment
+	}
+	materializedArgv, err := MaterializeEngineArgv(compiled.Plan.EngineArgv, resolved)
+	if err != nil {
+		experiment.Outcome = OutcomeHostUnsupported
+		experiment.PreflightStatus = PreflightError
+		experiment.RejectionReasons = []Reason{{Code: materializationReason(err), Detail: err.Error()}}
 		return experiment
 	}
 	preflightResult := preflight.Check(ctx, HostPreflightRequest{Backend: request.Backend, Requirements: compiled.DerivedRequirements, RequiredAssets: compiled.RequiredAssets, Capture: compiled.Plan.Capture})
@@ -238,7 +302,10 @@ func runCandidate(ctx context.Context, request Request, policy Policy, observer 
 		experiment.Outcome = OutcomeHostUnsupported
 		return experiment
 	}
-	candidate := ExecutableCandidate{Strategy: strategy, Fingerprint: compiled.StrategyFingerprint, Backend: request.Backend, Plan: compiled.Plan, Assets: resolved}
+	plan := compiled.Plan
+	plan.EngineArgv = materializedArgv
+	candidate := ExecutableCandidate{Strategy: strategy, Fingerprint: compiled.StrategyFingerprint, Backend: request.Backend, Plan: plan, Assets: resolved}
+	experiment.ExperimentExecuted = true
 	before, err := observe(ctx, observer, request.Target, request.NetworkLabel, request.Evidence, policy, &edge, "direct", "")
 	if err != nil {
 		return inconclusive(experiment, "DIRECT_BEFORE_OBSERVATION_FAILED", err)
@@ -249,34 +316,30 @@ func runCandidate(ctx context.Context, request Request, policy Policy, observer 
 		experiment.Limitations = append(experiment.Limitations, "SAME_EDGE_REQUIRED")
 		return experiment
 	}
-	if err := executor.Activate(ctx, candidate); err != nil {
-		_ = executor.Deactivate(context.WithoutCancel(ctx))
+	session := newCandidateSession(ctx, executor)
+	defer func() {
+		if err := session.Close(); err != nil && !session.closeReported {
+			session.closeReported = true
+			experiment.Outcome = OutcomeLifecycleFailure
+			experiment.RejectionReasons = append(experiment.RejectionReasons, Reason{Code: "DEACTIVATION_FAILED", Detail: err.Error()})
+		}
+	}()
+	if err := session.Activate(ctx, candidate); err != nil {
 		experiment.Outcome = OutcomeLifecycleFailure
 		experiment.RejectionReasons = append(experiment.RejectionReasons, Reason{Code: "ACTIVATION_FAILED", Detail: err.Error()})
 		return experiment
 	}
-	active := true
-	deactivate := func() error {
-		if !active {
-			return nil
-		}
-		active = false
-		return executor.Deactivate(ctx)
-	}
 	if err := executor.VerifyActive(ctx, candidate); err != nil {
-		_ = deactivate()
 		experiment.Outcome = OutcomeLifecycleFailure
 		experiment.RejectionReasons = append(experiment.RejectionReasons, Reason{Code: "ACTIVE_VERIFY_FAILED", Detail: err.Error()})
 		return experiment
 	}
 	activeObservation, err := observe(ctx, observer, request.Target, request.NetworkLabel, request.Evidence, policy, &edge, "externally_active_profile", strategy.ID)
 	if err != nil {
-		_ = deactivate()
 		return inconclusive(experiment, "ACTIVE_OBSERVATION_FAILED", err)
 	}
 	experiment.ActiveRunIDs = []string{activeObservation.RunID}
 	if !sameEdge(activeObservation, edge) || !sameFamily(before, activeObservation) {
-		_ = deactivate()
 		experiment.Outcome = OutcomeInconclusive
 		experiment.Limitations = append(experiment.Limitations, "SAME_EDGE_OR_ADDRESS_FAMILY_REQUIRED")
 		return experiment
@@ -284,7 +347,8 @@ func runCandidate(ctx context.Context, request Request, policy Policy, observer 
 	for _, control := range controls {
 		experiment.ControlResults = append(experiment.ControlResults, observeControl(ctx, observer, request, policy, edge, control, strategy.ID))
 	}
-	if err := deactivate(); err != nil {
+	if err := session.Close(); err != nil {
+		session.closeReported = true
 		experiment.Outcome = OutcomeLifecycleFailure
 		experiment.RejectionReasons = append(experiment.RejectionReasons, Reason{Code: "DEACTIVATION_FAILED", Detail: err.Error()})
 		return experiment
@@ -391,12 +455,26 @@ func selectedFamily(observation observatory.ObservationResult) observatory.Addre
 	return ""
 }
 func sameEdge(observation observatory.ObservationResult, expected net.IP) bool {
-	for _, attempt := range observation.Attempts {
-		if net.ParseIP(attempt.ResolvedIP).Equal(expected) {
-			return true
-		}
+	if observation.PrimaryAttemptIndex == nil {
+		return false
 	}
-	return false
+	index := *observation.PrimaryAttemptIndex
+	if index < 0 || index >= len(observation.Attempts) {
+		return false
+	}
+	attempt := observation.Attempts[index]
+	actual := net.ParseIP(attempt.ResolvedIP)
+	return actual != nil && actual.Equal(expected) && attempt.AddressFamily == familyForIP(expected)
+}
+
+func familyForIP(ip net.IP) observatory.AddressFamily {
+	if ip.To4() != nil {
+		return observatory.AddressFamilyIPv4
+	}
+	if ip.To16() != nil {
+		return observatory.AddressFamilyIPv6
+	}
+	return ""
 }
 func sameFamily(left, right observatory.ObservationResult) bool {
 	return selectedFamily(left) != "" && selectedFamily(left) == selectedFamily(right)
@@ -434,8 +512,8 @@ func controlRegression(controls []ControlResult) bool {
 }
 func executedCount(experiments []CandidateExperiment) int {
 	count := 0
-	for _, e := range experiments {
-		if e.Outcome != OutcomeNotRunBudget && e.Outcome != OutcomeNotRunPolicy {
+	for _, experiment := range experiments {
+		if experiment.ExperimentExecuted {
 			count++
 		}
 	}
@@ -464,7 +542,7 @@ func notRun(assessment planner.CandidateAssessment, strategy strategyir.Strategy
 func resolvedAssetsCover(required []string, resolved []ResolvedAsset) bool {
 	found := make(map[string]struct{}, len(resolved))
 	for _, asset := range resolved {
-		if asset.ID == "" || asset.Kind == "" {
+		if asset.ID == "" || asset.Kind == "" || asset.EngineValue == "" {
 			return false
 		}
 		found[asset.ID] = struct{}{}
@@ -475,6 +553,13 @@ func resolvedAssetsCover(required []string, resolved []ResolvedAsset) bool {
 		}
 	}
 	return true
+}
+
+func materializationReason(err error) string {
+	if strings.HasPrefix(err.Error(), "MISSING_ASSET:") {
+		return "MISSING_ASSET"
+	}
+	return "INVALID_RESOLVED_ASSET"
 }
 func inconclusive(experiment CandidateExperiment, code string, err error) CandidateExperiment {
 	experiment.Outcome = OutcomeInconclusive

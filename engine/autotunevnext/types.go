@@ -116,9 +116,23 @@ type StateSnapshot struct {
 	ID string `json:"id,omitempty"`
 }
 
+// AssetKind constrains which compiler placeholder context may consume a
+// product-managed runtime value.
+type AssetKind string
+
+const (
+	AssetKindBlobSymbol       AssetKind = "BLOB_SYMBOL"
+	AssetKindHostlistFile     AssetKind = "HOSTLIST_FILE"
+	AssetKindIPSetFile        AssetKind = "IPSET_FILE"
+	AssetKindAutoHostlistFile AssetKind = "AUTO_HOSTLIST_FILE"
+)
+
+// ResolvedAsset is supplied only by trusted product code. EngineValue is one
+// argv value fragment, never StrategyIR or remote strategy input.
 type ResolvedAsset struct {
-	ID   string `json:"id"`
-	Kind string `json:"kind"`
+	ID          string    `json:"id"`
+	Kind        AssetKind `json:"kind"`
+	EngineValue string    `json:"engine_value"`
 }
 
 type ExecutableCandidate struct {
@@ -172,6 +186,7 @@ type ControlResult struct {
 type CandidateExperiment struct {
 	StrategyID         string                        `json:"strategy_id"`
 	Fingerprint        string                        `json:"fingerprint,omitempty"`
+	ExperimentExecuted bool                          `json:"experiment_executed"`
 	PlannerStatus      planner.CandidateStatus       `json:"planner_status"`
 	CompileStatus      backendcap.CompileStatus      `json:"compile_status,omitempty"`
 	PreflightStatus    PreflightStatus               `json:"preflight_status"`
