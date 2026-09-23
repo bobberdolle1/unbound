@@ -512,13 +512,20 @@ func (e *LinuxRuntime) verifyRule(ctx context.Context, mode string, spec LinuxNF
 			"table " + spec.nftFamily() + " " + spec.Table,
 			"hook output",
 			address,
-			"tcp dport " + spec.nftPorts(),
 			"queue num " + fmt.Sprint(spec.Queue),
 			spec.Marker,
 		} {
 			if !strings.Contains(out, fragment) {
 				return fmt.Errorf("owned nft rule is missing %q", fragment)
 			}
+		}
+		portExpression := "tcp dport " + spec.nftPorts()
+		portPresent := strings.Contains(out, portExpression)
+		if len(spec.Ports) == 1 && spec.Ports[0].Start == spec.Ports[0].End {
+			portPresent = portPresent || strings.Contains(out, fmt.Sprintf("tcp dport %d", spec.Ports[0].Start))
+		}
+		if !portPresent {
+			return fmt.Errorf("owned nft rule is missing compiled TCP ports")
 		}
 		return nil
 	}
