@@ -99,6 +99,11 @@ func withTransport(strategy strategyir.Strategy, transport strategyir.Transport)
 		strategy.Selector.TCPPorts = nil
 		strategy.Selector.UDPPorts = []strategyir.PortRange{{Start: 443, End: 443}}
 	}
+	if transport == strategyir.TransportQUIC {
+		strategy.Selector.ApplicationProtocols = []strategyir.ApplicationProtocol{strategyir.ApplicationQUIC}
+	} else {
+		strategy.Selector.ApplicationProtocols = []strategyir.ApplicationProtocol{strategyir.ApplicationAny}
+	}
 	return strategy
 }
 func withAnchor(strategy strategyir.Strategy, anchor strategyir.PositionAnchor) strategyir.Strategy {
@@ -237,7 +242,7 @@ func TestTypedCutoffRangesCompileOrFailClosed(t *testing.T) {
 		{"out data packet three", strategyir.RepresentativeFixtures()["steam-safe-game-filter"], "--out-range=-d3"},
 		{"in relative sequence 4096", func() strategyir.Strategy {
 			s := strategyir.RepresentativeFixtures()["alternative-multisplit"]
-			s.Operations[0].Cutoff = &strategyir.Cutoff{Direction: strategyir.RangeDirectionIn, Counter: strategyir.RangeCounterRelativeSequence, Limit: 4096}
+			s.Range = &strategyir.Cutoff{Direction: strategyir.RangeDirectionIn, Counter: strategyir.RangeCounterRelativeSequence, Limit: 4096}
 			return s
 		}(), "--in-range=-s4096"},
 	} {
@@ -250,9 +255,10 @@ func TestTypedCutoffRangesCompileOrFailClosed(t *testing.T) {
 	}
 	unsupported := strategyir.Strategy{
 		SchemaVersion: strategyir.SchemaVersion, ID: "tpws-cutoff", Name: "tpws cutoff",
-		Transport: []strategyir.Transport{strategyir.TransportTCP},
-		Selector: strategyir.TrafficSelector{ApplicationProtocols: []strategyir.ApplicationProtocol{strategyir.ApplicationAny}, IPFamilies: []strategyir.IPFamily{strategyir.IPFamilyAny}, Direction: strategyir.DirectionOutbound, TCPPorts: []strategyir.PortRange{{Start: 443, End: 443}}, Scope: strategyir.Scope{Host: strategyir.HostScope{Mode: strategyir.HostScopeAll}}},
-		Operations: []strategyir.Operation{{Type: strategyir.OperationMultiSplit, Positions: []strategyir.PositionExpr{{Absolute: new(1)}}, Cutoff: &strategyir.Cutoff{Direction: strategyir.RangeDirectionOut, Counter: strategyir.RangeCounterDataPacketNumber, Limit: 8}}},
+		Transport:  []strategyir.Transport{strategyir.TransportTCP},
+		Selector:   strategyir.TrafficSelector{ApplicationProtocols: []strategyir.ApplicationProtocol{strategyir.ApplicationAny}, IPFamilies: []strategyir.IPFamily{strategyir.IPFamilyAny}, Direction: strategyir.DirectionOutbound, TCPPorts: []strategyir.PortRange{{Start: 443, End: 443}}, Scope: strategyir.Scope{Host: strategyir.HostScope{Mode: strategyir.HostScopeAll}}},
+		Range:      &strategyir.Cutoff{Direction: strategyir.RangeDirectionOut, Counter: strategyir.RangeCounterDataPacketNumber, Limit: 8},
+		Operations: []strategyir.Operation{{Type: strategyir.OperationMultiSplit, Positions: []strategyir.PositionExpr{{Absolute: new(1)}}}},
 		Safety:     strategyir.SafetyPolicy{Aggressiveness: "LOW"},
 	}
 	if result := Compile(unsupported, Zapret1TPWSDarwin); result.Status != StatusUnsupported || !hasReason(result.Unsupported, UnsupportedCutoff) {
@@ -271,29 +277,88 @@ func TestSplitIsOnePositionMultiSplitSemanticAlias(t *testing.T) {
 	}
 }
 
-func TestRepresentativeGoldenSemanticFragments(t *testing.T) {
+func TestRepresentativeGoldenOrderedPlans(t *testing.T) {
 	expected := map[string][]string{
-		"recommended-hostfakesplit": {"--filter-tcp=80,443", "--payload=tls_client_hello", "--hostlist=${asset:youtube}", "--hostlist-exclude=${asset:steam-web-exclude}", "--ipset-exclude=${asset:ipset-steam-exclude}", "--lua-desync=hostfakesplit:midhost=midsld:host=ozon.ru:repeats=4:tcp_md5:tcp_ts", "--out-range=-d8"},
-		"alternative-multisplit":   {"--filter-tcp=80,443", "--payload=tls_client_hello", "--hostlist=${asset:youtube}", "--lua-desync=multisplit:pos=2:seqovl=652:seqovl_pattern=${asset:tls-google}", "--out-range=-d8"},
-		"alternative-fake-tls":     {"--filter-tcp=443", "--payload=tls_client_hello", "--lua-desync=fake:blob=${asset:tls-clienthello-default}:repeats=11:tcp_ack=-66000:tcp_ts", "--lua-desync=multidisorder:pos=1,midsld:repeats=11", "--out-range=-d8"},
-		"discord-tcp":              {"--filter-tcp=443,5222-5223,5228", "--payload=tls_client_hello", "--hostlist-domains=discord.com,gateway.discord.gg", "--lua-desync=multisplit:pos=1"},
-		"steam-safe-game-filter":   {"--filter-tcp=1024-65535", "--ipset=${asset:ipset-all}", "--hostlist-exclude=${asset:steam-web-exclude}", "--ipset-exclude=${asset:ipset-exclude}", "--lua-desync=multisplit:pos=1:seqovl=652:seqovl_pattern=${asset:tls-google}", "--out-range=-d3"},
+		"recommended-hostfakesplit": {
+			"--wf-l3=ipv4,ipv6", "--filter-tcp=80,443", "--wf-tcp-out=80,443", "--payload=tls_client_hello",
+			"--hostlist=${asset:youtube}", "--hostlist-exclude=${asset:steam-web-exclude}", "--ipset-exclude=${asset:ipset-steam-exclude}",
+			"--out-range=-d8", "--lua-desync=hostfakesplit:midhost=midsld:host=ozon.ru:repeats=4:tcp_md5:tcp_ts",
+		},
+		"alternative-multisplit": {
+			"--wf-l3=ipv4,ipv6", "--filter-tcp=80,443", "--wf-tcp-out=80,443", "--payload=tls_client_hello",
+			"--hostlist=${asset:youtube}", "--out-range=-d8",
+			"--lua-desync=multisplit:pos=2:seqovl=652:seqovl_pattern=${asset:tls-google}",
+		},
+		"alternative-fake-tls": {
+			"--wf-l3=ipv4,ipv6", "--filter-tcp=443", "--wf-tcp-out=443", "--payload=tls_client_hello",
+			"--out-range=-d8",
+			"--lua-desync=fake:blob=${asset:tls-clienthello-default}:repeats=11:tcp_ack=-66000:tcp_ts",
+			"--lua-desync=multidisorder:pos=1,midsld:repeats=11",
+		},
+		"discord-tcp": {
+			"--wf-l3=ipv4,ipv6", "--filter-tcp=443,5222-5223,5228", "--wf-tcp-out=443,5222-5223,5228",
+			"--payload=tls_client_hello", "--hostlist-domains=discord.com,gateway.discord.gg", "--lua-desync=multisplit:pos=1",
+		},
+		"steam-safe-game-filter": {
+			"--wf-l3=ipv4,ipv6", "--filter-tcp=1024-65535", "--wf-tcp-out=1024-65535",
+			"--ipset=${asset:ipset-all}", "--hostlist-exclude=${asset:steam-web-exclude}", "--ipset-exclude=${asset:ipset-exclude}",
+			"--out-range=-d3", "--lua-desync=multisplit:pos=1:seqovl=652:seqovl_pattern=${asset:tls-google}",
+		},
 	}
-	for name, fragments := range expected {
+	for name, want := range expected {
 		t.Run(name, func(t *testing.T) {
 			result := Compile(strategyir.RepresentativeFixtures()[name], Zapret2Windows)
-			if result.Status != StatusCompiled {
-				t.Fatalf("fixture did not compile: %#v", result)
-			}
-			for _, fragment := range fragments {
-				if !contains(result.Plan.Argv, fragment) {
-					t.Fatalf("missing trusted semantic fragment %q in %v", fragment, result.Plan.Argv)
-				}
-			}
-			if name == "discord-tcp" && containsPrefix(result.Plan.Argv, "--out-range=") {
-				t.Fatalf("discord scope gained an untrusted cutoff: %v", result.Plan.Argv)
+			if result.Status != StatusCompiled || !slices.Equal(result.Plan.Argv, want) {
+				t.Fatalf("ordered legacy semantic plan mismatch\nwant: %v\ngot:  %v", want, result.Plan.Argv)
 			}
 		})
+	}
+}
+
+func TestIPFamilyGoldenPlans(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		family strategyir.IPFamily
+		value  string
+	}{
+		{"ipv4", strategyir.IPFamilyV4, "ipv4"},
+		{"ipv6", strategyir.IPFamilyV6, "ipv6"},
+		{"any", strategyir.IPFamilyAny, "ipv4,ipv6"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			strategy := strategyir.Strategy{
+				SchemaVersion: strategyir.SchemaVersion, ID: "family-" + tc.name, Name: "family " + tc.name,
+				Transport: []strategyir.Transport{strategyir.TransportTCP},
+				Selector: strategyir.TrafficSelector{
+					ApplicationProtocols: []strategyir.ApplicationProtocol{strategyir.ApplicationAny},
+					IPFamilies:           []strategyir.IPFamily{tc.family},
+					Direction:            strategyir.DirectionOutbound,
+					TCPPorts:             []strategyir.PortRange{{Start: 443, End: 443}},
+					Scope:                strategyir.Scope{Host: strategyir.HostScope{Mode: strategyir.HostScopeAll}},
+				},
+				Operations: []strategyir.Operation{{Type: strategyir.OperationMultiSplit, Positions: []strategyir.PositionExpr{{Absolute: new(1)}}}},
+				Safety:     strategyir.SafetyPolicy{Aggressiveness: "LOW"},
+			}
+			for _, backend := range []Backend{Zapret2Windows, Zapret2Linux} {
+				want := []string{"--wf-l3=" + tc.value, "--filter-tcp=443", "--wf-tcp-out=443", "--lua-desync=multisplit:pos=1"}
+				if result := Compile(strategy, backend); result.Status != StatusCompiled || !slices.Equal(result.Plan.Argv, want) {
+					t.Fatalf("%s family scope mismatch: %#v", backend, result)
+				}
+			}
+			wantTPWS := []string{"--filter-l3=" + tc.value, "--filter-tcp=443", "--split-pos=1"}
+			if result := Compile(strategy, Zapret1TPWSDarwin); result.Status != StatusCompiled || !slices.Equal(result.Plan.Argv, wantTPWS) {
+				t.Fatalf("tpws family scope mismatch: %#v", result)
+			}
+		})
+	}
+}
+
+func TestIPFamilyAnyRequiresDualStackCapability(t *testing.T) {
+	strategy := strategyir.RepresentativeFixtures()["alternative-multisplit"]
+	caps := Get(Zapret2Windows)
+	caps.IPFamilies = []strategyir.IPFamily{strategyir.IPFamilyV4}
+	if !hasReason(compatibility(strategy, caps), UnsupportedIPFamily) {
+		t.Fatal("ANY family scope was broadened for an IPv4-only backend")
 	}
 }
 

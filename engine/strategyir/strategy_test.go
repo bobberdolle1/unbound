@@ -92,16 +92,18 @@ func TestTransportPortScopesAreMandatory(t *testing.T) {
 		name      string
 		transport []Transport
 		selector  TrafficSelector
+		protocols []ApplicationProtocol
 	}{
-		{"tcp", []Transport{TransportTCP}, TrafficSelector{TCPPorts: []PortRange{{Start: 443, End: 443}}}},
-		{"udp", []Transport{TransportUDP}, TrafficSelector{UDPPorts: []PortRange{{Start: 443, End: 443}}}},
-		{"quic", []Transport{TransportQUIC}, TrafficSelector{UDPPorts: []PortRange{{Start: 443, End: 443}}}},
+		{"tcp", []Transport{TransportTCP}, TrafficSelector{TCPPorts: []PortRange{{Start: 443, End: 443}}}, []ApplicationProtocol{ApplicationTLS}},
+		{"udp", []Transport{TransportUDP}, TrafficSelector{UDPPorts: []PortRange{{Start: 443, End: 443}}}, []ApplicationProtocol{ApplicationAny}},
+		{"quic", []Transport{TransportQUIC}, TrafficSelector{UDPPorts: []PortRange{{Start: 443, End: 443}}}, []ApplicationProtocol{ApplicationQUIC}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			strategy := RepresentativeFixtures()["discord-tcp"]
 			strategy.Transport = tc.transport
 			strategy.Selector.TCPPorts = tc.selector.TCPPorts
 			strategy.Selector.UDPPorts = tc.selector.UDPPorts
+			strategy.Selector.ApplicationProtocols = tc.protocols
 			if err := Validate(strategy); err != nil {
 				t.Fatalf("valid %s scope rejected: %v", tc.name, err)
 			}
@@ -134,6 +136,76 @@ func TestApplicationProtocolSetValidation(t *testing.T) {
 	strategy.Selector.ApplicationProtocols = []ApplicationProtocol{ApplicationQUIC}
 	if err := Validate(strategy); err != nil {
 		t.Fatalf("single QUIC protocol rejected: %v", err)
+	}
+}
+
+func TestTransportApplicationProtocolConsistency(t *testing.T) {
+	cases := []struct {
+		name string
+		set  func(*Strategy)
+	}{
+		{"QUIC application requires QUIC transport", func(s *Strategy) {
+			s.Selector.ApplicationProtocols = []ApplicationProtocol{ApplicationQUIC}
+		}},
+		{"QUIC transport rejects ANY application", func(s *Strategy) {
+			s.Transport = []Transport{TransportQUIC}
+			s.Selector.TCPPorts = nil
+			s.Selector.UDPPorts = []PortRange{{Start: 443, End: 443}}
+			s.Selector.ApplicationProtocols = []ApplicationProtocol{ApplicationAny}
+		}},
+		{"UDP rejects TCP application protocol", func(s *Strategy) {
+			s.Transport = []Transport{TransportUDP}
+			s.Selector.TCPPorts = nil
+			s.Selector.UDPPorts = []PortRange{{Start: 443, End: 443}}
+		}},
+		{"mixed transports are fail closed", func(s *Strategy) {
+			s.Transport = []Transport{TransportTCP, TransportQUIC}
+			s.Selector.UDPPorts = []PortRange{{Start: 443, End: 443}}
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			strategy := RepresentativeFixtures()["discord-tcp"]
+			tc.set(&strategy)
+			if err := Validate(strategy); err == nil {
+				t.Fatal("ambiguous transport/application selector accepted")
+			}
+		})
+	}
+
+	quic := RepresentativeFixtures()["discord-tcp"]
+	quic.Transport = []Transport{TransportQUIC}
+	quic.Selector.TCPPorts = nil
+	quic.Selector.UDPPorts = []PortRange{{Start: 443, End: 443}}
+	quic.Selector.ApplicationProtocols = []ApplicationProtocol{ApplicationQUIC}
+	if err := Validate(quic); err != nil {
+		t.Fatalf("exact QUIC selector rejected: %v", err)
+	}
+}
+
+func TestIPFamilyAnyIsExclusiveAndCanonical(t *testing.T) {
+	strategy := RepresentativeFixtures()["recommended-hostfakesplit"]
+	strategy.Selector.IPFamilies = []IPFamily{IPFamilyAny, IPFamilyV4}
+	if err := Validate(strategy); err == nil {
+		t.Fatal("ANY+IPv4 accepted")
+	}
+	if _, err := Fingerprint(strategy); err == nil {
+		t.Fatal("invalid redundant ANY selector received a fingerprint")
+	}
+
+	first := RepresentativeFixtures()["recommended-hostfakesplit"]
+	second := RepresentativeFixtures()["recommended-hostfakesplit"]
+	second.Selector.IPFamilies = []IPFamily{IPFamilyV6, IPFamilyV4}
+	firstFingerprint, err := Fingerprint(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondFingerprint, err := Fingerprint(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstFingerprint != secondFingerprint {
+		t.Fatalf("family set ordering changed fingerprint: %s != %s", firstFingerprint, secondFingerprint)
 	}
 }
 

@@ -12,15 +12,19 @@ A StrategyIR document never carries `zapret2_args`, `tpws_args`, raw argv, shell
 
 `schema_version` is `1`. A strategy contains:
 
-- `id`, `name`, and presentation `metadata`;
-- `transport`: `TCP`, `UDP`, and/or `QUIC`;
+- exactly one `transport`: `TCP`, `UDP`, or `QUIC`;
 - a `selector` with an exact application-protocol set (`HTTP`, `TLS`, `QUIC`, or the sole `ANY` value), IPv4/IPv6/any family, direction, transport-specific port ranges, and destination scope;
+- an optional typed `range` filter for the entire ordered operation chain;
 - ordered typed `operations`;
 - declarative `safety`.
 
 Port ranges are inclusive `{ "start": 443, "end": 8443 }`; a singleton has identical start/end values. Every declared transport requires a non-empty scope: `TCP` requires `tcp_ports`; `UDP` and `QUIC` require `udp_ports`. Empty ports never mean all ports. `OUTBOUND`, `INBOUND`, and `BOTH` are explicit rather than inferred from profile text.
 
-`ANY` cannot be combined with another application protocol. Zapret2 preserves a non-`ANY` set as one exact comma-separated payload filter, for example `--payload=http_req,tls_client_hello`. A backend lacking that exact selector semantics returns `UNSUPPORTED_APPLICATION_PROTOCOL`; it never broadens to an unfiltered selector.
+`ANY` is exclusive in both selector sets. Application `QUIC` requires the sole `QUIC` transport, and `QUIC` transport requires the sole `QUIC` application protocol, which compiles as `--payload=quic_initial`. Thus it never becomes generic UDP capture. `HTTP` and `TLS` selectors require the sole `TCP` transport; the exact `{HTTP,TLS}` TCP union is supported. Generic `ANY` is permitted for TCP or UDP but not QUIC. Mixed transport sets, including UDP+QUIC, are invalid in V1 because a single backend payload filter cannot bind distinct L7 discriminators to distinct transports without separate profile sections.
+
+IP-family `ANY` is likewise exclusive: `{ANY,IPv4}` and `{ANY,IPv6}` are invalid rather than redundant identities. Zapret2 compiles IPv4 and IPv6 as `--wf-l3=ipv4` and `--wf-l3=ipv6`; `ANY` compiles as the exact dual-stack `--wf-l3=ipv4,ipv6`. tpws uses the corresponding `--filter-l3=` spellings. A backend that cannot preserve the family scope returns `UNSUPPORTED_IP_FAMILY`.
+
+Zapret2 preserves a non-`ANY` application set as one exact comma-separated payload filter, for example `--payload=http_req,tls_client_hello`. A backend lacking that exact selector semantics returns `UNSUPPORTED_APPLICATION_PROTOCOL`; it never broadens to an unfiltered selector.
 
 Destination scope is independent of packet operations:
 
@@ -50,7 +54,7 @@ Operations are a strict tagged union. `SPLIT` requires exactly one position; `MU
 
 `SPLIT` is intentionally the semantic one-position form of `MULTI_SPLIT` for current Zapret2 and tpws targets. Both compile to the same one-position backend form; tests lock that equivalence. The distinct names preserve source-level intent and make future divergent backend mappings explicit.
 
-Fake modifiers are independently capability-gated: repeat, TTL/hop, TCP sequence offset, TCP acknowledgment offset, TCP MD5-like fooling, and TCP timestamps. A cutoff is a typed bounded range: `IN` or `OUT`, one of `PACKET_NUMBER`, `DATA_PACKET_NUMBER`, `RELATIVE_SEQUENCE`, or `DATA_POSITION`, plus a positive terminal value. Zapret2 currently preserves `OUT + DATA_PACKET_NUMBER + 8` as `--out-range=-d8`, `OUT + DATA_PACKET_NUMBER + 3` as `--out-range=-d3`, and `IN + RELATIVE_SEQUENCE + 4096` as `--in-range=-s4096`. The names deliberately do not mislabel `d` as a generic packet count or `s` as sequence bytes. Unsupported direction/counter combinations fail closed.
+Fake modifiers are independently capability-gated: repeat, TTL/hop, TCP sequence offset, TCP acknowledgment offset, TCP MD5-like fooling, and TCP timestamps. A `Strategy.range` is a typed bounded profile filter: `IN` or `OUT`, one of `PACKET_NUMBER`, `DATA_PACKET_NUMBER`, `RELATIVE_SEQUENCE`, or `DATA_POSITION`, plus a positive terminal value. It applies to the entire ordered operation chain and has no per-operation override or reset semantics in V1. Zapret2 emits the range after the packet/scope selectors and before the first `--lua-desync`, so the same filter governs every subsequent desync instance in that chain. It currently preserves `OUT + DATA_PACKET_NUMBER + 8` as `--out-range=-d8`, `OUT + DATA_PACKET_NUMBER + 3` as `--out-range=-d3`, and `IN + RELATIVE_SEQUENCE + 4096` as `--in-range=-s4096`. The names deliberately do not mislabel `d` as a generic packet count or `s` as sequence bytes. Unsupported direction/counter combinations fail closed.
 
 Examples of trusted logical payload assets are `tls-clienthello-default`, `tls-google`, `quic-google`, and `fake-default-udp`. Resolution is executor responsibility and is constrained to pinned engine assets.
 
@@ -58,7 +62,7 @@ Examples of trusted logical payload assets are `tls-clienthello-default`, `tls-g
 
 `Validate` enforces schema version, exact protocol-set semantics, mandatory transport port scopes, strict operation shapes, typed positions/ranges, logical IDs, and safety scope invariants. `UnmarshalStrict` uses unknown-field rejection and rejects trailing JSON. Unknown operation kinds are invalid.
 
-`Canonicalize` deep-copies caller-owned slices and pointers before normalizing set-like fields—transport, app protocol and IP-family sets, port ranges, host literals, and logical scope IDs. It deliberately preserves operation order and position order. `Canonicalize`, `Marshal`, and `Fingerprint` never mutate input. `Fingerprint` is SHA-256 over canonical semantic JSON. IDs, display names, descriptions, and timestamps are excluded, so presentation changes do not alter the fingerprint.
+`Canonicalize` deep-copies caller-owned slices and pointers before normalizing set-like fields—transport, app protocol and IP-family sets, port ranges, host literals, and logical scope IDs. It deliberately preserves operation order and position order. Invalid redundant `ANY` selector combinations never canonicalize; valid family and protocol set order cannot change identity. `Canonicalize`, `Marshal`, and `Fingerprint` never mutate input. `Fingerprint` is SHA-256 over canonical semantic JSON. IDs, display names, descriptions, and timestamps are excluded, so presentation changes do not alter the fingerprint.
 
 ## Static BackendCapabilities
 
@@ -68,7 +72,7 @@ Capabilities describe a pinned engine’s static support, not the current machin
 |---|---|---|
 | `zapret2/windows` | v1.0.5.1 / `a1bca5a85e25ab138e9617a560c262fcf53e969a` | TCP, UDP, QUIC; exact multi-protocol payload filters; IPv4/v6; directional capture; logical host/IP lists; individually gated fake assets/modifiers; typed range cutoff; closed Zapret Lua operation table |
 | `zapret2/linux` | v1.0.5.1 / `a1bca5a85e25ab138e9617a560c262fcf53e969a` | Same semantic operation set; NFQUEUE/firewall ownership remains executor scope |
-| `zapret1-tpws/darwin` | base v72.13 / `d437963452674faadfd45adcd62466272b5a2fcd` | Outbound TCP SOCKS-path split, TLS-record split, disorder, HTTP host case with an `ANY` selector only; no UDP/QUIC interception, no host/IP scope, no L7 payload-selector preservation |
+| `zapret1-tpws/darwin` | base v72.13 / `d437963452674faadfd45adcd62466272b5a2fcd` | Outbound TCP SOCKS-path split, TLS-record split, disorder, HTTP host case with an `ANY` selector only; preserves IPv4/IPv6 via `--filter-l3`; no UDP/QUIC interception, no host/IP scope, no L7 payload-selector preservation |
 | `unbound-native/*` | no implementation | Unsupported |
 
 Environment facts such as enabled TCP timestamps, installed assets, privileges, and active IPv6 connectivity are not `BackendCapabilities`. Compiling Zapret2 derives the existing `engine.StrategyRequirements` (`EngineMinVersion`, `LuaModules`, inbound direction, QUIC, IPv6). V1 logical fake payloads are pinned `init_vars.lua` values: compiler capability checks them by logical ID and derives that Lua module, while `FakePayloads` remains reserved for future file-backed assets that the existing environment checker can verify.
@@ -86,6 +90,10 @@ Typed reasons include `UNSUPPORTED_OPERATION`, `UNSUPPORTED_TRANSPORT`, `UNSUPPO
 There is no best-effort translation. The compiler does not drop an operation, change a transport, broaden a protocol/host/IP scope, discard a position, or remove a safety-relevant constraint. For example, an explicit-host strategy compiled for tpws fails `UNSUPPORTED_SCOPE` because the current tpws compiler cannot truthfully preserve that scope. UDP and QUIC strategy requests for tpws are unsupported, not converted to TCP.
 
 Logical asset placeholders in plan argv use `${asset:<id>}`. They are not executable paths and must be resolved by trusted product code before any future executor consumes a plan.
+
+## Physical parser acceptance
+
+`TestWindowsCompiledRepresentativePlansDryRun` is environment-gated physical parser acceptance for every representative Zapret2 Windows plan. It invokes pinned `winws2.exe --dry-run` and requires `command line parameters verified`. This proves generated argv syntax is accepted by that binary; it does **not** prove packet-processing or profile semantic equivalence. No test in this boundary performs connectivity experiments.
 
 ## Inventory and shadow migration
 

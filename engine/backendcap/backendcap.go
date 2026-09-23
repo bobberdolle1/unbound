@@ -29,33 +29,33 @@ type Provenance struct {
 }
 
 type Capabilities struct {
-	Backend                    Backend                            `json:"backend"`
-	Provenance                 Provenance                         `json:"provenance"`
-	Transports                 []strategyir.Transport             `json:"transports"`
-	ApplicationProtocols       []strategyir.ApplicationProtocol   `json:"application_protocols"`
-	MultiProtocolPayloadFilter bool                               `json:"multi_protocol_payload_filter"`
-	IPFamilies                 []strategyir.IPFamily              `json:"ip_families"`
-	Directions                 []strategyir.Direction             `json:"directions"`
-	Operations                 []strategyir.OperationKind         `json:"operations"`
-	PositionAnchors            []strategyir.PositionAnchor        `json:"position_anchors"`
-	PortRanges                 bool                               `json:"port_ranges"`
-	ManagedHostlists           bool                               `json:"managed_hostlists"`
-	AutoHostlists              bool                               `json:"auto_hostlists"`
-	IPSetReferences            bool                               `json:"ip_set_references"`
-	InboundCapture             bool                               `json:"inbound_capture"`
-	QUIC                       bool                               `json:"quic"`
-	FakePayloads               bool                               `json:"fake_payloads"`
-	FakePayloadRefs            []string                           `json:"fake_payload_refs,omitempty"`
-	FakeRepeat                 bool                               `json:"fake_repeat"`
-	FakeTTL                    bool                               `json:"fake_ttl"`
-	FakeSequenceOffset         bool                               `json:"fake_sequence_offset"`
-	FakeAcknowledgmentOffset   bool                               `json:"fake_acknowledgment_offset"`
-	FakeTCPMD5                 bool                               `json:"fake_tcp_md5"`
-	FakeTCPTimestamp           bool                               `json:"fake_tcp_timestamp"`
-	RangeDirections            []strategyir.RangeDirection        `json:"range_directions,omitempty"`
-	RangeCounters              []strategyir.RangeCounter          `json:"range_counters,omitempty"`
-	LuaModules                 []string                           `json:"lua_modules,omitempty"`
-	LuaFunctions               []string                           `json:"lua_functions,omitempty"`
+	Backend                    Backend                          `json:"backend"`
+	Provenance                 Provenance                       `json:"provenance"`
+	Transports                 []strategyir.Transport           `json:"transports"`
+	ApplicationProtocols       []strategyir.ApplicationProtocol `json:"application_protocols"`
+	MultiProtocolPayloadFilter bool                             `json:"multi_protocol_payload_filter"`
+	IPFamilies                 []strategyir.IPFamily            `json:"ip_families"`
+	Directions                 []strategyir.Direction           `json:"directions"`
+	Operations                 []strategyir.OperationKind       `json:"operations"`
+	PositionAnchors            []strategyir.PositionAnchor      `json:"position_anchors"`
+	PortRanges                 bool                             `json:"port_ranges"`
+	ManagedHostlists           bool                             `json:"managed_hostlists"`
+	AutoHostlists              bool                             `json:"auto_hostlists"`
+	IPSetReferences            bool                             `json:"ip_set_references"`
+	InboundCapture             bool                             `json:"inbound_capture"`
+	QUIC                       bool                             `json:"quic"`
+	FakePayloads               bool                             `json:"fake_payloads"`
+	FakePayloadRefs            []string                         `json:"fake_payload_refs,omitempty"`
+	FakeRepeat                 bool                             `json:"fake_repeat"`
+	FakeTTL                    bool                             `json:"fake_ttl"`
+	FakeSequenceOffset         bool                             `json:"fake_sequence_offset"`
+	FakeAcknowledgmentOffset   bool                             `json:"fake_acknowledgment_offset"`
+	FakeTCPMD5                 bool                             `json:"fake_tcp_md5"`
+	FakeTCPTimestamp           bool                             `json:"fake_tcp_timestamp"`
+	RangeDirections            []strategyir.RangeDirection      `json:"range_directions,omitempty"`
+	RangeCounters              []strategyir.RangeCounter        `json:"range_counters,omitempty"`
+	LuaModules                 []string                         `json:"lua_modules,omitempty"`
+	LuaFunctions               []string                         `json:"lua_functions,omitempty"`
 }
 
 // Get reports static backend capability, never the current machine environment.
@@ -118,19 +118,19 @@ const (
 type ReasonCode string
 
 const (
-	UnsupportedOperation          ReasonCode = "UNSUPPORTED_OPERATION"
-	UnsupportedTransport          ReasonCode = "UNSUPPORTED_TRANSPORT"
+	UnsupportedOperation           ReasonCode = "UNSUPPORTED_OPERATION"
+	UnsupportedTransport           ReasonCode = "UNSUPPORTED_TRANSPORT"
 	UnsupportedApplicationProtocol ReasonCode = "UNSUPPORTED_APPLICATION_PROTOCOL"
-	UnsupportedPositionAnchor     ReasonCode = "UNSUPPORTED_POSITION_ANCHOR"
-	UnsupportedIPFamily           ReasonCode = "UNSUPPORTED_IP_FAMILY"
-	UnsupportedPortScope          ReasonCode = "UNSUPPORTED_PORT_SCOPE"
-	UnsupportedScope              ReasonCode = "UNSUPPORTED_SCOPE"
-	UnsupportedDirection          ReasonCode = "UNSUPPORTED_DIRECTION"
-	UnsupportedFakeModifier       ReasonCode = "UNSUPPORTED_FAKE_MODIFIER"
-	UnsupportedCutoff             ReasonCode = "UNSUPPORTED_CUTOFF"
-	MissingAsset                  ReasonCode = "MISSING_ASSET"
-	EngineVersionTooOld           ReasonCode = "ENGINE_VERSION_TOO_OLD"
-	InvalidIR                     ReasonCode = "INVALID_IR"
+	UnsupportedPositionAnchor      ReasonCode = "UNSUPPORTED_POSITION_ANCHOR"
+	UnsupportedIPFamily            ReasonCode = "UNSUPPORTED_IP_FAMILY"
+	UnsupportedPortScope           ReasonCode = "UNSUPPORTED_PORT_SCOPE"
+	UnsupportedScope               ReasonCode = "UNSUPPORTED_SCOPE"
+	UnsupportedDirection           ReasonCode = "UNSUPPORTED_DIRECTION"
+	UnsupportedFakeModifier        ReasonCode = "UNSUPPORTED_FAKE_MODIFIER"
+	UnsupportedCutoff              ReasonCode = "UNSUPPORTED_CUTOFF"
+	MissingAsset                   ReasonCode = "MISSING_ASSET"
+	EngineVersionTooOld            ReasonCode = "ENGINE_VERSION_TOO_OLD"
+	InvalidIR                      ReasonCode = "INVALID_IR"
 )
 
 type Reason struct {
@@ -214,9 +214,15 @@ func compatibility(strategy strategyir.Strategy, caps Capabilities) []Reason {
 	if len(strategy.Selector.ApplicationProtocols) > 1 && !caps.MultiProtocolPayloadFilter {
 		add(UnsupportedApplicationProtocol, "backend cannot preserve multiple application protocols")
 	}
-	for _, family := range strategy.Selector.IPFamilies {
-		if family != strategyir.IPFamilyAny && !has(caps.IPFamilies, family) {
-			add(UnsupportedIPFamily, string(family))
+	if len(strategy.Selector.IPFamilies) == 1 && strategy.Selector.IPFamilies[0] == strategyir.IPFamilyAny {
+		if !has(caps.IPFamilies, strategyir.IPFamilyV4) || !has(caps.IPFamilies, strategyir.IPFamilyV6) {
+			add(UnsupportedIPFamily, "ANY requires IPv4 and IPv6 support")
+		}
+	} else {
+		for _, family := range strategy.Selector.IPFamilies {
+			if !has(caps.IPFamilies, family) {
+				add(UnsupportedIPFamily, string(family))
+			}
 		}
 	}
 	if !has(caps.Directions, strategy.Selector.Direction) {
@@ -276,13 +282,13 @@ func compatibility(strategy strategyir.Strategy, caps Capabilities) []Reason {
 				add(UnsupportedFakeModifier, "TCP timestamp")
 			}
 		}
-		if operation.Cutoff != nil {
-			if !has(caps.RangeDirections, operation.Cutoff.Direction) {
-				add(UnsupportedCutoff, "direction "+string(operation.Cutoff.Direction))
-			}
-			if !has(caps.RangeCounters, operation.Cutoff.Counter) {
-				add(UnsupportedCutoff, "counter "+string(operation.Cutoff.Counter))
-			}
+	}
+	if strategy.Range != nil {
+		if !has(caps.RangeDirections, strategy.Range.Direction) {
+			add(UnsupportedCutoff, "direction "+string(strategy.Range.Direction))
+		}
+		if !has(caps.RangeCounters, strategy.Range.Counter) {
+			add(UnsupportedCutoff, "counter "+string(strategy.Range.Counter))
 		}
 	}
 	return dedupeReasons(reasons)
@@ -315,6 +321,13 @@ func compileArgs(strategy strategyir.Strategy, backend Backend) ([]string, []str
 	}
 	args := selectorArgs(strategy)
 	assets := scopeArgs(&args, strategy.Selector.Scope)
+	if strategy.Range != nil {
+		rangeArg, err := cutoffArg(*strategy.Range)
+		if err != nil {
+			return nil, nil, err
+		}
+		args = append(args, rangeArg)
+	}
 	for _, operation := range strategy.Operations {
 		operationArgs, operationAssets, err := compileZapretOperation(operation)
 		if err != nil {
@@ -327,7 +340,7 @@ func compileArgs(strategy strategyir.Strategy, backend Backend) ([]string, []str
 }
 
 func selectorArgs(strategy strategyir.Strategy) []string {
-	args := []string{}
+	args := []string{"--wf-l3=" + familyList(strategy.Selector.IPFamilies)}
 	if has(strategy.Transport, strategyir.TransportTCP) {
 		args = append(args, "--filter-tcp="+ports(strategy.Selector.TCPPorts))
 		args = append(args, captureArgs("tcp", strategy.Selector.Direction, ports(strategy.Selector.TCPPorts))...)
@@ -366,6 +379,22 @@ func payloadName(protocol strategyir.ApplicationProtocol) string {
 	default:
 		return "all"
 	}
+}
+
+func familyList(families []strategyir.IPFamily) string {
+	if len(families) == 1 && families[0] == strategyir.IPFamilyAny {
+		return "ipv4,ipv6"
+	}
+	values := make([]string, len(families))
+	for i, family := range families {
+		switch family {
+		case strategyir.IPFamilyV4:
+			values[i] = "ipv4"
+		case strategyir.IPFamilyV6:
+			values[i] = "ipv6"
+		}
+	}
+	return strings.Join(values, ",")
 }
 
 func scopeArgs(args *[]string, scope strategyir.Scope) []string {
@@ -440,13 +469,6 @@ func compileZapretOperation(operation strategyir.Operation) ([]string, []string,
 		value += fakeSuffix(*operation.Fake)
 	}
 	args = append(args, "--lua-desync="+value)
-	if operation.Cutoff != nil {
-		rangeArg, err := cutoffArg(*operation.Cutoff)
-		if err != nil {
-			return nil, nil, err
-		}
-		args = append(args, rangeArg)
-	}
 	return args, assets, nil
 }
 func fakeSuffix(fake strategyir.FakeModifiers) string {
@@ -510,7 +532,7 @@ func positionList(positions []strategyir.PositionExpr) string {
 }
 
 func compileTPWS(strategy strategyir.Strategy) ([]string, []string, error) {
-	args := []string{}
+	args := []string{"--filter-l3=" + familyList(strategy.Selector.IPFamilies)}
 	if len(strategy.Selector.TCPPorts) > 0 {
 		args = append(args, "--filter-tcp="+ports(strategy.Selector.TCPPorts))
 	}

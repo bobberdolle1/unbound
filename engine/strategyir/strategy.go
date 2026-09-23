@@ -170,7 +170,6 @@ type Operation struct {
 	Fake              *FakeModifiers `json:"fake,omitempty"`
 	HostTemplate      string         `json:"host_template,omitempty"`
 	Window            *WindowShaping `json:"window,omitempty"`
-	Cutoff            *Cutoff        `json:"cutoff,omitempty"`
 }
 
 type SafetyPolicy struct {
@@ -188,12 +187,14 @@ type Metadata struct {
 }
 
 // Strategy is declarative and executable only after compilation by a trusted backend.
+// Range applies to the entire ordered operation chain.
 type Strategy struct {
 	SchemaVersion int             `json:"schema_version"`
 	ID            string          `json:"id"`
 	Name          string          `json:"name"`
 	Transport     []Transport     `json:"transport"`
 	Selector      TrafficSelector `json:"selector"`
+	Range         *Cutoff         `json:"range,omitempty"`
 	Operations    []Operation     `json:"operations"`
 	Safety        SafetyPolicy    `json:"safety"`
 	Metadata      Metadata        `json:"metadata,omitempty"`
@@ -226,6 +227,9 @@ func Validate(s Strategy) error {
 	if s.Selector.Direction != DirectionOutbound && s.Selector.Direction != DirectionInbound && s.Selector.Direction != DirectionBoth {
 		return fmt.Errorf("invalid direction %q", s.Selector.Direction)
 	}
+	if len(s.Transport) != 1 {
+		return fmt.Errorf("v1 requires exactly one transport")
+	}
 	for _, transport := range s.Transport {
 		if transport != TransportTCP && transport != TransportUDP && transport != TransportQUIC {
 			return fmt.Errorf("invalid transport %q", transport)
@@ -245,10 +249,31 @@ func Validate(s Strategy) error {
 	if containsProtocol(s.Selector.ApplicationProtocols, ApplicationAny) && len(s.Selector.ApplicationProtocols) != 1 {
 		return fmt.Errorf("application ANY cannot be combined with other protocols")
 	}
+	transport := s.Transport[0]
+	if containsProtocol(s.Selector.ApplicationProtocols, ApplicationQUIC) && transport != TransportQUIC {
+		return fmt.Errorf("QUIC application protocol requires QUIC transport")
+	}
+	switch transport {
+	case TransportQUIC:
+		if len(s.Selector.ApplicationProtocols) != 1 || s.Selector.ApplicationProtocols[0] != ApplicationQUIC {
+			return fmt.Errorf("QUIC transport requires only QUIC application protocol")
+		}
+	case TransportUDP:
+		if len(s.Selector.ApplicationProtocols) != 1 || s.Selector.ApplicationProtocols[0] != ApplicationAny {
+			return fmt.Errorf("UDP transport requires only ANY application protocol")
+		}
+	case TransportTCP:
+		if containsProtocol(s.Selector.ApplicationProtocols, ApplicationQUIC) {
+			return fmt.Errorf("TCP transport cannot carry QUIC application protocol")
+		}
+	}
 	for _, family := range s.Selector.IPFamilies {
 		if family != IPFamilyAny && family != IPFamilyV4 && family != IPFamilyV6 {
 			return fmt.Errorf("invalid IP family %q", family)
 		}
+	}
+	if containsFamily(s.Selector.IPFamilies, IPFamilyAny) && len(s.Selector.IPFamilies) != 1 {
+		return fmt.Errorf("IP family ANY cannot be combined with other families")
 	}
 	if len(s.Selector.TCPPorts) != 0 && !containsTransport(s.Transport, TransportTCP) {
 		return fmt.Errorf("tcp_ports require TCP transport")
@@ -272,6 +297,9 @@ func Validate(s Strategy) error {
 	case "LOW", "MEDIUM", "HIGH", "EXPERIMENTAL":
 	default:
 		return fmt.Errorf("invalid safety aggressiveness %q", s.Safety.Aggressiveness)
+	}
+	if err := validateCutoff(s.Range); err != nil {
+		return err
 	}
 	for i, operation := range s.Operations {
 		if err := validateOperation(operation); err != nil {
@@ -368,19 +396,6 @@ func validateOperation(op Operation) error {
 	if op.Window != nil && (op.Window.Window < 1 || op.Window.Scale < 0) {
 		return fmt.Errorf("window values must be positive")
 	}
-	if op.Cutoff != nil {
-		if op.Cutoff.Direction != RangeDirectionIn && op.Cutoff.Direction != RangeDirectionOut {
-			return fmt.Errorf("invalid cutoff direction %q", op.Cutoff.Direction)
-		}
-		switch op.Cutoff.Counter {
-		case RangeCounterPacketNumber, RangeCounterDataPacketNumber, RangeCounterRelativeSequence, RangeCounterDataPosition:
-		default:
-			return fmt.Errorf("invalid cutoff counter %q", op.Cutoff.Counter)
-		}
-		if op.Cutoff.Limit < 1 || op.Cutoff.Limit > 1<<31-1 {
-			return fmt.Errorf("cutoff limit must be 1..2147483647")
-		}
-	}
 	requirePositions := func(exactlyOne bool) error {
 		if len(op.Positions) == 0 || (exactlyOne && len(op.Positions) != 1) {
 			return fmt.Errorf("%s requires %spositions", op.Type, map[bool]string{true: "exactly one ", false: ""}[exactlyOne])
@@ -474,6 +489,33 @@ func containsProtocol(protocols []ApplicationProtocol, expected ApplicationProto
 	return false
 }
 
+func containsFamily(families []IPFamily, expected IPFamily) bool {
+	for _, family := range families {
+		if family == expected {
+			return true
+		}
+	}
+	return false
+}
+
+func validateCutoff(cutoff *Cutoff) error {
+	if cutoff == nil {
+		return nil
+	}
+	if cutoff.Direction != RangeDirectionIn && cutoff.Direction != RangeDirectionOut {
+		return fmt.Errorf("invalid cutoff direction %q", cutoff.Direction)
+	}
+	switch cutoff.Counter {
+	case RangeCounterPacketNumber, RangeCounterDataPacketNumber, RangeCounterRelativeSequence, RangeCounterDataPosition:
+	default:
+		return fmt.Errorf("invalid cutoff counter %q", cutoff.Counter)
+	}
+	if cutoff.Limit < 1 || cutoff.Limit > 1<<31-1 {
+		return fmt.Errorf("cutoff limit must be 1..2147483647")
+	}
+	return nil
+}
+
 // Canonicalize normalizes semantic sets without changing operation or position order.
 func Canonicalize(s Strategy) (Strategy, error) {
 	if err := Validate(s); err != nil {
@@ -506,6 +548,10 @@ func cloneStrategy(s Strategy) Strategy {
 	out.Selector.Scope.ExcludeHostListIDs = append([]string(nil), s.Selector.Scope.ExcludeHostListIDs...)
 	out.Selector.Scope.IPSetIDs = append([]string(nil), s.Selector.Scope.IPSetIDs...)
 	out.Selector.Scope.ExcludeIPSetIDs = append([]string(nil), s.Selector.Scope.ExcludeIPSetIDs...)
+	if s.Range != nil {
+		rangeCopy := *s.Range
+		out.Range = &rangeCopy
+	}
 	out.Operations = make([]Operation, len(s.Operations))
 	for i, op := range s.Operations {
 		out.Operations[i] = op
@@ -539,10 +585,6 @@ func cloneStrategy(s Strategy) Strategy {
 		if op.Window != nil {
 			window := *op.Window
 			out.Operations[i].Window = &window
-		}
-		if op.Cutoff != nil {
-			cutoff := *op.Cutoff
-			out.Operations[i].Cutoff = &cutoff
 		}
 	}
 	return out
@@ -603,6 +645,7 @@ type semanticStrategy struct {
 	SchemaVersion int             `json:"schema_version"`
 	Transport     []Transport     `json:"transport"`
 	Selector      TrafficSelector `json:"selector"`
+	Range         *Cutoff         `json:"range,omitempty"`
 	Operations    []Operation     `json:"operations"`
 	Safety        SafetyPolicy    `json:"safety"`
 }
@@ -612,7 +655,7 @@ func semanticJSON(s Strategy) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return json.Marshal(semanticStrategy{c.SchemaVersion, c.Transport, c.Selector, c.Operations, c.Safety})
+	return json.Marshal(semanticStrategy{c.SchemaVersion, c.Transport, c.Selector, c.Range, c.Operations, c.Safety})
 }
 func Fingerprint(s Strategy) (string, error) {
 	data, err := semanticJSON(s)
