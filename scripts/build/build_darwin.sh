@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Build native macOS release artifacts for UNBOUND.
 # Usage: ./scripts/build/build_darwin.sh [amd64|arm64|universal] [debug]
-# Environment: UNBOUND_VERSION=<override>
+# Environment: UNBOUND_VERSION=<override>, UNBOUND_BUILD_COMMIT=<sha>,
+# UNBOUND_BUILD_DIRTY=true|false|unknown, UNBOUND_BUILD_CHANNEL=development|release
 
 set -euo pipefail
 
@@ -43,7 +44,18 @@ test -f engine/core_bin/darwin/tpws || {
     exit 1
 }
 
-VERSION="${UNBOUND_VERSION:-$(node -e "try { console.log(require('./wails.json').info.productVersion); } catch(e) { console.log('0.6.7'); }")}"
+VERSION="${UNBOUND_VERSION:-$(node -e "try { console.log(require('./wails.json').info.productVersion); } catch(e) { console.log('0.7.0-dev'); }")}"
+BUILD_COMMIT="${UNBOUND_BUILD_COMMIT:-$(git rev-parse --verify HEAD 2>/dev/null || printf 'unknown')}"
+if [ -n "${UNBOUND_BUILD_DIRTY:-}" ]; then
+    BUILD_DIRTY="$UNBOUND_BUILD_DIRTY"
+elif [ "$BUILD_COMMIT" = "unknown" ]; then
+    BUILD_DIRTY="unknown"
+elif [ -n "$(git status --porcelain --untracked-files=normal)" ]; then
+    BUILD_DIRTY="true"
+else
+    BUILD_DIRTY="false"
+fi
+BUILD_CHANNEL="${UNBOUND_BUILD_CHANNEL:-development}"
 
 echo "==================================================="
 echo "  🚀 BUILDING UNBOUND v$VERSION for macOS ($PLATFORM)"
@@ -69,7 +81,7 @@ fi
 echo "[INFO] Building frontend..."
 (cd frontend && npm ci --no-audit --no-fund && npm run build)
 
-LDFLAGS="-X unbound/engine.Version=$VERSION"
+LDFLAGS="-X unbound/engine.Version=$VERSION -X unbound/engine.BuildCommit=$BUILD_COMMIT -X unbound/engine.BuildDirty=$BUILD_DIRTY -X unbound/engine.BuildChannel=$BUILD_CHANNEL"
 if [ "$MODE" != "debug" ]; then
     LDFLAGS="-s -w $LDFLAGS"
 fi

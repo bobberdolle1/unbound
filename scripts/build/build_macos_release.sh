@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 # Build, sanitize, sign, package, and smoke-test one universal macOS release.
 # Usage: scripts/build/build_macos_release.sh [version]
+# Environment: UNBOUND_BUILD_COMMIT=<sha>, UNBOUND_BUILD_DIRTY=false,
+# UNBOUND_BUILD_CHANNEL=release
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-VERSION="${1:-$(node -p "require('$ROOT/wails.json').info.productVersion")}" 
+VERSION="${1:-$(node -p "require('$ROOT/wails.json').info.productVersion")}"
+BUILD_COMMIT="${UNBOUND_BUILD_COMMIT:-$(git -C "$ROOT" rev-parse --verify HEAD 2>/dev/null || printf 'unknown')}"
+BUILD_DIRTY="${UNBOUND_BUILD_DIRTY:-false}"
+BUILD_CHANNEL="${UNBOUND_BUILD_CHANNEL:-release}"
 DIST="$ROOT/release"
 APP=""
 WORK=""
@@ -48,7 +53,7 @@ set +e
 (
   cd "$ROOT"
   wails build -platform darwin/universal -clean \
-    -ldflags "-X unbound/engine.Version=$VERSION"
+    -ldflags "-X unbound/engine.Version=$VERSION -X unbound/engine.BuildCommit=$BUILD_COMMIT -X unbound/engine.BuildDirty=$BUILD_DIRTY -X unbound/engine.BuildChannel=$BUILD_CHANNEL"
 )
 WAILS_STATUS=$?
 set -e

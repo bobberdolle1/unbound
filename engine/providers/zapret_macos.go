@@ -133,7 +133,7 @@ type ZapretMacOSProvider struct {
 	binPath          string
 	currentProfile   string
 	anchorLoaded     bool
-	modifiedServices []string
+	modifiedServices []socksProxyState
 	customProfiles   map[string][]string
 	customOrder      []string
 
@@ -184,25 +184,96 @@ func getActiveNetworkServices() []string {
 	return []string{"Wi-Fi"}
 }
 
-func enableSystemSocks(port string) []string {
-	services := getActiveNetworkServices()
-	var modified []string
-	for _, service := range services {
-		_ = exec.Command("networksetup", "-setsocksfirewallproxy", service, "127.0.0.1", port).Run()
-		if err := exec.Command("networksetup", "-setsocksfirewallproxystate", service, "on").Run(); err == nil {
-			modified = append(modified, service)
+// socksProxyState is the complete SOCKS setting for a service before UNBOUND
+// changes it. Only a captured state may be restored; this prevents shutdown
+// from clearing an unrelated user proxy configuration.
+type socksProxyState struct {
+	Service string
+	Enabled bool
+	Host    string
+	Port    string
+}
+
+func snapshotSystemSocks(service string) (socksProxyState, error) {
+	out, err := exec.Command("networksetup", "-getsocksfirewallproxy", service).Output()
+	if err != nil {
+		return socksProxyState{}, err
+	}
+	return parseSystemSocksOutput(service, string(out))
+}
+
+func parseSystemSocksOutput(service, output string) (socksProxyState, error) {
+	state := socksProxyState{Service: service}
+	sawEnabled := false
+	for _, line := range strings.Split(output, "\n") {
+		key, value, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
 		}
+		switch strings.TrimSpace(key) {
+		case "Enabled":
+			sawEnabled = true
+			switch strings.TrimSpace(value) {
+			case "Yes":
+				state.Enabled = true
+			case "No":
+				state.Enabled = false
+			default:
+				return socksProxyState{}, fmt.Errorf("unexpected SOCKS enabled state for %s: %q", service, value)
+			}
+		case "Server":
+			state.Host = strings.TrimSpace(value)
+		case "Port":
+			state.Port = strings.TrimSpace(value)
+		}
+	}
+	if !sawEnabled {
+		return socksProxyState{}, fmt.Errorf("missing SOCKS enabled state for %s", service)
+	}
+	if state.Enabled && (state.Host == "" || state.Port == "") {
+		return socksProxyState{}, fmt.Errorf("incomplete enabled SOCKS state for %s", service)
+	}
+	return state, nil
+}
+
+func enableSystemSocks(port string) []socksProxyState {
+	var modified []socksProxyState
+	for _, service := range getActiveNetworkServices() {
+		state, err := snapshotSystemSocks(service)
+		if err != nil {
+			continue
+		}
+		if err := exec.Command("networksetup", "-setsocksfirewallproxy", service, "127.0.0.1", port).Run(); err != nil {
+			continue
+		}
+		if err := exec.Command("networksetup", "-setsocksfirewallproxystate", service, "on").Run(); err != nil {
+			restoreSystemSocks([]socksProxyState{state})
+			continue
+		}
+		modified = append(modified, state)
 	}
 	return modified
 }
 
-func disableSystemSocks(services []string) {
-	if len(services) == 0 {
-		services = getActiveNetworkServices()
+func restoreSystemSocks(states []socksProxyState) {
+	for _, state := range states {
+		if state.Host != "" && state.Port != "" {
+			_ = exec.Command("networksetup", "-setsocksfirewallproxy", state.Service, state.Host, state.Port).Run()
+		}
+		enabled := "off"
+		if state.Enabled {
+			enabled = "on"
+		}
+		_ = exec.Command("networksetup", "-setsocksfirewallproxystate", state.Service, enabled).Run()
 	}
-	for _, service := range services {
-		_ = exec.Command("networksetup", "-setsocksfirewallproxystate", service, "off").Run()
+}
+
+func socksProxyServiceNames(states []socksProxyState) []string {
+	names := make([]string, 0, len(states))
+	for _, state := range states {
+		names = append(names, state.Service)
 	}
+	return names
 }
 
 // NewZapretMacOSProvider builds the macOS engine provider.
@@ -604,7 +675,7 @@ func removeLegacyUnboundPFDeclarations(content []byte) ([]byte, error) {
 		case rdrDeclaration, anchorDeclaration:
 			continue
 		}
-		if strings.Contains(trimmed, pfAnchorName) {
+		if strings.Contains(trimmed, `"`+pfAnchorName+`"`) {
 			return nil, fmt.Errorf("unexpected %s declaration: %q", pfAnchorName, trimmed)
 		}
 		out.WriteString(line)
@@ -768,10 +839,11 @@ func (e *ZapretMacOSProvider) Start(ctx context.Context, profileName string) err
 	e.setStatusLocked(StatusRunning)
 	e.addLogLocked("tpws активен. Активируем системный SOCKS5 прокси...")
 
-	// Enable system SOCKS proxy for active network services
+	// Enable the SOCKS proxy only for the active default-route service, after
+	// capturing its exact prior state for restoration on every stop path.
 	e.modifiedServices = enableSystemSocks(tpwsPort)
 	if len(e.modifiedServices) > 0 {
-		e.addLogLocked(fmt.Sprintf("Системный SOCKS5 прокси включен для: %s (127.0.0.1:%s)", strings.Join(e.modifiedServices, ", "), tpwsPort))
+		e.addLogLocked(fmt.Sprintf("Системный SOCKS5 прокси включен для: %s (127.0.0.1:%s)", strings.Join(socksProxyServiceNames(e.modifiedServices), ", "), tpwsPort))
 	}
 
 	go e.pipeToLogs(stdout, "")
@@ -798,12 +870,8 @@ func (e *ZapretMacOSProvider) reap(cmd *exec.Cmd, profileName string) {
 		return // a newer Start() already replaced this process
 	}
 
-	if len(e.modifiedServices) > 0 {
-		disableSystemSocks(e.modifiedServices)
-		e.modifiedServices = nil
-	} else {
-		disableSystemSocks(nil)
-	}
+	restoreSystemSocks(e.modifiedServices)
+	e.modifiedServices = nil
 	e.flushPfAnchor()
 	e.cmd = nil
 	e.cancel = nil
@@ -824,12 +892,8 @@ func (e *ZapretMacOSProvider) reap(cmd *exec.Cmd, profileName string) {
 func (e *ZapretMacOSProvider) Stop() error {
 	e.mu.Lock()
 
-	if len(e.modifiedServices) > 0 {
-		disableSystemSocks(e.modifiedServices)
-		e.modifiedServices = nil
-	} else {
-		disableSystemSocks(nil)
-	}
+	restoreSystemSocks(e.modifiedServices)
+	e.modifiedServices = nil
 
 	if e.cmd == nil || e.cmd.Process == nil {
 		e.flushPfAnchor()

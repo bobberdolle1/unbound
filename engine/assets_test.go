@@ -85,6 +85,40 @@ func TestExtractAssetsUsesPrivateRuntime(t *testing.T) {
 	}
 }
 
+func TestExtractAssetsLinuxRuntimeModes(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("Linux runtime permissions")
+	}
+	paths, err := ExtractAssets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertMode := func(path string, want os.FileMode) {
+		t.Helper()
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Mode().Perm(); got != want {
+			t.Fatalf("%s mode = %o, want %o", path, got, want)
+		}
+	}
+	assertMode(paths.RootDir, 0711)
+	assertMode(paths.LuaDir, 0755)
+	for _, entry := range mustReadDir(t, paths.LuaDir) {
+		assertMode(filepath.Join(paths.LuaDir, entry.Name()), 0644)
+	}
+}
+
+func mustReadDir(t *testing.T, path string) []os.DirEntry {
+	t.Helper()
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return entries
+}
+
 func testSHA256(data []byte) string {
 	hash := sha256.Sum256(data)
 	return hex.EncodeToString(hash[:])

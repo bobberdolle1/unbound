@@ -74,17 +74,18 @@ func extractAssets() (*AssetPaths, error) {
 	binDir := filepath.Join(workspace.stagingDir, "core_bin")
 	luaDir := filepath.Join(workspace.stagingDir, "lua_scripts")
 	listDir := filepath.Join(workspace.stagingDir, "lists")
-	for _, dir := range []string{binDir, listDir} {
-		if err := os.MkdirAll(dir, 0700); err != nil {
+	dirModes := map[string]fs.FileMode{binDir: 0700, luaDir: 0755, listDir: 0700}
+	for dir, mode := range dirModes {
+		if err := os.MkdirAll(dir, mode); err != nil {
 			return nil, fmt.Errorf("create runtime asset directory: %w", err)
 		}
-	}
-	if err := os.MkdirAll(luaDir, 0755); err != nil {
-		return nil, fmt.Errorf("create runtime Lua directory: %w", err)
+		if err := os.Chmod(dir, mode); err != nil {
+			return nil, fmt.Errorf("set runtime asset directory mode: %w", err)
+		}
 	}
 
 	extracted := make(map[string]string)
-	extractPrefix := func(sourcePrefix, targetDir string) error {
+	extractPrefix := func(sourcePrefix, targetDir string, mode fs.FileMode) error {
 		entries, err := EmbeddedAssets.ReadDir(sourcePrefix)
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -103,10 +104,7 @@ func extractAssets() (*AssetPaths, error) {
 			}
 			targetPath := filepath.Join(targetDir, entry.Name())
 			expectedHash := sha256Hex(data)
-			mode := os.FileMode(0700)
-			if sourcePrefix == "lua_scripts" {
-				mode = 0644
-			}
+
 			if err := writeFileAtomicVerified(targetPath, data, mode, expectedHash); err != nil {
 				return fmt.Errorf("extract %s: %w", sourcePath, err)
 			}
@@ -115,16 +113,16 @@ func extractAssets() (*AssetPaths, error) {
 		return nil
 	}
 
-	if err := extractPrefix("core_bin", binDir); err != nil {
+	if err := extractPrefix("core_bin", binDir, 0700); err != nil {
 		return nil, err
 	}
-	if err := extractPrefix(platformAssetDirectory(), binDir); err != nil {
+	if err := extractPrefix(platformAssetDirectory(), binDir, 0700); err != nil {
 		return nil, err
 	}
-	if err := extractPrefix("lua_scripts", luaDir); err != nil {
+	if err := extractPrefix("lua_scripts", luaDir, 0644); err != nil {
 		return nil, err
 	}
-	if err := extractPrefix("lists", listDir); err != nil {
+	if err := extractPrefix("lists", listDir, 0700); err != nil {
 		return nil, err
 	}
 

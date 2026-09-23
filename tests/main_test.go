@@ -29,6 +29,9 @@ func TestHealthCheck(t *testing.T) {
 	if !hasElevatedPrivileges() {
 		t.Skip("Skipping health check - requires administrator/root privileges")
 	}
+	if os.Getenv("UNBOUND_RUN_WINDOWS_NETWORK_E2E") != "1" {
+		t.Skip("Set UNBOUND_RUN_WINDOWS_NETWORK_E2E=1 for physical network acceptance")
+	}
 
 	if err := engine.RunHealthCheck(); err != nil {
 		t.Fatalf("Health check failed: %v", err)

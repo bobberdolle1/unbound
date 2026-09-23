@@ -205,6 +205,7 @@ func TestRemoveLegacyUnboundPFDeclarations(t *testing.T) {
 		{name: "absent is no-op", input: "anchor \"com.apple/*\"\n", want: "anchor \"com.apple/*\"\n"},
 		{name: "preserves unrelated anchors", input: "anchor \"com.example.proxy\"\nrdr-anchor \"com.apple/*\"\n", want: "anchor \"com.example.proxy\"\nrdr-anchor \"com.apple/*\"\n"},
 		{name: "preserves similar names", input: "anchor \"com.unbound.zapret2\"\n", want: "anchor \"com.unbound.zapret2\"\n"},
+		{name: "preserves similar suffix names", input: "anchor \"com.unbound.zapret-other\"\n", want: "anchor \"com.unbound.zapret-other\"\n"},
 		{name: "removes duplicates", input: "anchor \"com.unbound.zapret\"\nanchor \"com.unbound.zapret\"\n", want: ""},
 		{name: "fails closed on unexpected declaration", input: "anchor \"com.unbound.zapret\" all\n", wantErr: true},
 	}
@@ -216,6 +217,48 @@ func TestRemoveLegacyUnboundPFDeclarations(t *testing.T) {
 			}
 			if !tt.wantErr && string(got) != tt.want {
 				t.Errorf("result = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseSystemSocksOutput(t *testing.T) {
+	tests := []struct {
+		name    string
+		output  string
+		want    socksProxyState
+		wantErr bool
+	}{
+		{
+			name:   "enabled proxy",
+			output: "Enabled: Yes\nServer: proxy.example\nPort: 1080\nAuthenticated Proxy Enabled: 0\n",
+			want:   socksProxyState{Service: "Wi-Fi", Enabled: true, Host: "proxy.example", Port: "1080"},
+		},
+		{
+			name:   "disabled proxy retains configured endpoint",
+			output: "Enabled: No\nServer: proxy.example\nPort: 1080\n",
+			want:   socksProxyState{Service: "Wi-Fi", Host: "proxy.example", Port: "1080"},
+		},
+		{
+			name:    "enabled proxy missing endpoint",
+			output:  "Enabled: Yes\nServer: \nPort: 0\n",
+			wantErr: true,
+		},
+		{
+			name:    "unknown enabled value",
+			output:  "Enabled: Maybe\nServer: proxy.example\nPort: 1080\n",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseSystemSocksOutput("Wi-Fi", tt.output)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("parseSystemSocksOutput() error = %v, wantErr %t", err, tt.wantErr)
+			}
+			if !tt.wantErr && got != tt.want {
+				t.Fatalf("parseSystemSocksOutput() = %+v, want %+v", got, tt.want)
 			}
 		})
 	}

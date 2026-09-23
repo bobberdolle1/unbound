@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -43,11 +44,17 @@ func buildTestBinary(t *testing.T) string {
 // runBinary runs the test binary with the given args, enforcing a timeout.
 func runBinary(t *testing.T, bin string, timeout time.Duration, args ...string) (string, int) {
 	t.Helper()
+	return runBinaryWithEnv(t, bin, timeout, os.Environ(), args...)
+}
+
+func runBinaryWithEnv(t *testing.T, bin string, timeout time.Duration, env []string, args ...string) (string, int) {
+	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd.Env = env
 	out, err := cmd.CombinedOutput()
 
 	exitCode := 0
@@ -61,6 +68,79 @@ func runBinary(t *testing.T, bin string, timeout time.Duration, args ...string) 
 		}
 	}
 	return string(out), exitCode
+}
+
+func setEnv(env []string, key, value string) []string {
+	prefix := key + "="
+	out := make([]string, 0, len(env)+1)
+	for _, entry := range env {
+		if !strings.HasPrefix(entry, prefix) {
+			out = append(out, entry)
+		}
+	}
+	return append(out, prefix+value)
+}
+
+func isolatedConfigEnv(t *testing.T) []string {
+	t.Helper()
+
+	root := t.TempDir()
+	env := os.Environ()
+	var configDirs []string
+	switch runtime.GOOS {
+	case "windows":
+		appData := filepath.Join(root, "appdata")
+		env = setEnv(env, "APPDATA", appData)
+		env = setEnv(env, "USERPROFILE", filepath.Join(root, "userprofile"))
+		configDirs = []string{filepath.Join(appData, engine.ConfigDirName)}
+	case "darwin":
+		home := filepath.Join(root, "home")
+		env = setEnv(env, "HOME", home)
+		configDirs = []string{filepath.Join(home, "Library", "Application Support", engine.ConfigDirName)}
+	default:
+		home := filepath.Join(root, "home")
+		env = setEnv(env, "HOME", home)
+		env = setEnv(env, "XDG_CONFIG_HOME", root)
+		configDirs = []string{
+			filepath.Join(root, engine.ConfigDirName),
+			filepath.Join(home, ".config", engine.ConfigDirName),
+		}
+	}
+
+	repoRoot, err := filepath.Abs("..")
+	if err != nil {
+		t.Fatalf("resolve repository root: %v", err)
+	}
+	embeddedListsDir := filepath.Join(repoRoot, "engine", "lists")
+	embeddedLists, err := os.ReadDir(embeddedListsDir)
+	if err != nil {
+		t.Fatalf("read embedded list fixtures: %v", err)
+	}
+
+	for _, configDir := range configDirs {
+		listsDir := filepath.Join(configDir, "lists")
+		if err := os.MkdirAll(listsDir, 0755); err != nil {
+			t.Fatalf("create isolated lists directory: %v", err)
+		}
+		for _, source := range engine.DefaultListSources {
+			if err := os.WriteFile(filepath.Join(listsDir, source.Filename), []byte(source.Fallback), 0644); err != nil {
+				t.Fatalf("preseed %s: %v", source.Filename, err)
+			}
+		}
+		for _, entry := range embeddedLists {
+			if entry.IsDir() {
+				continue
+			}
+			data, err := os.ReadFile(filepath.Join(embeddedListsDir, entry.Name()))
+			if err != nil {
+				t.Fatalf("read embedded list %s: %v", entry.Name(), err)
+			}
+			if err := os.WriteFile(filepath.Join(listsDir, entry.Name()), data, 0644); err != nil {
+				t.Fatalf("preseed embedded list %s: %v", entry.Name(), err)
+			}
+		}
+	}
+	return env
 }
 
 // cleanOutput strips non-printable characters (emoji sequences, etc.) that
@@ -106,6 +186,31 @@ func TestE2E_VersionFlag(t *testing.T) {
 	}
 }
 
+func TestE2E_VersionJSON(t *testing.T) {
+	bin := buildTestBinary(t)
+	out, code := runBinary(t, bin, 10*time.Second, "--version", "--json")
+	if code != 0 {
+		t.Fatalf("--version --json exited %d; output: %s", code, out)
+	}
+
+	var identity engine.BuildIdentity
+	if err := json.Unmarshal([]byte(out), &identity); err != nil {
+		t.Fatalf("parse --version --json: %v; output: %s", err, out)
+	}
+	if identity.Version != engine.Version {
+		t.Errorf("version = %q, want %q", identity.Version, engine.Version)
+	}
+	if identity.OS == "" || identity.Arch == "" {
+		t.Errorf("platform identity is incomplete: %+v", identity)
+	}
+	if identity.Channel != "development" && identity.Channel != "release" {
+		t.Errorf("channel = %q", identity.Channel)
+	}
+	if identity.Commit != "unknown" && !regexp.MustCompile(`^[0-9a-f]{7,64}$`).MatchString(identity.Commit) {
+		t.Errorf("commit = %q", identity.Commit)
+	}
+}
+
 func TestE2E_HelpFlag(t *testing.T) {
 	bin := buildTestBinary(t)
 
@@ -130,7 +235,7 @@ func TestE2E_HelpFlag(t *testing.T) {
 func TestE2E_ListProfiles(t *testing.T) {
 	bin := buildTestBinary(t)
 
-	out, code := runBinary(t, bin, 15*time.Second, "--list-profiles")
+	out, code := runBinaryWithEnv(t, bin, 30*time.Second, isolatedConfigEnv(t), "--list-profiles")
 	out = cleanOutput(out)
 
 	// On platforms without the engine binary, it may exit 1.
@@ -176,9 +281,10 @@ func TestE2E_InvalidFlag(t *testing.T) {
 func TestE2E_CLIHeadlessStartStop(t *testing.T) {
 	bin := buildTestBinary(t)
 
-	// Run CLI mode with a short timeout so it gets killed.
-	out, code := runBinary(t, bin, 5*time.Second, "--cli", "--debug")
-	out = cleanOutput(out)
+	// Use an isolated, fully preseeded configuration so the privileged startup
+	// path has no network or developer-state dependency.
+	out, code := runBinaryWithEnv(t, bin, 5*time.Second, isolatedConfigEnv(t),
+		"--cli", "--debug", "--profile", "Standard HTTPS/QUIC")
 
 	// Skip if we lack privileges or the engine binary.
 	switch {

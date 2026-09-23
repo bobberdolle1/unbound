@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "bundles": [
     {
       "name": "zapret2",
@@ -34,16 +34,41 @@
     },
     {
       "name": "zapret",
-      "tag": "v72.13",
-      "commit": "87e058624c72863db53bdaf7fb6f16576dddb6ab",
-      "releaseUrl": "https://github.com/bol-van/zapret/releases/tag/v72.13",
-      "sourceAsset": "zapret-v72.13.zip",
-      "sourceAssetSha256": "c493e33a0dc4eba23a8686efdaba55f59755ad6ade3564aebd9d13f4c65e2e0c",
+      "baseTag": "v72.13",
+      "commit": "d437963452674faadfd45adcd62466272b5a2fcd",
+      "sourceKind": "git_commit",
+      "repository": "https://github.com/bol-van/zapret.git",
+      "sourceArchive": {
+        "url": "https://github.com/bol-van/zapret/archive/d437963452674faadfd45adcd62466272b5a2fcd.tar.gz",
+        "reference": "d437963452674faadfd45adcd62466272b5a2fcd",
+        "sha256": "2e6ed5e926db45502751eb5bf934bc9466d89e3c1499391e0dd4004693348db9"
+      },
       "license": "MIT",
       "licenseFile": "third_party/ZAPRET_LICENSE.txt",
       "paths": [
         "core_bin/darwin/tpws"
-      ]
+      ],
+      "build": {
+        "command": "make -C tpws mac",
+        "target": "universal2",
+        "architectures": [
+          "arm64",
+          "x86_64"
+        ],
+        "compiler": "Apple clang 21.0.0 (clang-2100.3.34.2)",
+        "sdk": "macOS 27.0",
+        "deploymentTarget": "macos10.8",
+        "host": "macOS 27.0 (26A428)",
+        "codesign": "ad-hoc, linker-signed; TeamIdentifier not set",
+        "artifact": {
+          "path": "core_bin/darwin/tpws",
+          "sha256": "6ec3f467a0ca17dde7a12e1ca3a068de52ae61385886d5ba8faa09ca93fa72b6",
+          "slices": {
+            "arm64": "27fc03e00bf3f57a061bf0bf1c86676c36600475e3ca6a795f2a1b88097f5ff2",
+            "x86_64": "f37cb26b699c7040da7d57fac564ba5de8aa981e86cedcc5dbeed20de7cca2b0"
+          }
+        }
+      }
     }
   ]
 }

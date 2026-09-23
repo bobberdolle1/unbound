@@ -2,10 +2,10 @@
 
 <img src="./build/logo.svg" alt="UNBOUND Logo" width="120" />
 
-# UNBOUND `v0.6.9`
-**Локальный настольный оркестратор десинхронизации L3/L4 трафика для macOS, Windows и Linux.**
+# UNBOUND `v0.7.0-dev`
+**Development build. The latest audited release is `v0.6.9`; see [its identity audit](docs/release/v0.6.9-identity-audit.md).**
 
-[![Version](https://img.shields.io/badge/Version-v0.6.9-08090b?style=for-the-badge&logo=rocket)](#)
+[![Version](https://img.shields.io/badge/Version-v0.7.0--dev-08090b?style=for-the-badge&logo=rocket)](#)
 [![Design](https://img.shields.io/badge/Design-Precision_Monochrome-10b981?style=for-the-badge)](#)
 [![Security](https://img.shields.io/badge/Security-SHA256_pinned-10b981?style=for-the-badge&logo=shield)](SECURITY.md)
 [![License](https://img.shields.io/badge/License-GPL--3.0-blue?style=for-the-badge)](LICENSE)

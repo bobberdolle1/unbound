@@ -21,12 +21,6 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
-    inputs:
-      release:
-        description: 'Publish a GitHub Release (as a draft unless building a tag)?'
-        required: false
-        default: 'false'
-        type: boolean
 
 concurrency:
   group: release-${{ github.ref }}
@@ -47,8 +41,11 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      commit: ${{ steps.version.outputs.commit }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - id: version
         run: |
           set -euo pipefail
@@ -57,8 +54,10 @@ jobs:
           else
             VER="$(jq -r '.info.productVersion // "0.0.0-dev"' wails.json)"
           fi
+          COMMIT="$(git rev-parse "${GITHUB_SHA}^{commit}")"
           echo "version=$VER" >> "$GITHUB_OUTPUT"
-          echo "Resolved version: $VER"
+          echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: $VER ($COMMIT)"
 
   verify:
     name: Verify release commit
@@ -66,6 +65,8 @@ jobs:
     needs: resolve-version
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
@@ -91,6 +92,16 @@ jobs:
           test "$(jq -r '.version' frontend/package.json)" = "$VERSION"
           grep -F "## [$VERSION]" CHANGELOG.md
           go run . --version | grep -F "$VERSION"
+      - name: Verify annotated tag identity
+        if: github.ref_type == 'tag'
+        env:
+          TAG: ${{ github.ref_name }}
+          EXPECTED_COMMIT: ${{ needs.resolve-version.outputs.commit }}
+        run: |
+          set -euo pipefail
+          test "$(git cat-file -t "refs/tags/$TAG")" = tag
+          test "$(git rev-parse "$TAG^{commit}")" = "$EXPECTED_COMMIT"
+
 
       - name: Go and asset gate
         run: |
@@ -106,6 +117,9 @@ jobs:
     needs: [resolve-version, verify]
     env:
       VERSION: ${{ needs.resolve-version.outputs.version }}
+      BUILD_COMMIT: ${{ needs.resolve-version.outputs.commit }}
+      BUILD_DIRTY: 'false'
+      BUILD_CHANNEL: release
     steps:
       - uses: actions/checkout@v4
 
@@ -136,7 +150,7 @@ jobs:
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.13.0
 
       - name: Build
-        run: wails build -clean -o unbound.exe -ldflags "-H windowsgui -X unbound/engine.Version=${env:VERSION}"
+        run: wails build -clean -o unbound.exe -ldflags "-H windowsgui -X unbound/engine.Version=${env:VERSION} -X unbound/engine.BuildCommit=${env:BUILD_COMMIT} -X unbound/engine.BuildDirty=${env:BUILD_DIRTY} -X unbound/engine.BuildChannel=${env:BUILD_CHANNEL}"
         shell: pwsh
 
       - name: Smoke-test Windows binary
@@ -192,6 +206,9 @@ jobs:
     needs: [resolve-version, verify]
     env:
       VERSION: ${{ needs.resolve-version.outputs.version }}
+      UNBOUND_BUILD_COMMIT: ${{ needs.resolve-version.outputs.commit }}
+      UNBOUND_BUILD_DIRTY: 'false'
+      UNBOUND_BUILD_CHANNEL: release
     steps:
       - uses: actions/checkout@v4
 
@@ -230,18 +247,18 @@ jobs:
       - build-macos
     if: >-
       always() &&
+      github.ref_type == 'tag' &&
       needs.verify.result == 'success' &&
       needs.build-windows.result == 'success' &&
-      needs.build-macos.result == 'success' &&
-      (github.ref_type == 'tag' ||
-       (github.event_name == 'workflow_dispatch' && inputs.release))
+      needs.build-macos.result == 'success'
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/download-artifact@v4
         with:
           path: artifacts/
-
 
       - name: Generate release checksums
         run: |
@@ -251,14 +268,23 @@ jobs:
             | xargs -0 sha256sum \
             | sed 's#  artifacts/[^/]*/#  #' > artifacts/SHA256SUMS.txt
           test -s artifacts/SHA256SUMS.txt
+
+      - name: Refuse release asset replacement
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; replacement is forbidden." >&2
+            exit 1
+          fi
+
       - name: Extract release notes from CHANGELOG
-        id: notes
         env:
           VERSION: ${{ needs.resolve-version.outputs.version }}
         run: |
           set -euo pipefail
-          # The old workflow pasted a fixed v2.0-era announcement into every
-          # release regardless of what was actually being shipped.
           if awk -v ver="$VERSION" '
                 $0 ~ "^## \\[" ver "\\]" { found = 1; next }
                 found && /^## \[/        { exit }
@@ -269,25 +295,90 @@ jobs:
             echo "No CHANGELOG entry for $VERSION; falling back to generated notes" >&2
             printf 'См. полный список изменений ниже.\n' > notes.md
           fi
-          {
-            echo 'body<<RELEASE_NOTES_EOF'
-            cat notes.md
-            echo 'RELEASE_NOTES_EOF'
-          } >> "$GITHUB_OUTPUT"
+          printf '\n<!-- unbound-release-workflow-run:%s -->\n' "$GITHUB_RUN_ID" >> notes.md
 
-      - name: List artifacts
-        run: find artifacts/ -type f | sort
+      - name: Create owned draft release
+        id: create-draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.resolve-version.outputs.version }}
+          PRERELEASE: ${{ contains(needs.resolve-version.outputs.version, 'dev') || contains(needs.resolve-version.outputs.version, 'beta') || contains(needs.resolve-version.outputs.version, 'rc') }}
+        run: |
+          set -euo pipefail
+          args=(--repo "$GITHUB_REPOSITORY" --draft --verify-tag --title "Unbound v$VERSION" --notes-file notes.md)
+          if [[ "$PRERELEASE" == "true" ]]; then
+            args+=(--prerelease)
+          fi
+          gh release create "$TAG" "${args[@]}"
+          release_id="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .id)"
+          echo "release_id=$release_id" >> "$GITHUB_OUTPUT"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" --jq .draft)" = true
+          gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" --jq .body | grep -F "<!-- unbound-release-workflow-run:$GITHUB_RUN_ID -->"
 
-      - uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', needs.resolve-version.outputs.version) }}
-          name: "Unbound v${{ needs.resolve-version.outputs.version }}"
-          body: ${{ steps.notes.outputs.body }}
-          files: |
-            artifacts/**/*.zip
-            artifacts/**/*.dmg
-            artifacts/**/*.pkg
-            artifacts/SHA256SUMS.txt
-          draft: ${{ github.ref_type != 'tag' }}
-          prerelease: ${{ contains(needs.resolve-version.outputs.version, 'dev') || contains(needs.resolve-version.outputs.version, 'beta') || contains(needs.resolve-version.outputs.version, 'rc') }}
-          generate_release_notes: true
+      - name: Upload draft artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mapfile -d '' files < <(find artifacts -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.dmg' -o -name '*.pkg' \) -print0)
+          files+=(artifacts/SHA256SUMS.txt)
+          test "${#files[@]}" -gt 1
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" "${files[@]}"
+
+      - name: Verify draft artifact digests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          test "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true
+          remote="$(mktemp -d)"
+          trap 'rm -rf "$remote"' EXIT
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS.txt --dir "$remote"
+          cmp artifacts/SHA256SUMS.txt "$remote/SHA256SUMS.txt"
+          while read -r sha file; do
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$file" --dir "$remote"
+            printf '%s  %s\n' "$sha" "$remote/$file" | sha256sum -c -
+          done < artifacts/SHA256SUMS.txt
+
+      - name: Publish verified draft
+        id: publish-draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+
+      - name: Verify published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          test "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = false
+          remote="$(mktemp -d)"
+          trap 'rm -rf "$remote"' EXIT
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS.txt --dir "$remote"
+          cmp artifacts/SHA256SUMS.txt "$remote/SHA256SUMS.txt"
+          while read -r sha file; do
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$file" --dir "$remote"
+            printf '%s  %s\n' "$sha" "$remote/$file" | sha256sum -c -
+          done < artifacts/SHA256SUMS.txt
+
+      - name: Remove failed owned draft
+        if: >-
+          failure() &&
+          steps.create-draft.outputs.release_id != '' &&
+          steps.publish-draft.outcome != 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          RELEASE_ID: ${{ steps.create-draft.outputs.release_id }}
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --jq .draft)" = true
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --jq .body | grep -F "<!-- unbound-release-workflow-run:$GITHUB_RUN_ID -->"
+          gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes

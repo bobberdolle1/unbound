@@ -13,10 +13,14 @@
 
 SHELL := /usr/bin/env bash
 
-# `wails.json` is the canonical release-version source. Node is already
-# required by both build and gui through the frontend build.
+# `wails.json` is the canonical source version. Build provenance is resolved
+# while compiling; packaged binaries never inspect a .git directory at runtime.
 VERSION ?= $(shell node -p "require('./wails.json').info.productVersion")
-LDFLAGS := -s -w -X unbound/engine.Version=$(VERSION)
+GIT_AVAILABLE := $(shell git rev-parse --is-inside-work-tree >/dev/null 2>&1 && echo yes || echo no)
+COMMIT ?= $(shell git rev-parse --verify HEAD 2>/dev/null || echo unknown)
+DIRTY ?= $(shell if [ "$(GIT_AVAILABLE)" != yes ]; then echo unknown; elif [ -n "$$(git status --porcelain --untracked-files=normal)" ]; then echo true; else echo false; fi)
+CHANNEL ?= development
+LDFLAGS := -s -w -X unbound/engine.Version=$(VERSION) -X unbound/engine.BuildCommit=$(COMMIT) -X unbound/engine.BuildDirty=$(DIRTY) -X unbound/engine.BuildChannel=$(CHANNEL)
 
 GOOS_HOST := $(shell go env GOOS 2>/dev/null)
 BIN_NAME  := unbound$(if $(filter windows,$(GOOS_HOST)),.exe,)
@@ -66,7 +70,7 @@ gui: ## Build the native desktop app via Wails
 	@command -v wails >/dev/null || { \
 		echo "wails not installed: go install github.com/wailsapp/wails/v2/cmd/wails@v2.13.0"; \
 		exit 1; }
-	@wails build -clean -ldflags "-X unbound/engine.Version=$(VERSION)"
+	@wails build -clean -ldflags "$(LDFLAGS)"
 	@if [ "$(GOOS_HOST)" = "darwin" ]; then \
 		app="build/bin/unbound.app"; \
 		[ -d "$$app" ] || app="build/bin/Unbound.app"; \

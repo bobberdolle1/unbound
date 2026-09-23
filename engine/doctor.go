@@ -135,6 +135,7 @@ func RunDoctorWithProgress(ctx context.Context, mode string, activeProfile strin
 	totalChecks := 4 + len(probeDefs) // 4 local groups + network probes
 	completedChecks := 0
 	var progressMu sync.Mutex
+	var emitMu sync.Mutex
 	runningMap := make(map[string]bool)
 	runID := fmt.Sprintf("doc_%d", startTime.UnixNano())
 
@@ -142,6 +143,10 @@ func RunDoctorWithProgress(ctx context.Context, mode string, activeProfile strin
 		if onProgress == nil {
 			return
 		}
+
+		// DoctorProgressFn is a serialized producer contract. Snapshot mutable
+		// state under progressMu, but never hold it while invoking consumer code.
+		emitMu.Lock()
 		progressMu.Lock()
 		runningList := make([]string, 0, len(runningMap))
 		for name := range runningMap {
@@ -163,6 +168,7 @@ func RunDoctorWithProgress(ctx context.Context, mode string, activeProfile strin
 		}
 		progressMu.Unlock()
 		onProgress(p)
+		emitMu.Unlock()
 	}
 
 	// Initial start event

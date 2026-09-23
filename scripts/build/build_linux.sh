@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Build the self-contained Linux CLI for the selected architecture.
 # Usage: ./scripts/build/build_linux.sh [debug]
-# Environment: GOARCH=amd64|arm64, UNBOUND_VERSION=<override>
-
+# Environment: GOARCH=amd64|arm64, UNBOUND_VERSION=<override>,
+# UNBOUND_BUILD_COMMIT=<sha>, UNBOUND_BUILD_DIRTY=true|false|unknown,
+# UNBOUND_BUILD_CHANNEL=development|release
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,11 +25,22 @@ done
 
 cd "$PROJECT_ROOT"
 VERSION="${UNBOUND_VERSION:-$(node -p "require('./wails.json').info.productVersion")}"
+BUILD_COMMIT="${UNBOUND_BUILD_COMMIT:-$(git rev-parse --verify HEAD 2>/dev/null || printf 'unknown')}"
+if [ -n "${UNBOUND_BUILD_DIRTY:-}" ]; then
+    BUILD_DIRTY="$UNBOUND_BUILD_DIRTY"
+elif [ "$BUILD_COMMIT" = "unknown" ]; then
+    BUILD_DIRTY="unknown"
+elif [ -n "$(git status --porcelain --untracked-files=normal)" ]; then
+    BUILD_DIRTY="true"
+else
+    BUILD_DIRTY="false"
+fi
+BUILD_CHANNEL="${UNBOUND_BUILD_CHANNEL:-development}"
 GO_ARGS=(build -trimpath)
-LDFLAGS="-s -w -X unbound/engine.Version=$VERSION"
+LDFLAGS="-s -w -X unbound/engine.Version=$VERSION -X unbound/engine.BuildCommit=$BUILD_COMMIT -X unbound/engine.BuildDirty=$BUILD_DIRTY -X unbound/engine.BuildChannel=$BUILD_CHANNEL"
 if [ "${1:-}" = "debug" ]; then
     GO_ARGS+=("-gcflags=all=-N -l")
-    LDFLAGS="-X unbound/engine.Version=$VERSION"
+    LDFLAGS="-X unbound/engine.Version=$VERSION -X unbound/engine.BuildCommit=$BUILD_COMMIT -X unbound/engine.BuildDirty=$BUILD_DIRTY -X unbound/engine.BuildChannel=$BUILD_CHANNEL"
 elif [ "$#" -gt 0 ]; then
     echo "[ERROR] Unknown argument: $1" >&2
     exit 2

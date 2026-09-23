@@ -79,10 +79,13 @@ func main() {
 	}
 
 	if *showVersion {
+		identity := engine.CurrentBuildIdentity()
 		if *jsonOutput {
-			fmt.Printf("{\"version\":\"%s\",\"os\":\"%s\",\"arch\":\"%s\"}\n", engine.Version, runtime.GOOS, runtime.GOARCH)
+			if err := json.NewEncoder(os.Stdout).Encode(identity); err != nil {
+				log.Fatalf("encode build identity: %v", err)
+			}
 		} else {
-			fmt.Printf("unbound %s (%s/%s)\n", engine.Version, runtime.GOOS, runtime.GOARCH)
+			fmt.Printf("unbound %s (%s/%s)\n", identity.Version, identity.OS, identity.Arch)
 		}
 		return
 	}
@@ -383,6 +386,22 @@ func runHeadlessMode(profileName string, runAutoTune bool, debugMode bool, runDu
 	fmt.Println("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	fmt.Println("🚀 UNBOUND - Headless CLI Mode")
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	// On Windows and Linux the engine cannot start without elevation. Check
+	// before extracting assets or refreshing lists so an unprivileged CLI call
+	// fails immediately without network or filesystem side effects.
+	if runtime.GOOS != "darwin" {
+		hasPriv, err := checkAdminPrivileges()
+		if err != nil {
+			log.Fatalf("Failed to check privileges: %v", err)
+		}
+		if !hasPriv {
+			if runtime.GOOS == "windows" {
+				log.Fatal("Administrator privileges required. Run as administrator.")
+			}
+			log.Fatal("Root privileges required. Re-run with sudo.")
+		}
+	}
 
 	// Ensure dynamic lists exist
 	fmt.Println("Checking for updated bypass lists...")
