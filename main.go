@@ -43,6 +43,9 @@ func main() {
 	observeFamily := flag.String("observe-ip-family", "any", "Observation address family: 4, 6, or any")
 	observeTimeout := flag.Duration("observe-timeout", 0, "Overall read-only observation timeout")
 	observeSave := flag.Bool("observe-save", false, "Persist a redacted observation JSON under Unbound data")
+	var attributeFiles, attributeControlFiles stringList
+	flag.Var(&attributeFiles, "attribute", "Read an observation JSON file for pure failure attribution; repeat for multiple target files")
+	flag.Var(&attributeControlFiles, "attribute-control", "Read an observation JSON file as a compatible control cohort; repeat as needed")
 	installService := flag.Bool("install-service", false, "Register autostart service for Unbound")
 	uninstallService := flag.Bool("uninstall-service", false, "Remove autostart service for Unbound")
 	jsonOutput := flag.Bool("json", false, "Output profile list, status, or observation in JSON format")
@@ -72,7 +75,7 @@ func main() {
 
 	flag.Parse()
 	if !isBindingsBuild() {
-		if relaunched, err := relaunchElevatedIfNeeded(requiresElevationForMode(*showVersion, *testMode, *observeURL != "", *listProfiles, *cliMode, *autoTuneMode, *installService, *uninstallService, *controlMode, *acceptanceTest)); err != nil {
+		if relaunched, err := relaunchElevatedIfNeeded(requiresElevationForMode(*showVersion, *testMode, *observeURL != "", len(attributeFiles) > 0, *listProfiles, *cliMode, *autoTuneMode, *installService, *uninstallService, *controlMode, *acceptanceTest)); err != nil {
 			log.Fatalf("Failed to request administrator privileges: %v", err)
 		} else if relaunched {
 			return
@@ -98,6 +101,10 @@ func main() {
 
 	if *observeURL != "" {
 		runObservation(*observeURL, *observeProtocol, *observeFamily, *observeTimeout, *observeSave, *jsonOutput)
+		return
+	}
+	if len(attributeFiles) > 0 {
+		runAttribution(attributeFiles, attributeControlFiles, *jsonOutput)
 		return
 	}
 
@@ -203,11 +210,11 @@ func main() {
 	}
 }
 
-func requiresElevationForMode(showVersion, testMode, observeMode, listProfiles, cliMode, autoTuneMode, installService, uninstallService, controlMode, acceptanceTest bool) bool {
+func requiresElevationForMode(showVersion, testMode, observeMode, attributeMode, listProfiles, cliMode, autoTuneMode, installService, uninstallService, controlMode, acceptanceTest bool) bool {
 	if acceptanceTest {
 		return true
 	}
-	return !(showVersion || testMode || observeMode || listProfiles || cliMode || autoTuneMode || installService || uninstallService || controlMode)
+	return !(showVersion || testMode || observeMode || attributeMode || listProfiles || cliMode || autoTuneMode || installService || uninstallService || controlMode)
 }
 
 func runAcceptanceTest() {
