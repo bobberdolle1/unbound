@@ -38,9 +38,14 @@ func main() {
 	profileName := flag.String("profile", "", "Profile to use in CLI mode (default: interactive selection)")
 	autoTuneMode := flag.Bool("autotune", false, "Run AutoTune benchmark in CLI mode and start the best profile")
 	testMode := flag.Bool("test", false, "Run quick connectivity diagnostic probe for targets and exit")
+	observeURL := flag.String("observe", "", "Run a read-only TCP/TLS/HTTP observation for an HTTPS URL")
+	observeProtocol := flag.String("observe-protocol", "tcp", "Observation transport: tcp or quic")
+	observeFamily := flag.String("observe-ip-family", "any", "Observation address family: 4, 6, or any")
+	observeTimeout := flag.Duration("observe-timeout", 0, "Overall read-only observation timeout")
+	observeSave := flag.Bool("observe-save", false, "Persist a redacted observation JSON under Unbound data")
 	installService := flag.Bool("install-service", false, "Register autostart service for Unbound")
 	uninstallService := flag.Bool("uninstall-service", false, "Remove autostart service for Unbound")
-	jsonOutput := flag.Bool("json", false, "Output profile list or status in JSON format")
+	jsonOutput := flag.Bool("json", false, "Output profile list, status, or observation in JSON format")
 	trayMode := flag.Bool("tray", false, "Start minimized to system tray")
 	debugMode := flag.Bool("debug", false, "Enable verbose debug logging")
 	showVersion := flag.Bool("version", false, "Print the version and exit")
@@ -58,6 +63,7 @@ func main() {
 		fmt.Println("  unbound --cli --autotune                     Run AutoTune in CLI and start best profile")
 		fmt.Println("  unbound --cli --profile=\"Alternative 2\"       Start CLI with specific profile")
 		fmt.Println("  unbound --test                               Run quick connectivity diagnostic probe")
+		fmt.Println("  unbound --observe https://example.com --json Run read-only stage observation")
 		fmt.Println("  unbound --list-profiles --json               List profiles in JSON format")
 		fmt.Println("  unbound --install-service                    Enable OS autostart service")
 		fmt.Println("  unbound --uninstall-service                  Disable OS autostart service")
@@ -66,7 +72,7 @@ func main() {
 
 	flag.Parse()
 	if !isBindingsBuild() {
-		if relaunched, err := relaunchElevatedIfNeeded(requiresElevationForMode(*showVersion, *testMode, *listProfiles, *cliMode, *autoTuneMode, *installService, *uninstallService, *controlMode, *acceptanceTest)); err != nil {
+		if relaunched, err := relaunchElevatedIfNeeded(requiresElevationForMode(*showVersion, *testMode, *observeURL != "", *listProfiles, *cliMode, *autoTuneMode, *installService, *uninstallService, *controlMode, *acceptanceTest)); err != nil {
 			log.Fatalf("Failed to request administrator privileges: %v", err)
 		} else if relaunched {
 			return
@@ -87,6 +93,11 @@ func main() {
 		} else {
 			fmt.Printf("unbound %s (%s/%s)\n", identity.Version, identity.OS, identity.Arch)
 		}
+		return
+	}
+
+	if *observeURL != "" {
+		runObservation(*observeURL, *observeProtocol, *observeFamily, *observeTimeout, *observeSave, *jsonOutput)
 		return
 	}
 
@@ -192,11 +203,11 @@ func main() {
 	}
 }
 
-func requiresElevationForMode(showVersion, testMode, listProfiles, cliMode, autoTuneMode, installService, uninstallService, controlMode, acceptanceTest bool) bool {
+func requiresElevationForMode(showVersion, testMode, observeMode, listProfiles, cliMode, autoTuneMode, installService, uninstallService, controlMode, acceptanceTest bool) bool {
 	if acceptanceTest {
 		return true
 	}
-	return !(showVersion || testMode || listProfiles || cliMode || autoTuneMode || installService || uninstallService || controlMode)
+	return !(showVersion || testMode || observeMode || listProfiles || cliMode || autoTuneMode || installService || uninstallService || controlMode)
 }
 
 func runAcceptanceTest() {
