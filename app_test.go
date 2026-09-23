@@ -122,14 +122,15 @@ func TestAutoReconnectDoesNotStartDuringAutoTuneOrShutdown(t *testing.T) {
 
 func TestRequiresElevationForMode(t *testing.T) {
 	tests := []struct {
-		name                                                                                                                      string
-		showVersion, testMode, listProfiles, cliMode, autoTuneMode, installService, uninstallService, controlMode, acceptanceTest bool
-		want                                                                                                                      bool
+		name                                                                                                                                   string
+		showVersion, testMode, observeMode, listProfiles, cliMode, autoTuneMode, installService, uninstallService, controlMode, acceptanceTest bool
+		want                                                                                                                                   bool
 	}{
 		{name: "GUI", want: true},
 		{name: "acceptance test", acceptanceTest: true, want: true},
 		{name: "version", showVersion: true},
 		{name: "diagnostic probe", testMode: true},
+		{name: "read-only observation", observeMode: true},
 		{name: "profile catalog", listProfiles: true},
 		{name: "CLI", cliMode: true},
 		{name: "AutoTune CLI", autoTuneMode: true},
@@ -142,6 +143,7 @@ func TestRequiresElevationForMode(t *testing.T) {
 			got := requiresElevationForMode(
 				test.showVersion,
 				test.testMode,
+				test.observeMode,
 				test.listProfiles,
 				test.cliMode,
 				test.autoTuneMode,

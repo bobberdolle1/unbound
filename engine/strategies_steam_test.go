@@ -242,13 +242,15 @@ func (f *fakeRegistrar) RegisterProfile(name string, args []string) {
 	f.registerd[name] = args
 }
 
-// TestWinws2DryRunAcceptsAllProfiles validates that every generated winws2
-// command line parses on the real bundled engine (option names, values, Lua
-// function resolution and blob references). It skips when the bundle is not
-// extracted or when the engine cannot run at all in this context — the
-// winws2 manifest requires elevation even for --dry-run, so non-elevated
-// shells skip the check instead of failing.
+// TestWinws2DryRunAcceptsAllProfiles validates generated winws2 arguments on
+// the real bundled engine. Even --dry-run competes with an active WinDivert
+// filter, so it is an explicit Windows physical-engine acceptance test rather
+// than part of ordinary hermetic source validation.
 func TestWinws2DryRunAcceptsAllProfiles(t *testing.T) {
+	if os.Getenv("UNBOUND_RUN_WINDOWS_NETWORK_E2E") != "1" {
+		t.Skip("Set UNBOUND_RUN_WINDOWS_NETWORK_E2E=1 for physical winws2 dry-run acceptance")
+	}
+
 	winws := os.Getenv("UNBOUND_WINWS2")
 	if runtime.GOOS != "windows" {
 		t.Skip("winws2.exe dry-run verification is specific to Windows")

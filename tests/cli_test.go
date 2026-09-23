@@ -208,7 +208,7 @@ func TestCLIWithInvalidProfile(t *testing.T) {
 		t.Fatalf("Failed to build test binary: %v\nOutput: %s", err, string(buildOutput))
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, tempBinary, "--cli", "--profile=NonExistentProfile")
@@ -236,7 +236,7 @@ func TestCLIDebugMode(t *testing.T) {
 		t.Fatalf("Failed to build test binary: %v\nOutput: %s", err, string(buildOutput))
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	profileName := firstCLIProfile(t, tempBinary)

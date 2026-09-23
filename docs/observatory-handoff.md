@@ -1,6 +1,6 @@
 # Observatory v1 handoff
 
-**Scope:** design only. No Observatory implementation is included in this branch.
+**Scope:** Observatory v1 direct TCP/TLS/HTTP implementation. See [Observatory v1](observatory.md) for schema, CLI, privacy, and capability semantics.
 
 ## Pipeline
 
