@@ -44,11 +44,13 @@ jobs:
   # ───────────────────────────────────────────────────────────────────────────
   resolve-version:
     name: Resolve version
-    runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      commit: ${{ steps.version.outputs.commit }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - id: version
         run: |
           set -euo pipefail
@@ -57,8 +59,10 @@ jobs:
           else
             VER="$(jq -r '.info.productVersion // "0.0.0-dev"' wails.json)"
           fi
+          COMMIT="$(git rev-parse "${GITHUB_SHA}^{commit}")"
           echo "version=$VER" >> "$GITHUB_OUTPUT"
-          echo "Resolved version: $VER"
+          echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: $VER ($COMMIT)"
 
   verify:
     name: Verify release commit
@@ -91,6 +95,16 @@ jobs:
           test "$(jq -r '.version' frontend/package.json)" = "$VERSION"
           grep -F "## [$VERSION]" CHANGELOG.md
           go run . --version | grep -F "$VERSION"
+      - name: Verify annotated tag identity
+        if: github.ref_type == 'tag'
+        env:
+          TAG: ${{ github.ref_name }}
+          EXPECTED_COMMIT: ${{ needs.resolve-version.outputs.commit }}
+        run: |
+          set -euo pipefail
+          test "$(git cat-file -t "refs/tags/$TAG")" = tag
+          test "$(git rev-parse "$TAG^{commit}")" = "$EXPECTED_COMMIT"
+
 
       - name: Go and asset gate
         run: |
@@ -106,6 +120,9 @@ jobs:
     needs: [resolve-version, verify]
     env:
       VERSION: ${{ needs.resolve-version.outputs.version }}
+      BUILD_COMMIT: ${{ needs.resolve-version.outputs.commit }}
+      BUILD_DIRTY: 'false'
+      BUILD_CHANNEL: release
     steps:
       - uses: actions/checkout@v4
 
@@ -136,7 +153,7 @@ jobs:
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.13.0
 
       - name: Build
-        run: wails build -clean -o unbound.exe -ldflags "-H windowsgui -X unbound/engine.Version=${env:VERSION}"
+        run: wails build -clean -o unbound.exe -ldflags "-H windowsgui -X unbound/engine.Version=${env:VERSION} -X unbound/engine.BuildCommit=${env:BUILD_COMMIT} -X unbound/engine.BuildDirty=${env:BUILD_DIRTY} -X unbound/engine.BuildChannel=${env:BUILD_CHANNEL}"
         shell: pwsh
 
       - name: Smoke-test Windows binary
@@ -192,6 +209,9 @@ jobs:
     needs: [resolve-version, verify]
     env:
       VERSION: ${{ needs.resolve-version.outputs.version }}
+      UNBOUND_BUILD_COMMIT: ${{ needs.resolve-version.outputs.commit }}
+      UNBOUND_BUILD_DIRTY: 'false'
+      UNBOUND_BUILD_CHANNEL: release
     steps:
       - uses: actions/checkout@v4
 
@@ -251,6 +271,16 @@ jobs:
             | xargs -0 sha256sum \
             | sed 's#  artifacts/[^/]*/#  #' > artifacts/SHA256SUMS.txt
           test -s artifacts/SHA256SUMS.txt
+      - name: Refuse release asset replacement
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', needs.resolve-version.outputs.version) }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; replacement is forbidden." >&2
+            exit 1
+          fi
       - name: Extract release notes from CHANGELOG
         id: notes
         env:
@@ -288,6 +318,27 @@ jobs:
             artifacts/**/*.dmg
             artifacts/**/*.pkg
             artifacts/SHA256SUMS.txt
-          draft: ${{ github.ref_type != 'tag' }}
+          draft: true
           prerelease: ${{ contains(needs.resolve-version.outputs.version, 'dev') || contains(needs.resolve-version.outputs.version, 'beta') || contains(needs.resolve-version.outputs.version, 'rc') }}
           generate_release_notes: true
+
+      - name: Publish completed release draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', needs.resolve-version.outputs.version) }}
+        run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+
+      - name: Verify published artifact digests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', needs.resolve-version.outputs.version) }}
+        run: |
+          set -euo pipefail
+          remote="$(mktemp -d)"
+          trap 'rm -rf "$remote"' EXIT
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS.txt --dir "$remote"
+          cmp artifacts/SHA256SUMS.txt "$remote/SHA256SUMS.txt"
+          while read -r sha file; do
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$file" --dir "$remote"
+            printf '%s  %s\n' "$sha" "$remote/$file" | sha256sum -c -
+          done < artifacts/SHA256SUMS.txt
