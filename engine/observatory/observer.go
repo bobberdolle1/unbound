@@ -455,8 +455,7 @@ func (c *writeTrackingConn) firstWriteAt() (time.Time, bool) {
 func helloEvidence(started time.Time, sentAt time.Time, wrote bool) StageEvidence {
 	if wrote {
 		evidence := passEvidence(StageHello, started)
-		evidence.HelloSentAt = sentAt
-		evidence.Detail = "ClientHello emission observed post-hoc after TLS handshake completion"
+		evidence.HelloSentAt = &sentAt
 		return evidence
 	}
 	return failureEvidence(StageHello, started, StatusNotReached, ClassUnknown, "client_hello_not_emitted", "TLS handshake ended before ClientHello bytes were emitted")

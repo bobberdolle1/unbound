@@ -114,7 +114,7 @@ type StageEvidence struct {
 	Class                 Classification    `json:"class,omitempty"`
 	Error                 string            `json:"error,omitempty"`
 	Detail                string            `json:"detail,omitempty"`
-	HelloSentAt           time.Time         `json:"hello_sent_at,omitempty"`
+	HelloSentAt           *time.Time        `json:"hello_sent_at,omitempty"`
 	TLSVersion            string            `json:"tls_version,omitempty"`
 	ALPN                  string            `json:"alpn,omitempty"`
 	CipherSuite           string            `json:"cipher_suite,omitempty"`

@@ -1,6 +1,7 @@
 package observatory
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -36,8 +37,8 @@ func TestDirectObserverSuccessAndStageProgression(t *testing.T) {
 		t.Fatal("successful HTTP path metadata missing")
 	}
 	hello := stage(t, attempt, StageHello)
-	if hello.HelloSentAt.IsZero() || hello.HelloSentAt.Before(hello.StartedAt) {
-		t.Fatalf("Hello sent time = %s, started = %s", hello.HelloSentAt, hello.StartedAt)
+	if hello.HelloSentAt == nil || hello.HelloSentAt.Before(hello.StartedAt) {
+		t.Fatalf("Hello sent time = %v, started = %s", hello.HelloSentAt, hello.StartedAt)
 	}
 	if result.PrimaryAttemptIndex == nil || *result.PrimaryAttemptIndex != 0 {
 		t.Fatalf("primary attempt index = %v", result.PrimaryAttemptIndex)
@@ -245,7 +246,8 @@ func TestProgressCallbacksAreSerialized(t *testing.T) {
 
 func TestSchemaRoundTripAndSensitivePersistenceSanitization(t *testing.T) {
 	primary := 0
-	result := ObservationResult{SchemaVersion: SchemaVersion, RunID: "run", PrimaryAttemptIndex: &primary, ResolvedAddresses: []ResolvedAddress{{IP: "192.0.2.1", ResolverOrder: 0}}, Target: Target{URL: "https://user:password@example.test/path?token=secret"}, Attempts: []ConnectionAttempt{{Stages: []StageEvidence{{Stage: StageHTTP, PathComplete: true, HelloSentAt: time.Unix(1, 0).UTC(), ResponseHeaders: map[string]string{"authorization": "secret", "content-type": "text/plain"}, Detail: "ok"}}}}}
+	helloSentAt := time.Unix(1, 0).UTC()
+	result := ObservationResult{SchemaVersion: SchemaVersion, RunID: "run", PrimaryAttemptIndex: &primary, ResolvedAddresses: []ResolvedAddress{{IP: "192.0.2.1", ResolverOrder: 0}}, Target: Target{URL: "https://user:password@example.test/path?token=secret"}, Attempts: []ConnectionAttempt{{Stages: []StageEvidence{{Stage: StageHTTP, PathComplete: true, HelloSentAt: &helloSentAt, ResponseHeaders: map[string]string{"authorization": "secret", "content-type": "text/plain"}, Detail: "ok"}}}}}
 	clean := sanitizeForPersistence(result)
 	if clean.Target.URL != "https://example.test/path" {
 		t.Fatalf("sanitized URL = %q", clean.Target.URL)
@@ -262,8 +264,15 @@ func TestSchemaRoundTripAndSensitivePersistenceSanitization(t *testing.T) {
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if decoded.SchemaVersion != SchemaVersion || decoded.PrimaryAttemptIndex == nil || *decoded.PrimaryAttemptIndex != 0 || decoded.ResolvedAddresses[0].ResolverOrder != 0 || !decoded.Attempts[0].Stages[0].PathComplete || decoded.Attempts[0].Stages[0].HelloSentAt.IsZero() {
+	if decoded.SchemaVersion != SchemaVersion || decoded.PrimaryAttemptIndex == nil || *decoded.PrimaryAttemptIndex != 0 || decoded.ResolvedAddresses[0].ResolverOrder != 0 || !decoded.Attempts[0].Stages[0].PathComplete || decoded.Attempts[0].Stages[0].HelloSentAt == nil {
 		t.Fatalf("schema round trip lost optional evidence: %#v", decoded)
+	}
+	withoutHelloSentAt, err := json.Marshal(StageEvidence{Stage: StageConnect})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(withoutHelloSentAt, []byte("hello_sent_at")) {
+		t.Fatalf("zero Hello timestamp serialized: %s", withoutHelloSentAt)
 	}
 }
 
