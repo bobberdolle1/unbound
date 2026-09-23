@@ -70,5 +70,6 @@ func CatalogCoverage() []LegacyCoverage {
 		{"Linux built-in profiles", PartiallyRepresentable, "NFQUEUE/firewall ownership remains executor scope"},
 		{"macOS Standard HTTPS/QUIC (tpws TCP strategy)", Representable, ""},
 		{"macOS QUIC fallback profiles", PartiallyRepresentable, "PF UDP fallback is executor policy, not packet StrategyIR"},
+		{"Saved discovered profiles", Unrepresentable, "opaque legacy argv import is intentionally absent"},
 	}
 }
