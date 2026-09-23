@@ -31,8 +31,16 @@ func TestDirectObserverSuccessAndStageProgression(t *testing.T) {
 	}
 	attempt := onlyAttempt(t, result)
 	assertStages(t, attempt, []Stage{StageResolve, StageConnect, StageHello, StageHandshake, StageHTTP, StageCarry})
-	if stage(t, attempt, StageHTTP).HTTPStatus != http.StatusNoContent {
-		t.Fatal("HTTP status was not recorded")
+	httpStage := stage(t, attempt, StageHTTP)
+	if httpStage.HTTPStatus != http.StatusNoContent || !httpStage.PathComplete || httpStage.Status != StatusPass {
+		t.Fatal("successful HTTP path metadata missing")
+	}
+	hello := stage(t, attempt, StageHello)
+	if hello.HelloSentAt.IsZero() || hello.HelloSentAt.Before(hello.StartedAt) {
+		t.Fatalf("Hello sent time = %s, started = %s", hello.HelloSentAt, hello.StartedAt)
+	}
+	if result.PrimaryAttemptIndex == nil || *result.PrimaryAttemptIndex != 0 {
+		t.Fatalf("primary attempt index = %v", result.PrimaryAttemptIndex)
 	}
 	if stage(t, attempt, StageHandshake).PeerCertificateSHA256 == "" {
 		t.Fatal("leaf certificate fingerprint missing")
@@ -124,20 +132,38 @@ func TestDirectObserverTLSReset(t *testing.T) {
 	}
 }
 
-func TestDirectObserverHTTPStatus(t *testing.T) {
-	server := httptest.NewUnstartedServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		writer.WriteHeader(http.StatusServiceUnavailable)
-	}))
-	server.StartTLS()
-	defer server.Close()
-	result := observeFixture(t, server.URL, serverTLSConfig(server), nil)
-	attempt := onlyAttempt(t, result)
-	httpStage := stage(t, attempt, StageHTTP)
-	if httpStage.Class != ClassHTTPStatus || httpStage.HTTPStatus != http.StatusServiceUnavailable {
-		t.Fatalf("HTTP evidence = %#v", httpStage)
-	}
-	if result.Classification != ClassHTTPStatus {
-		t.Fatalf("classification = %s, want HTTP_STATUS", result.Classification)
+func TestDirectObserverHTTPStatusDoesNotFlattenCompletedPath(t *testing.T) {
+	for _, test := range []struct {
+		name           string
+		status         int
+		location       string
+		classification Classification
+	}{
+		{name: "redirect", status: http.StatusFound, location: "/next", classification: ClassSuccess},
+		{name: "forbidden", status: http.StatusForbidden, classification: ClassHTTPStatus},
+		{name: "unavailable", status: http.StatusServiceUnavailable, classification: ClassHTTPStatus},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewUnstartedServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				if test.location != "" {
+					writer.Header().Set("Location", test.location)
+				}
+				writer.WriteHeader(test.status)
+			}))
+			server.StartTLS()
+			defer server.Close()
+			result := observeFixture(t, server.URL, serverTLSConfig(server), nil)
+			httpStage := stage(t, onlyAttempt(t, result), StageHTTP)
+			if httpStage.Status != StatusPass || !httpStage.PathComplete || httpStage.HTTPStatus != test.status {
+				t.Fatalf("HTTP evidence = %#v", httpStage)
+			}
+			if result.Classification != test.classification {
+				t.Fatalf("classification = %s, want %s", result.Classification, test.classification)
+			}
+			if test.location != "" && httpStage.Redirect != test.location {
+				t.Fatalf("redirect = %q", httpStage.Redirect)
+			}
+		})
 	}
 }
 
@@ -180,8 +206,8 @@ func TestPinnedEndpointPreservesHostnameAndIP(t *testing.T) {
 	if attempt.ResolvedIP != "127.0.0.1" || result.Target.Hostname != "pinned.example" {
 		t.Fatalf("endpoint was not pinned: %#v %#v", attempt, result.Target)
 	}
-	if receivedHost != "pinned.example" {
-		t.Fatalf("HTTP Host = %q, want original hostname", receivedHost)
+	if receivedHost != "pinned.example:"+port {
+		t.Fatalf("HTTP Host = %q, want original hostname and port", receivedHost)
 	}
 	if result.Target.URL != "https://pinned.example:"+port+"/generate_204" {
 		t.Fatalf("stored URL was not redacted: %q", result.Target.URL)
@@ -218,7 +244,8 @@ func TestProgressCallbacksAreSerialized(t *testing.T) {
 }
 
 func TestSchemaRoundTripAndSensitivePersistenceSanitization(t *testing.T) {
-	result := ObservationResult{SchemaVersion: SchemaVersion, RunID: "run", Target: Target{URL: "https://user:password@example.test/path?token=secret"}, Attempts: []ConnectionAttempt{{Stages: []StageEvidence{{Stage: StageHTTP, ResponseHeaders: map[string]string{"authorization": "secret", "content-type": "text/plain"}, Detail: "ok"}}}}}
+	primary := 0
+	result := ObservationResult{SchemaVersion: SchemaVersion, RunID: "run", PrimaryAttemptIndex: &primary, ResolvedAddresses: []ResolvedAddress{{IP: "192.0.2.1", ResolverOrder: 0}}, Target: Target{URL: "https://user:password@example.test/path?token=secret"}, Attempts: []ConnectionAttempt{{Stages: []StageEvidence{{Stage: StageHTTP, PathComplete: true, HelloSentAt: time.Unix(1, 0).UTC(), ResponseHeaders: map[string]string{"authorization": "secret", "content-type": "text/plain"}, Detail: "ok"}}}}}
 	clean := sanitizeForPersistence(result)
 	if clean.Target.URL != "https://example.test/path" {
 		t.Fatalf("sanitized URL = %q", clean.Target.URL)
@@ -235,8 +262,8 @@ func TestSchemaRoundTripAndSensitivePersistenceSanitization(t *testing.T) {
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if decoded.SchemaVersion != SchemaVersion {
-		t.Fatalf("schema = %d", decoded.SchemaVersion)
+	if decoded.SchemaVersion != SchemaVersion || decoded.PrimaryAttemptIndex == nil || *decoded.PrimaryAttemptIndex != 0 || decoded.ResolvedAddresses[0].ResolverOrder != 0 || !decoded.Attempts[0].Stages[0].PathComplete || decoded.Attempts[0].Stages[0].HelloSentAt.IsZero() {
+		t.Fatalf("schema round trip lost optional evidence: %#v", decoded)
 	}
 }
 
@@ -267,18 +294,124 @@ func (resolver fixtureResolver) LookupNetIP(context.Context, string, string) ([]
 	return resolver.addresses, resolver.err
 }
 
-func TestResolutionOrderIsDeterministic(t *testing.T) {
-	addresses, evidence := resolveAddresses(context.Background(), "example.test", Options{Resolver: fixtureResolver{addresses: []netip.Addr{netip.MustParseAddr("2001:db8::1"), netip.MustParseAddr("192.0.2.2"), netip.MustParseAddr("192.0.2.1")}}}, time.Second)
+func TestResolutionOrderPreservesResolverAndFamilyOrder(t *testing.T) {
+	options := Options{Resolver: fixtureResolver{addresses: []netip.Addr{netip.MustParseAddr("2001:db8::1"), netip.MustParseAddr("192.0.2.2"), netip.MustParseAddr("192.0.2.1")}}}
+	addresses, evidence := resolveAddresses(context.Background(), "example.test", options, time.Second)
 	if evidence.Status != StatusPass {
 		t.Fatal(evidence)
 	}
 	got := []string{addresses[0].String(), addresses[1].String(), addresses[2].String()}
-	want := []string{"192.0.2.1", "192.0.2.2", "2001:db8::1"}
+	want := []string{"2001:db8::1", "192.0.2.2", "192.0.2.1"}
 	for index := range want {
 		if got[index] != want[index] {
 			t.Fatalf("order = %v, want %v", got, want)
 		}
 	}
+	ipv4, evidence := resolveAddresses(context.Background(), "example.test", Options{Resolver: options.Resolver, AddressFamily: AddressFamilyIPv4}, time.Second)
+	if evidence.Status != StatusPass || len(ipv4) != 2 || ipv4[0].String() != "192.0.2.2" || ipv4[1].String() != "192.0.2.1" {
+		t.Fatalf("family-filtered resolver order = %v", ipv4)
+	}
+	resolved := toResolvedAddresses(addresses)
+	if resolved[0].ResolverOrder != 0 || resolved[2].ResolverOrder != 2 {
+		t.Fatalf("resolver order metadata = %#v", resolved)
+	}
+}
+
+func TestDirectObserverHTTPProtocolFailureLeavesPathIncomplete(t *testing.T) {
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		connection, buffer, err := writer.(http.Hijacker).Hijack()
+		if err != nil {
+			return
+		}
+		_, _ = buffer.WriteString("not an HTTP response\r\n\r\n")
+		_ = buffer.Flush()
+		_ = connection.Close()
+	}))
+	server.StartTLS()
+	defer server.Close()
+
+	result := observeFixture(t, server.URL, serverTLSConfig(server), nil)
+	httpStage := stage(t, onlyAttempt(t, result), StageHTTP)
+	if httpStage.Status != StatusFail || httpStage.PathComplete || httpStage.Class != ClassHTTPProtocolFailure {
+		t.Fatalf("HTTP protocol evidence = %#v", httpStage)
+	}
+	if result.FinalBoundary != StageHTTP || result.Classification != ClassHTTPProtocolFailure {
+		t.Fatalf("result = %s at %s", result.Classification, result.FinalBoundary)
+	}
+}
+
+func TestDirectObserverHTTPTimeoutLeavesPathIncomplete(t *testing.T) {
+	release := make(chan struct{})
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		select {
+		case <-release:
+		case <-time.After(time.Second):
+		}
+	}))
+	server.StartTLS()
+	defer func() {
+		close(release)
+		server.Close()
+	}()
+
+	result := observeFixture(t, server.URL, serverTLSConfig(server), func(options *Options) {
+		options.Timeouts.HTTP = 50 * time.Millisecond
+	})
+	httpStage := stage(t, onlyAttempt(t, result), StageHTTP)
+	if httpStage.Status != StatusTimeout || httpStage.PathComplete || httpStage.Class != ClassHTTPTimeout {
+		t.Fatalf("HTTP timeout evidence = %#v", httpStage)
+	}
+	if result.FinalBoundary != StageHTTP || result.Classification != ClassHTTPTimeout {
+		t.Fatalf("result = %s at %s", result.Classification, result.FinalBoundary)
+	}
+}
+
+func TestSummaryChoosesDeepestMultiEdgeFailure(t *testing.T) {
+	tests := []struct {
+		name     string
+		attempts []ConnectionAttempt
+		primary  int
+	}{
+		{
+			name: "connect then handshake",
+			attempts: []ConnectionAttempt{
+				failedAttempt(StageConnect, ClassTCPConnectTimeout),
+				failedAttempt(StageHandshake, ClassTLSHandshakeTimeout),
+			},
+			primary: 1,
+		},
+		{
+			name: "handshake then connect",
+			attempts: []ConnectionAttempt{
+				failedAttempt(StageHandshake, ClassTLSHandshakeTimeout),
+				failedAttempt(StageConnect, ClassTCPConnectTimeout),
+			},
+			primary: 0,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			summary := summarizeAttempts(test.attempts)
+			if summary.boundary != StageHandshake || summary.classification != ClassTLSHandshakeTimeout || summary.attemptIndex != test.primary {
+				t.Fatalf("summary = %#v", summary)
+			}
+		})
+	}
+}
+
+func TestSummaryPrioritizesCompletedHTTPStatus(t *testing.T) {
+	attempts := []ConnectionAttempt{
+		failedAttempt(StageHandshake, ClassTLSHandshakeTimeout),
+		{Stages: []StageEvidence{{Stage: StageHTTP, Status: StatusPass, Class: ClassHTTPStatus, PathComplete: true, HTTPStatus: http.StatusForbidden}}},
+	}
+	summary := summarizeAttempts(attempts)
+	if summary.boundary != StageHTTP || summary.classification != ClassHTTPStatus || summary.attemptIndex != 1 || !summary.pathComplete {
+		t.Fatalf("summary = %#v", summary)
+	}
+}
+
+func failedAttempt(boundary Stage, class Classification) ConnectionAttempt {
+	return ConnectionAttempt{Stages: []StageEvidence{{Stage: boundary, Status: StatusTimeout, Class: class}}}
 }
 
 func observeFixture(t *testing.T, rawURL string, config *tls.Config, mutate func(*Options)) ObservationResult {

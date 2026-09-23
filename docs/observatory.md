@@ -28,11 +28,15 @@ unbound --observe https://example.com --observe-save
 
 ## Schema
 
-Every result has `schema_version: 1`, a random `run_id`, UTC bounds, `build_identity`, `platform`, target, network context, resolved addresses, ordered attempts, `final_boundary`, and a factual `classification`.
+Every result has `schema_version: 1`, a random `run_id`, UTC bounds, `build_identity`, `platform`, target, network context, resolved addresses, ordered attempts, `primary_attempt_index`, `final_boundary`, and a factual `classification`.
+
+Resolved addresses preserve the resolver's returned order after address-family filtering. `resolver_order` identifies each retained address position. `primary_attempt_index` identifies the attempt that determines the run summary; attempts remain complete evidence rather than being collapsed into the summary.
 
 Each attempt records one pinned resolved IP, address family, TCP transport, local address when connected, elapsed time, and stage evidence. Stage evidence contains a status, a factual error class/code, bounded native detail, timing, and where relevant TLS or HTTP metadata.
 
 Build identity always contains `version`, `commit`, `dirty`, `channel`, `os`, and `arch` so evidence identifies the producing binary.
+
+`schema_version` remains `1` for additive optional fields such as `resolver_order`, `primary_attempt_index`, `hello_sent_at`, and `path_complete`. Consumers must ignore unknown fields and treat absent optional fields as unavailable evidence.
 
 ## Stage semantics
 
@@ -40,18 +44,22 @@ Build identity always contains `version`, `commit`, `dirty`, `channel`, `os`, an
 |---|---|---|
 | `resolve` | A usable address set was returned. | DNS resolver error is `DNS_FAILURE`; later stages are `NOT_REACHED`. |
 | `connect` | A TCP socket reached the selected IP. | Timeout/refusal/reset/unreachable retain distinct TCP classes. |
-| `hello` | TLS ClientHello bytes were emitted over the connected socket. | It is never inferred from creating a UDP socket or merely allocating TLS state. |
+| `hello` | TLS ClientHello bytes were emitted over the connected socket. `hello_sent_at` is recorded post-hoc from the first successful underlying TLS write; no callback runs inside `Write`. | It is never inferred from creating a UDP socket or merely allocating TLS state. |
 | `handshake` | Real `crypto/tls` handshake completed. | TLS timeout, reset, certificate, protocol, and other failures remain distinct. |
-| `HTTP` | A bounded HTTP/1.1 response was received after TLS. | A response status such as 503 is factual `HTTP_STATUS`, not a TLS failure. |
+| `HTTP` | A valid HTTP/1.1 response was parsed after TLS. `path_complete: true` and `PASS` record that completed exchange even for an application failure status. | `4xx`/`5xx` carry `HTTP_STATUS`; malformed response bytes are `HTTP_PROTOCOL_FAILURE`; a read deadline is `HTTP_TIMEOUT`. `2xx` and `3xx` are target success; redirects retain bounded `Location`. |
 | `carry` | The completed evidence was preserved. | Carry makes no network request and never rewrites an earlier boundary. |
 
 Permitted statuses are `PASS`, `FAIL`, `TIMEOUT`, `RESET`, `SKIPPED`, `SKIPPED_UNSUPPORTED`, `NOT_REACHED`, and `CANCELLED`. `NOT_REACHED` is never converted into `FAIL`.
 
 The structural attribution invariant is explicit in the ordered stages: a post-DNS TCP strategy cannot explain a DNS failure; a TLS ClientHello strategy cannot explain a TCP-connect failure; a TCP-only strategy cannot be credited or blamed for a QUIC result.
 
+## Multi-edge summary
+
+Attempts run sequentially in retained resolver order. A `2xx` or `3xx` completed HTTP exchange ends the run with `SUCCESS` at `carry`. Without target success, the summary selects the deepest reached factual boundary: `HTTP > handshake > hello > connect > resolve`. A completed `4xx`/`5xx` exchange therefore selects `HTTP_STATUS` ahead of an earlier TLS timeout. Equal-depth failures use the lowest attempt index, i.e. first resolver-returned address, and that selection is explicit in `primary_attempt_index`.
+
 ## Edge pinning
 
-After resolution, every TCP attempt uses one resolved IP as its socket destination. TLS uses the original hostname as `ServerName`; HTTP uses the original hostname in `Host`. The observer does not hand the request to an HTTP transport that can perform another DNS lookup and switch CDN edge.
+After resolution, every TCP attempt uses one resolved IP as its socket destination. TLS uses the original hostname without a port as `ServerName`; HTTP uses the original URL authority in `Host`, retaining an explicit port such as `example.com:8443`. The observer does not hand the request to an HTTP transport that can perform another DNS lookup and switch CDN edge.
 
 For example, an observation of `www.youtube.com -> X` records connect/TLS/HTTP against `X`, not an opaque later edge. The historical Windows YouTube case is evidence-shaped as resolve pass, connect pass, ClientHello attempted, handshake failure, HTTP not reached. It is not labelled "YouTube blocked".
 

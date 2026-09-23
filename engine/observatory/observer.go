@@ -14,7 +14,6 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -104,6 +103,8 @@ func (o *DirectTCPHTTPSObserver) Observe(ctx context.Context, rawURL string, opt
 		attempt.Stages = append(attempt.Stages, carryEvidence(resolveEvidence.StartedAt))
 		attempt.ElapsedMS = elapsedMS(resolveEvidence.StartedAt)
 		result.Attempts = append(result.Attempts, attempt)
+		primary := 0
+		result.PrimaryAttemptIndex = &primary
 		result.FinalBoundary = StageResolve
 		result.Classification = resolveEvidence.Class
 		result.FinishedAt = time.Now().UTC()
@@ -118,15 +119,11 @@ func (o *DirectTCPHTTPSObserver) Observe(ctx context.Context, rawURL string, opt
 			result.NetworkContext.LocalAddress = attempt.LocalAddress
 			result.NetworkContext.AddressFamily = attempt.AddressFamily
 		}
-		if attemptSucceeded(attempt) {
-			result.FinalBoundary = StageCarry
-			result.Classification = ClassSuccess
-			break
-		}
 	}
-	if result.Classification != ClassSuccess {
-		result.FinalBoundary, result.Classification = finalFailure(result.Attempts)
-	}
+	summary := summarizeAttempts(result.Attempts)
+	result.PrimaryAttemptIndex = &summary.attemptIndex
+	result.FinalBoundary = summary.boundary
+	result.Classification = summary.classification
 	result.FinishedAt = time.Now().UTC()
 	return result, nil
 }
@@ -160,13 +157,6 @@ func resolveAddresses(ctx context.Context, hostname string, options Options, tim
 	if len(selected) == 0 {
 		return nil, failureEvidence(StageResolve, started, StatusFail, ClassDNSFailure, "no_usable_addresses", "resolver returned no address matching requested family")
 	}
-	sort.Slice(selected, func(i, j int) bool {
-		fi, fj := familyForIP(selected[i]), familyForIP(selected[j])
-		if fi != fj {
-			return fi < fj
-		}
-		return selected[i].String() < selected[j].String()
-	})
 	return selected, passEvidence(StageResolve, started)
 }
 
@@ -206,7 +196,8 @@ func (o *DirectTCPHTTPSObserver) observeTCPAttempt(ctx context.Context, target *
 	tlsCtx, cancelTLS := context.WithTimeout(ctx, timeouts.TLS)
 	err = tlsConn.HandshakeContext(tlsCtx)
 	cancelTLS()
-	hello := helloEvidence(handshakeStarted, tracked.wrote())
+	helloSentAt, helloWritten := tracked.firstWriteAt()
+	hello := helloEvidence(handshakeStarted, helloSentAt, helloWritten)
 	attempt.Stages = append(attempt.Stages, hello)
 	emitter.emit(hello)
 	if err != nil {
@@ -232,7 +223,7 @@ func (o *DirectTCPHTTPSObserver) observeTCPAttempt(ctx context.Context, target *
 
 func observeHTTP(ctx context.Context, conn *tls.Conn, target *url.URL, timeout time.Duration) StageEvidence {
 	started := time.Now().UTC()
-	request := &http.Request{Method: http.MethodGet, URL: target, Host: target.Hostname(), Header: make(http.Header), Close: true}
+	request := &http.Request{Method: http.MethodGet, URL: target, Host: target.Host, Header: make(http.Header), Close: true}
 	request.Header.Set("User-Agent", engine.UserAgent())
 	request.Header.Set("Accept", "*/*")
 	deadline := time.Now().Add(timeout)
@@ -247,12 +238,11 @@ func observeHTTP(ctx context.Context, conn *tls.Conn, target *url.URL, timeout t
 		return httpFailure(started, err)
 	}
 	defer response.Body.Close()
-	status := StatusPass
 	class := Classification("")
 	if response.StatusCode < 200 || response.StatusCode >= 400 {
-		status, class = StatusFail, ClassHTTPStatus
+		class = ClassHTTPStatus
 	}
-	evidence := StageEvidence{Stage: StageHTTP, Status: status, StartedAt: started, ElapsedMS: elapsedMS(started), Class: class, HTTPProtocol: response.Proto, HTTPStatus: response.StatusCode, ResponseHeaders: allowedHeaders(response.Header)}
+	evidence := StageEvidence{Stage: StageHTTP, Status: StatusPass, StartedAt: started, ElapsedMS: elapsedMS(started), Class: class, HTTPProtocol: response.Proto, HTTPStatus: response.StatusCode, PathComplete: true, ResponseHeaders: allowedHeaders(response.Header)}
 	if location := response.Header.Get("Location"); location != "" {
 		evidence.Redirect = boundedDetail(location)
 	}
@@ -273,37 +263,104 @@ func (o *DirectTCPHTTPSObserver) observeQUICUnsupported(ctx context.Context, res
 	attempt.Stages = append(attempt.Stages, unsupportedStages(time.Now().UTC(), StageHello, StageHandshake, StageHTTP)...)
 	attempt.Stages = append(attempt.Stages, carryEvidence(time.Now().UTC()))
 	result.Attempts = []ConnectionAttempt{attempt}
+	primary := 0
+	result.PrimaryAttemptIndex = &primary
 	result.FinalBoundary = StageConnect
 	result.Classification = ClassQUICUnsupported
 	return result
 }
 
-func attemptSucceeded(attempt ConnectionAttempt) bool {
+type attemptSummary struct {
+	attemptIndex   int
+	boundary       Stage
+	classification Classification
+	pathComplete   bool
+	targetSuccess  bool
+}
+
+// summarizeAttempts chooses the deepest factual boundary. Ties use the first
+// attempt in resolver-returned order, which PrimaryAttemptIndex makes explicit.
+func summarizeAttempts(attempts []ConnectionAttempt) attemptSummary {
+	best := attemptSummary{attemptIndex: 0, boundary: StageResolve, classification: ClassUnknown}
+	for index, attempt := range attempts {
+		candidate := summarizeAttempt(index, attempt)
+		if attemptTargetSuccessful(attempt) {
+			candidate.boundary = StageCarry
+			candidate.classification = ClassSuccess
+			candidate.targetSuccess = true
+			return candidate
+		}
+		if stageDepth(candidate.boundary) > stageDepth(best.boundary) {
+			best = candidate
+		}
+	}
+	return best
+}
+
+func summarizeAttempt(index int, attempt ConnectionAttempt) attemptSummary {
+	summary := attemptSummary{attemptIndex: index, boundary: StageResolve, classification: ClassUnknown}
 	for _, evidence := range attempt.Stages {
-		if evidence.Stage == StageHTTP {
-			return evidence.Status == StatusPass
+		if evidence.Stage == StageHTTP && evidence.PathComplete {
+			summary.boundary = StageHTTP
+			summary.pathComplete = true
+			if evidence.Class == ClassHTTPStatus {
+				summary.classification = ClassHTTPStatus
+			} else {
+				summary.classification = ClassSuccess
+			}
+			continue
+		}
+		if isTerminalFailure(evidence) && stageDepth(evidence.Stage) >= stageDepth(summary.boundary) {
+			summary.boundary = evidence.Stage
+			summary.classification = evidence.Class
+		}
+	}
+	return summary
+}
+
+func attemptPathComplete(attempt ConnectionAttempt) bool {
+	for _, evidence := range attempt.Stages {
+		if evidence.Stage == StageHTTP && evidence.PathComplete {
+			return true
 		}
 	}
 	return false
 }
 
-func finalFailure(attempts []ConnectionAttempt) (Stage, Classification) {
-	for _, attempt := range attempts {
-		for _, evidence := range attempt.Stages {
-			if evidence.Status == StatusFail || evidence.Status == StatusTimeout || evidence.Status == StatusReset || evidence.Status == StatusCancelled || evidence.Status == StatusSkippedUnsupported {
-				if evidence.Class != "" {
-					return evidence.Stage, evidence.Class
-				}
-			}
+func attemptTargetSuccessful(attempt ConnectionAttempt) bool {
+	for _, evidence := range attempt.Stages {
+		if evidence.Stage == StageHTTP && evidence.PathComplete {
+			return evidence.Class != ClassHTTPStatus
 		}
 	}
-	return StageCarry, ClassUnknown
+	return false
+}
+
+func isTerminalFailure(evidence StageEvidence) bool {
+	return evidence.Class != "" && (evidence.Status == StatusFail || evidence.Status == StatusTimeout || evidence.Status == StatusReset || evidence.Status == StatusCancelled || evidence.Status == StatusSkippedUnsupported)
+}
+
+func stageDepth(stage Stage) int {
+	switch stage {
+	case StageResolve:
+		return 1
+	case StageConnect:
+		return 2
+	case StageHello:
+		return 3
+	case StageHandshake:
+		return 4
+	case StageHTTP:
+		return 5
+	default:
+		return 0
+	}
 }
 
 func toResolvedAddresses(addresses []net.IP) []ResolvedAddress {
 	result := make([]ResolvedAddress, 0, len(addresses))
-	for _, ip := range addresses {
-		result = append(result, ResolvedAddress{IP: ip.String(), AddressFamily: familyForIP(ip)})
+	for index, ip := range addresses {
+		result = append(result, ResolvedAddress{IP: ip.String(), AddressFamily: familyForIP(ip), ResolverOrder: index})
 	}
 	return result
 }
@@ -371,8 +428,9 @@ func (e *serializedEmitter) emit(evidence StageEvidence) {
 
 type writeTrackingConn struct {
 	net.Conn
-	mu     sync.Mutex
-	writes int
+	mu         sync.Mutex
+	writes     int
+	firstWrite time.Time
 }
 
 func (c *writeTrackingConn) Write(data []byte) (int, error) {
@@ -380,15 +438,26 @@ func (c *writeTrackingConn) Write(data []byte) (int, error) {
 	if n > 0 {
 		c.mu.Lock()
 		c.writes++
+		if c.firstWrite.IsZero() {
+			c.firstWrite = time.Now().UTC()
+		}
 		c.mu.Unlock()
 	}
 	return n, err
 }
-func (c *writeTrackingConn) wrote() bool { c.mu.Lock(); defer c.mu.Unlock(); return c.writes > 0 }
 
-func helloEvidence(started time.Time, wrote bool) StageEvidence {
+func (c *writeTrackingConn) firstWriteAt() (time.Time, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.firstWrite, !c.firstWrite.IsZero()
+}
+
+func helloEvidence(started time.Time, sentAt time.Time, wrote bool) StageEvidence {
 	if wrote {
-		return passEvidence(StageHello, started)
+		evidence := passEvidence(StageHello, started)
+		evidence.HelloSentAt = sentAt
+		evidence.Detail = "ClientHello emission observed post-hoc after TLS handshake completion"
+		return evidence
 	}
 	return failureEvidence(StageHello, started, StatusNotReached, ClassUnknown, "client_hello_not_emitted", "TLS handshake ended before ClientHello bytes were emitted")
 }

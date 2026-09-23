@@ -101,6 +101,7 @@ type NetworkContext struct {
 type ResolvedAddress struct {
 	IP            string        `json:"ip"`
 	AddressFamily AddressFamily `json:"address_family"`
+	ResolverOrder int           `json:"resolver_order"`
 }
 
 // StageEvidence records a boundary observed during one pinned connection
@@ -113,6 +114,7 @@ type StageEvidence struct {
 	Class                 Classification    `json:"class,omitempty"`
 	Error                 string            `json:"error,omitempty"`
 	Detail                string            `json:"detail,omitempty"`
+	HelloSentAt           time.Time         `json:"hello_sent_at,omitempty"`
 	TLSVersion            string            `json:"tls_version,omitempty"`
 	ALPN                  string            `json:"alpn,omitempty"`
 	CipherSuite           string            `json:"cipher_suite,omitempty"`
@@ -120,6 +122,7 @@ type StageEvidence struct {
 	ServerName            string            `json:"server_name,omitempty"`
 	HTTPProtocol          string            `json:"http_protocol,omitempty"`
 	HTTPStatus            int               `json:"http_status,omitempty"`
+	PathComplete          bool              `json:"path_complete,omitempty"`
 	Redirect              string            `json:"redirect,omitempty"`
 	ResponseHeaders       map[string]string `json:"response_headers,omitempty"`
 }
@@ -143,19 +146,20 @@ type ExecutionContext struct {
 // read-only observation. ObservationRun is retained as the semantic name for a
 // complete run; both names intentionally refer to the same data shape.
 type ObservationResult struct {
-	SchemaVersion     int                  `json:"schema_version"`
-	RunID             string               `json:"run_id"`
-	StartedAt         time.Time            `json:"started_at"`
-	FinishedAt        time.Time            `json:"finished_at"`
-	BuildIdentity     engine.BuildIdentity `json:"build_identity"`
-	Platform          string               `json:"platform"`
-	NetworkContext    NetworkContext       `json:"network_context"`
-	Target            Target               `json:"target"`
-	ResolvedAddresses []ResolvedAddress    `json:"resolved_addresses,omitempty"`
-	Attempts          []ConnectionAttempt  `json:"attempts"`
-	FinalBoundary     Stage                `json:"final_boundary"`
-	Classification    Classification       `json:"classification"`
-	ExecutionContext  ExecutionContext     `json:"execution_context,omitempty"`
+	SchemaVersion       int                  `json:"schema_version"`
+	RunID               string               `json:"run_id"`
+	StartedAt           time.Time            `json:"started_at"`
+	FinishedAt          time.Time            `json:"finished_at"`
+	BuildIdentity       engine.BuildIdentity `json:"build_identity"`
+	Platform            string               `json:"platform"`
+	NetworkContext      NetworkContext       `json:"network_context"`
+	ExecutionContext    ExecutionContext     `json:"execution_context,omitempty"`
+	Target              Target               `json:"target"`
+	ResolvedAddresses   []ResolvedAddress    `json:"resolved_addresses,omitempty"`
+	Attempts            []ConnectionAttempt  `json:"attempts"`
+	PrimaryAttemptIndex *int                 `json:"primary_attempt_index,omitempty"`
+	FinalBoundary       Stage                `json:"final_boundary"`
+	Classification      Classification       `json:"classification"`
 }
 
 type ObservationRun = ObservationResult
