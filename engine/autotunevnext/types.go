@@ -4,6 +4,7 @@ package autotunevnext
 import (
 	"context"
 	"errors"
+	"net"
 	"time"
 
 	"unbound/engine"
@@ -136,11 +137,13 @@ type ResolvedAsset struct {
 }
 
 type ExecutableCandidate struct {
-	Strategy    strategyir.Strategy `json:"strategy"`
-	Fingerprint string              `json:"fingerprint"`
-	Backend     backendcap.Backend  `json:"backend"`
-	Plan        backendcap.Plan     `json:"plan"`
-	Assets      []ResolvedAsset     `json:"assets"`
+	Strategy     strategyir.Strategy       `json:"strategy"`
+	Fingerprint  string                    `json:"fingerprint"`
+	Backend      backendcap.Backend        `json:"backend"`
+	Plan         backendcap.Plan           `json:"plan"`
+	Assets       []ResolvedAsset           `json:"assets"`
+	TargetEdge   net.IP                    `json:"-"`
+	TargetFamily observatory.AddressFamily `json:"target_family"`
 }
 
 // Executor owns all machine mutation. It must restore and prove original state.

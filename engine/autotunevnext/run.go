@@ -311,6 +311,8 @@ func runCandidate(ctx context.Context, request Request, policy Policy, observer 
 		return inconclusive(experiment, "DIRECT_BEFORE_OBSERVATION_FAILED", err)
 	}
 	experiment.DirectBeforeRunIDs = []string{before.RunID}
+	candidate.TargetEdge = append(net.IP(nil), edge...)
+	candidate.TargetFamily = selectedFamily(before)
 	if !sameEdge(before, edge) {
 		experiment.Outcome = OutcomeInconclusive
 		experiment.Limitations = append(experiment.Limitations, "SAME_EDGE_REQUIRED")
