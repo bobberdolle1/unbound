@@ -105,10 +105,12 @@ func TestDirectObserverTLSReset(t *testing.T) {
 		if acceptErr != nil {
 			return
 		}
+		_ = connection.SetReadDeadline(time.Now().Add(time.Second))
+		_, _ = connection.Read(make([]byte, 1))
 		if tcp, ok := connection.(*net.TCPConn); ok {
 			_ = tcp.SetLinger(0)
 		}
-		connection.Close()
+		_ = connection.Close()
 	}()
 
 	result := observeFixture(t, "https://localhost:"+portFromAddress(t, listener.Addr().String()), nil, nil)
@@ -143,9 +145,12 @@ func TestDirectObserverCertificateFailure(t *testing.T) {
 	server := httptest.NewUnstartedServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) { writer.WriteHeader(http.StatusNoContent) }))
 	server.StartTLS()
 	defer server.Close()
-	result := observeFixture(t, server.URL, nil, nil)
-	if got := stage(t, onlyAttempt(t, result), StageHandshake).Class; got != ClassTLSCertificateFailure {
-		t.Fatalf("TLS class = %s, want certificate failure", got)
+	result := observeFixture(t, server.URL, nil, func(options *Options) {
+		options.Timeouts.TLS = 5 * time.Second
+		options.Timeouts.Overall = 8 * time.Second
+	})
+	if got := stage(t, onlyAttempt(t, result), StageHandshake); got.Class != ClassTLSCertificateFailure {
+		t.Fatalf("TLS class = %s (%s), want certificate failure", got.Class, got.Detail)
 	}
 }
 
