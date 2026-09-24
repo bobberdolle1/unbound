@@ -163,15 +163,22 @@ func TestLinuxFirewallListingCoversIPTablesAndIP6Tables(t *testing.T) {
 }
 
 func TestLinuxQueueOwnershipUsesExactReferencesAndNFNetlink(t *testing.T) {
-	queues := queuesInRuleListing("queue num 40000 --queue-num 40001 unrelated-40002")
-	if _, ok := queues[40000]; !ok {
-		t.Fatal("nft queue reference was not parsed")
+	queues := queuesInRuleListing(strings.Join([]string{
+		"queue num 40000",
+		"queue flags bypass to 40001",
+		"--queue-num 40002",
+		"unrelated-40003",
+		"tcp dport 40004",
+	}, "\n"))
+	for _, queue := range []uint16{40000, 40001, 40002} {
+		if _, ok := queues[queue]; !ok {
+			t.Fatalf("queue %d was not parsed", queue)
+		}
 	}
-	if _, ok := queues[40001]; !ok {
-		t.Fatal("iptables queue reference was not parsed")
-	}
-	if _, ok := queues[40002]; ok {
-		t.Fatal("unrelated numeric substring became a queue identity")
+	for _, number := range []uint16{40003, 40004} {
+		if _, ok := queues[number]; ok {
+			t.Fatalf("unrelated number %d became a queue identity", number)
+		}
 	}
 	if !nfNetlinkQueueBound([]byte("40000 99 1"), 40000) {
 		t.Fatal("bound nfnetlink queue was not detected")
@@ -183,6 +190,30 @@ func TestLinuxQueueOwnershipUsesExactReferencesAndNFNetlink(t *testing.T) {
 	runtime.readQueueState = func() ([]byte, error) { return []byte("40000"), nil }
 	if _, _, _, err := runtime.allocateOwnership(context.Background(), "iptables"); err == nil {
 		t.Fatal("occupied nfnetlink queue was selected")
+	}
+}
+
+func TestLinuxAllocateOwnershipRejectsCanonicalNFTQueueCollision(t *testing.T) {
+	runner := &linuxRunnerStub{paths: map[string]bool{"nft": true}}
+	runner.runFn = func(_ string, args []string) (string, error) {
+		if strings.Join(args, " ") != "list ruleset" {
+			t.Fatalf("unexpected nft command: %q", args)
+		}
+		return "table ip existing { chain output { queue flags bypass to 41370 } }", nil
+	}
+	runtime := testLinuxRuntime(t, runner)
+	proposals := [][]byte{{5, 90, 1}, {5, 91, 2}}
+	runtime.randomBytes = func(data []byte) (int, error) {
+		copy(data, proposals[0])
+		proposals = proposals[1:]
+		return len(data), nil
+	}
+	queue, _, _, err := runtime.allocateOwnership(context.Background(), "nft")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if queue != 41371 {
+		t.Fatalf("queue=%d, want canonical collision to reject 41370", queue)
 	}
 }
 
@@ -218,6 +249,15 @@ func TestLinuxRuleDeletionRequiresFactualAbsence(t *testing.T) {
 			return "", nil
 		}, true},
 		{"nft exact absence", "nft", func(_ string, _ []string) (string, error) { return "table ip unrelated { }", nil }, false},
+		{"nft unrelated canonical queue", "nft", func(_ string, _ []string) (string, error) {
+			return "table ip unrelated { chain output { queue flags bypass to 40000 } }", nil
+		}, false},
+		{"nft residual owned table", "nft", func(_ string, _ []string) (string, error) {
+			return "table ip unbound_autotune_test { }", nil
+		}, true},
+		{"nft residual owned marker", "nft", func(_ string, _ []string) (string, error) {
+			return `comment "unbound-autotune-vnext:test"`, nil
+		}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			runner := &linuxRunnerStub{paths: map[string]bool{}, runFn: tc.runFn}
@@ -227,6 +267,87 @@ func TestLinuxRuleDeletionRequiresFactualAbsence(t *testing.T) {
 				t.Fatalf("err=%v", err)
 			}
 		})
+	}
+}
+func canonicalOwnedNFTTable(spec LinuxNFQueueSpec) string {
+	return strings.Join([]string{
+		nftTableHeader(spec),
+		"chain output {",
+		"type filter hook output priority mangle; policy accept;",
+		`ip daddr 192.0.2.7 tcp dport 443 queue flags bypass to 40000 comment "unbound-autotune-vnext:test"`,
+		"}",
+		"}",
+	}, "\n")
+}
+
+func TestLinuxVerifyRuleScopesExactOwnedNFTTable(t *testing.T) {
+	spec := ownedLinuxSpec()
+	canonical := canonicalOwnedNFTTable(spec)
+	for _, tc := range []struct {
+		name    string
+		listing string
+		wantErr bool
+	}{
+		{"canonical owned table", canonical, false},
+		{"wrong edge", strings.Replace(canonical, "192.0.2.7", "192.0.2.8", 1), true},
+		{"wrong port", strings.Replace(canonical, "tcp dport 443", "tcp dport 444", 1), true},
+		{"wrong queue", strings.Replace(canonical, "to 40000", "to 40001", 1), true},
+		{"wrong marker", strings.Replace(canonical, linuxOwnershipPrefix+":test", linuxOwnershipPrefix+":other", 1), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &linuxRunnerStub{paths: map[string]bool{}}
+			runner.runFn = func(name string, args []string) (string, error) {
+				if name != "nft" || strings.Join(args, " ") != "list table ip unbound_autotune_test" {
+					t.Fatalf("verify queried %s %q, not the exact owned table", name, args)
+				}
+				return tc.listing, nil
+			}
+			runtime := testLinuxRuntime(t, runner)
+			err := runtime.verifyRule(context.Background(), "nft", spec)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("err=%v", err)
+			}
+		})
+	}
+}
+
+func TestLinuxVerifyRuleCannotCombineSeparateNFTTables(t *testing.T) {
+	spec := ownedLinuxSpec()
+	ownedTable := strings.Join([]string{
+		nftTableHeader(spec),
+		"chain output { type filter hook output priority mangle; policy accept;",
+		`comment "unbound-autotune-vnext:test"`,
+		"}",
+		"}",
+	}, "\n")
+	unrelatedTable := strings.Join([]string{
+		"table ip unrelated {",
+		"chain output {",
+		"ip daddr 192.0.2.7 tcp dport 443 queue flags bypass to 40000",
+		"}",
+		"}",
+	}, "\n")
+	runner := &linuxRunnerStub{paths: map[string]bool{}}
+	runner.runFn = func(name string, args []string) (string, error) {
+		if name != "nft" {
+			t.Fatalf("unexpected command: %s %q", name, args)
+		}
+		switch strings.Join(args, " ") {
+		case "list table ip unbound_autotune_test":
+			return ownedTable, nil
+		case "list ruleset":
+			return ownedTable + "\n" + unrelatedTable, nil
+		default:
+			t.Fatalf("unexpected nft arguments: %q", args)
+			return "", nil
+		}
+	}
+	runtime := testLinuxRuntime(t, runner)
+	if err := runtime.verifyRule(context.Background(), "nft", spec); err == nil {
+		t.Fatal("verification combined fragments from separate nft tables")
+	}
+	if strings.Contains(strings.Join(runner.calls, "\n"), "list ruleset") {
+		t.Fatal("verification consulted unrelated nft tables")
 	}
 }
 

@@ -421,7 +421,7 @@ func (e *LinuxRuntime) firewallListing(ctx context.Context) (string, error) {
 	return ipv4 + "\n" + ipv6, nil
 }
 
-var queueNumberPattern = regexp.MustCompile(`(?:queue\s+num|--queue-num)\s+([0-9]+)`)
+var queueNumberPattern = regexp.MustCompile(`(?:^|[[:space:]])(?:queue[[:space:]]+num[[:space:]]+|queue[[:space:]]+flags[[:space:]]+bypass[[:space:]]+to[[:space:]]+|--queue-num[[:space:]]+)([0-9]+)\b`)
 
 func queuesInRuleListing(listing string) map[uint16]struct{} {
 	queues := make(map[uint16]struct{})
@@ -432,6 +432,14 @@ func queuesInRuleListing(listing string) map[uint16]struct{} {
 		}
 	}
 	return queues
+}
+
+func nftTableHeader(spec LinuxNFQueueSpec) string {
+	return "table " + spec.nftFamily() + " " + spec.Table + " {"
+}
+
+func nftOwnedStatePresent(listing string, spec LinuxNFQueueSpec) bool {
+	return strings.Contains(listing, nftTableHeader(spec)) || strings.Contains(listing, spec.Marker)
 }
 
 func (e *LinuxRuntime) allocateOwnership(ctx context.Context, mode string) (uint16, string, string, error) {
@@ -500,16 +508,16 @@ func (e *LinuxRuntime) applyRule(ctx context.Context, mode string, spec LinuxNFQ
 
 func (e *LinuxRuntime) verifyRule(ctx context.Context, mode string, spec LinuxNFQueueSpec) error {
 	if mode == "nft" {
-		out, err := e.runner.run(ctx, "nft", "list", "ruleset")
+		out, err := e.runner.run(ctx, "nft", "list", "table", spec.nftFamily(), spec.Table)
 		if err != nil {
-			return fmt.Errorf("audit owned nft rule: %w", err)
+			return fmt.Errorf("audit owned nft table: %w", err)
 		}
 		address := "ip daddr " + spec.Edge.String()
 		if spec.Family == observatory.AddressFamilyIPv6 {
 			address = "ip6 daddr " + spec.Edge.String()
 		}
 		for _, fragment := range []string{
-			"table " + spec.nftFamily() + " " + spec.Table,
+			nftTableHeader(spec),
 			"hook output",
 			address,
 			spec.Marker,
@@ -518,9 +526,7 @@ func (e *LinuxRuntime) verifyRule(ctx context.Context, mode string, spec LinuxNF
 				return fmt.Errorf("owned nft rule is missing %q", fragment)
 			}
 		}
-		queuePresent := strings.Contains(out, "queue num "+fmt.Sprint(spec.Queue)) ||
-			strings.Contains(out, "queue flags bypass to "+fmt.Sprint(spec.Queue))
-		if !queuePresent {
+		if _, present := queuesInRuleListing(out)[spec.Queue]; !present {
 			return fmt.Errorf("owned nft rule is missing compiled NFQUEUE target")
 		}
 		portExpression := "tcp dport " + spec.nftPorts()
@@ -547,12 +553,8 @@ func (e *LinuxRuntime) deleteRule(ctx context.Context, mode string, spec LinuxNF
 		if err != nil {
 			return fmt.Errorf("nft delete owned table: %s: %w", strings.TrimSpace(out), err)
 		}
-		listing, err := e.runner.run(ctx, "nft", "list", "ruleset")
-		if err != nil {
+		if err := e.ownedRuleAbsent(ctx, mode, spec); err != nil {
 			return fmt.Errorf("audit nft ruleset after owned delete: %w", err)
-		}
-		if strings.Contains(listing, spec.Table) || strings.Contains(listing, spec.Marker) || strings.Contains(listing, "queue num "+fmt.Sprint(spec.Queue)) {
-			return fmt.Errorf("owned nft state remains after delete")
 		}
 		return nil
 	}
@@ -573,7 +575,7 @@ func (e *LinuxRuntime) ownedRuleAbsent(ctx context.Context, mode string, spec Li
 		if err != nil {
 			return fmt.Errorf("audit nft ruleset for owned absence: %w", err)
 		}
-		if strings.Contains(listing, spec.Table) || strings.Contains(listing, spec.Marker) || strings.Contains(listing, "queue num "+fmt.Sprint(spec.Queue)) {
+		if nftOwnedStatePresent(listing, spec) {
 			return fmt.Errorf("owned nft state remains active")
 		}
 		return nil
