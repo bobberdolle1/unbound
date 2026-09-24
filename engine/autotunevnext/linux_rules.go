@@ -87,5 +87,5 @@ func (s LinuxNFQueueSpec) iptablesArgs(operation string) []string {
 	if s.Family == observatory.AddressFamilyIPv6 {
 		binaryFamily = "ip6tables"
 	}
-	return append([]string{binaryFamily, "-t", "mangle", operation, "OUTPUT", "-d", s.Edge.String(), "-p", "tcp", "-m", "multiport", "--dports", s.iptablesPorts(), "-m", "mark", "!", "--mark", "0x40000000/0x40000000", "-m", "comment", "--comment", s.Marker, "-j", "NFQUEUE", "--queue-num", fmt.Sprint(s.Queue), "--queue-bypass"})
+	return []string{binaryFamily, "-t", "mangle", operation, "OUTPUT", "-d", s.Edge.String(), "-p", "tcp", "-m", "multiport", "--dports", s.iptablesPorts(), "-m", "mark", "!", "--mark", "0x40000000/0x40000000", "-m", "comment", "--comment", s.Marker, "-j", "NFQUEUE", "--queue-num", fmt.Sprint(s.Queue), "--queue-bypass"}
 }

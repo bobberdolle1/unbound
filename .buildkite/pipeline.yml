@@ -1,0 +1,24 @@
+# Buildkite V1: agent registration and fork-PR filtering are configured outside git.
+# See docs/CI.md before enabling this pipeline.
+env:
+  GO_VERSION: "1.26.0"
+  NODE_VERSION: "22.13.0"
+
+steps:
+  - label: ":linux: canonical CI"
+    key: linux-ci
+    agents:
+      queue: linux
+    command: "bash scripts/ci/linux.sh all"
+
+  - label: ":windows: canonical CI"
+    key: windows-ci
+    agents:
+      queue: windows
+    command: "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/ci/windows.ps1"
+
+  - label: ":mac: canonical CI"
+    key: macos-ci
+    agents:
+      queue: macos
+    command: "bash scripts/ci/macos.sh all"

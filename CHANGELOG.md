@@ -15,6 +15,9 @@
 - Add explicit experimental AutoTune vNext UI with product-owned HTTPS presets and a protected Cloudflare control; legacy AutoTune, tray, startup, and CLI routes remain unchanged.
 - Present factual vNext lifecycle outcomes, cancellation, restoration state, redacted target details, and verified-only strategy labels without permanent activation or learning.
 
+- Add provider-independent Linux, Windows, and macOS CI entrypoints plus a Buildkite queue pipeline; GitHub Actions and release validation now consume the same repository-owned checks.
+- Correct the vNext Linux rule argv construction so Go 1.26 `vet` accepts the production parser path without changing its arguments.
+
 ## [0.6.9] - 2026-09-11
 ### Windows release-correctness hotfix
 

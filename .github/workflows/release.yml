@@ -76,13 +76,8 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - name: Frontend gate
-        working-directory: frontend
-        run: |
-          npm ci
-          npm run typecheck
-          npm test
-          npm run build
+      - name: Canonical Linux CI gate
+        run: bash ./scripts/ci/linux.sh all
       - name: Version consistency gate
         env:
           VERSION: ${{ needs.resolve-version.outputs.version }}
@@ -103,11 +98,6 @@ jobs:
           test "$(git rev-parse "$TAG^{commit}")" = "$EXPECTED_COMMIT"
 
 
-      - name: Go and asset gate
-        run: |
-          go vet ./...
-          go test ./...
-          bash ./scripts/check.sh assets
 
 
   # ───────────────────────────────────────────────────────────────────────────
@@ -134,17 +124,9 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Build frontend and run native release gate
+      - name: Canonical Windows CI gate
         shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          Push-Location frontend
-          npm ci
-          npm test
-          npm run build
-          Pop-Location
-          go vet ./...
-          go test ./...
+        run: ./scripts/ci/windows.ps1
 
       - name: Install Wails CLI
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.13.0
