@@ -24,6 +24,7 @@ type App struct {
 	manager             *providers.ProviderManager
 	assets              *engine.AssetPaths
 	newVNextService     func(*providers.ProviderManager, *engine.AssetPaths) *productVNextService
+	vNextService        *productVNextService
 	startMinimized      bool
 	debugMode           bool
 	autoTuneCancel      context.CancelFunc
@@ -146,6 +147,13 @@ func (a *App) startup(ctx context.Context) {
 	// Log registered engines and notify frontend
 	engines := a.manager.GetEngineNames()
 	logger.Infof("App", "Registered engines: %v", engines)
+
+	// Managed vNext intent is separate from legacy settings. It never reuses a
+	// stored edge: a delayed bounded revalidation rebuilds the catalog and
+	// verifies current direct evidence before any activation.
+	if settings == nil || !settings.AutoStartProfile {
+		a.startManagedVNextRevalidation(ctx)
+	}
 	wailsruntime.EventsEmit(ctx, "engines_changed", engines)
 	// Auto-start profile: activate the user-selected strategy on every launch
 	// (boot or manual). This is independent of settings.AutoStart, which only
@@ -228,6 +236,44 @@ func (a *App) startup(ctx context.Context) {
 	wailsruntime.LogInfo(ctx, "UNBOUND initialized")
 }
 
+func (a *App) startManagedVNextRevalidation(parent context.Context) {
+	if _, present, err := loadVNextManagedState(); err != nil || !present {
+		return
+	}
+	a.mu.Lock()
+	if a.closing || a.assets == nil {
+		a.mu.Unlock()
+		return
+	}
+	service := a.vNextService
+	if service == nil {
+		factory := a.newVNextService
+		if factory == nil {
+			factory = newProductVNextService
+		}
+		service = factory(a.manager, a.assets)
+		a.vNextService = service
+	}
+	ctx, cancel := context.WithCancel(parent)
+	a.startupCancel = cancel
+	a.startupWG.Add(1)
+	a.mu.Unlock()
+	go func() {
+		defer a.startupWG.Done()
+		defer cancel()
+		timer := time.NewTimer(3 * time.Second)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+		}
+		status := service.RevalidateSaved(ctx)
+		engine.GetLogger().Infof("AutoTuneVNext", "startup revalidation state=%s", status.State)
+		a.TriggerTrayUpdate()
+	}()
+}
+
 func (a *App) shutdown(ctx context.Context) {
 	a.mu.Lock()
 	a.closing = true
@@ -257,6 +303,15 @@ func (a *App) shutdown(ctx context.Context) {
 	a.startupWG.Wait()
 	a.autoTuneWG.Wait()
 	a.autoReconnectWG.Wait()
+	a.mu.Lock()
+	vNextService := a.vNextService
+	a.mu.Unlock()
+	if vNextService != nil {
+		vNextService.InvalidateGrants()
+		if state := vNextService.Revert(ctx); state.State == "STATE_RESTORE_FAILED" {
+			engine.GetLogger().Error("App", "Managed vNext restoration failed during shutdown")
+		}
+	}
 	_ = a.manager.Stop()
 	if err := engine.CleanupExtractedAssets(); err != nil {
 		engine.GetLogger().Warnf("App", "Runtime cleanup failed: %v", err)
@@ -402,8 +457,16 @@ func (a *App) StartEngine(engineName string, profileName string) (err error) {
 		}
 	}()
 	manualChangeStarted = true
+	a.mu.Lock()
+	vNextService := a.vNextService
+	a.mu.Unlock()
+	if vNextService != nil {
+		vNextService.InvalidateGrants()
+		if state := vNextService.Revert(a.ctx); state.State == "STATE_RESTORE_FAILED" {
+			return fmt.Errorf("managed vNext restore failed")
+		}
+	}
 	logger.Info("App", "Stopping current engine if running...")
-	wailsruntime.LogInfo(a.ctx, "Stopping current engine if running...")
 	a.manager.Stop()
 	time.Sleep(500 * time.Millisecond)
 
@@ -456,7 +519,6 @@ func (a *App) StartEngine(engineName string, profileName string) (err error) {
 func (a *App) AddDefenderExclusion() error {
 	return engine.AddDefenderExclusion()
 }
-
 func (a *App) StopEngine() (err error) {
 	if !a.beginManualProfileChange() {
 		return fmt.Errorf("application is shutting down")
@@ -467,6 +529,15 @@ func (a *App) StopEngine() (err error) {
 			a.endManualProfileChange()
 		}
 	}()
+	a.mu.Lock()
+	vNextService := a.vNextService
+	a.mu.Unlock()
+	if vNextService != nil {
+		vNextService.InvalidateGrants()
+		if state := vNextService.Revert(a.ctx); state.State == "STATE_RESTORE_FAILED" {
+			return fmt.Errorf("managed vNext restore failed")
+		}
+	}
 	err = a.manager.Stop()
 	a.endManualProfileChange()
 	changeEnded = true
@@ -1127,7 +1198,15 @@ func (a *App) AutoTuneVNext(target string, controls []string) AutoTuneVNextResul
 	a.autoTuneCancel = cancel
 	a.autoTuneWG.Add(1)
 	assets := a.assets
+	service := a.vNextService
 	newService := a.newVNextService
+	if service == nil && assets != nil {
+		if newService == nil {
+			newService = newProductVNextService
+		}
+		service = newService(a.manager, assets)
+		a.vNextService = service
+	}
 	a.mu.Unlock()
 	defer func() {
 		cancel()
@@ -1137,13 +1216,10 @@ func (a *App) AutoTuneVNext(target string, controls []string) AutoTuneVNextResul
 		a.autoTuneWG.Done()
 	}()
 
-	if assets == nil {
+	if assets == nil || service == nil {
 		return productVNextFailure(autotunevnext.StatusPreflightFailed, "", "", "PRODUCT_ASSETS_UNAVAILABLE")
 	}
-	if newService == nil {
-		newService = newProductVNextService
-	}
-	result := newService(a.manager, assets).Run(runCtx, AutoTuneVNextRequest{Target: target, Controls: controls})
+	result := service.Run(runCtx, AutoTuneVNextRequest{Target: target, Controls: controls})
 	engine.GetLogger().Infof("AutoTuneVNext", "status=%s backend=%s restored=%t", result.Status, result.Backend, result.StateRestored)
 	return result
 }
@@ -1162,6 +1238,78 @@ func (a *App) RunExperimentalAutoTuneVNext(presetID string, customTarget string)
 		return productVNextFailure(autotunevnext.StatusPreflightFailed, "", "", "INVALID_EXPERIMENTAL_TARGET")
 	}
 	return a.AutoTuneVNext(target, controls)
+}
+
+// ApplyAutoTuneVNextSelection consumes an opaque backend-owned verified grant.
+// The frontend cannot supply a target, fingerprint, backend, or strategy ID.
+func (a *App) ApplyAutoTuneVNextSelection(token string) AutoTuneVNextManagedStatus {
+	a.mu.Lock()
+	if a.closing || a.profileChange || a.autoTuneCancel != nil {
+		a.mu.Unlock()
+		return AutoTuneVNextManagedStatus{State: "NOT_APPLIED"}
+	}
+	service := a.vNextService
+	parent := a.ctx
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithCancel(parent)
+	a.autoTuneCancel = cancel
+	a.autoTuneWG.Add(1)
+	a.mu.Unlock()
+	defer func() {
+		cancel()
+		a.mu.Lock()
+		a.autoTuneCancel = nil
+		a.mu.Unlock()
+		a.autoTuneWG.Done()
+		a.TriggerTrayUpdate()
+	}()
+	if service == nil {
+		return AutoTuneVNextManagedStatus{State: "NOT_APPLIED"}
+	}
+	return service.Apply(ctx, token)
+}
+
+// RevertAutoTuneVNext returns only after managed ownership has restored and
+// verified the original product state.
+func (a *App) RevertAutoTuneVNext() AutoTuneVNextManagedStatus {
+	a.mu.Lock()
+	if a.closing || a.profileChange || a.autoTuneCancel != nil {
+		a.mu.Unlock()
+		return AutoTuneVNextManagedStatus{State: "NOT_APPLIED"}
+	}
+	service := a.vNextService
+	parent := a.ctx
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithCancel(parent)
+	a.autoTuneCancel = cancel
+	a.autoTuneWG.Add(1)
+	a.mu.Unlock()
+	defer func() {
+		cancel()
+		a.mu.Lock()
+		a.autoTuneCancel = nil
+		a.mu.Unlock()
+		a.autoTuneWG.Done()
+		a.TriggerTrayUpdate()
+	}()
+	if service == nil {
+		return AutoTuneVNextManagedStatus{State: "DIRECT"}
+	}
+	return service.Revert(ctx)
+}
+
+func (a *App) GetAutoTuneVNextManagedStatus() AutoTuneVNextManagedStatus {
+	a.mu.Lock()
+	service := a.vNextService
+	a.mu.Unlock()
+	if service == nil {
+		return AutoTuneVNextManagedStatus{State: "DIRECT"}
+	}
+	return service.Status()
 }
 
 func (a *App) CancelAutoTune() {

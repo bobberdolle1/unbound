@@ -123,6 +123,8 @@ type AutoTuneVNextResult struct {
 	CandidateOutcomes   []AutoTuneVNextCandidateOutcome `json:"candidate_outcomes,omitempty"`
 	SelectedStrategyID  string                          `json:"selected_strategy_id,omitempty"`
 	SelectedFingerprint string                          `json:"selected_fingerprint,omitempty"`
+	ApplyAvailable      bool                            `json:"apply_available"`
+	ApplyToken          string                          `json:"apply_token,omitempty"`
 	Limitations         []string                        `json:"limitations,omitempty"`
 	LifecycleErrors     []AutoTuneVNextLifecycleError   `json:"lifecycle_errors,omitempty"`
 }
@@ -144,6 +146,10 @@ type productVNextService struct {
 	manager *providers.ProviderManager
 	assets  *engine.AssetPaths
 	deps    productVNextDependencies
+
+	mu     sync.Mutex
+	grants map[string]verifiedSelectionGrant
+	active *managedVNextActivation
 }
 
 func newProductVNextService(manager *providers.ProviderManager, assets *engine.AssetPaths) *productVNextService {
@@ -158,10 +164,11 @@ func newProductVNextService(manager *providers.ProviderManager, assets *engine.A
 }
 
 func newProductVNextServiceWith(manager *providers.ProviderManager, assets *engine.AssetPaths, deps productVNextDependencies) *productVNextService {
-	return &productVNextService{manager: manager, assets: assets, deps: deps}
+	return &productVNextService{manager: manager, assets: assets, deps: deps, grants: make(map[string]verifiedSelectionGrant)}
 }
 
 func (s *productVNextService) Run(ctx context.Context, input AutoTuneVNextRequest) AutoTuneVNextResult {
+	s.InvalidateGrants()
 	target, publicTarget, err := normalizeVNextTarget(input.Target)
 	if err != nil {
 		return productVNextFailure(autotunevnext.StatusPreflightFailed, "", "", "INVALID_TARGET")
@@ -208,7 +215,12 @@ func (s *productVNextService) Run(ctx context.Context, input AutoTuneVNextReques
 	if err != nil {
 		return productVNextFailureWithCatalog(autotunevnext.StatusInconclusive, publicTarget, string(runtimeBinding.backend), "OPERATION_CONFLICT", productVNextCatalogStatus)
 	}
-	return mapAutoTuneVNextResult(result, publicTarget)
+	mapped := mapAutoTuneVNextResult(result, publicTarget)
+	if token := s.issueVerifiedGrant(result, target, publicTarget, controls); token != "" {
+		mapped.ApplyAvailable = true
+		mapped.ApplyToken = token
+	}
+	return mapped
 }
 
 func productVNextFailure(status autotunevnext.Status, target, backend, limitation string) AutoTuneVNextResult {

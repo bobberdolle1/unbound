@@ -1,0 +1,403 @@
+package main
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"unbound/engine"
+	"unbound/engine/autotunevnext"
+	"unbound/engine/backendcap"
+	"unbound/engine/observatory"
+	"unbound/engine/strategyir"
+)
+
+const (
+	vNextManagedStateFile = "autotune_vnext_state.json"
+	vNextManagedSchema    = 1
+	vNextGrantTTL         = 10 * time.Minute
+)
+
+type verifiedSelectionGrant struct {
+	token        string
+	target       autotunevnext.Target
+	publicTarget string
+	controls     []autotunevnext.Target
+	strategyID   string
+	fingerprint  string
+	backend      backendcap.Backend
+	createdAt    time.Time
+	expiresAt    time.Time
+	consumed     bool
+}
+
+type managedVNextActivation struct {
+	activation *autotunevnext.ManagedActivation
+	grant      verifiedSelectionGrant
+}
+
+// AutoTuneVNextManagedStatus exposes only logical/redacted managed state.
+type AutoTuneVNextManagedStatus struct {
+	State             string `json:"state"`
+	Active            bool   `json:"active"`
+	NeedsRevalidation bool   `json:"needs_revalidation"`
+	Target            string `json:"target,omitempty"`
+	StrategyID        string `json:"strategy_id,omitempty"`
+	Fingerprint       string `json:"fingerprint,omitempty"`
+	Backend           string `json:"backend,omitempty"`
+}
+
+type persistedVNextState struct {
+	SchemaVersion int    `json:"schema_version"`
+	Enabled       bool   `json:"enabled"`
+	Target        string `json:"target"`
+	StrategyID    string `json:"strategy_id"`
+	Fingerprint   string `json:"fingerprint"`
+	Backend       string `json:"backend"`
+	SavedAt       string `json:"saved_at"`
+}
+
+func getVNextManagedStatePath() (string, error) {
+	dir, err := engine.GetConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, vNextManagedStateFile), nil
+}
+
+func loadVNextManagedState() (persistedVNextState, bool, error) {
+	path, err := getVNextManagedStatePath()
+	if err != nil {
+		return persistedVNextState{}, false, err
+	}
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return persistedVNextState{}, false, nil
+	}
+	if err != nil {
+		return persistedVNextState{}, false, err
+	}
+	var state persistedVNextState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return persistedVNextState{}, false, fmt.Errorf("corrupt managed vNext state: %w", err)
+	}
+	if state.SchemaVersion != vNextManagedSchema || !state.Enabled || state.Target == "" || state.StrategyID == "" || state.Fingerprint == "" || state.Backend == "" {
+		return persistedVNextState{}, false, errors.New("invalid managed vNext state")
+	}
+	if _, _, err := normalizeVNextTarget(state.Target); err != nil {
+		return persistedVNextState{}, false, fmt.Errorf("invalid managed target: %w", err)
+	}
+	if _, err := time.Parse(time.RFC3339Nano, state.SavedAt); err != nil {
+		return persistedVNextState{}, false, fmt.Errorf("invalid managed saved_at: %w", err)
+	}
+	return state, true, nil
+}
+
+func saveVNextManagedState(state persistedVNextState) error {
+	path, err := getVNextManagedStatePath()
+	if err != nil {
+		return err
+	}
+	data, err := json.Marshal(state)
+	if err != nil {
+		return err
+	}
+	temp, err := os.CreateTemp(filepath.Dir(path), ".autotune-vnext-*.tmp")
+	if err != nil {
+		return err
+	}
+	tempName := temp.Name()
+	defer os.Remove(tempName)
+	if _, err := temp.Write(data); err != nil {
+		temp.Close()
+		return err
+	}
+	if err := temp.Sync(); err != nil {
+		temp.Close()
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tempName, path)
+}
+
+func clearVNextManagedState() error {
+	path, err := getVNextManagedStatePath()
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
+func secureGrantToken() (string, error) {
+	bytes := make([]byte, 32)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
+}
+
+func (s *productVNextService) invalidateGrantsLocked() {
+	for token := range s.grants {
+		delete(s.grants, token)
+	}
+}
+
+func (s *productVNextService) issueVerifiedGrant(result autotunevnext.Result, target autotunevnext.Target, public string, controls []autotunevnext.Target) string {
+	if result.Status != autotunevnext.StatusCompletedSelected || !result.StateRestored || result.SelectedStrategyID == "" || result.SelectedFingerprint == "" {
+		return ""
+	}
+	verified := false
+	for _, experiment := range result.Experiments {
+		if experiment.StrategyID == result.SelectedStrategyID && experiment.Fingerprint == result.SelectedFingerprint && experiment.Outcome == autotunevnext.OutcomeVerifiedFixed {
+			verified = true
+			break
+		}
+	}
+	if !verified {
+		return ""
+	}
+	token, err := secureGrantToken()
+	if err != nil {
+		return ""
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.invalidateGrantsLocked()
+	now := time.Now()
+	s.grants[token] = verifiedSelectionGrant{token: token, target: target, publicTarget: public, controls: append([]autotunevnext.Target(nil), controls...), strategyID: result.SelectedStrategyID, fingerprint: result.SelectedFingerprint, backend: result.Backend, createdAt: now, expiresAt: now.Add(vNextGrantTTL)}
+	return token
+}
+
+func (s *productVNextService) InvalidateGrants() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.invalidateGrantsLocked()
+}
+
+func (s *productVNextService) resolveGrant(token string) (verifiedSelectionGrant, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	grant, ok := s.grants[token]
+	if !ok || token == "" || grant.consumed || time.Now().After(grant.expiresAt) {
+		if ok {
+			delete(s.grants, token)
+		}
+		return verifiedSelectionGrant{}, errors.New("APPLY_TOKEN_INVALID")
+	}
+	if s.active != nil {
+		return verifiedSelectionGrant{}, errors.New("OPERATION_CONFLICT")
+	}
+	return grant, nil
+}
+
+func (s *productVNextService) Apply(ctx context.Context, token string) AutoTuneVNextManagedStatus {
+	grant, err := s.resolveGrant(token)
+	if err != nil {
+		return AutoTuneVNextManagedStatus{State: "NOT_APPLIED"}
+	}
+	catalog, err := productionVNextStrategyCatalog(hostnameForVNextTarget(grant.target))
+	if err != nil {
+		return AutoTuneVNextManagedStatus{State: "NOT_APPLIED"}
+	}
+	var strategy strategyir.Strategy
+	for _, candidate := range catalog {
+		if candidate.ID == grant.strategyID {
+			strategy = candidate
+			break
+		}
+	}
+	if strategy.ID == "" {
+		return AutoTuneVNextManagedStatus{State: "SAVED_STRATEGY_STALE"}
+	}
+	fingerprint, err := strategyir.Fingerprint(strategy)
+	if err != nil || fingerprint != grant.fingerprint {
+		return AutoTuneVNextManagedStatus{State: "SAVED_STRATEGY_STALE"}
+	}
+	adapter := newProductRuntimeProvider(s.manager)
+	if err := adapter.validateRestorableState(); err != nil {
+		return AutoTuneVNextManagedStatus{State: "NOT_APPLIED"}
+	}
+	runtimeBinding, err := s.deps.newRuntime(adapter, s.assets, logProductVNextPhysicalEvent)
+	if err != nil {
+		return AutoTuneVNextManagedStatus{State: managedRuntimeFailureState(err)}
+	}
+	if runtimeBinding.backend != grant.backend {
+		return AutoTuneVNextManagedStatus{State: "SAVED_STRATEGY_STALE"}
+	}
+	resolver, err := s.deps.newResolver(s.assets)
+	if err != nil {
+		return AutoTuneVNextManagedStatus{State: "NOT_APPLIED"}
+	}
+	activation, err := autotunevnext.ApplyVerified(ctx, autotunevnext.ManagedRequest{Target: grant.target, Controls: grant.controls, Strategy: strategy, Fingerprint: grant.fingerprint, Backend: runtimeBinding.backend, NetworkLabel: "product-autotune-vnext"}, s.deps.observer, runtimeBinding.executor, runtimeBinding.preflight, resolver)
+	if err != nil {
+		return AutoTuneVNextManagedStatus{State: "NOT_APPLIED"}
+	}
+	state := persistedVNextState{SchemaVersion: vNextManagedSchema, Enabled: true, Target: grant.publicTarget, StrategyID: grant.strategyID, Fingerprint: grant.fingerprint, Backend: string(runtimeBinding.backend), SavedAt: time.Now().UTC().Format(time.RFC3339Nano)}
+	if err := saveVNextManagedState(state); err != nil {
+		_ = activation.Revert(context.Background())
+		return AutoTuneVNextManagedStatus{State: "NOT_APPLIED"}
+	}
+	s.mu.Lock()
+	if current, ok := s.grants[token]; ok {
+		current.consumed = true
+		s.grants[token] = current
+	}
+	s.active = &managedVNextActivation{activation: activation, grant: grant}
+	s.mu.Unlock()
+	return managedStatusForGrant("APPLIED", true, grant)
+}
+
+func (s *productVNextService) Revert(ctx context.Context) AutoTuneVNextManagedStatus {
+	s.mu.Lock()
+	active := s.active
+	s.mu.Unlock()
+	if active == nil {
+		return AutoTuneVNextManagedStatus{State: "DIRECT"}
+	}
+	if err := active.activation.Revert(ctx); err != nil {
+		return managedStatusForGrant("STATE_RESTORE_FAILED", true, active.grant)
+	}
+	if err := clearVNextManagedState(); err != nil {
+		return managedStatusForGrant("STATE_RESTORE_FAILED", false, active.grant)
+	}
+	s.mu.Lock()
+	if s.active == active {
+		s.active = nil
+	}
+	s.invalidateGrantsLocked()
+	s.mu.Unlock()
+	return managedStatusForGrant("REVERTED", false, active.grant)
+}
+
+func (s *productVNextService) Status() AutoTuneVNextManagedStatus {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.active == nil {
+		return AutoTuneVNextManagedStatus{State: "DIRECT"}
+	}
+	return managedStatusForGrant("VNEXT_MANAGED_ACTIVE", true, s.active.grant)
+}
+
+// ManagedHealthy checks the retained exact edge through the active managed
+// runtime. An unhealthy or changed edge triggers revalidation, never a wider
+// capture scope.
+func (s *productVNextService) ManagedHealthy(ctx context.Context) bool {
+	s.mu.Lock()
+	active := s.active
+	s.mu.Unlock()
+	if active == nil {
+		return false
+	}
+	candidate := active.activation.Candidate()
+	if len(candidate.TargetEdge) == 0 {
+		return false
+	}
+	healthCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
+	observation, err := s.deps.observer.Observe(healthCtx, active.grant.target.URL, observatory.Options{AddressFamily: candidate.TargetFamily, Transport: active.grant.target.Transport, ResolvedIP: candidate.TargetEdge, NetworkLabel: "product-autotune-vnext"})
+	return err == nil && observation.Classification == observatory.ClassSuccess
+}
+
+// RevalidateActive is one bounded recovery attempt. It restores direct state
+// before rerunning saved-intent verification and never substitutes a strategy.
+func (s *productVNextService) RevalidateActive(ctx context.Context) AutoTuneVNextManagedStatus {
+	s.mu.Lock()
+	active := s.active
+	s.mu.Unlock()
+	if active == nil {
+		return AutoTuneVNextManagedStatus{State: "DIRECT"}
+	}
+	if state := s.Revert(ctx); state.State == "STATE_RESTORE_FAILED" {
+		return state
+	}
+	return s.RevalidateSaved(ctx)
+}
+
+// RevalidateSaved rebuilds the current catalog and repeats the bounded
+// experiment before activation. Persisted intent contains no old edge, argv,
+// process, or capture state.
+func (s *productVNextService) RevalidateSaved(ctx context.Context) AutoTuneVNextManagedStatus {
+	state, present, err := loadVNextManagedState()
+	if err != nil {
+		return AutoTuneVNextManagedStatus{State: "SAVED_STRATEGY_STALE"}
+	}
+	if !present {
+		return AutoTuneVNextManagedStatus{State: "DIRECT"}
+	}
+	target, publicTarget, err := normalizeVNextTarget(state.Target)
+	if err != nil {
+		return AutoTuneVNextManagedStatus{State: "SAVED_STRATEGY_STALE"}
+	}
+	catalog, err := productionVNextStrategyCatalog(hostnameForVNextTarget(target))
+	if err != nil {
+		return AutoTuneVNextManagedStatus{State: "SAVED_STRATEGY_STALE"}
+	}
+	matched := false
+	for _, strategy := range catalog {
+		fingerprint, fingerprintErr := strategyir.Fingerprint(strategy)
+		if strategy.ID == state.StrategyID && fingerprintErr == nil && fingerprint == state.Fingerprint {
+			matched = true
+			break
+		}
+	}
+	if !matched {
+		return AutoTuneVNextManagedStatus{State: "SAVED_STRATEGY_STALE"}
+	}
+	control, _, controlErr := normalizeVNextTarget(productVNextDefaultControl.Target)
+	if controlErr != nil {
+		return AutoTuneVNextManagedStatus{State: "SAVED_STRATEGY_STALE"}
+	}
+	result := s.Run(ctx, AutoTuneVNextRequest{Target: target.URL, Controls: []string{control.URL}})
+	switch result.Status {
+	case string(autotunevnext.StatusCompletedNoActionNeeded):
+		return AutoTuneVNextManagedStatus{State: "SAVED_NOT_CURRENTLY_NEEDED", Target: publicTarget, StrategyID: state.StrategyID, Fingerprint: shortManagedFingerprint(state.Fingerprint), Backend: state.Backend, NeedsRevalidation: true}
+	case string(autotunevnext.StatusCompletedSelected):
+		if result.ApplyAvailable && result.SelectedStrategyID == state.StrategyID && result.SelectedFingerprint == state.Fingerprint {
+			return s.Apply(ctx, result.ApplyToken)
+		}
+	}
+	return AutoTuneVNextManagedStatus{State: "NO_VERIFIED_STRATEGY", Target: publicTarget, StrategyID: state.StrategyID, Fingerprint: shortManagedFingerprint(state.Fingerprint), Backend: state.Backend, NeedsRevalidation: true}
+}
+
+func shortManagedFingerprint(fingerprint string) string {
+	if len(fingerprint) > 12 {
+		return fingerprint[:12]
+	}
+	return fingerprint
+}
+
+func managedStatusForGrant(state string, active bool, grant verifiedSelectionGrant) AutoTuneVNextManagedStatus {
+	fingerprint := grant.fingerprint
+	if len(fingerprint) > 12 {
+		fingerprint = fingerprint[:12]
+	}
+	return AutoTuneVNextManagedStatus{State: state, Active: active, Target: grant.publicTarget, StrategyID: grant.strategyID, Fingerprint: fingerprint, Backend: string(grant.backend)}
+}
+
+func hostnameForVNextTarget(target autotunevnext.Target) string {
+	parsed, err := url.Parse(target.URL)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSuffix(strings.ToLower(parsed.Hostname()), ".")
+}
+
+func managedRuntimeFailureState(err error) string {
+	if errors.Is(err, errVNextMeasurementPathUnsupported) {
+		return "MEASUREMENT_PATH_UNSUPPORTED"
+	}
+	return "NOT_APPLIED"
+}

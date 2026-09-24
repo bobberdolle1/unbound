@@ -27,6 +27,7 @@ type trayStateSnapshot struct {
 	profile    string
 	pingText   string
 	autoTuning bool
+	managed    AutoTuneVNextManagedStatus
 }
 
 type trayController struct {
@@ -52,22 +53,28 @@ func (tc *trayController) sync(current trayStateSnapshot) {
 
 	prev := tc.lastSnapshot
 
-	// 1. If nothing changed, make ZERO calls to Win32 systray to prevent menu message loop contention.
 	if prev.status == current.status &&
 		prev.profile == current.profile &&
 		prev.pingText == current.pingText &&
-		prev.autoTuning == current.autoTuning {
+		prev.autoTuning == current.autoTuning &&
+		prev.managed.State == current.managed.State &&
+		prev.managed.StrategyID == current.managed.StrategyID {
 		return
 	}
 
 	// 2. Status & action transitions (Enable/Disable only; no Hide/Show structural mutations)
-	if prev.status != current.status || prev.profile != current.profile || prev.autoTuning != current.autoTuning {
+	if prev.status != current.status || prev.profile != current.profile || prev.autoTuning != current.autoTuning || prev.managed.State != current.managed.State || prev.managed.StrategyID != current.managed.StrategyID {
 		var statusTitle string
 		switch {
 		case current.autoTuning:
 			statusTitle = "Статус: Автоподбор..."
 			tc.mConnect.Disable()
 			tc.mDisconnect.Disable()
+			tc.mAutoTune.Disable()
+		case current.managed.Active:
+			statusTitle = fmt.Sprintf("Статус: Управляемая стратегия (%s)", current.managed.StrategyID)
+			tc.mConnect.Disable()
+			tc.mDisconnect.Enable()
 			tc.mAutoTune.Disable()
 		case current.status == providers.StatusRunning:
 			if current.profile != "" {
@@ -113,13 +120,19 @@ func (a *App) getTraySnapshot() trayStateSnapshot {
 
 	a.mu.Lock()
 	autoTuning := a.autoTuneCancel != nil
+	service := a.vNextService
 	a.mu.Unlock()
+	managed := AutoTuneVNextManagedStatus{State: "DIRECT"}
+	if service != nil {
+		managed = service.Status()
+	}
 
 	return trayStateSnapshot{
 		status:     status,
 		profile:    profile,
 		pingText:   pingText,
 		autoTuning: autoTuning,
+		managed:    managed,
 	}
 }
 
