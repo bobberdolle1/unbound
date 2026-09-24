@@ -148,7 +148,7 @@ func TestLinuxVerifyRestoredFailsForResidualOwnedRule(t *testing.T) {
 }
 
 func TestLinuxFirewallListingCoversIPTablesAndIP6Tables(t *testing.T) {
-	runner := &linuxRunnerStub{paths: map[string]bool{"ip6tables": true}}
+	runner := &linuxRunnerStub{paths: map[string]bool{"iptables": true, "ip6tables": true}}
 	runner.runFn = func(name string, _ []string) (string, error) {
 		if name == "ip6tables" {
 			return "-A OUTPUT --comment " + linuxOwnershipPrefix + ":stale", nil
