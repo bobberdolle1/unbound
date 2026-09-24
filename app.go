@@ -23,6 +23,7 @@ type App struct {
 	ctx                 context.Context
 	manager             *providers.ProviderManager
 	assets              *engine.AssetPaths
+	newVNextService     func(*providers.ProviderManager, *engine.AssetPaths) *productVNextService
 	startMinimized      bool
 	debugMode           bool
 	autoTuneCancel      context.CancelFunc
@@ -56,6 +57,7 @@ type App struct {
 func NewApp() *App {
 	return &App{
 		manager:           providers.NewProviderManager(),
+		newVNextService:   newProductVNextService,
 		trayUpdateTrigger: make(chan struct{}, 1),
 	}
 }
@@ -1125,19 +1127,23 @@ func (a *App) AutoTuneVNext(target string, controls []string) AutoTuneVNextResul
 	a.autoTuneCancel = cancel
 	a.autoTuneWG.Add(1)
 	assets := a.assets
+	newService := a.newVNextService
 	a.mu.Unlock()
 	defer func() {
 		cancel()
-		a.autoTuneWG.Done()
 		a.mu.Lock()
 		a.autoTuneCancel = nil
 		a.mu.Unlock()
+		a.autoTuneWG.Done()
 	}()
 
 	if assets == nil {
 		return productVNextFailure(autotunevnext.StatusPreflightFailed, "", "", "PRODUCT_ASSETS_UNAVAILABLE")
 	}
-	result := newProductVNextService(a.manager, assets).Run(runCtx, AutoTuneVNextRequest{Target: target, Controls: controls})
+	if newService == nil {
+		newService = newProductVNextService
+	}
+	result := newService(a.manager, assets).Run(runCtx, AutoTuneVNextRequest{Target: target, Controls: controls})
 	engine.GetLogger().Infof("AutoTuneVNext", "status=%s backend=%s restored=%t", result.Status, result.Backend, result.StateRestored)
 	return result
 }

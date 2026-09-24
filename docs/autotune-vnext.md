@@ -56,3 +56,11 @@ Windows derives a raw WinDivert filter from the factual target edge plus the com
 Both adapters use only extracted, hash-verified product assets and the pinned engine hash. Their host preflight fails closed for missing privilege, asset identity failure, missing capture tooling, timestamp requirements, ownership collision, or an already-active vNext process. Lifecycle logs contain only experiment identity, backend, strategy/fingerprint, selected edge, lifecycle phase, PID, and bounded failure detail; they exclude URLs, headers, credentials, packet data, and unrelated process listings.
 
 macOS tpws uses SOCKS. The default direct Observatory dialer does not prove it traversed SOCKS, so vNext marks macOS tpws experiment measurement as `MEASUREMENT_PATH_UNSUPPORTED` until an explicit provider-neutral SOCKS-aware Observatory connector exists. It does not rely on a system proxy.
+
+## Product entrypoint
+
+`App.AutoTuneVNext` and the explicit `--autotune-vnext` CLI mode are separate from legacy AutoTune. Existing UI, tray, startup `Автоподбор`, and `--autotune` routes remain legacy. Product composition uses the direct TCP/HTTPS Observatory, the product asset resolver, and `RunCoordinated`; it does not acquire a second AutoTune coordinator lock.
+
+The runtime provider snapshots the active `ProviderManager` engine and profile before direct observation. A running product state restores the same engine/profile; an initially stopped state restores stopped without inventing a profile. Application cancellation and shutdown share the existing AutoTune cancellation and wait-group path, so vNext finalization restores and verifies product state before shutdown tears down the manager.
+
+Production has no audited StrategyIR candidates yet. Its catalog remains empty and reports `CATALOG_REQUIRED`; the developer-only acceptance strategy is excluded. Product inputs accept HTTPS only. The internal target retains its path and query for the Observatory, while the public result omits userinfo, query, fragment, and secrets. Candidate `planner_status` is the Planner candidate status; the result-level `planner_disposition` remains the Planner report disposition.

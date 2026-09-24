@@ -922,7 +922,7 @@ export namespace main {
 	export class AutoTuneVNextCandidateOutcome {
 	    strategy_id: string;
 	    fingerprint?: string;
-	    planner_disposition?: string;
+	    planner_status?: string;
 	    outcome: string;
 	
 	    static createFrom(source: any = {}) {
@@ -933,7 +933,7 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.strategy_id = source["strategy_id"];
 	        this.fingerprint = source["fingerprint"];
-	        this.planner_disposition = source["planner_disposition"];
+	        this.planner_status = source["planner_status"];
 	        this.outcome = source["outcome"];
 	    }
 	}

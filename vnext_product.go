@@ -32,10 +32,10 @@ type AutoTuneVNextAttribution struct {
 }
 
 type AutoTuneVNextCandidateOutcome struct {
-	StrategyID  string `json:"strategy_id"`
-	Fingerprint string `json:"fingerprint,omitempty"`
-	Planner     string `json:"planner_disposition,omitempty"`
-	Outcome     string `json:"outcome"`
+	StrategyID    string `json:"strategy_id"`
+	Fingerprint   string `json:"fingerprint,omitempty"`
+	PlannerStatus string `json:"planner_status,omitempty"`
+	Outcome       string `json:"outcome"`
 }
 
 type AutoTuneVNextLifecycleError struct {
@@ -157,7 +157,7 @@ func mapAutoTuneVNextResult(result autotunevnext.Result, publicTarget string) Au
 	for _, experiment := range result.Experiments {
 		mapped.CandidateOutcomes = append(mapped.CandidateOutcomes, AutoTuneVNextCandidateOutcome{
 			StrategyID: experiment.StrategyID, Fingerprint: experiment.Fingerprint,
-			Planner: string(experiment.PlannerStatus), Outcome: string(experiment.Outcome),
+			PlannerStatus: string(experiment.PlannerStatus), Outcome: string(experiment.Outcome),
 		})
 	}
 	for _, lifecycle := range result.Lifecycle.Errors {
