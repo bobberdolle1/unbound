@@ -25,9 +25,9 @@ permissions:
   contents: read
 
 env:
-  # Must satisfy the `go` directive in go.mod (1.25.0). The old workflow
+  # Must satisfy the `go` directive in go.mod (1.26.0). The old workflow
   # pinned 1.23, which fails to build the module at all.
-  GO_VERSION: '1.25'
+  GO_VERSION: '1.26.0'
   NODE_VERSION: '22.13.0'
 
 jobs:

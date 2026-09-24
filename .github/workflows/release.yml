@@ -6,7 +6,7 @@
 # dispatch so a routine push does not spend half an hour building artifacts.
 #
 # Fixed from the previous main.yml, which could not complete:
-#   - GO_VERSION was 1.23 while go.mod requires 1.25
+#   - GO_VERSION was 1.23 while go.mod requires 1.26
 #   - `go build -o <file> ./...` is an error: -o takes a single package
 #   - the Windows job copied README_RELEASE.txt, a file that does not exist
 #   - setup-node was given `cache: 'frontend'`; the only valid values are
@@ -30,7 +30,7 @@ permissions:
   contents: write
 
 env:
-  GO_VERSION: '1.25'
+  GO_VERSION: '1.26.0'
   NODE_VERSION: '22.13.0'
   JAVA_VERSION: '17'
 
