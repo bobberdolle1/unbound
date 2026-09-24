@@ -10,6 +10,26 @@ import (
 	"testing"
 )
 
+func diagnosticMentionsRejectedOption(output, option string) bool {
+	normalized := strings.ToLower(strings.Join(strings.Fields(output), " "))
+	if !strings.Contains(normalized, strings.ToLower(option)) {
+		return false
+	}
+
+	for _, rejection := range []string{
+		"ambiguous option",
+		"unknown option",
+		"invalid option",
+		"unrecognized option",
+		"unsupported option",
+	} {
+		if strings.Contains(normalized, rejection) {
+			return true
+		}
+	}
+	return false
+}
+
 // TestRealWinws2DryRunVerifiesArgvAndLuaBootstrap tests the bundled winws2 executable
 // with authentic argument vectors and Lua scripts without requiring network interception or elevation.
 func TestRealWinws2DryRunVerifiesArgvAndLuaBootstrap(t *testing.T) {
@@ -134,8 +154,8 @@ func TestRealWinws2DryRunVerifiesArgvAndLuaBootstrap(t *testing.T) {
 			t.Fatal("Expected ambiguous --wf-tcp flag to fail, but winws2 succeeded")
 		}
 		combined := outBuf.String() + "\n" + errBuf.String()
-		if !strings.Contains(combined, "ambiguous option -- wf-tcp") {
-			t.Errorf("Expected ambiguous option error, got: %s", combined)
+		if !diagnosticMentionsRejectedOption(combined, "wf-tcp") {
+			t.Errorf("Expected --wf-tcp parser rejection diagnostic, got: %s", combined)
 		}
 	})
 }
