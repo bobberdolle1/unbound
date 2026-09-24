@@ -905,6 +905,102 @@ export namespace engine {
 
 export namespace main {
 	
+	export class AutoTuneVNextAttribution {
+	    primary_finding?: string;
+	    confidence?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AutoTuneVNextAttribution(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.primary_finding = source["primary_finding"];
+	        this.confidence = source["confidence"];
+	    }
+	}
+	export class AutoTuneVNextCandidateOutcome {
+	    strategy_id: string;
+	    fingerprint?: string;
+	    planner_disposition?: string;
+	    outcome: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AutoTuneVNextCandidateOutcome(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.strategy_id = source["strategy_id"];
+	        this.fingerprint = source["fingerprint"];
+	        this.planner_disposition = source["planner_disposition"];
+	        this.outcome = source["outcome"];
+	    }
+	}
+	export class AutoTuneVNextLifecycleError {
+	    code: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AutoTuneVNextLifecycleError(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.code = source["code"];
+	    }
+	}
+	export class AutoTuneVNextResult {
+	    status: string;
+	    state_restored: boolean;
+	    target?: string;
+	    backend?: string;
+	    baseline_attribution?: AutoTuneVNextAttribution;
+	    planner_disposition?: string;
+	    catalog_status: string;
+	    candidate_outcomes?: AutoTuneVNextCandidateOutcome[];
+	    selected_strategy_id?: string;
+	    selected_fingerprint?: string;
+	    limitations?: string[];
+	    lifecycle_errors?: AutoTuneVNextLifecycleError[];
+	
+	    static createFrom(source: any = {}) {
+	        return new AutoTuneVNextResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.status = source["status"];
+	        this.state_restored = source["state_restored"];
+	        this.target = source["target"];
+	        this.backend = source["backend"];
+	        this.baseline_attribution = this.convertValues(source["baseline_attribution"], AutoTuneVNextAttribution);
+	        this.planner_disposition = source["planner_disposition"];
+	        this.catalog_status = source["catalog_status"];
+	        this.candidate_outcomes = this.convertValues(source["candidate_outcomes"], AutoTuneVNextCandidateOutcome);
+	        this.selected_strategy_id = source["selected_strategy_id"];
+	        this.selected_fingerprint = source["selected_fingerprint"];
+	        this.limitations = source["limitations"];
+	        this.lifecycle_errors = this.convertValues(source["lifecycle_errors"], AutoTuneVNextLifecycleError);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class PingRecord {
 	    ts: number;
 	    lat: number;

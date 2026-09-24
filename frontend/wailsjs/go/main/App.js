@@ -18,6 +18,10 @@ export function AutoTune() {
   return window['go']['main']['App']['AutoTune']();
 }
 
+export function AutoTuneVNext(arg1, arg2) {
+  return window['go']['main']['App']['AutoTuneVNext'](arg1, arg2);
+}
+
 export function CancelAutoTune() {
   return window['go']['main']['App']['CancelAutoTune']();
 }

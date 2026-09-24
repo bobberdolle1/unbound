@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"unbound/engine"
+	"unbound/engine/autotunevnext"
 	"unbound/engine/providers"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -21,6 +22,7 @@ import (
 type App struct {
 	ctx                 context.Context
 	manager             *providers.ProviderManager
+	assets              *engine.AssetPaths
 	startMinimized      bool
 	debugMode           bool
 	autoTuneCancel      context.CancelFunc
@@ -103,6 +105,9 @@ func (a *App) startup(ctx context.Context) {
 	}
 
 	logger.Info("App", "Startup validation passed")
+	a.mu.Lock()
+	a.assets = assets
+	a.mu.Unlock()
 
 	// Apply system settings
 	settings, _ := engine.GetSettings()
@@ -1098,6 +1103,43 @@ func (a *App) AutoTune() string {
 	})
 
 	return result.ProfileName
+}
+
+// AutoTuneVNext runs the explicitly requested experimental vNext product path.
+// Legacy AutoTune, its UI, and tray flow continue to call AutoTune unchanged.
+func (a *App) AutoTuneVNext(target string, controls []string) AutoTuneVNextResult {
+	a.mu.Lock()
+	if a.closing {
+		a.mu.Unlock()
+		return productVNextFailure(autotunevnext.StatusCancelled, "", "", "APPLICATION_SHUTTING_DOWN")
+	}
+	if a.profileChange || a.autoTuneCancel != nil {
+		a.mu.Unlock()
+		return productVNextFailure(autotunevnext.StatusInconclusive, "", "", "OPERATION_CONFLICT")
+	}
+	parent := a.ctx
+	if parent == nil {
+		parent = context.Background()
+	}
+	runCtx, cancel := context.WithCancel(parent)
+	a.autoTuneCancel = cancel
+	a.autoTuneWG.Add(1)
+	assets := a.assets
+	a.mu.Unlock()
+	defer func() {
+		cancel()
+		a.autoTuneWG.Done()
+		a.mu.Lock()
+		a.autoTuneCancel = nil
+		a.mu.Unlock()
+	}()
+
+	if assets == nil {
+		return productVNextFailure(autotunevnext.StatusPreflightFailed, "", "", "PRODUCT_ASSETS_UNAVAILABLE")
+	}
+	result := newProductVNextService(a.manager, assets).Run(runCtx, AutoTuneVNextRequest{Target: target, Controls: controls})
+	engine.GetLogger().Infof("AutoTuneVNext", "status=%s backend=%s restored=%t", result.Status, result.Backend, result.StateRestored)
+	return result
 }
 
 func (a *App) CancelAutoTune() {
