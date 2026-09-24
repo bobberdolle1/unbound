@@ -10,6 +10,9 @@ export const backendService = {
   autoTune: () => WailsApp.AutoTune(),
   cancelAutoTune: () => WailsApp.CancelAutoTune(),
   killWinws2: () => WailsApp.KillWinws2(),
+  getAutoTuneVNextExperimentConfig: () => WailsApp.GetAutoTuneVNextExperimentConfig(),
+  runExperimentalAutoTuneVNext: (presetId: string, customTarget: string) =>
+    WailsApp.RunExperimentalAutoTuneVNext(presetId, customTarget),
 
   // Settings & System
   getSettings: () => WailsApp.GetSettings(),

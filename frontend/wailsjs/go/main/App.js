@@ -94,6 +94,10 @@ export function GetAutoStartTaskInfo() {
   return window['go']['main']['App']['GetAutoStartTaskInfo']();
 }
 
+export function GetAutoTuneVNextExperimentConfig() {
+  return window['go']['main']['App']['GetAutoTuneVNextExperimentConfig']();
+}
+
 export function GetBypassLists() {
   return window['go']['main']['App']['GetBypassLists']();
 }
@@ -216,6 +220,10 @@ export function RunDiagnostics() {
 
 export function RunDoctor(arg1) {
   return window['go']['main']['App']['RunDoctor'](arg1);
+}
+
+export function RunExperimentalAutoTuneVNext(arg1, arg2) {
+  return window['go']['main']['App']['RunExperimentalAutoTuneVNext'](arg1, arg2);
 }
 
 export function RunStrategyLab(arg1, arg2, arg3, arg4) {

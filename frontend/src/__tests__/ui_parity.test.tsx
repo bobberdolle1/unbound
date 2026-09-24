@@ -43,6 +43,8 @@ describe('UI Parity & Precision Monochrome Tests', () => {
         handleToggleFavorite={() => {}}
         favoriteProfiles={[]}
         handleAutoTune={() => {}}
+        openAutoTuneVNext={() => {}}
+        vNextRunning={false}
         isScanning={false}
         scanProgress=""
         autotuneProgress={null}

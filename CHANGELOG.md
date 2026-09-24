@@ -12,6 +12,8 @@
 - Restore every captured macOS SOCKS proxy state transactionally on stop.
 - Add build identity metadata and publish the v0.6.9 release-identity audit.
 - Gate privileged Windows engine, network, and AutoTune tests behind `UNBOUND_RUN_WINDOWS_NETWORK_E2E=1`; ordinary `go test ./...` is hermetic.
+- Add explicit experimental AutoTune vNext UI with product-owned HTTPS presets and a protected Cloudflare control; legacy AutoTune, tray, startup, and CLI routes remain unchanged.
+- Present factual vNext lifecycle outcomes, cancellation, restoration state, redacted target details, and verified-only strategy labels without permanent activation or learning.
 
 ## [0.6.9] - 2026-09-11
 ### Windows release-correctness hotfix

@@ -1148,6 +1148,22 @@ func (a *App) AutoTuneVNext(target string, controls []string) AutoTuneVNextResul
 	return result
 }
 
+// GetAutoTuneVNextExperimentConfig exposes product-owned target presets for
+// the explicit experimental flow. Legacy AutoTuneTargets remain untouched.
+func (a *App) GetAutoTuneVNextExperimentConfig() AutoTuneVNextExperimentConfig {
+	return productVNextExperimentConfig()
+}
+
+// RunExperimentalAutoTuneVNext resolves a product preset or validated custom
+// HTTPS URL and always supplies the protected product control.
+func (a *App) RunExperimentalAutoTuneVNext(presetID string, customTarget string) AutoTuneVNextResult {
+	target, controls, _, err := resolveProductVNextExperimentTarget(presetID, customTarget)
+	if err != nil {
+		return productVNextFailure(autotunevnext.StatusPreflightFailed, "", "", "INVALID_EXPERIMENTAL_TARGET")
+	}
+	return a.AutoTuneVNext(target, controls)
+}
+
 func (a *App) CancelAutoTune() {
 	a.mu.Lock()
 	cancel := a.autoTuneCancel

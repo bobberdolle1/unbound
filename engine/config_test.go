@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"testing"
 )
 
@@ -14,6 +15,14 @@ func TestDefaultSettingsDoNotReferencePlatformSpecificProfile(t *testing.T) {
 	}
 	if settings.StartupProfileMode != "Последний использованный" {
 		t.Fatalf("startup mode = %q", settings.StartupProfileMode)
+	}
+}
+
+func TestDefaultSettingsPreserveLegacyAutoTuneTargetSymbols(t *testing.T) {
+	settings := getDefaultSettings()
+	want := []string{"youtube", "discord", "steam", "general"}
+	if !slices.Equal(settings.AutoTuneTargets, want) {
+		t.Fatalf("legacy AutoTuneTargets=%v, want %v", settings.AutoTuneTargets, want)
 	}
 }
 

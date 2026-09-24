@@ -49,6 +49,8 @@ export function GetAutoHostlistEntries():Promise<Array<engine.AutoHostlistEntry>
 
 export function GetAutoStartTaskInfo():Promise<engine.TaskRegistrationInfo>;
 
+export function GetAutoTuneVNextExperimentConfig():Promise<main.AutoTuneVNextExperimentConfig>;
+
 export function GetBypassLists():Promise<Array<string>>;
 
 export function GetDoctorRunState(arg1:string):Promise<engine.DoctorRunState>;
@@ -110,6 +112,8 @@ export function RunBypassComparison():Promise<engine.BypassComparisonResult>;
 export function RunDiagnostics():Promise<Array<engine.DiagnosticResult>>;
 
 export function RunDoctor(arg1:string):Promise<engine.DoctorResult>;
+
+export function RunExperimentalAutoTuneVNext(arg1:string,arg2:string):Promise<main.AutoTuneVNextResult>;
 
 export function RunStrategyLab(arg1:string,arg2:string,arg3:string,arg4:Array<string>):Promise<engine.StrategyLabReport>;
 

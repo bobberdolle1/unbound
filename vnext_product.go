@@ -29,6 +29,71 @@ type AutoTuneVNextRequest struct {
 	Controls []string `json:"controls,omitempty"`
 }
 
+// AutoTuneVNextTargetPreset is a product-owned HTTPS diagnostic target shown
+// by the explicitly experimental vNext flow.
+type AutoTuneVNextTargetPreset struct {
+	ID     string `json:"id"`
+	Label  string `json:"label"`
+	Target string `json:"target"`
+}
+
+// AutoTuneVNextExperimentConfig keeps the target and protected-control policy
+// in the product layer instead of asking the frontend to construct URLs.
+type AutoTuneVNextExperimentConfig struct {
+	Targets        []AutoTuneVNextTargetPreset `json:"targets"`
+	DefaultControl AutoTuneVNextTargetPreset   `json:"default_control"`
+}
+
+var productVNextExperimentTargets = []AutoTuneVNextTargetPreset{
+	{ID: "youtube-web", Label: "YouTube", Target: "https://www.youtube.com/generate_204"},
+	{ID: "discord-api", Label: "Discord", Target: "https://discord.com/api/v10/gateway"},
+	{ID: "steam-store", Label: "Steam", Target: "https://store.steampowered.com/"},
+}
+
+var productVNextDefaultControl = AutoTuneVNextTargetPreset{
+	ID: "cloudflare-control", Label: "Cloudflare", Target: "https://cloudflare.com/cdn-cgi/trace",
+}
+
+func productVNextExperimentConfig() AutoTuneVNextExperimentConfig {
+	return AutoTuneVNextExperimentConfig{
+		Targets:        append([]AutoTuneVNextTargetPreset(nil), productVNextExperimentTargets...),
+		DefaultControl: productVNextDefaultControl,
+	}
+}
+
+func resolveProductVNextExperimentTarget(presetID, customTarget string) (string, []string, string, error) {
+	config := productVNextExperimentConfig()
+	control, _, err := normalizeVNextTarget(config.DefaultControl.Target)
+	if err != nil {
+		return "", nil, "", err
+	}
+
+	presetID = strings.TrimSpace(presetID)
+	var rawTarget string
+	switch presetID {
+	case "custom":
+		rawTarget = customTarget
+	default:
+		if strings.TrimSpace(customTarget) != "" {
+			return "", nil, "", errors.New("custom target requires custom preset")
+		}
+		for _, preset := range config.Targets {
+			if preset.ID == presetID {
+				rawTarget = preset.Target
+				break
+			}
+		}
+		if rawTarget == "" {
+			return "", nil, "", errors.New("unknown experimental target preset")
+		}
+	}
+	target, publicTarget, err := normalizeVNextTarget(rawTarget)
+	if err != nil {
+		return "", nil, "", err
+	}
+	return target.URL, []string{control.URL}, publicTarget, nil
+}
+
 type AutoTuneVNextAttribution struct {
 	PrimaryFinding string `json:"primary_finding,omitempty"`
 	Confidence     string `json:"confidence,omitempty"`
@@ -254,7 +319,7 @@ func productionVNextStrategyCatalog(hostname string) ([]strategyir.Strategy, err
 }
 
 func normalizeVNextTarget(raw string) (autotunevnext.Target, string, error) {
-	parsed, err := url.ParseRequestURI(strings.TrimSpace(raw))
+	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || parsed.Scheme != "https" || parsed.User != nil || parsed.Hostname() == "" {
 		return autotunevnext.Target{}, "", errors.New("invalid HTTPS target")
 	}
@@ -262,6 +327,7 @@ func normalizeVNextTarget(raw string) (autotunevnext.Target, string, error) {
 		return autotunevnext.Target{}, "", err
 	}
 	parsed.Fragment = ""
+	parsed.RawFragment = ""
 	parsed.Scheme = "https"
 	parsed.Host = strings.ToLower(parsed.Host)
 	public := url.URL{Scheme: parsed.Scheme, Host: parsed.Host, Path: parsed.Path}

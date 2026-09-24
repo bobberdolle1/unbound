@@ -72,6 +72,8 @@ export default function App() {
   const [isDiscordCleanModalOpen, setIsDiscordCleanModalOpen] = useState(false);
   const [discordRunningProcs, setDiscordRunningProcs] = useState<string[]>([]);
   const [isStrategyLabOpen, setIsStrategyLabOpen] = useState(false);
+  const [isAutoTuneVNextOpen, setIsAutoTuneVNextOpen] = useState(false);
+  const [isAutoTuneVNextRunning, setIsAutoTuneVNextRunning] = useState(false);
 
   // Operations States
   const [isVerifyingAssets, setIsVerifyingAssets] = useState<boolean>(false);
@@ -332,7 +334,7 @@ export default function App() {
 
   const isConnected = engineState.status === 'Running';
   const isConnecting = engineState.status === 'Starting';
-  const disableMain = isConnecting || engineState.isScanning;
+  const disableMain = isConnecting || engineState.isScanning || isAutoTuneVNextRunning;
 
   const statusLedState =
     livePingData.status === 'error'
@@ -399,6 +401,8 @@ export default function App() {
             handleToggleFavorite={engineActions.handleToggleFavorite}
             favoriteProfiles={engineState.favoriteProfiles}
             handleAutoTune={engineActions.handleAutoTune}
+            openAutoTuneVNext={() => setIsAutoTuneVNextOpen(true)}
+            vNextRunning={isAutoTuneVNextRunning}
             isScanning={engineState.isScanning}
             scanProgress={engineState.scanProgress}
             autotuneProgress={engineState.autotuneProgress}
@@ -485,6 +489,9 @@ export default function App() {
         onConfirmDiscordClean={() => executeDiscordClean(true)}
         isStrategyLabOpen={isStrategyLabOpen}
         onCloseStrategyLab={() => setIsStrategyLabOpen(false)}
+        isAutoTuneVNextOpen={isAutoTuneVNextOpen}
+        onCloseAutoTuneVNext={() => setIsAutoTuneVNextOpen(false)}
+        onAutoTuneVNextRunningChange={setIsAutoTuneVNextRunning}
         onSaveDiscoveredProfileSuccess={(name) => {
           engineActions.setSelectedProfile(name);
           addToast({

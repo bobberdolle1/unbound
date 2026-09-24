@@ -937,6 +937,54 @@ export namespace main {
 	        this.outcome = source["outcome"];
 	    }
 	}
+	export class AutoTuneVNextTargetPreset {
+	    id: string;
+	    label: string;
+	    target: string;
+
+	    static createFrom(source: any = {}) {
+	        return new AutoTuneVNextTargetPreset(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.label = source["label"];
+	        this.target = source["target"];
+	    }
+	}
+	export class AutoTuneVNextExperimentConfig {
+	    targets: AutoTuneVNextTargetPreset[];
+	    default_control: AutoTuneVNextTargetPreset;
+
+	    static createFrom(source: any = {}) {
+	        return new AutoTuneVNextExperimentConfig(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.targets = this.convertValues(source["targets"], AutoTuneVNextTargetPreset);
+	        this.default_control = this.convertValues(source["default_control"], AutoTuneVNextTargetPreset);
+	    }
+
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class AutoTuneVNextLifecycleError {
 	    code: string;
 	
@@ -1001,6 +1049,7 @@ export namespace main {
 		    return a;
 		}
 	}
+
 	export class PingRecord {
 	    ts: number;
 	    lat: number;

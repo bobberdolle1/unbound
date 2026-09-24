@@ -5,6 +5,7 @@ import { DiagnosticsModal } from './DiagnosticsModal';
 import { DiscordConfirmModal } from './DiscordConfirmModal';
 import { LuaEditorModal } from './LuaEditorModal';
 import { StrategyLabModal } from './StrategyLabModal';
+import { AutoTuneVNextModal } from './AutoTuneVNextModal';
 
 interface ModalHostProps {
   // Conflict Overlay
@@ -33,6 +34,10 @@ interface ModalHostProps {
   isStrategyLabOpen?: boolean;
   onCloseStrategyLab?: () => void;
   onSaveDiscoveredProfileSuccess?: (name: string) => void;
+  // Experimental AutoTune vNext Modal
+  isAutoTuneVNextOpen?: boolean;
+  onCloseAutoTuneVNext?: () => void;
+  onAutoTuneVNextRunningChange?: (running: boolean) => void;
   // LUA Editor Modal
   isLuaOpen: boolean;
   onCloseLuaModal: () => void;
@@ -108,6 +113,12 @@ export const ModalHost: React.FC<ModalHostProps> = (props) => {
         isOpen={Boolean(props.isStrategyLabOpen)}
         onClose={props.onCloseStrategyLab || (() => {})}
         onSaveProfileSuccess={props.onSaveDiscoveredProfileSuccess}
+      />
+
+      <AutoTuneVNextModal
+        isOpen={Boolean(props.isAutoTuneVNextOpen)}
+        onClose={props.onCloseAutoTuneVNext || (() => {})}
+        onRunningChange={props.onAutoTuneVNextRunningChange || (() => {})}
       />
     </>
   );

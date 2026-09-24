@@ -17,6 +17,8 @@ interface MainControlViewProps {
   handleToggleFavorite: () => void;
   favoriteProfiles: string[];
   handleAutoTune: () => void;
+  openAutoTuneVNext: () => void;
+  vNextRunning: boolean;
   isScanning: boolean;
   scanProgress: string;
   autotuneProgress: { percent?: number; msg?: string } | null;
@@ -38,6 +40,8 @@ export const MainControlView: React.FC<MainControlViewProps> = ({
   handleToggleFavorite,
   favoriteProfiles,
   handleAutoTune,
+  openAutoTuneVNext,
+  vNextRunning,
   isScanning,
   scanProgress,
   autotuneProgress,
@@ -109,11 +113,25 @@ export const MainControlView: React.FC<MainControlViewProps> = ({
 
         <button
           onClick={handleAutoTune}
-          disabled={disableMain || isScanning}
+          disabled={disableMain || isScanning || vNextRunning}
           className="btn-ui-secondary w-full justify-center"
         >
           <UIZap className="w-4 h-4" />
           <span>{isScanning ? 'Сканирование...' : 'Автоподбор стратегии'}</span>
+        </button>
+      </div>
+
+      <div className="rounded-[var(--ui-radius)] border border-dashed border-[var(--ui-border)] p-3 flex items-center justify-between gap-3">
+        <div>
+          <div className="text-xs font-semibold">Экспериментальные инструменты</div>
+          <div className="mt-0.5 text-xs text-[var(--ui-text-muted)]">Проверка не заменяет обычный автоподбор и не активирует стратегию.</div>
+        </div>
+        <button
+          onClick={openAutoTuneVNext}
+          disabled={disableMain || isScanning || vNextRunning}
+          className="btn-ui-secondary shrink-0 text-xs"
+        >
+          AutoTune vNext (эксперимент)
         </button>
       </div>
 
