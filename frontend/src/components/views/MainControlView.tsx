@@ -112,26 +112,26 @@ export const MainControlView: React.FC<MainControlViewProps> = ({
         </div>
 
         <button
-          onClick={handleAutoTune}
+          onClick={openAutoTuneVNext}
           disabled={disableMain || isScanning || vNextRunning}
           className="btn-ui-secondary w-full justify-center"
         >
           <UIZap className="w-4 h-4" />
-          <span>{isScanning ? 'Сканирование...' : 'Автоподбор стратегии'}</span>
+          <span>{vNextRunning ? 'Проверка стратегии...' : 'Автоподбор стратегии'}</span>
         </button>
       </div>
 
       <div className="rounded-[var(--ui-radius)] border border-dashed border-[var(--ui-border)] p-3 flex items-center justify-between gap-3">
         <div>
-          <div className="text-xs font-semibold">Экспериментальные инструменты</div>
-          <div className="mt-0.5 text-xs text-[var(--ui-text-muted)]">Проверка не заменяет обычный автоподбор и не активирует стратегию.</div>
+          <div className="text-xs font-semibold">Совместимость</div>
+          <div className="mt-0.5 text-xs text-[var(--ui-text-muted)]">Legacy AutoTune остаётся доступным для существующих профилей.</div>
         </div>
         <button
-          onClick={openAutoTuneVNext}
+          onClick={handleAutoTune}
           disabled={disableMain || isScanning || vNextRunning}
           className="btn-ui-secondary shrink-0 text-xs"
         >
-          AutoTune vNext (эксперимент)
+          Legacy AutoTune
         </button>
       </div>
 

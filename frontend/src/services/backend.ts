@@ -13,6 +13,9 @@ export const backendService = {
   getAutoTuneVNextExperimentConfig: () => WailsApp.GetAutoTuneVNextExperimentConfig(),
   runExperimentalAutoTuneVNext: (presetId: string, customTarget: string) =>
     WailsApp.RunExperimentalAutoTuneVNext(presetId, customTarget),
+  applyAutoTuneVNextSelection: (token: string) => WailsApp.ApplyAutoTuneVNextSelection(token),
+  revertAutoTuneVNext: () => WailsApp.RevertAutoTuneVNext(),
+  getAutoTuneVNextManagedStatus: () => WailsApp.GetAutoTuneVNextManagedStatus(),
 
   // Settings & System
   getSettings: () => WailsApp.GetSettings(),

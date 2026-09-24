@@ -13,6 +13,8 @@ export function AutoTune():Promise<string>;
 
 export function AutoTuneVNext(arg1:string,arg2:Array<string>):Promise<main.AutoTuneVNextResult>;
 
+export function ApplyAutoTuneVNextSelection(arg1:string):Promise<main.AutoTuneVNextManagedStatus>;
+
 export function CancelAutoTune():Promise<void>;
 
 export function CancelDoctor(arg1:string):Promise<void>;
@@ -50,6 +52,8 @@ export function GetAutoHostlistEntries():Promise<Array<engine.AutoHostlistEntry>
 export function GetAutoStartTaskInfo():Promise<engine.TaskRegistrationInfo>;
 
 export function GetAutoTuneVNextExperimentConfig():Promise<main.AutoTuneVNextExperimentConfig>;
+
+export function GetAutoTuneVNextManagedStatus():Promise<main.AutoTuneVNextManagedStatus>;
 
 export function GetBypassLists():Promise<Array<string>>;
 
@@ -114,6 +118,8 @@ export function RunDiagnostics():Promise<Array<engine.DiagnosticResult>>;
 export function RunDoctor(arg1:string):Promise<engine.DoctorResult>;
 
 export function RunExperimentalAutoTuneVNext(arg1:string,arg2:string):Promise<main.AutoTuneVNextResult>;
+
+export function RevertAutoTuneVNext():Promise<main.AutoTuneVNextManagedStatus>;
 
 export function RunStrategyLab(arg1:string,arg2:string,arg3:string,arg4:Array<string>):Promise<engine.StrategyLabReport>;
 

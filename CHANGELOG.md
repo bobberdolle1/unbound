@@ -18,6 +18,9 @@
 - Add provider-independent Linux, Windows, and macOS CI entrypoints plus a Buildkite queue pipeline; GitHub Actions and release validation now consume the same repository-owned checks.
 - Correct the vNext Linux rule argv construction so Go 1.26 `vet` accepts the production parser path without changing its arguments.
 
+- Promote AutoTune vNext to the primary managed strategy flow while retaining `Legacy AutoTune` as an explicit compatibility path.
+- Add backend-owned verified-selection grants, fresh exact-edge Apply revalidation, atomic logical activation intent, startup drift checks, managed Revert ownership, and factual tray/UI status. Hermetic tests cover these lifecycle paths; natural-network effectiveness remains unproven.
+
 ## [0.6.9] - 2026-09-11
 ### Windows release-correctness hotfix
 

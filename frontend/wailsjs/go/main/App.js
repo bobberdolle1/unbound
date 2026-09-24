@@ -22,6 +22,10 @@ export function AutoTuneVNext(arg1, arg2) {
   return window['go']['main']['App']['AutoTuneVNext'](arg1, arg2);
 }
 
+export function ApplyAutoTuneVNextSelection(arg1) {
+  return window['go']['main']['App']['ApplyAutoTuneVNextSelection'](arg1);
+}
+
 export function CancelAutoTune() {
   return window['go']['main']['App']['CancelAutoTune']();
 }
@@ -96,6 +100,10 @@ export function GetAutoStartTaskInfo() {
 
 export function GetAutoTuneVNextExperimentConfig() {
   return window['go']['main']['App']['GetAutoTuneVNextExperimentConfig']();
+}
+
+export function GetAutoTuneVNextManagedStatus() {
+  return window['go']['main']['App']['GetAutoTuneVNextManagedStatus']();
 }
 
 export function GetBypassLists() {
@@ -224,6 +232,10 @@ export function RunDoctor(arg1) {
 
 export function RunExperimentalAutoTuneVNext(arg1, arg2) {
   return window['go']['main']['App']['RunExperimentalAutoTuneVNext'](arg1, arg2);
+}
+
+export function RevertAutoTuneVNext() {
+  return window['go']['main']['App']['RevertAutoTuneVNext']();
 }
 
 export function RunStrategyLab(arg1, arg2, arg3, arg4) {

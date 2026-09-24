@@ -1008,6 +1008,8 @@ export namespace main {
 	    candidate_outcomes?: AutoTuneVNextCandidateOutcome[];
 	    selected_strategy_id?: string;
 	    selected_fingerprint?: string;
+	    apply_available: boolean;
+	    apply_token?: string;
 	    limitations?: string[];
 	    lifecycle_errors?: AutoTuneVNextLifecycleError[];
 	
@@ -1027,6 +1029,8 @@ export namespace main {
 	        this.candidate_outcomes = this.convertValues(source["candidate_outcomes"], AutoTuneVNextCandidateOutcome);
 	        this.selected_strategy_id = source["selected_strategy_id"];
 	        this.selected_fingerprint = source["selected_fingerprint"];
+	        this.apply_available = source["apply_available"];
+	        this.apply_token = source["apply_token"];
 	        this.limitations = source["limitations"];
 	        this.lifecycle_errors = this.convertValues(source["lifecycle_errors"], AutoTuneVNextLifecycleError);
 	    }
@@ -1048,6 +1052,31 @@ export namespace main {
 		    }
 		    return a;
 		}
+	}
+
+	export class AutoTuneVNextManagedStatus {
+	    state: string;
+	    active: boolean;
+	    needs_revalidation: boolean;
+	    target?: string;
+	    strategy_id?: string;
+	    fingerprint?: string;
+	    backend?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new AutoTuneVNextManagedStatus(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.state = source["state"];
+	        this.active = source["active"];
+	        this.needs_revalidation = source["needs_revalidation"];
+	        this.target = source["target"];
+	        this.strategy_id = source["strategy_id"];
+	        this.fingerprint = source["fingerprint"];
+	        this.backend = source["backend"];
+	    }
 	}
 
 	export class PingRecord {
