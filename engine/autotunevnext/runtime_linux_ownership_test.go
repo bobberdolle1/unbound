@@ -66,7 +66,15 @@ func testLinuxRuntime(t *testing.T, runner *linuxRunnerStub) *LinuxRuntime {
 func closedLinuxCandidate(spec LinuxNFQueueSpec) *linuxCandidate {
 	done := make(chan struct{})
 	close(done)
-	return &linuxCandidate{done: done, cancel: func() {}, spec: spec, mode: "iptables", pid: 4242}
+	return &linuxCandidate{
+		done:           done,
+		cancel:         func() {},
+		spec:           spec,
+		mode:           "iptables",
+		pid:            4242,
+		processStarted: true,
+		ruleInstalled:  true,
+	}
 }
 
 func TestLinuxDeactivateRetainsOwnershipUntilProcessAndRuleAreGone(t *testing.T) {
