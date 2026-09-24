@@ -17,7 +17,10 @@ import (
 	"unbound/engine/strategyir"
 )
 
-const productVNextCatalogStatus = "CATALOG_REQUIRED"
+const (
+	productVNextCatalogStatus            = "READY"
+	productVNextCatalogStatusUnavailable = "UNAVAILABLE"
+)
 
 var errVNextMeasurementPathUnsupported = errors.New("MEASUREMENT_PATH_UNSUPPORTED")
 
@@ -106,39 +109,49 @@ func (s *productVNextService) Run(ctx context.Context, input AutoTuneVNextReques
 		}
 		controls = append(controls, control)
 	}
+	catalogURL, err := url.Parse(target.URL)
+	if err != nil {
+		return productVNextFailure(autotunevnext.StatusPreflightFailed, publicTarget, "", "PRODUCT_CATALOG_INVALID")
+	}
+	catalog, err := productionVNextStrategyCatalog(catalogURL.Hostname())
+	if err != nil {
+		return productVNextFailure(autotunevnext.StatusPreflightFailed, publicTarget, "", "PRODUCT_CATALOG_INVALID")
+	}
 	adapter := newProductRuntimeProvider(s.manager)
 	if err := adapter.validateRestorableState(); err != nil {
-		return productVNextFailure(autotunevnext.StatusPreflightFailed, publicTarget, "", "PRODUCT_STATE_UNCERTAIN")
+		return productVNextFailureWithCatalog(autotunevnext.StatusPreflightFailed, publicTarget, "", "PRODUCT_STATE_UNCERTAIN", productVNextCatalogStatus)
 	}
 	runtimeBinding, err := s.deps.newRuntime(adapter, s.assets, logProductVNextPhysicalEvent)
 	if err != nil {
 		if errors.Is(err, errVNextMeasurementPathUnsupported) {
-			return productVNextFailure(autotunevnext.StatusPreflightFailed, publicTarget, "", "MEASUREMENT_PATH_UNSUPPORTED")
+			return productVNextFailureWithCatalog(autotunevnext.StatusPreflightFailed, publicTarget, "", "MEASUREMENT_PATH_UNSUPPORTED", productVNextCatalogStatus)
 		}
-		return productVNextFailure(autotunevnext.StatusPreflightFailed, publicTarget, "", "PRODUCT_RUNTIME_UNAVAILABLE")
+		return productVNextFailureWithCatalog(autotunevnext.StatusPreflightFailed, publicTarget, "", "PRODUCT_RUNTIME_UNAVAILABLE", productVNextCatalogStatus)
 	}
 	resolver, err := s.deps.newResolver(s.assets)
 	if err != nil {
-		return productVNextFailure(autotunevnext.StatusPreflightFailed, publicTarget, string(runtimeBinding.backend), "PRODUCT_ASSETS_UNAVAILABLE")
+		return productVNextFailureWithCatalog(autotunevnext.StatusPreflightFailed, publicTarget, string(runtimeBinding.backend), "PRODUCT_ASSETS_UNAVAILABLE", productVNextCatalogStatus)
 	}
 	request := autotunevnext.Request{
 		Target:       target,
 		Controls:     controls,
-		Strategies:   productionVNextStrategyCatalog(),
+		Strategies:   catalog,
 		Backend:      runtimeBinding.backend,
 		NetworkLabel: "product-autotune-vnext",
 	}
 	result, err := s.deps.run(ctx, request, s.deps.observer, runtimeBinding.executor, runtimeBinding.preflight, resolver)
 	if err != nil {
-		return productVNextFailure(autotunevnext.StatusInconclusive, publicTarget, string(runtimeBinding.backend), "OPERATION_CONFLICT")
+		return productVNextFailureWithCatalog(autotunevnext.StatusInconclusive, publicTarget, string(runtimeBinding.backend), "OPERATION_CONFLICT", productVNextCatalogStatus)
 	}
-	mapped := mapAutoTuneVNextResult(result, publicTarget)
-	mapped.Limitations = append(mapped.Limitations, productVNextCatalogStatus)
-	return mapped
+	return mapAutoTuneVNextResult(result, publicTarget)
 }
 
 func productVNextFailure(status autotunevnext.Status, target, backend, limitation string) AutoTuneVNextResult {
-	return AutoTuneVNextResult{Status: string(status), Target: target, Backend: backend, CatalogStatus: productVNextCatalogStatus, Limitations: []string{limitation}}
+	return productVNextFailureWithCatalog(status, target, backend, limitation, productVNextCatalogStatusUnavailable)
+}
+
+func productVNextFailureWithCatalog(status autotunevnext.Status, target, backend, limitation, catalogStatus string) AutoTuneVNextResult {
+	return AutoTuneVNextResult{Status: string(status), Target: target, Backend: backend, CatalogStatus: catalogStatus, Limitations: []string{limitation}}
 }
 
 func mapAutoTuneVNextResult(result autotunevnext.Result, publicTarget string) AutoTuneVNextResult {
@@ -170,11 +183,74 @@ func mapAttribution(report attribution.AttributionReport) AutoTuneVNextAttributi
 	return AutoTuneVNextAttribution{PrimaryFinding: string(report.PrimaryFinding.Code), Confidence: string(report.Confidence)}
 }
 
-func productionVNextStrategyCatalog() []strategyir.Strategy {
-	// No audited product StrategyIR candidates exist yet. In particular, this
-	// boundary must never derive candidates from legacy profile names or expose
-	// AcceptanceTLSStrategy, which remains developer-only.
-	return nil
+// productionVNextStrategyCatalog is a closed audited catalog. The caller may
+// choose only the normalized explicit hostname; all packet semantics remain
+// static reviewed product code.
+func productionVNextStrategyCatalog(hostname string) ([]strategyir.Strategy, error) {
+	hostname = strings.ToLower(strings.TrimSpace(hostname))
+	if err := validateVNextHostname(hostname); err != nil {
+		return nil, err
+	}
+	one, two, overlap := 1, 2, 652
+	selector := func() strategyir.TrafficSelector {
+		return strategyir.TrafficSelector{
+			ApplicationProtocols: []strategyir.ApplicationProtocol{strategyir.ApplicationTLS},
+			IPFamilies:           []strategyir.IPFamily{strategyir.IPFamilyAny},
+			Direction:            strategyir.DirectionOutbound,
+			TCPPorts:             []strategyir.PortRange{{Start: 443, End: 443}},
+			Scope:                strategyir.Scope{Host: strategyir.HostScope{Mode: strategyir.HostScopeExplicit, Hosts: []string{hostname}}},
+		}
+	}
+	catalog := []strategyir.Strategy{
+		{
+			SchemaVersion: strategyir.SchemaVersion, ID: "prod-tls-multisplit-1-v1", Name: "Production TLS multisplit at byte 1",
+			Transport: []strategyir.Transport{strategyir.TransportTCP}, Selector: selector(),
+			Operations: []strategyir.Operation{{Type: strategyir.OperationMultiSplit, Positions: []strategyir.PositionExpr{{Absolute: &one}}}},
+			Safety:     strategyir.SafetyPolicy{Aggressiveness: "LOW", TargetOnly: true},
+			Metadata:   strategyir.Metadata{Description: "LOW: one target-local TLS segmentation point without fake payload or overlap.", Source: "Production vNext V1; reviewed target-local TLS multisplit semantic"},
+		},
+		{
+			SchemaVersion: strategyir.SchemaVersion, ID: "prod-tls-multisplit-overlap-v1", Name: "Production TLS overlap multisplit",
+			Transport: []strategyir.Transport{strategyir.TransportTCP}, Selector: selector(),
+			Range:      &strategyir.Cutoff{Direction: strategyir.RangeDirectionOut, Counter: strategyir.RangeCounterDataPacketNumber, Limit: 8},
+			Operations: []strategyir.Operation{{Type: strategyir.OperationMultiSplit, Positions: []strategyir.PositionExpr{{Absolute: &two}}, SequenceOverlap: &overlap, OverlapPatternRef: "tls-google"}},
+			Safety:     strategyir.SafetyPolicy{Aggressiveness: "MEDIUM", TargetOnly: true},
+			Metadata:   strategyir.Metadata{Description: "MEDIUM: target-local TLS segmentation with sequence overlap.", Source: "Production vNext V1; reviewed from RepresentativeFixtures alternative-multisplit packet-operation semantics"},
+		},
+		{
+			SchemaVersion: strategyir.SchemaVersion, ID: "prod-tls-hostfakesplit-v1", Name: "Production TLS host fake split",
+			Transport: []strategyir.Transport{strategyir.TransportTCP}, Selector: selector(),
+			Range:      &strategyir.Cutoff{Direction: strategyir.RangeDirectionOut, Counter: strategyir.RangeCounterDataPacketNumber, Limit: 8},
+			Operations: []strategyir.Operation{{Type: strategyir.OperationHostFakeSplit, Positions: []strategyir.PositionExpr{{Anchor: strategyir.AnchorMidSLD}}, HostTemplate: "ozon.ru", Fake: &strategyir.FakeModifiers{Repeat: 4, TCPMD5: true, TCPTimestamp: true}}},
+			Safety:     strategyir.SafetyPolicy{Aggressiveness: "MEDIUM", TargetOnly: true},
+			Metadata:   strategyir.Metadata{Description: "MEDIUM: repeated target-local host fake split with TCP modifiers.", Source: "Production vNext V1; reviewed from RepresentativeFixtures recommended-hostfakesplit packet-operation semantics"},
+		},
+	}
+	if len(catalog) == 0 || len(catalog) > autotunevnext.DefaultPolicy().MaxCandidates {
+		return nil, errors.New("invalid production catalog size")
+	}
+	ids := make(map[string]struct{}, len(catalog))
+	fingerprints := make(map[string]struct{}, len(catalog))
+	for index, strategy := range catalog {
+		normalized, err := strategyir.Canonicalize(strategy)
+		if err != nil {
+			return nil, err
+		}
+		fingerprint, err := strategyir.Fingerprint(normalized)
+		if err != nil {
+			return nil, err
+		}
+		if _, exists := ids[normalized.ID]; exists {
+			return nil, errors.New("duplicate production strategy id")
+		}
+		if _, exists := fingerprints[fingerprint]; exists {
+			return nil, errors.New("duplicate production strategy fingerprint")
+		}
+		ids[normalized.ID] = struct{}{}
+		fingerprints[fingerprint] = struct{}{}
+		catalog[index] = normalized
+	}
+	return catalog, nil
 }
 
 func normalizeVNextTarget(raw string) (autotunevnext.Target, string, error) {

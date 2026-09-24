@@ -145,14 +145,21 @@ func TestNormalizeVNextTargetRejectsUnsafeInputs(t *testing.T) {
 	}
 }
 
-func TestProductionVNextCatalogIsEmptyAndExcludesAcceptanceStrategy(t *testing.T) {
-	for _, strategy := range productionVNextStrategyCatalog() {
+func TestProductionVNextCatalogExcludesAcceptanceStrategy(t *testing.T) {
+	catalog, err := productionVNextStrategyCatalog("target.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, strategy := range catalog {
 		if strategy.ID == "autotune-acceptance-tls-split-v1" {
 			t.Fatal("acceptance strategy leaked into production catalog")
 		}
+		if strategy.ID == "alternative-fake-tls" {
+			t.Fatal("high-risk fake TLS fixture leaked into production catalog")
+		}
 	}
-	if catalog := productionVNextStrategyCatalog(); len(catalog) != 0 {
-		t.Fatalf("catalog=%v, want empty until audited candidates exist", catalog)
+	if len(catalog) == 0 {
+		t.Fatal("production catalog is empty")
 	}
 }
 
@@ -174,7 +181,7 @@ func TestAutoTuneVNextResultSerializationIsRedactedAndStable(t *testing.T) {
 		Status:        autotunevnext.StatusCompletedNoEligibleCandidates,
 		StateRestored: true,
 		Backend:       backendcap.Zapret2Windows,
-		Limitations:   []string{"CATALOG_REQUIRED"},
+		Limitations:   []string{"TEST_LIMITATION"},
 		Experiments: []autotunevnext.CandidateExperiment{{
 			StrategyID: "candidate", PlannerStatus: planner.StatusEligible, Outcome: autotunevnext.OutcomeNotRunPolicy,
 		}},
