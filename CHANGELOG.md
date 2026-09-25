@@ -13,7 +13,7 @@
 - Add build identity metadata and publish the v0.6.9 release-identity audit.
 - Gate privileged Windows engine, network, and AutoTune tests behind `UNBOUND_RUN_WINDOWS_NETWORK_E2E=1`; ordinary `go test ./...` is hermetic.
 - Add the primary AutoTune vNext UI with product-owned HTTPS presets, protected Cloudflare control, redacted managed state, and an explicit `Legacy AutoTune` fallback.
-- Add managed-intent suspend-on-shutdown, explicit-revert clearing, lifetime exact-edge health monitoring with bounded recovery, restoration-ownership retries, deterministic startup precedence, and factual persistence failure states. Natural-network effectiveness remains unproven.
+- Add managed-intent suspend-on-shutdown, explicit-revert clearing, current-edge drift revalidation without widening exact capture, lifetime health monitoring with bounded recovery, restoration-ownership retries, and factual persistence failure states. Quit's failsafe now waits the bounded vNext operation and restoration window. Natural-network effectiveness remains unproven.
 
 - Add provider-independent Linux, Windows, and macOS CI entrypoints plus a Buildkite queue pipeline; GitHub Actions and release validation now consume the same repository-owned checks.
 - Correct the vNext Linux rule argv construction so Go 1.26 `vet` accepts the production parser path without changing its arguments.

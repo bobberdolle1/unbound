@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"net"
 	"os"
 	"testing"
 	"time"
@@ -16,9 +17,11 @@ import (
 
 type managedVNextSequenceObserver struct {
 	results []observatory.ObservationResult
+	calls   []observatory.Options
 }
 
-func (o *managedVNextSequenceObserver) Observe(context.Context, string, observatory.Options) (observatory.ObservationResult, error) {
+func (o *managedVNextSequenceObserver) Observe(_ context.Context, _ string, options observatory.Options) (observatory.ObservationResult, error) {
+	o.calls = append(o.calls, options)
 	if len(o.results) == 0 {
 		return observatory.ObservationResult{}, errors.New("unexpected observation")
 	}
@@ -58,6 +61,16 @@ func managedVNextObservation(success bool) observatory.ObservationResult {
 		FinalBoundary:       boundary,
 		Classification:      classification,
 	}
+}
+
+func managedVNextObservationAt(success bool, edge string) observatory.ObservationResult {
+	result := managedVNextObservation(success)
+	result.Attempts[0].ResolvedIP = edge
+	if net.ParseIP(edge).To4() == nil {
+		result.Attempts[0].AddressFamily = observatory.AddressFamilyIPv6
+		result.NetworkContext.AddressFamily = observatory.AddressFamilyIPv6
+	}
+	return result
 }
 
 type managedVNextRequestedAssets struct{}
@@ -430,5 +443,137 @@ func TestHealthRevalidationReactivatesExactSavedStrategy(t *testing.T) {
 	}
 	if status := service.RevalidateActive(context.Background()); status.State != "APPLIED" || !status.Active || status.StrategyID != state.StrategyID {
 		t.Fatalf("health revalidation status=%+v", status)
+	}
+}
+
+func TestManagedHealthySameEdgeHealthy(t *testing.T) {
+	restore := engine.SetConfigDirForTest(t.TempDir())
+	defer restore()
+	service, _, _ := appliedManagedVNextService(t)
+	observer := service.deps.observer.(*managedVNextSequenceObserver)
+	start := len(observer.calls)
+	observer.results = []observatory.ObservationResult{managedVNextObservation(true)}
+
+	if !service.ManagedHealthy(context.Background()) {
+		t.Fatal("managed health rejected the current exact edge")
+	}
+	if got := observer.calls[start]; len(got.ResolvedIP) != 0 || got.AddressFamily != observatory.AddressFamilyAny {
+		t.Fatalf("health observation was not current-edge discovery: %#v", got)
+	}
+}
+
+func TestManagedHealthEdgeDriftTriggersRevalidation(t *testing.T) {
+	restore := engine.SetConfigDirForTest(t.TempDir())
+	defer restore()
+	service, _, _ := appliedManagedVNextService(t)
+	observer := service.deps.observer.(*managedVNextSequenceObserver)
+	start := len(observer.calls)
+	observer.results = []observatory.ObservationResult{managedVNextObservationAt(true, "192.0.2.2")}
+
+	if service.ManagedHealthy(context.Background()) {
+		t.Fatal("managed health accepted a changed target edge")
+	}
+	if got := observer.calls[start]; len(got.ResolvedIP) != 0 || got.AddressFamily != observatory.AddressFamilyAny {
+		t.Fatalf("drift observation reused candidate edge: %#v", got)
+	}
+}
+
+func TestEdgeDriftDirectNowWorksSuspends(t *testing.T) {
+	restore := engine.SetConfigDirForTest(t.TempDir())
+	defer restore()
+	service, _, _ := appliedManagedVNextService(t)
+	observer := service.deps.observer.(*managedVNextSequenceObserver)
+	observer.results = []observatory.ObservationResult{managedVNextObservationAt(true, "192.0.2.2")}
+	if service.ManagedHealthy(context.Background()) {
+		t.Fatal("changed target edge did not require revalidation")
+	}
+	service.deps.run = func(context.Context, autotunevnext.Request, autotunevnext.Observer, autotunevnext.Executor, autotunevnext.HostPreflight, autotunevnext.AssetResolver) (autotunevnext.Result, error) {
+		return autotunevnext.Result{Status: autotunevnext.StatusCompletedNoActionNeeded, StateRestored: true}, nil
+	}
+	if status := service.RevalidateActive(context.Background()); status.State != "SAVED_NOT_CURRENTLY_NEEDED" || status.Active {
+		t.Fatalf("drift revalidation status=%+v", status)
+	}
+}
+
+func TestEdgeDriftReverifiedReappliesNewEdgeWithoutOldEdgeReuse(t *testing.T) {
+	restore := engine.SetConfigDirForTest(t.TempDir())
+	defer restore()
+	service, _, _ := appliedManagedVNextService(t)
+	state, present, err := loadVNextManagedState()
+	if err != nil || !present {
+		t.Fatalf("saved state present=%t err=%v", present, err)
+	}
+	observer := service.deps.observer.(*managedVNextSequenceObserver)
+	observer.results = []observatory.ObservationResult{managedVNextObservationAt(true, "192.0.2.2")}
+	if service.ManagedHealthy(context.Background()) {
+		t.Fatal("changed target edge did not require revalidation")
+	}
+	start := len(observer.calls)
+	observer.results = []observatory.ObservationResult{
+		managedVNextObservationAt(false, "192.0.2.2"),
+		managedVNextObservationAt(false, "192.0.2.2"),
+		managedVNextObservationAt(false, "192.0.2.2"),
+		managedVNextObservationAt(true, "192.0.2.2"),
+		managedVNextObservationAt(true, "192.0.2.2"),
+	}
+	service.deps.run = func(_ context.Context, _ autotunevnext.Request, _ autotunevnext.Observer, _ autotunevnext.Executor, _ autotunevnext.HostPreflight, _ autotunevnext.AssetResolver) (autotunevnext.Result, error) {
+		return autotunevnext.Result{
+			Status:              autotunevnext.StatusCompletedSelected,
+			StateRestored:       true,
+			Backend:             backendcap.Zapret2Windows,
+			SelectedStrategyID:  state.StrategyID,
+			SelectedFingerprint: state.Fingerprint,
+			Experiments:         []autotunevnext.CandidateExperiment{{StrategyID: state.StrategyID, Fingerprint: state.Fingerprint, Outcome: autotunevnext.OutcomeVerifiedFixed}},
+		}, nil
+	}
+	if status := service.RevalidateActive(context.Background()); status.State != "APPLIED" || !status.Active {
+		t.Fatalf("drift revalidation status=%+v", status)
+	}
+	service.mu.Lock()
+	candidate := service.active.activation.Candidate()
+	service.mu.Unlock()
+	if got := candidate.TargetEdge.String(); got != "192.0.2.2" {
+		t.Fatalf("reapplied candidate edge=%s", got)
+	}
+	for _, options := range observer.calls[start:] {
+		if len(options.ResolvedIP) != 0 && options.ResolvedIP.String() == "192.0.2.1" {
+			t.Fatalf("old edge was reused after drift: %#v", observer.calls[start:])
+		}
+	}
+}
+
+func TestQuitFailsafeDoesNotPreemptVNextCleanup(t *testing.T) {
+	previousSchedule := appScheduleShutdownFailsafe
+	previousExit := appForceProcessExit
+	previousQuit := appRuntimeQuit
+	t.Cleanup(func() {
+		appScheduleShutdownFailsafe = previousSchedule
+		appForceProcessExit = previousExit
+		appRuntimeQuit = previousQuit
+	})
+
+	var scheduled time.Duration
+	forcedExit := false
+	quitCalled := false
+	appScheduleShutdownFailsafe = func(delay time.Duration, _ func()) *time.Timer {
+		scheduled = delay
+		return nil
+	}
+	appForceProcessExit = func(int) { forcedExit = true }
+	appRuntimeQuit = func(context.Context) { quitCalled = true }
+
+	app := NewApp()
+	app.ctx = context.Background()
+	app.QuitApp()
+
+	wantMinimum := autotunevnext.DefaultPolicy().MaxDuration + autotunevnext.ManagedCleanupTimeout + vNextShutdownFailsafeMargin
+	if scheduled < wantMinimum {
+		t.Fatalf("failsafe delay=%s, want at least %s", scheduled, wantMinimum)
+	}
+	if forcedExit {
+		t.Fatal("QuitApp forced exit before graceful cleanup")
+	}
+	if !quitCalled {
+		t.Fatal("QuitApp did not request graceful Wails shutdown")
 	}
 }

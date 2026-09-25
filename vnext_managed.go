@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -384,9 +385,9 @@ func (s *productVNextService) Status() AutoTuneVNextManagedStatus {
 	return AutoTuneVNextManagedStatus{State: "SAVED_REVALIDATION_PENDING", NeedsRevalidation: true, Target: state.Target, StrategyID: state.StrategyID, Fingerprint: shortManagedFingerprint(state.Fingerprint), Backend: state.Backend}
 }
 
-// ManagedHealthy checks the retained exact edge through the active managed
-// runtime. An unhealthy or changed edge triggers revalidation, never a wider
-// capture scope.
+// ManagedHealthy resolves the target's current edge without pinning it to the
+// retained capture edge. Any edge or family drift requires revalidation; the
+// active capture rule remains exact-edge scoped until Suspend restores it.
 func (s *productVNextService) ManagedHealthy(ctx context.Context) bool {
 	s.mu.Lock()
 	active := s.active
@@ -395,13 +396,37 @@ func (s *productVNextService) ManagedHealthy(ctx context.Context) bool {
 		return false
 	}
 	candidate := active.activation.Candidate()
-	if len(candidate.TargetEdge) == 0 {
+	if len(candidate.TargetEdge) == 0 || candidate.TargetFamily == "" {
 		return false
 	}
 	healthCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
-	observation, err := s.deps.observer.Observe(healthCtx, active.grant.target.URL, observatory.Options{AddressFamily: candidate.TargetFamily, Transport: active.grant.target.Transport, ResolvedIP: candidate.TargetEdge, NetworkLabel: "product-autotune-vnext"})
-	return err == nil && observation.Classification == observatory.ClassSuccess
+	observation, err := s.deps.observer.Observe(healthCtx, active.grant.target.URL, observatory.Options{
+		AddressFamily: active.grant.target.AddressFamily,
+		Transport:     active.grant.target.Transport,
+		NetworkLabel:  "product-autotune-vnext",
+	})
+	if err != nil || observation.Classification != observatory.ClassSuccess {
+		return false
+	}
+	currentEdge, currentFamily, ok := concreteManagedObservationEdge(observation)
+	return ok && currentEdge.Equal(candidate.TargetEdge) && currentFamily == candidate.TargetFamily
+}
+
+func concreteManagedObservationEdge(observation observatory.ObservationResult) (net.IP, observatory.AddressFamily, bool) {
+	if observation.PrimaryAttemptIndex == nil {
+		return nil, "", false
+	}
+	index := *observation.PrimaryAttemptIndex
+	if index < 0 || index >= len(observation.Attempts) {
+		return nil, "", false
+	}
+	attempt := observation.Attempts[index]
+	edge := net.ParseIP(attempt.ResolvedIP)
+	if edge == nil || attempt.AddressFamily == "" {
+		return nil, "", false
+	}
+	return edge, attempt.AddressFamily, true
 }
 
 // RevalidateActive is one bounded recovery attempt. It restores direct state

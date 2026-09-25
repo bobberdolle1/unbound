@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"time"
 
 	"unbound/engine/attribution"
 	"unbound/engine/backendcap"
@@ -53,12 +52,13 @@ func (a *ManagedActivation) Candidate() ExecutableCandidate {
 }
 
 // Revert restores the exact snapshot even when candidate activation never
-// completed. It clears ownership only after Restore and VerifyRestored succeed.
+// completed. A verified restoration is authoritative even if an earlier
+// best-effort deactivation attempt reported an error.
 func (a *ManagedActivation) Revert(ctx context.Context) error {
 	if a == nil || !a.restorePending {
 		return nil
 	}
-	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), ManagedCleanupTimeout)
 	defer cancel()
 	var cleanupErr error
 	if a.candidateActive {
@@ -70,15 +70,17 @@ func (a *ManagedActivation) Revert(ctx context.Context) error {
 		if cleanupErr == nil {
 			cleanupErr = fmt.Errorf("RESTORE_FAILED: %w", err)
 		}
-	} else if err := a.executor.VerifyRestored(cleanupCtx, a.snapshot); err != nil {
+		return cleanupErr
+	}
+	if err := a.executor.VerifyRestored(cleanupCtx, a.snapshot); err != nil {
 		if cleanupErr == nil {
 			cleanupErr = fmt.Errorf("RESTORE_VERIFY_FAILED: %w", err)
 		}
-	} else {
-		a.restorePending = false
-		a.candidateActive = false
+		return cleanupErr
 	}
-	return cleanupErr
+	a.restorePending = false
+	a.candidateActive = false
+	return nil
 }
 
 // ApplyVerified performs a fresh exact-edge revalidation before retaining a

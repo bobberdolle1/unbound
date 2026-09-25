@@ -15,7 +15,10 @@ import (
 	"unbound/engine/strategyir"
 )
 
-const SchemaVersion = 1
+const (
+	SchemaVersion         = 1
+	ManagedCleanupTimeout = 30 * time.Second
+)
 
 type Status string
 

@@ -67,7 +67,7 @@ func onTrayAction(actionTag C.int) {
 	case 4: // Disconnect
 		_ = a.StopEngine()
 		a.TriggerTrayUpdate()
-	case 5: // AutoTune
+	case 5: // Legacy AutoTune
 		go func() {
 			a.TriggerTrayUpdate()
 			_ = a.AutoTune()
@@ -323,7 +323,7 @@ func getAppMenu(a *App) *menu.Menu {
 		})
 	}
 
-	engineMenu.AddText("Автоподбор", nil, func(*menu.CallbackData) {
+	engineMenu.AddText("Legacy AutoTune", nil, func(*menu.CallbackData) {
 		go func() {
 			a.TriggerTrayUpdate()
 			_ = a.AutoTune()

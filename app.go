@@ -57,13 +57,22 @@ type App struct {
 	doctorState  *engine.DoctorRunState
 }
 
-var appCheckAdminPrivileges = checkAdminPrivileges
+const (
+	vNextShutdownFailsafeMargin = 5 * time.Second
+)
+
+var vNextShutdownFailsafeDelay = autotunevnext.DefaultPolicy().MaxDuration + autotunevnext.ManagedCleanupTimeout + vNextShutdownFailsafeMargin
+
 var (
-	appRuntimeEventsEmit = wailsruntime.EventsEmit
-	appRuntimeLogError   = wailsruntime.LogError
-	appRuntimeLogErrorf  = wailsruntime.LogErrorf
-	appRuntimeLogInfo    = wailsruntime.LogInfo
-	appRuntimeLogInfof   = wailsruntime.LogInfof
+	appCheckAdminPrivileges     = checkAdminPrivileges
+	appRuntimeEventsEmit        = wailsruntime.EventsEmit
+	appRuntimeLogError          = wailsruntime.LogError
+	appRuntimeLogErrorf         = wailsruntime.LogErrorf
+	appRuntimeLogInfo           = wailsruntime.LogInfo
+	appRuntimeLogInfof          = wailsruntime.LogInfof
+	appRuntimeQuit              = wailsruntime.Quit
+	appScheduleShutdownFailsafe = time.AfterFunc
+	appForceProcessExit         = os.Exit
 )
 
 func NewApp() *App {
@@ -1544,10 +1553,10 @@ func (a *App) IsAutoStartEnabled() bool {
 //
 // The actual teardown lives in App.shutdown (wails OnShutdown): it waits for
 // autotune/reconnect/startup goroutines, stops the engine and removes the
-// per-process runtime directory. onBeforeClose lets the quit through only
-// when a.quitting is set — otherwise runtime.Quit is vetoed and the window
-// just hides to tray. The 5s failsafe guarantees process death even if the
-// webview teardown wedges.
+// per-process runtime directory. vNext cancellation can enter one
+// MaxDuration-bounded operation followed by an uncancelled
+// ManagedCleanupTimeout restoration transaction. The failsafe therefore adds
+// both bounds and a margin before it can force process exit.
 func (a *App) QuitApp() {
 	logger := engine.GetLogger()
 	logger.Info("App", "QuitApp requested by user")
@@ -1555,11 +1564,11 @@ func (a *App) QuitApp() {
 	a.quitting = true
 	a.closing = true
 	a.mu.Unlock()
-	time.AfterFunc(5*time.Second, func() {
+	appScheduleShutdownFailsafe(vNextShutdownFailsafeDelay, func() {
 		logger.Warn("App", "graceful shutdown timed out, forcing exit")
-		os.Exit(0)
+		appForceProcessExit(0)
 	})
-	wailsruntime.Quit(a.ctx)
+	appRuntimeQuit(a.ctx)
 }
 
 func (a *App) CheckPrivileges() bool {

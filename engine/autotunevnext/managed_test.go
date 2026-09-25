@@ -114,3 +114,22 @@ func TestManagedRevertRetainsOwnershipWhenRestoreFails(t *testing.T) {
 		t.Fatal("restore failure cleared managed ownership")
 	}
 }
+
+func TestManagedRevertTreatsVerifiedRestoreAsFactualAfterDeactivateError(t *testing.T) {
+	executor := &fakeExecutor{deactivateErr: errors.New("deactivate")}
+	activation := &ManagedActivation{
+		executor:        executor,
+		snapshot:        StateSnapshot{ID: "snapshot"},
+		candidateActive: true,
+		restorePending:  true,
+	}
+	if err := activation.Revert(context.Background()); err != nil {
+		t.Fatalf("verified restoration reported failure: %v", err)
+	}
+	if activation.restorePending || activation.candidateActive {
+		t.Fatalf("verified restoration retained ownership: %#v", activation)
+	}
+	if want := []string{"deactivate", "restore", "verify-restored"}; !slices.Equal(executor.calls, want) {
+		t.Fatalf("calls=%v want=%v", executor.calls, want)
+	}
+}

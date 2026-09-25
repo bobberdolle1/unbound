@@ -5,7 +5,6 @@ import (
 	"net"
 	"sort"
 	"strings"
-	"time"
 
 	"unbound/engine/attribution"
 	"unbound/engine/backendcap"
@@ -152,7 +151,7 @@ func (s *candidateSession) Close() error {
 		return s.closeErr
 	}
 	s.closed = true
-	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(s.parent), 30*time.Second)
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(s.parent), ManagedCleanupTimeout)
 	defer cancel()
 	s.closeErr = s.executor.Deactivate(cleanupCtx)
 	return s.closeErr
@@ -586,7 +585,7 @@ func observationFailure(result Result, parent, experiment context.Context, code 
 }
 func finalizeRestore(ctx context.Context, executor Executor, snapshot StateSnapshot, result *Result) {
 	result.Lifecycle.RestoreAttempted = true
-	restoreCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	restoreCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), ManagedCleanupTimeout)
 	defer cancel()
 	if err := executor.Restore(restoreCtx, snapshot); err != nil {
 		result.Status = StatusStateRestoreFailed
