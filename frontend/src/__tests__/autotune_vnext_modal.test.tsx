@@ -65,10 +65,20 @@ describe('AutoTune cutover', () => {
   it('routes the primary action to vNext and retains explicit Legacy AutoTune fallback', () => {
     const legacy = vi.fn();
     const vnext = vi.fn();
-    render(<MainControlView statusLedState="disconnected" isConnected={false} isConnecting={false} disableMain={false} toggleConnection={vi.fn()} selectedProfile="" setSelectedProfile={vi.fn()} sortedProfiles={[]} selectedEngine="zapret" handleToggleFavorite={vi.fn()} favoriteProfiles={[]} handleAutoTune={legacy} openAutoTuneVNext={vnext} vNextRunning={false} isScanning={false} scanProgress="" autotuneProgress={null} handleCancelAutoTune={vi.fn()} livePingData={{ active: false, latency: 0, status: 'disconnected' }} pingHistory={[]} />);
+    render(<MainControlView statusLedState="disconnected" isConnected={false} isConnecting={false} disableMain={false} toggleConnection={vi.fn()} selectedProfile="" setSelectedProfile={vi.fn()} sortedProfiles={[]} selectedEngine="zapret" handleToggleFavorite={vi.fn()} favoriteProfiles={[]} handleAutoTune={legacy} openAutoTuneVNext={vnext} vNextRunning={false} isScanning={false} scanProgress="" autotuneProgress={null} handleCancelAutoTune={vi.fn()} livePingData={{ active: false, latency: 0, status: 'disconnected' }} pingHistory={[]} managedState={{ state: 'DIRECT', active: false, needs_revalidation: false }} revertManaged={vi.fn()} />);
     fireEvent.click(screen.getByText('Автоподбор стратегии'));
     expect(vnext).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByText('Legacy AutoTune'));
     expect(legacy).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows factual managed and dormant states on the main view', () => {
+    const revert = vi.fn();
+    const { rerender } = render(<MainControlView statusLedState="disconnected" isConnected={false} isConnecting={false} disableMain={false} toggleConnection={vi.fn()} selectedProfile="" setSelectedProfile={vi.fn()} sortedProfiles={[]} selectedEngine="zapret" handleToggleFavorite={vi.fn()} favoriteProfiles={[]} handleAutoTune={vi.fn()} openAutoTuneVNext={vi.fn()} vNextRunning={false} isScanning={false} scanProgress="" autotuneProgress={null} handleCancelAutoTune={vi.fn()} livePingData={{ active: true, latency: 0, status: 'managed_active' }} pingHistory={[]} managedState={{ state: 'VNEXT_MANAGED_ACTIVE', active: true, needs_revalidation: false, strategy_id: 'prod-tls-multisplit-1-v1', target: 'https://example.test/' }} revertManaged={revert} />);
+    expect(screen.getByText('Управляемая стратегия активна')).toBeDefined();
+    fireEvent.click(screen.getByText('Отключить управляемую стратегию'));
+    expect(revert).toHaveBeenCalledTimes(1);
+    rerender(<MainControlView statusLedState="disconnected" isConnected={false} isConnecting={false} disableMain={false} toggleConnection={vi.fn()} selectedProfile="" setSelectedProfile={vi.fn()} sortedProfiles={[]} selectedEngine="zapret" handleToggleFavorite={vi.fn()} favoriteProfiles={[]} handleAutoTune={vi.fn()} openAutoTuneVNext={vi.fn()} vNextRunning={false} isScanning={false} scanProgress="" autotuneProgress={null} handleCancelAutoTune={vi.fn()} livePingData={{ active: false, latency: 0, status: 'disconnected' }} pingHistory={[]} managedState={{ state: 'SAVED_NOT_CURRENTLY_NEEDED', active: false, needs_revalidation: true }} revertManaged={revert} />);
+    expect(screen.getByText(/Сохранённая стратегия сейчас не требуется/)).toBeDefined();
   });
 });

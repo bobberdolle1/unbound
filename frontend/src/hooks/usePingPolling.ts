@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { backendService } from '../services/backend';
 import { main } from '../../wailsjs/go/models';
 
-export function usePingPolling(status: string) {
+export function usePingPolling(status: string, managedActive = false) {
   const [livePingData, setLivePingData] = useState<{
     active: boolean;
     latency: number;
@@ -33,7 +33,7 @@ export function usePingPolling(status: string) {
   }, []);
 
   useEffect(() => {
-    if (status !== 'Running') {
+    if (status !== 'Running' && !managedActive) {
       setLivePingData({ active: false, latency: 0, status: 'stopped' });
       setPingHistory([]);
       return;
@@ -63,7 +63,7 @@ export function usePingPolling(status: string) {
     poll();
     const interval = setInterval(poll, 4000);
     return () => clearInterval(interval);
-  }, [status]);
+  }, [status, managedActive]);
 
   return { livePingData, pingHistory };
 }

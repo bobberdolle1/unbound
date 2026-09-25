@@ -155,7 +155,7 @@ func (a *App) onTrayReady() {
 		mShow:       systray.AddMenuItem("Развернуть Unbound", "Показать окно приложения"),
 		mConnect:    systray.AddMenuItem("Подключить", "Запустить обход DPI"),
 		mDisconnect: systray.AddMenuItem("Отключить", "Остановить обход DPI"),
-		mAutoTune:   systray.AddMenuItem("Автоподбор", "Запустить автоматический подбор профиля"),
+		mAutoTune:   systray.AddMenuItem("Автоподбор стратегии", "Открыть основной интерфейс AutoTune vNext"),
 		mQuit:       systray.AddMenuItem("Выход", "Остановить двигатель и выйти из приложения"),
 		initialized: true,
 	}
@@ -220,11 +220,8 @@ func (a *App) onTrayReady() {
 				a.TriggerTrayUpdate()
 
 			case <-tc.mAutoTune.ClickedCh:
-				go func() {
-					a.TriggerTrayUpdate()
-					_ = a.AutoTune()
-					a.TriggerTrayUpdate()
-				}()
+				a.ShowFromTray()
+				runtime.EventsEmit(a.ctx, "open_autotune_vnext")
 
 			case <-tc.mQuit.ClickedCh:
 				a.QuitApp()

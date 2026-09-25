@@ -33,6 +33,8 @@ type App struct {
 	autoReconnectWG     sync.WaitGroup
 	startupCancel       context.CancelFunc
 	startupWG           sync.WaitGroup
+	managedHealthCancel context.CancelFunc
+	managedHealthWG     sync.WaitGroup
 	autoReconnectID     uint64
 	profileChangeMu     sync.Mutex
 	profileChange       bool
@@ -148,82 +150,15 @@ func (a *App) startup(ctx context.Context) {
 	engines := a.manager.GetEngineNames()
 	logger.Infof("App", "Registered engines: %v", engines)
 
-	// Managed vNext intent is separate from legacy settings. It never reuses a
-	// stored edge: a delayed bounded revalidation rebuilds the catalog and
-	// verifies current direct evidence before any activation.
-	if settings == nil || !settings.AutoStartProfile {
+	// Persisted managed intent has deterministic precedence over legacy
+	// AutoStartProfile. They are separate ownership models and never race.
+	_, managedIntentPresent, managedIntentErr := loadVNextManagedState()
+	if managedIntentPresent {
 		a.startManagedVNextRevalidation(ctx)
-	}
-	wailsruntime.EventsEmit(ctx, "engines_changed", engines)
-	// Auto-start profile: activate the user-selected strategy on every launch
-	// (boot or manual). This is independent of settings.AutoStart, which only
-	// registers the OS-level launch.
-	if settings != nil && settings.AutoStartProfile {
-		startupCtx, cancelStartup := context.WithCancel(ctx)
-		a.mu.Lock()
-		a.startupCancel = cancelStartup
-		a.startupWG.Add(1)
-		a.mu.Unlock()
-		go func() {
-			defer a.startupWG.Done()
-			defer cancelStartup()
-			timer := time.NewTimer(3 * time.Second)
-			defer timer.Stop()
-			select {
-			case <-startupCtx.Done():
-				return
-			case <-timer.C:
-			}
-			if strings.EqualFold(strings.TrimSpace(settings.StartupProfileMode), "autotune") ||
-				strings.TrimSpace(settings.StartupProfileMode) == "Автоподбор" {
-				a.AutoTune()
-				return
-			}
-			if len(engines) == 0 {
-				return
-			}
-			engineName := engines[0]
-			profiles := a.manager.GetProfiles(engineName)
-			if len(profiles) == 0 {
-				return
-			}
-			profileName := settings.DefaultProfile
-			if contains(profiles, settings.StartupProfileMode) {
-				profileName = settings.StartupProfileMode
-			}
-			if !contains(profiles, profileName) {
-				profileName = profiles[0]
-			}
-			logger.Info("Startup", fmt.Sprintf("Auto-recovery: trying profile %s", profileName))
-			if err := a.manager.Start(startupCtx, engineName, profileName); err != nil {
-				logger.Warnf("Startup", "Profile %s failed: %v, running AutoTune", profileName, err)
-				autoProfile := a.AutoTune()
-				if autoProfile != "Failed" && autoProfile != "Already running" && autoProfile != "Shutting down" {
-					logger.Info("Startup", fmt.Sprintf("Auto-recovery: switched to %s", autoProfile))
-				}
-				return
-			}
-			_ = engine.SaveLastProfile(profileName)
-			if settings.AutoReconnect {
-				a.AutoReconnectMonitor()
-			}
-			timer.Reset(5 * time.Second)
-			select {
-			case <-startupCtx.Done():
-				return
-			case <-timer.C:
-			}
-			ping := a.GetLivePing()
-			status, _ := ping["status"].(string)
-			if status == "blocked" || status == "disconnected" {
-				logger.Warn("Startup", "Profile started but connectivity blocked, running AutoTune")
-				_ = a.manager.Stop()
-				autoProfile := a.AutoTune()
-				if autoProfile != "Failed" && autoProfile != "Already running" && autoProfile != "Shutting down" {
-					logger.Info("Startup", fmt.Sprintf("Auto-recovery: switched to %s", autoProfile))
-				}
-			}
-		}()
+	} else if settings != nil && settings.AutoStartProfile {
+		a.startLegacyProfileStartup(ctx, settings, engines)
+	} else if managedIntentErr != nil {
+		engine.GetLogger().Warnf("AutoTuneVNext", "managed intent ignored: %v", managedIntentErr)
 	}
 
 	a.setupTray()
@@ -268,9 +203,134 @@ func (a *App) startManagedVNextRevalidation(parent context.Context) {
 			return
 		case <-timer.C:
 		}
+		a.profileChangeMu.Lock()
+		defer a.profileChangeMu.Unlock()
+		if ctx.Err() != nil {
+			return
+		}
 		status := service.RevalidateSaved(ctx)
 		engine.GetLogger().Infof("AutoTuneVNext", "startup revalidation state=%s", status.State)
+		if status.Active {
+			a.startManagedVNextHealthMonitor(parent, service)
+		}
 		a.TriggerTrayUpdate()
+	}()
+}
+
+// startLegacyProfileStartup retains legacy AutoStartProfile behavior only when
+// no persisted vNext intent owns startup.
+func (a *App) startLegacyProfileStartup(parent context.Context, settings *engine.Settings, engines []string) {
+	ctx, cancel := context.WithCancel(parent)
+	a.mu.Lock()
+	a.startupCancel = cancel
+	a.startupWG.Add(1)
+	a.mu.Unlock()
+	go func() {
+		startupDone := false
+		defer func() {
+			if !startupDone {
+				a.startupWG.Done()
+			}
+		}()
+		defer cancel()
+		timer := time.NewTimer(3 * time.Second)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+		}
+		if strings.EqualFold(strings.TrimSpace(settings.StartupProfileMode), "autotune") || strings.TrimSpace(settings.StartupProfileMode) == "Автоподбор" {
+			a.startupWG.Done()
+			startupDone = true
+			_ = a.AutoTune()
+			return
+		}
+		if len(engines) == 0 {
+			return
+		}
+		profile := settings.DefaultProfile
+		if contains(a.manager.GetProfiles(engines[0]), settings.StartupProfileMode) {
+			profile = settings.StartupProfileMode
+		}
+		if !contains(a.manager.GetProfiles(engines[0]), profile) {
+			profiles := a.manager.GetProfiles(engines[0])
+			if len(profiles) == 0 {
+				return
+			}
+			profile = profiles[0]
+		}
+		a.profileChangeMu.Lock()
+		defer a.profileChangeMu.Unlock()
+		if ctx.Err() == nil {
+			if err := a.manager.Start(ctx, engines[0], profile); err == nil {
+				_ = engine.SaveLastProfile(profile)
+				if settings.AutoReconnect {
+					a.AutoReconnectMonitor()
+				}
+			}
+		}
+	}()
+}
+
+const (
+	managedHealthInterval      = 30 * time.Second
+	managedHealthFailureLimit  = 2
+	managedHealthRecoveryLimit = 2
+	managedHealthCheckLimit    = 20
+)
+
+// startManagedVNextHealthMonitor is a bounded, target-specific monitor. It
+// uses the managed exact edge only; it cannot rotate legacy profiles.
+func (a *App) startManagedVNextHealthMonitor(parent context.Context, service *productVNextService) {
+	a.mu.Lock()
+	if a.closing {
+		a.mu.Unlock()
+		return
+	}
+	if a.managedHealthCancel != nil {
+		a.managedHealthCancel()
+	}
+	ctx, cancel := context.WithCancel(parent)
+	a.managedHealthCancel = cancel
+	a.managedHealthWG.Add(1)
+	a.mu.Unlock()
+	go func() {
+		defer a.managedHealthWG.Done()
+		defer cancel()
+		ticker := time.NewTicker(managedHealthInterval)
+		defer ticker.Stop()
+		failures, recoveries := 0, 0
+		for checks := 0; checks < managedHealthCheckLimit && recoveries < managedHealthRecoveryLimit; checks++ {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+			a.profileChangeMu.Lock()
+			if ctx.Err() != nil || !service.Status().Active {
+				a.profileChangeMu.Unlock()
+				return
+			}
+			if service.ManagedHealthy(ctx) {
+				failures = 0
+				a.profileChangeMu.Unlock()
+				continue
+			}
+			failures++
+			if failures < managedHealthFailureLimit {
+				a.profileChangeMu.Unlock()
+				continue
+			}
+			status := service.RevalidateActive(ctx)
+			recoveries++
+			failures = 0
+			a.profileChangeMu.Unlock()
+			a.TriggerTrayUpdate()
+			if !status.Active {
+				return
+			}
+		}
 	}()
 }
 
@@ -280,6 +340,7 @@ func (a *App) shutdown(ctx context.Context) {
 	autoTuneCancel := a.autoTuneCancel
 	autoReconnectCancel := a.autoReconnectCancel
 	startupCancel := a.startupCancel
+	managedHealthCancel := a.managedHealthCancel
 	trayCancel := a.trayCancel
 	doctorCancel := a.doctorCancel
 	a.mu.Unlock()
@@ -295,20 +356,24 @@ func (a *App) shutdown(ctx context.Context) {
 	if startupCancel != nil {
 		startupCancel()
 	}
+	if managedHealthCancel != nil {
+		managedHealthCancel()
+	}
 	if autoReconnectCancel != nil {
 		autoReconnectCancel()
 	}
-	a.profileChangeMu.Lock()
-	a.profileChangeMu.Unlock()
 	a.startupWG.Wait()
+	a.managedHealthWG.Wait()
 	a.autoTuneWG.Wait()
 	a.autoReconnectWG.Wait()
+	a.profileChangeMu.Lock()
+	defer a.profileChangeMu.Unlock()
 	a.mu.Lock()
 	vNextService := a.vNextService
 	a.mu.Unlock()
 	if vNextService != nil {
 		vNextService.InvalidateGrants()
-		if state := vNextService.Revert(ctx); state.State == "STATE_RESTORE_FAILED" {
+		if state := vNextService.Suspend(ctx); state.State == "STATE_RESTORE_FAILED" {
 			engine.GetLogger().Error("App", "Managed vNext restoration failed during shutdown")
 		}
 	}
@@ -350,11 +415,53 @@ func (a *App) GetEngineNames() []string {
 	return a.manager.GetEngineNames()
 }
 
+// disableManagedVNextIntent runs inside the mutation coordinator for explicit
+// legacy takeover. It clears dormant intent as well as live managed ownership.
+func (a *App) disableManagedVNextIntent(ctx context.Context) error {
+	a.mu.Lock()
+	service := a.vNextService
+	a.mu.Unlock()
+	if service == nil {
+		return clearVNextManagedState()
+	}
+	service.InvalidateGrants()
+	state := service.Revert(ctx)
+	if state.State == "STATE_RESTORE_FAILED" {
+		return errors.New("managed vNext restore failed")
+	}
+	if state.State == "PERSISTENCE_UPDATE_FAILED" {
+		return errors.New("managed vNext persistence update failed")
+	}
+	return nil
+}
+
 func (a *App) GetProfiles(engineName string) []string {
 	return a.manager.GetProfiles(engineName)
 }
 
 func (a *App) beginManualProfileChange() bool {
+	a.mu.Lock()
+	startupCancel := a.startupCancel
+	managedHealthCancel := a.managedHealthCancel
+	autoTuneCancel := a.autoTuneCancel
+	autoReconnectCancel := a.autoReconnectCancel
+	a.mu.Unlock()
+	if startupCancel != nil {
+		startupCancel()
+	}
+	if managedHealthCancel != nil {
+		managedHealthCancel()
+	}
+	if autoTuneCancel != nil {
+		autoTuneCancel()
+	}
+	if autoReconnectCancel != nil {
+		autoReconnectCancel()
+	}
+	a.startupWG.Wait()
+	a.managedHealthWG.Wait()
+	a.autoTuneWG.Wait()
+	a.autoReconnectWG.Wait()
 	a.profileChangeMu.Lock()
 	a.mu.Lock()
 	if a.closing {
@@ -363,17 +470,7 @@ func (a *App) beginManualProfileChange() bool {
 		return false
 	}
 	a.profileChange = true
-	autoTuneCancel := a.autoTuneCancel
-	autoReconnectCancel := a.autoReconnectCancel
 	a.mu.Unlock()
-	if autoTuneCancel != nil {
-		autoTuneCancel()
-	}
-	if autoReconnectCancel != nil {
-		autoReconnectCancel()
-	}
-	a.autoTuneWG.Wait()
-	a.autoReconnectWG.Wait()
 	return true
 }
 
@@ -457,14 +554,8 @@ func (a *App) StartEngine(engineName string, profileName string) (err error) {
 		}
 	}()
 	manualChangeStarted = true
-	a.mu.Lock()
-	vNextService := a.vNextService
-	a.mu.Unlock()
-	if vNextService != nil {
-		vNextService.InvalidateGrants()
-		if state := vNextService.Revert(a.ctx); state.State == "STATE_RESTORE_FAILED" {
-			return fmt.Errorf("managed vNext restore failed")
-		}
+	if err := a.disableManagedVNextIntent(a.ctx); err != nil {
+		return err
 	}
 	logger.Info("App", "Stopping current engine if running...")
 	a.manager.Stop()
@@ -529,14 +620,8 @@ func (a *App) StopEngine() (err error) {
 			a.endManualProfileChange()
 		}
 	}()
-	a.mu.Lock()
-	vNextService := a.vNextService
-	a.mu.Unlock()
-	if vNextService != nil {
-		vNextService.InvalidateGrants()
-		if state := vNextService.Revert(a.ctx); state.State == "STATE_RESTORE_FAILED" {
-			return fmt.Errorf("managed vNext restore failed")
-		}
+	if err := a.disableManagedVNextIntent(a.ctx); err != nil {
+		return err
 	}
 	err = a.manager.Stop()
 	a.endManualProfileChange()
@@ -1023,24 +1108,22 @@ func persistSettings(next *engine.Settings) error {
 func (a *App) AutoTune() string {
 	logger := engine.GetLogger()
 	notifMgr := engine.GetNotificationManager()
-
-	a.mu.Lock()
-	if a.closing {
-		a.mu.Unlock()
-		logger.Warn("App", "AutoTune rejected during shutdown")
+	if !a.beginManualProfileChange() {
 		return "Shutting down"
 	}
-	if a.profileChange {
-		a.mu.Unlock()
-		logger.Warn("App", "AutoTune rejected during manual profile change")
-		return "Already running"
+	defer a.endManualProfileChange()
+
+	if err := a.disableManagedVNextIntent(a.ctx); err != nil {
+		logger.Warnf("App", "Legacy AutoTune blocked by managed vNext state: %v", err)
+		return "Failed"
 	}
+
+	a.mu.Lock()
 	if a.autoTuneCancel != nil {
 		a.mu.Unlock()
 		logger.Warn("App", "AutoTune already running")
 		return "Already running"
 	}
-
 	tuneCtx, cancel := context.WithCancel(a.ctx)
 	a.autoTuneCancel = cancel
 	a.autoTuneWG.Add(1)
@@ -1178,15 +1261,14 @@ func (a *App) AutoTune() string {
 	return result.ProfileName
 }
 
-// AutoTuneVNext runs the explicitly requested experimental vNext product path.
-// Legacy AutoTune, its UI, and tray flow continue to call AutoTune unchanged.
+// AutoTuneVNext runs the primary product vNext experiment path.
 func (a *App) AutoTuneVNext(target string, controls []string) AutoTuneVNextResult {
-	a.mu.Lock()
-	if a.closing {
-		a.mu.Unlock()
+	if !a.beginManualProfileChange() {
 		return productVNextFailure(autotunevnext.StatusCancelled, "", "", "APPLICATION_SHUTTING_DOWN")
 	}
-	if a.profileChange || a.autoTuneCancel != nil {
+	defer a.endManualProfileChange()
+	a.mu.Lock()
+	if a.closing || a.autoTuneCancel != nil {
 		a.mu.Unlock()
 		return productVNextFailure(autotunevnext.StatusInconclusive, "", "", "OPERATION_CONFLICT")
 	}
@@ -1215,7 +1297,6 @@ func (a *App) AutoTuneVNext(target string, controls []string) AutoTuneVNextResul
 		a.mu.Unlock()
 		a.autoTuneWG.Done()
 	}()
-
 	if assets == nil || service == nil {
 		return productVNextFailure(autotunevnext.StatusPreflightFailed, "", "", "PRODUCT_ASSETS_UNAVAILABLE")
 	}
@@ -1225,7 +1306,7 @@ func (a *App) AutoTuneVNext(target string, controls []string) AutoTuneVNextResul
 }
 
 // GetAutoTuneVNextExperimentConfig exposes product-owned target presets for
-// the explicit experimental flow. Legacy AutoTuneTargets remain untouched.
+// the primary vNext flow. Legacy AutoTune targets remain untouched.
 func (a *App) GetAutoTuneVNextExperimentConfig() AutoTuneVNextExperimentConfig {
 	return productVNextExperimentConfig()
 }
@@ -1240,11 +1321,13 @@ func (a *App) RunExperimentalAutoTuneVNext(presetID string, customTarget string)
 	return a.AutoTuneVNext(target, controls)
 }
 
-// ApplyAutoTuneVNextSelection consumes an opaque backend-owned verified grant.
-// The frontend cannot supply a target, fingerprint, backend, or strategy ID.
 func (a *App) ApplyAutoTuneVNextSelection(token string) AutoTuneVNextManagedStatus {
+	if !a.beginManualProfileChange() {
+		return AutoTuneVNextManagedStatus{State: "NOT_APPLIED"}
+	}
+	defer a.endManualProfileChange()
 	a.mu.Lock()
-	if a.closing || a.profileChange || a.autoTuneCancel != nil {
+	if a.closing || a.autoTuneCancel != nil {
 		a.mu.Unlock()
 		return AutoTuneVNextManagedStatus{State: "NOT_APPLIED"}
 	}
@@ -1268,14 +1351,22 @@ func (a *App) ApplyAutoTuneVNextSelection(token string) AutoTuneVNextManagedStat
 	if service == nil {
 		return AutoTuneVNextManagedStatus{State: "NOT_APPLIED"}
 	}
-	return service.Apply(ctx, token)
+	status := service.Apply(ctx, token)
+	if status.Active {
+		a.startManagedVNextHealthMonitor(parent, service)
+	}
+	return status
 }
 
-// RevertAutoTuneVNext returns only after managed ownership has restored and
-// verified the original product state.
+// RevertAutoTuneVNext is the explicit user semantic: restore direct state and
+// clear persisted managed intent.
 func (a *App) RevertAutoTuneVNext() AutoTuneVNextManagedStatus {
+	if !a.beginManualProfileChange() {
+		return AutoTuneVNextManagedStatus{State: "NOT_APPLIED"}
+	}
+	defer a.endManualProfileChange()
 	a.mu.Lock()
-	if a.closing || a.profileChange || a.autoTuneCancel != nil {
+	if a.closing || a.autoTuneCancel != nil {
 		a.mu.Unlock()
 		return AutoTuneVNextManagedStatus{State: "NOT_APPLIED"}
 	}
@@ -1297,6 +1388,9 @@ func (a *App) RevertAutoTuneVNext() AutoTuneVNextManagedStatus {
 		a.TriggerTrayUpdate()
 	}()
 	if service == nil {
+		if err := clearVNextManagedState(); err != nil {
+			return AutoTuneVNextManagedStatus{State: "PERSISTENCE_UPDATE_FAILED"}
+		}
 		return AutoTuneVNextManagedStatus{State: "DIRECT"}
 	}
 	return service.Revert(ctx)
@@ -1306,10 +1400,17 @@ func (a *App) GetAutoTuneVNextManagedStatus() AutoTuneVNextManagedStatus {
 	a.mu.Lock()
 	service := a.vNextService
 	a.mu.Unlock()
-	if service == nil {
-		return AutoTuneVNextManagedStatus{State: "DIRECT"}
+	if service != nil {
+		return service.Status()
 	}
-	return service.Status()
+	state, present, err := loadVNextManagedState()
+	if err != nil {
+		return AutoTuneVNextManagedStatus{State: "SAVED_STRATEGY_STALE", NeedsRevalidation: true}
+	}
+	if present {
+		return AutoTuneVNextManagedStatus{State: "SAVED_REVALIDATION_PENDING", NeedsRevalidation: true, Target: state.Target, StrategyID: state.StrategyID, Fingerprint: shortManagedFingerprint(state.Fingerprint), Backend: state.Backend}
+	}
+	return AutoTuneVNextManagedStatus{State: "DIRECT"}
 }
 
 func (a *App) CancelAutoTune() {
@@ -1322,7 +1423,11 @@ func (a *App) CancelAutoTune() {
 }
 
 func (a *App) GetLivePing() map[string]interface{} {
+	managed := a.GetAutoTuneVNextManagedStatus()
 	if a.manager.GetStatus() != providers.StatusRunning {
+		if managed.Active {
+			return map[string]interface{}{"active": true, "latency": 0, "status": "managed_active", "services": map[string]int64{}, "serviceStatus": map[string]string{}}
+		}
 		return map[string]interface{}{"active": true, "latency": 0, "status": "disconnected", "services": map[string]int64{}, "serviceStatus": map[string]string{}}
 	}
 	targets := []struct{ Name, URL string }{

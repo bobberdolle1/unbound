@@ -90,3 +90,63 @@ func TestStartupRejectsCatalogFingerprintDrift(t *testing.T) {
 		t.Fatalf("state=%#v", got)
 	}
 }
+
+func TestShutdownPreservesDormantManagedIntentAndLegacyTakeoverClearsIt(t *testing.T) {
+	restore := engine.SetConfigDirForTest(t.TempDir())
+	defer restore()
+	state := persistedVNextState{SchemaVersion: vNextManagedSchema, Enabled: true, Target: "https://target.test/", StrategyID: "strategy", Fingerprint: "fingerprint", Backend: string(backendcap.Zapret2Windows), SavedAt: time.Now().UTC().Format(time.RFC3339Nano)}
+	if err := saveVNextManagedState(state); err != nil {
+		t.Fatal(err)
+	}
+	app := NewApp()
+	app.ctx = context.Background()
+	app.shutdown(context.Background())
+	if _, present, err := loadVNextManagedState(); err != nil || !present {
+		t.Fatalf("shutdown lost managed intent present=%t err=%v", present, err)
+	}
+	if err := app.disableManagedVNextIntent(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, present, err := loadVNextManagedState(); err != nil || present {
+		t.Fatalf("legacy takeover retained managed intent present=%t err=%v", present, err)
+	}
+}
+
+func TestManagedStatusReportsDormantIntent(t *testing.T) {
+	restore := engine.SetConfigDirForTest(t.TempDir())
+	defer restore()
+	state := persistedVNextState{SchemaVersion: vNextManagedSchema, Enabled: true, Target: "https://target.test/", StrategyID: "strategy", Fingerprint: "fingerprint", Backend: string(backendcap.Zapret2Windows), SavedAt: time.Now().UTC().Format(time.RFC3339Nano)}
+	if err := saveVNextManagedState(state); err != nil {
+		t.Fatal(err)
+	}
+	if got := newProductVNextService(nil, nil).Status(); got.State != "SAVED_REVALIDATION_PENDING" || got.Active || !got.NeedsRevalidation {
+		t.Fatalf("status=%+v", got)
+	}
+}
+
+func TestManualMutationCancelsStartupRevalidationBeforeLegacyTakeover(t *testing.T) {
+	restore := engine.SetConfigDirForTest(t.TempDir())
+	defer restore()
+	state := persistedVNextState{SchemaVersion: vNextManagedSchema, Enabled: true, Target: "https://target.test/", StrategyID: "strategy", Fingerprint: "fingerprint", Backend: string(backendcap.Zapret2Windows), SavedAt: time.Now().UTC().Format(time.RFC3339Nano)}
+	if err := saveVNextManagedState(state); err != nil {
+		t.Fatal(err)
+	}
+	app := NewApp()
+	app.ctx = context.Background()
+	app.assets = &engine.AssetPaths{}
+	app.startManagedVNextRevalidation(context.Background())
+	if !app.beginManualProfileChange() {
+		t.Fatal("manual mutation was rejected")
+	}
+	app.endManualProfileChange()
+	app.startupWG.Wait()
+}
+
+func TestExperimentWhileManagedActiveIsRejected(t *testing.T) {
+	service := newProductVNextService(nil, nil)
+	service.active = &managedVNextActivation{}
+	result := service.Run(context.Background(), AutoTuneVNextRequest{Target: "https://target.test/"})
+	if result.Status != string(autotunevnext.StatusInconclusive) || len(result.Limitations) != 1 || result.Limitations[0] != "MANAGED_ACTIVATION_ACTIVE" {
+		t.Fatalf("result=%+v", result)
+	}
+}

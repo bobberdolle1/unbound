@@ -1,6 +1,6 @@
 # AutoTune vNext
 
-AutoTune vNext is an evidence-driven, bounded StrategyIR experiment engine. It is separate from legacy AutoTune and does not change the existing UI or `RunAutoTuneV3` behavior.
+AutoTune vNext is the primary evidence-driven, bounded StrategyIR product flow. Legacy AutoTune remains an explicitly labeled compatibility path; `RunAutoTuneV3` behavior is unchanged.
 
 ## Legacy and vNext
 
@@ -63,10 +63,12 @@ macOS tpws uses SOCKS. The default direct Observatory dialer does not prove it t
 
 An experiment can issue an in-memory, random, single-use Apply capability only when its final result is `COMPLETED_SELECTED`, `state_restored=true`, and the selected candidate itself is `VERIFIED_FIXED`. The capability identifies backend-owned logical target, strategy ID, fingerprint, backend, and expiry. The UI never supplies executable arguments, capture filters, target edge, backend, strategy ID, or fingerprint as Apply authority.
 
-Apply rebuilds the production catalog for the normalized hostname, requires the stored ID and canonical fingerprint to match, takes a new runtime snapshot, observes a fresh concrete edge, reruns Planner eligibility, compiles and preflights trusted assets, then verifies target and protected control while active. Failure deactivates, restores, and verifies the original state before returning `NOT_APPLIED`. A managed activation owns its runtime until `RevertAutoTuneVNext`, which deactivates, restores, and verifies before state is cleared. Restoration failure is `STATE_RESTORE_FAILED` and retains ownership.
+Apply rebuilds the production catalog for the normalized hostname, requires the stored ID and canonical fingerprint to match, takes a new runtime snapshot, observes a fresh concrete edge, reruns Planner eligibility, compiles and preflights trusted assets, then verifies target and protected control while active. Failure cleanup reports `STATE_RESTORE_FAILED` rather than `NOT_APPLIED` when direct restoration cannot be proven. If persistence fails after activation, bounded revert either proves direct state and returns `PERSISTENCE_UPDATE_FAILED`, or retains ownership and reports `STATE_RESTORE_FAILED`.
 
-Managed intent is stored atomically in `autotune_vnext_state.json` as schema version, logical target, strategy ID, fingerprint, backend, and save time. It contains no argv, filter, process ID, queue, asset path, token, or resolved edge. Startup rebuilds the catalog and repeats bounded verification; direct health produces `SAVED_NOT_CURRENTLY_NEEDED`, and stale catalog ID or fingerprint produces `SAVED_STRATEGY_STALE`. An old CDN edge is never replayed.
+Explicit Revert and manual legacy takeover deactivate, restore, verify, then clear managed intent. Application shutdown and bounded active-health revalidation use the distinct suspend path: they deactivate, restore, verify, and retain intent. Health checks use the managed target's retained exact edge, require consecutive failures, perform at most two bounded recovery attempts, and never select another candidate or rotate a legacy profile.
 
-The tray reports a managed StrategyIR state separately from legacy profile names. Manual legacy start, profile switch, and stop first revert managed vNext ownership. macOS keeps the factual `MEASUREMENT_PATH_UNSUPPORTED` limitation; no managed vNext activation is synthesized there.
+Managed intent is stored atomically in `autotune_vnext_state.json` as schema version, logical target, strategy ID, fingerprint, backend, and save time. It contains no argv, filter, process ID, queue, asset path, token, or resolved edge. A present managed intent owns startup revalidation over legacy `AutoStartProfile`; legacy startup runs only when no managed intent exists. Startup rebuilds the catalog and repeats bounded verification; direct health produces `SAVED_NOT_CURRENTLY_NEEDED`, and stale catalog ID or fingerprint produces `SAVED_STRATEGY_STALE`. An old CDN edge is never replayed.
+
+The primary screen and tray report managed StrategyIR state separately from legacy profile names. A managed active state remains active even when the legacy ProviderManager is intentionally stopped; the UI exposes managed disconnect through Revert. The tray opens the primary vNext target-selection UI. macOS keeps the factual `MEASUREMENT_PATH_UNSUPPORTED` limitation; no managed vNext activation is synthesized there.
 
 Hermetic tests exercise the direct-fail / active-pass / direct-fail / control-pass sequence and lifecycle failure paths. They prove implementation behavior only. Production effectiveness remains `NO_NATURAL_FAILURE`; no claim is made that the catalog has worked on a naturally failing network.

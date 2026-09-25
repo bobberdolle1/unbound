@@ -30,7 +30,7 @@ type AutoTuneVNextRequest struct {
 }
 
 // AutoTuneVNextTargetPreset is a product-owned HTTPS diagnostic target shown
-// by the explicitly experimental vNext flow.
+// by the primary vNext flow.
 type AutoTuneVNextTargetPreset struct {
 	ID     string `json:"id"`
 	Label  string `json:"label"`
@@ -147,9 +147,10 @@ type productVNextService struct {
 	assets  *engine.AssetPaths
 	deps    productVNextDependencies
 
-	mu     sync.Mutex
-	grants map[string]verifiedSelectionGrant
-	active *managedVNextActivation
+	mu      sync.Mutex
+	grants  map[string]verifiedSelectionGrant
+	active  *managedVNextActivation
+	dormant AutoTuneVNextManagedStatus
 }
 
 func newProductVNextService(manager *providers.ProviderManager, assets *engine.AssetPaths) *productVNextService {
@@ -168,6 +169,12 @@ func newProductVNextServiceWith(manager *providers.ProviderManager, assets *engi
 }
 
 func (s *productVNextService) Run(ctx context.Context, input AutoTuneVNextRequest) AutoTuneVNextResult {
+	s.mu.Lock()
+	managedActive := s.active != nil
+	s.mu.Unlock()
+	if managedActive {
+		return productVNextFailure(autotunevnext.StatusInconclusive, "", "", "MANAGED_ACTIVATION_ACTIVE")
+	}
 	s.InvalidateGrants()
 	target, publicTarget, err := normalizeVNextTarget(input.Target)
 	if err != nil {

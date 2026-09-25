@@ -2,6 +2,7 @@ package autotunevnext
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"time"
@@ -12,6 +13,10 @@ import (
 	"unbound/engine/planner"
 	"unbound/engine/strategyir"
 )
+
+// ErrManagedStateRestoreFailed means a failed Apply could not prove that the
+// original runtime state was restored. Callers must retain factual ownership.
+var ErrManagedStateRestoreFailed = errors.New("STATE_RESTORE_FAILED")
 
 // ManagedRequest is a product-owned revalidation request. The caller provides
 // the strategy identity selected by an earlier experiment; it never accepts
@@ -70,7 +75,7 @@ func (a *ManagedActivation) Revert(ctx context.Context) error {
 
 // ApplyVerified performs a fresh exact-edge revalidation before retaining a
 // managed candidate. It does not reuse the experiment session or its edge.
-func ApplyVerified(ctx context.Context, request ManagedRequest, observer Observer, executor Executor, preflight HostPreflight, assets AssetResolver) (*ManagedActivation, error) {
+func ApplyVerified(ctx context.Context, request ManagedRequest, observer Observer, executor Executor, preflight HostPreflight, assets AssetResolver) (activation *ManagedActivation, err error) {
 	if observer == nil || executor == nil || preflight == nil || assets == nil {
 		return nil, fmt.Errorf("NOT_APPLIED: dependency missing")
 	}
@@ -92,7 +97,8 @@ func ApplyVerified(ctx context.Context, request ManagedRequest, observer Observe
 	if err != nil {
 		return nil, fmt.Errorf("NOT_APPLIED: SNAPSHOT_FAILED: %w", err)
 	}
-	activation := &ManagedActivation{executor: executor, snapshot: snapshot, parent: ctx}
+	activation = &ManagedActivation{executor: executor, snapshot: snapshot, parent: ctx}
+	owned := activation
 	committed := false
 	defer func() {
 		if committed {
@@ -100,11 +106,22 @@ func ApplyVerified(ctx context.Context, request ManagedRequest, observer Observe
 		}
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cleanupCancel()
-		if activation.active {
-			_ = executor.Deactivate(cleanupCtx)
+		var cleanupErr error
+		if owned.active {
+			if deactivateErr := executor.Deactivate(cleanupCtx); deactivateErr != nil {
+				cleanupErr = deactivateErr
+			}
 		}
-		_ = executor.Restore(cleanupCtx, snapshot)
-		_ = executor.VerifyRestored(cleanupCtx, snapshot)
+		if restoreErr := executor.Restore(cleanupCtx, snapshot); restoreErr != nil && cleanupErr == nil {
+			cleanupErr = restoreErr
+		}
+		if verifyErr := executor.VerifyRestored(cleanupCtx, snapshot); verifyErr != nil && cleanupErr == nil {
+			cleanupErr = verifyErr
+		}
+		if cleanupErr != nil {
+			activation = nil
+			err = fmt.Errorf("%w: %v", ErrManagedStateRestoreFailed, cleanupErr)
+		}
 	}()
 	if err := executor.EstablishDirect(operationCtx, snapshot); err != nil {
 		return nil, fmt.Errorf("NOT_APPLIED: ESTABLISH_DIRECT_FAILED: %w", err)
