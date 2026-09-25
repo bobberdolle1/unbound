@@ -13,6 +13,7 @@ import (
 	"unbound/engine/backendcap"
 	"unbound/engine/diagnosis"
 	"unbound/engine/observatory"
+	"unbound/engine/strategyir"
 )
 
 func TestNewEntryDeterminismAndCorrelation(t *testing.T) {
@@ -55,38 +56,38 @@ func TestTTLDecayAndCompatibility(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	query := queryFor(entry, at.Add(time.Hour))
+	query := queryFor(entry, entry.RecordedAt.Add(time.Hour))
 	if match := MatchEntry(entry, query); match.Status != MatchCompatible || match.Confidence != attribution.ConfidenceHigh {
 		t.Fatalf("fresh=%#v", match)
 	}
-	query.Now = at.Add(4 * time.Hour)
+	query.Now = entry.RecordedAt.Add(4 * time.Hour)
 	if match := MatchEntry(entry, query); match.Confidence != attribution.ConfidenceMedium {
 		t.Fatalf("middle=%#v", match)
 	}
-	query.Now = at.Add(7 * time.Hour)
+	query.Now = entry.RecordedAt.Add(7 * time.Hour)
 	if match := MatchEntry(entry, query); match.Confidence != attribution.ConfidenceLow {
 		t.Fatalf("old=%#v", match)
 	}
-	query.Now = at.Add(9 * time.Hour)
+	query.Now = entry.RecordedAt.Add(9 * time.Hour)
 	if match := MatchEntry(entry, query); match.Status != MatchExpired {
 		t.Fatalf("expired=%#v", match)
 	}
-	query.Now = at.Add(time.Hour)
+	query.Now = entry.RecordedAt.Add(time.Hour)
 	query.AddressFamily = observatory.AddressFamilyIPv6
 	if match := MatchEntry(entry, query); match.Status != MatchIncompatible || match.Reasons[0] != ReasonFamilyChanged {
 		t.Fatalf("family=%#v", match)
 	}
-	query = queryFor(entry, at.Add(time.Hour))
+	query = queryFor(entry, entry.RecordedAt.Add(time.Hour))
 	query.TargetContractRevision = "v2"
 	if match := MatchEntry(entry, query); match.Status != MatchIncompatible || match.Reasons[0] != ReasonContractChanged {
 		t.Fatalf("contract=%#v", match)
 	}
-	query = queryFor(entry, at.Add(time.Hour))
-	query.StrategyFingerprint = fingerprint("strategy", "b")
+	query = queryFor(entry, entry.RecordedAt.Add(time.Hour))
+	query.StrategyFingerprint = strings.Repeat("b", 64)
 	if match := MatchEntry(entry, query); match.Status != MatchIncompatible || match.Reasons[0] != ReasonStrategyChanged {
 		t.Fatalf("strategy=%#v", match)
 	}
-	query = queryFor(entry, at.Add(time.Hour))
+	query = queryFor(entry, entry.RecordedAt.Add(time.Hour))
 	query.BackendFingerprint = fingerprint("backend", "c")
 	if match := MatchEntry(entry, query); match.Status != MatchIncompatible || match.Reasons[0] != ReasonBackendChanged {
 		t.Fatalf("backend=%#v", match)
@@ -96,7 +97,7 @@ func TestTTLDecayAndCompatibility(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	query = queryFor(entry, at.Add(time.Hour))
+	query = queryFor(entry, entry.RecordedAt.Add(time.Hour))
 	query.ContextKey = ""
 	if match := MatchEntry(entry, query); match.Status != MatchStale || match.Reasons[0] != ReasonContextMissing {
 		t.Fatalf("empty context=%#v", match)
@@ -250,11 +251,266 @@ func TestPersistenceCorruptionAndPrivacy(t *testing.T) {
 	}
 }
 
+func TestNewEntryAcceptsRealStrategyIRAndRejectsTamperedDiagnosis(t *testing.T) {
+	at := time.Date(2026, 1, 2, 3, 0, 0, 0, time.UTC)
+	input := testInput(t, at, autotunevnext.OutcomeVerifiedFixed)
+	input.BackendFingerprint = ""
+	input.CapabilityFingerprint = ""
+	if _, err := NewEntry(input, DefaultPolicy()); err != nil {
+		t.Fatalf("real StrategyIR fingerprint rejected: %v", err)
+	}
+	for _, mutate := range []func(*diagnosis.Report){
+		func(report *diagnosis.Report) { report.Kind = diagnosis.KindNoAnomaly },
+		func(report *diagnosis.Report) { report.Confidence = attribution.ConfidenceLow },
+		func(report *diagnosis.Report) { report.EvidenceFingerprints[0] = "evidence-v1-tampered" },
+		func(report *diagnosis.Report) { report.DiagnosisID = "diagnosis-v1-tampered" },
+	} {
+		tampered := input
+		tampered.Diagnosis.EvidenceFingerprints = append([]string(nil), input.Diagnosis.EvidenceFingerprints...)
+		mutate(&tampered.Diagnosis)
+		if _, err := NewEntry(tampered, DefaultPolicy()); err == nil {
+			t.Fatalf("tampered diagnosis accepted: %#v", tampered.Diagnosis)
+		}
+	}
+	input = testInput(t, at, autotunevnext.OutcomeVerifiedFixed)
+	input.RecordedAt = input.RecordedAt.Add(time.Second)
+	if _, err := NewEntry(input, DefaultPolicy()); err == nil {
+		t.Fatal("TTL-extending recorded timestamp accepted")
+	}
+}
+
+func TestQueryAndMutationFailClosed(t *testing.T) {
+	at := time.Date(2026, 1, 2, 3, 0, 0, 0, time.UTC)
+	entry, err := NewEntry(testInput(t, at, autotunevnext.OutcomeVerifiedFixed), DefaultPolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := queryFor(entry, entry.RecordedAt.Add(time.Hour))
+	tampered := entry
+	tampered.EntryID = "outcome-v1-tampered"
+	if match := MatchEntry(tampered, query); match.Status == MatchCompatible {
+		t.Fatalf("tampered entry reusable: %#v", match)
+	}
+	tampered = entry
+	tampered.StrategyFingerprint = "invalid"
+	if match := MatchEntry(tampered, query); match.Status == MatchCompatible {
+		t.Fatalf("invalid fingerprint reusable: %#v", match)
+	}
+	ledger, err := Add(Ledger{}, entry, DefaultPolicy(), entry.RecordedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tamperedLedger := ledger
+	tamperedLedger.Fingerprint = "ledger-v1-tampered"
+	if matches := QueryLedger(tamperedLedger, query); len(matches) != 0 {
+		t.Fatalf("corrupt ledger queried: %#v", matches)
+	}
+	tamperedLedger = ledger
+	tamperedLedger.SchemaVersion++
+	if matches := QueryLedger(tamperedLedger, query); len(matches) != 0 {
+		t.Fatalf("future ledger queried: %#v", matches)
+	}
+	if match := MatchEntry(entry, queryFor(entry, entry.RecordedAt.Add(-time.Second))); match.Status != MatchStale || match.Reasons[0] != ReasonFuture {
+		t.Fatalf("future entry reused: %#v", match)
+	}
+	if _, err := Invalidate(tamperedLedger, entry.EntryID, InvalidationExplicit, entry.RecordedAt); err == nil {
+		t.Fatal("corrupt source ledger invalidated")
+	}
+	if _, err := Invalidate(ledger, "missing", InvalidationExplicit, entry.RecordedAt); err == nil {
+		t.Fatal("missing entry invalidated")
+	}
+	if _, err := Invalidate(ledger, entry.EntryID, InvalidationReason("INVALID"), entry.RecordedAt); err == nil {
+		t.Fatal("invalid reason accepted")
+	}
+	if _, err := Invalidate(ledger, entry.EntryID, InvalidationExplicit, entry.RecordedAt.Add(-time.Second)); err == nil {
+		t.Fatal("pre-event invalidation accepted")
+	}
+}
+
+func TestContradictionUsesChronologyAndDirectScope(t *testing.T) {
+	at := time.Date(2026, 1, 2, 3, 0, 0, 0, time.UTC)
+	negative, err := NewEntry(testInput(t, at, autotunevnext.OutcomeStillFailing), DefaultPolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	positive, err := NewEntry(testInput(t, at.Add(time.Hour), autotunevnext.OutcomeVerifiedFixed), DefaultPolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	left, err := Add(Ledger{}, positive, DefaultPolicy(), positive.RecordedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	left, err = Add(left, negative, DefaultPolicy(), positive.RecordedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	right, err := Add(Ledger{}, negative, DefaultPolicy(), positive.RecordedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	right, err = Add(right, positive, DefaultPolicy(), positive.RecordedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if left.Fingerprint != right.Fingerprint {
+		t.Fatalf("out-of-order import changed canonical state: %q %q", left.Fingerprint, right.Fingerprint)
+	}
+	for _, entry := range left.Entries {
+		if entry.EntryID == positive.EntryID && entry.InvalidatedAt != nil {
+			t.Fatal("older negative invalidated newer positive")
+		}
+	}
+	directInput := testInput(t, at.Add(2*time.Hour), autotunevnext.OutcomeDirectBecameReachable)
+	directInput.StrategyID, directInput.StrategyFingerprint, directInput.Backend, directInput.BackendFingerprint, directInput.CapabilityFingerprint = "", "", "", "", ""
+	direct, err := NewEntry(directInput, DefaultPolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	left, err = Add(left, direct, DefaultPolicy(), direct.RecordedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range left.Entries {
+		if entry.EntryID == positive.EntryID && entry.InvalidationReason != InvalidationContradicted {
+			t.Fatalf("direct event without backend did not invalidate positive: %#v", entry)
+		}
+	}
+	if match := MatchEntry(direct, queryFor(positive, direct.RecordedAt.Add(time.Minute))); match.Status != MatchCompatible {
+		t.Fatalf("direct reachability rejected candidate query: %#v", match)
+	}
+}
+
+func TestRepeatedSaveAndCanonicalLedger(t *testing.T) {
+	at := time.Date(2026, 1, 2, 3, 0, 0, 0, time.UTC)
+	first, err := NewEntry(testInput(t, at, autotunevnext.OutcomeVerifiedFixed), DefaultPolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := NewEntry(testInput(t, at.Add(time.Hour), autotunevnext.OutcomeInconclusive), DefaultPolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ledger, err := Add(Ledger{}, first, DefaultPolicy(), first.RecordedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, FileName)
+	if err := Save(path, ledger); err != nil {
+		t.Fatal(err)
+	}
+	ledger, err = Add(ledger, second, DefaultPolicy(), second.RecordedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Save(path, ledger); err != nil {
+		t.Fatal(err)
+	}
+	loaded := Load(path)
+	if loaded.State != LoadValid || loaded.Ledger.Fingerprint != ledger.Fingerprint {
+		t.Fatalf("replacement load=%#v", loaded)
+	}
+	permuted := ledger
+	permuted.Entries = append([]OutcomeEntry(nil), ledger.Entries...)
+	permuted.Entries[0], permuted.Entries[1] = permuted.Entries[1], permuted.Entries[0]
+	permuted.Fingerprint, err = ledgerFingerprint(permuted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Save(filepath.Join(dir, "noncanonical.json"), permuted); err == nil {
+		t.Fatal("noncanonical ledger persisted")
+	}
+	if matches := QueryLedger(permuted, queryFor(first, first.RecordedAt.Add(time.Hour))); len(matches) != 0 {
+		t.Fatalf("noncanonical ledger queried: %#v", matches)
+	}
+}
+
+func TestLoadEmptyLedgerCanAcceptFirstEntry(t *testing.T) {
+	at := time.Date(2026, 1, 2, 3, 0, 0, 0, time.UTC)
+	entry, err := NewEntry(testInput(t, at, autotunevnext.OutcomeVerifiedFixed), DefaultPolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	empty := Load(filepath.Join(t.TempDir(), FileName))
+	if empty.State != LoadEmpty {
+		t.Fatalf("empty load=%#v", empty)
+	}
+	ledger, err := Add(empty.Ledger, entry, DefaultPolicy(), entry.RecordedAt)
+	if err != nil || len(ledger.Entries) != 1 {
+		t.Fatalf("first add=%#v %v", ledger, err)
+	}
+}
+
+func TestNewEntryRejectsControlTargetAndImpossibleOutcome(t *testing.T) {
+	at := time.Date(2026, 1, 2, 3, 0, 0, 0, time.UTC)
+	control := rebuildEvidence(t, testEvidence(t, at), observatory.ControlRoleHealthy, false)
+	input := testInput(t, at, autotunevnext.OutcomeVerifiedFixed)
+	input.Evidence = []observatory.EvidenceRecord{control}
+	input.Diagnosis = testDiagnosis(t, control)
+	input.RecordedAt = input.Diagnosis.EffectiveAt
+	if _, err := NewEntry(input, DefaultPolicy()); err == nil {
+		t.Fatal("control evidence accepted as primary target history")
+	}
+	success := rebuildEvidence(t, testEvidence(t, at), observatory.ControlRolePrimary, true)
+	input = testInput(t, at, autotunevnext.OutcomeVerifiedFixed)
+	input.Evidence = []observatory.EvidenceRecord{success}
+	input.Diagnosis = testNoAnomalyDiagnosis(t, success)
+	input.RecordedAt = input.Diagnosis.EffectiveAt
+	if _, err := NewEntry(input, DefaultPolicy()); err == nil {
+		t.Fatal("verified fixed accepted with no-anomaly diagnosis")
+	}
+}
+
+func rebuildEvidence(t *testing.T, source observatory.EvidenceRecord, role observatory.ControlRole, success bool) observatory.EvidenceRecord {
+	t.Helper()
+	spec := source.Probe
+	spec.ControlRole = role
+	observation := source.Runs[0].Observation
+	if success {
+		observation.FinalBoundary = observatory.StageHTTP
+		observation.Classification = observatory.ClassSuccess
+		observation.Attempts[0].Stages = []observatory.StageEvidence{{Stage: observatory.StageResolve, Status: observatory.StatusPass}, {Stage: observatory.StageConnect, Status: observatory.StatusPass}, {Stage: observatory.StageHello, Status: observatory.StatusPass}, {Stage: observatory.StageHandshake, Status: observatory.StatusPass}, {Stage: observatory.StageHTTP, Status: observatory.StatusPass, HTTPStatus: 204, PathComplete: true}}
+	}
+	record, err := observatory.BuildEvidenceRecord(spec, observatory.EvidenceInput{Observations: []observatory.ObservationResult{observation}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return record
+}
+
+func testNoAnomalyDiagnosis(t *testing.T, evidence observatory.EvidenceRecord) diagnosis.Report {
+	t.Helper()
+	runID := evidence.Runs[0].Observation.RunID
+	finding := attribution.Finding{Code: attribution.FindingNoAnomaly, Confidence: attribution.ConfidenceHigh, Stage: observatory.StageHTTP, SupportingEvidence: []attribution.EvidenceRef{{RunID: runID, AttemptIndex: 0, Stage: observatory.StageHTTP}}}
+	report, err := diagnosis.Diagnose(diagnosis.Input{Target: []observatory.EvidenceRecord{evidence}, Attribution: attribution.AttributionReport{SchemaVersion: attribution.SchemaVersion, AttributionID: "attribution-v1-success", InputRunIDs: []string{runID}, Target: attribution.TargetRef{Scheme: "https", Hostname: evidence.Probe.Target.Hostname, Port: evidence.Probe.Target.Port, Path: "/ok", RequestedProtocol: evidence.Probe.Transport}, PrimaryFinding: finding, Findings: []attribution.Finding{finding}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return report
+}
+
 func testInput(t *testing.T, at time.Time, outcome autotunevnext.Outcome) BuildInput {
 	t.Helper()
 	evidence := testEvidence(t, at)
-	diagnosisReport := diagnosis.Report{SchemaVersion: diagnosis.SchemaVersion, DiagnosisID: "diagnosis-v1-test", ProbeIdentity: evidence.ProbeIdentity, Kind: diagnosis.KindTCPPathFailure, Confidence: attribution.ConfidenceHigh, EvidenceFingerprints: []string{evidence.Fingerprint}, EffectiveAt: at}
-	return BuildInput{Evidence: []observatory.EvidenceRecord{evidence}, Diagnosis: diagnosisReport, StrategyID: "strategy", StrategyFingerprint: fingerprint("strategy", "a"), Backend: backendcap.Zapret2Windows, BackendFingerprint: fingerprint("backend", "b"), CapabilityFingerprint: fingerprint("capability", "c"), Outcome: outcome, RecordedAt: at, ContextKey: fingerprint("context", "d")}
+	diagnosisReport := testDiagnosis(t, evidence)
+	strategy := strategyir.RepresentativeFixtures()["alternative-multisplit"]
+	strategyFingerprint, err := strategyir.Fingerprint(strategy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return BuildInput{Evidence: []observatory.EvidenceRecord{evidence}, Diagnosis: diagnosisReport, StrategyID: strategy.ID, StrategyFingerprint: strategyFingerprint, Backend: backendcap.Zapret2Windows, BackendFingerprint: "backend-current", CapabilityFingerprint: "capability-current", Outcome: outcome, RecordedAt: diagnosisReport.EffectiveAt, ContextKey: fingerprint("context", "d")}
+}
+
+func testDiagnosis(t *testing.T, evidence observatory.EvidenceRecord) diagnosis.Report {
+	t.Helper()
+	runID := evidence.Runs[0].Observation.RunID
+	finding := attribution.Finding{Code: attribution.FindingTCPPathFailureSuspected, Confidence: attribution.ConfidenceHigh, Stage: observatory.StageConnect, SupportingEvidence: []attribution.EvidenceRef{{RunID: runID, AttemptIndex: 0, Stage: observatory.StageConnect}}}
+	report, err := diagnosis.Diagnose(diagnosis.Input{Target: []observatory.EvidenceRecord{evidence}, Attribution: attribution.AttributionReport{SchemaVersion: attribution.SchemaVersion, AttributionID: "attribution-v1-test", InputRunIDs: []string{runID}, Target: attribution.TargetRef{Scheme: "https", Hostname: evidence.Probe.Target.Hostname, Port: evidence.Probe.Target.Port, Path: "/ok", RequestedProtocol: evidence.Probe.Transport}, PrimaryFinding: finding, Findings: []attribution.Finding{finding}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return report
 }
 
 func testEvidence(t *testing.T, at time.Time) observatory.EvidenceRecord {
@@ -262,8 +518,8 @@ func testEvidence(t *testing.T, at time.Time) observatory.EvidenceRecord {
 	primary := 0
 	port := "443"
 	spec := observatory.ProbeSpec{SchemaVersion: observatory.ProbeSpecSchemaVersion, ID: "probe", ServiceID: "service", TargetContractRevision: "v1", Target: observatory.Target{URL: "https://example.test/ok", Hostname: "example.test", Port: port, RequestedProtocol: observatory.TransportTCP}, Transport: observatory.TransportTCP, AddressFamilyPolicy: observatory.AddressFamilyIPv4, Mode: observatory.ProbeModeHTTPSGet, ExpectedResponse: observatory.ExpectedResponse{AllowedStatusCodes: []int{204}, RequirePathComplete: true}, ControlRole: observatory.ControlRolePrimary, Privacy: observatory.PrivacyModeRedacted}
-	stages := []observatory.StageEvidence{{Stage: observatory.StageResolve, Status: observatory.StatusPass}, {Stage: observatory.StageConnect, Status: observatory.StatusPass}, {Stage: observatory.StageHello, Status: observatory.StatusPass}, {Stage: observatory.StageHandshake, Status: observatory.StatusPass}, {Stage: observatory.StageHTTP, Status: observatory.StatusPass, HTTPStatus: 204, PathComplete: true}}
-	observation := observatory.ObservationResult{SchemaVersion: observatory.SchemaVersion, RunID: "run", StartedAt: at, FinishedAt: at.Add(time.Second), Target: spec.Target, Attempts: []observatory.ConnectionAttempt{{ResolvedIP: "192.0.2.1", AddressFamily: observatory.AddressFamilyIPv4, Transport: observatory.TransportTCP, Stages: stages}}, PrimaryAttemptIndex: &primary, FinalBoundary: observatory.StageHTTP, Classification: observatory.ClassSuccess, ExecutionContext: observatory.ExecutionContext{Mode: "direct"}}
+	stages := []observatory.StageEvidence{{Stage: observatory.StageResolve, Status: observatory.StatusPass}, {Stage: observatory.StageConnect, Status: observatory.StatusFail, Class: observatory.ClassTCPConnectTimeout}}
+	observation := observatory.ObservationResult{SchemaVersion: observatory.SchemaVersion, RunID: "run", StartedAt: at, FinishedAt: at.Add(time.Second), Target: spec.Target, Attempts: []observatory.ConnectionAttempt{{ResolvedIP: "192.0.2.1", AddressFamily: observatory.AddressFamilyIPv4, Transport: observatory.TransportTCP, Stages: stages}}, PrimaryAttemptIndex: &primary, FinalBoundary: observatory.StageConnect, Classification: observatory.ClassTCPConnectTimeout, ExecutionContext: observatory.ExecutionContext{Mode: "direct"}}
 	record, err := observatory.BuildEvidenceRecord(spec, observatory.EvidenceInput{Observations: []observatory.ObservationResult{observation}})
 	if err != nil {
 		t.Fatal(err)

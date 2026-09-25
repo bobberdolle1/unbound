@@ -115,7 +115,8 @@ type BuildInput struct {
 }
 
 // NewEntry creates one immutable, evidence-linked historical event. RecordedAt
-// is caller supplied to make construction deterministic and testable.
+// is the effective time of the complete diagnosis evidence cohort; requiring
+// exact equality prevents callers from extending TTL with an arbitrary time.
 func NewEntry(input BuildInput, policy Policy) (OutcomeEntry, error) {
 	policy, err := policy.normalized()
 	if err != nil {
@@ -127,35 +128,43 @@ func NewEntry(input BuildInput, policy Policy) (OutcomeEntry, error) {
 	if !persistedOutcome(input.Outcome) {
 		return OutcomeEntry{}, fmt.Errorf("outcome %q is not durable effectiveness history", input.Outcome)
 	}
+	if err := input.Diagnosis.Validate(); err != nil {
+		return OutcomeEntry{}, fmt.Errorf("invalid diagnosis report: %w", err)
+	}
+	if !input.RecordedAt.UTC().Equal(input.Diagnosis.EffectiveAt.UTC()) {
+		return OutcomeEntry{}, fmt.Errorf("recorded time must equal diagnosis effective time")
+	}
 	if err := safeContextKey(input.ContextKey); err != nil {
 		return OutcomeEntry{}, err
 	}
-	if err := safeFingerprint("capability", input.CapabilityFingerprint); err != nil {
+	if err := safeOpaqueFingerprint("backend", input.BackendFingerprint); err != nil {
 		return OutcomeEntry{}, err
 	}
-	if err := safeFingerprint("backend", input.BackendFingerprint); err != nil {
+	if err := safeOpaqueFingerprint("capability", input.CapabilityFingerprint); err != nil {
 		return OutcomeEntry{}, err
 	}
 	if len(input.Evidence) == 0 {
 		return OutcomeEntry{}, fmt.Errorf("outcome entry requires evidence")
 	}
-	if input.Diagnosis.SchemaVersion != diagnosis.SchemaVersion || input.Diagnosis.DiagnosisID == "" || input.Diagnosis.ProbeIdentity == "" || len(input.Diagnosis.EvidenceFingerprints) == 0 {
-		return OutcomeEntry{}, fmt.Errorf("validated diagnosis report is required")
-	}
 	fingerprints := make([]string, 0, len(input.Evidence))
 	var target *observatory.EvidenceRecord
+	var latest time.Time
 	family := observatory.AddressFamily("")
 	for index := range input.Evidence {
 		record := &input.Evidence[index]
 		if err := record.Validate(); err != nil {
 			return OutcomeEntry{}, fmt.Errorf("invalid evidence: %w", err)
 		}
+		if record.CollectedAt.After(latest) {
+			latest = record.CollectedAt
+		}
 		fingerprints = append(fingerprints, record.Fingerprint)
 		if record.ProbeIdentity == input.Diagnosis.ProbeIdentity {
+			if record.Probe.ControlRole != observatory.ControlRolePrimary {
+				return OutcomeEntry{}, fmt.Errorf("diagnosis target evidence is not a primary target")
+			}
 			if target == nil {
 				target = record
-			} else if target.ProbeIdentity != record.ProbeIdentity {
-				return OutcomeEntry{}, fmt.Errorf("target evidence probe identities differ")
 			}
 			for _, run := range record.Runs {
 				if run.AddressFamily == "" {
@@ -177,20 +186,30 @@ func NewEntry(input BuildInput, policy Policy) (OutcomeEntry, error) {
 	if target == nil || family == "" {
 		return OutcomeEntry{}, fmt.Errorf("diagnosis target requires one factual address family")
 	}
+	if !input.Diagnosis.EffectiveAt.UTC().Equal(latest.UTC()) {
+		return OutcomeEntry{}, fmt.Errorf("diagnosis effective time does not match supplied evidence")
+	}
 	sort.Strings(fingerprints)
 	if !sameStrings(fingerprints, sortedStrings(input.Diagnosis.EvidenceFingerprints)) {
 		return OutcomeEntry{}, fmt.Errorf("diagnosis does not reference supplied evidence")
 	}
-	if input.Diagnosis.ProbeIdentity != target.ProbeIdentity {
-		return OutcomeEntry{}, fmt.Errorf("diagnosis probe identity does not match evidence")
+	if !outcomeCompatibleDiagnosis(input.Outcome, input.Diagnosis.Kind) {
+		return OutcomeEntry{}, fmt.Errorf("outcome %q is inconsistent with diagnosis %q", input.Outcome, input.Diagnosis.Kind)
 	}
-	if requiresStrategy(input.Outcome) && (input.StrategyID == "" || input.StrategyFingerprint == "" || input.Backend == "" || input.BackendFingerprint == "") {
-		return OutcomeEntry{}, fmt.Errorf("executed outcome requires strategy and backend identities")
-	}
-	if input.StrategyFingerprint != "" {
-		if err := safeFingerprint("strategy", input.StrategyFingerprint); err != nil {
+	if requiresStrategy(input.Outcome) {
+		if input.StrategyID == "" || input.StrategyFingerprint == "" || input.Backend == "" {
+			return OutcomeEntry{}, fmt.Errorf("executed outcome requires strategy and backend identities")
+		}
+		if err := safeStrategyFingerprint(input.StrategyFingerprint); err != nil {
 			return OutcomeEntry{}, err
 		}
+	}
+	if input.Outcome == autotunevnext.OutcomeDirectBecameReachable {
+		input.StrategyID = ""
+		input.StrategyFingerprint = ""
+		input.Backend = ""
+		input.BackendFingerprint = ""
+		input.CapabilityFingerprint = ""
 	}
 	entry := OutcomeEntry{ProbeIdentity: target.ProbeIdentity, ServiceID: target.Probe.ServiceID, TargetContractRevision: target.Probe.TargetContractRevision, Transport: target.Probe.Transport, AddressFamily: family, StrategyID: input.StrategyID, StrategyFingerprint: input.StrategyFingerprint, Backend: input.Backend, BackendFingerprint: input.BackendFingerprint, CapabilityFingerprint: input.CapabilityFingerprint, DiagnosisID: input.Diagnosis.DiagnosisID, DiagnosisKind: input.Diagnosis.Kind, DiagnosisConfidence: input.Diagnosis.Confidence, EvidenceFingerprints: fingerprints, Outcome: input.Outcome, RecordedAt: input.RecordedAt.UTC(), ExpiresAt: input.RecordedAt.UTC().Add(policy.ttl(input.Outcome)), ContextKey: input.ContextKey}
 	entry.EntryID, err = entryID(entry)
@@ -210,6 +229,15 @@ func persistedOutcome(outcome autotunevnext.Outcome) bool {
 }
 func requiresStrategy(outcome autotunevnext.Outcome) bool {
 	return outcome != autotunevnext.OutcomeDirectBecameReachable
+}
+
+func outcomeCompatibleDiagnosis(outcome autotunevnext.Outcome, kind diagnosis.Kind) bool {
+	switch outcome {
+	case autotunevnext.OutcomeVerifiedFixed, autotunevnext.OutcomeStillFailing, autotunevnext.OutcomeRegressionObserved, autotunevnext.OutcomeDirectBecameReachable:
+		return kind != diagnosis.KindNoAnomaly && kind != diagnosis.KindInsufficientEvidence && kind != diagnosis.KindUnknown
+	default:
+		return true
+	}
 }
 func (policy Policy) ttl(outcome autotunevnext.Outcome) time.Duration {
 	switch outcome {
@@ -232,7 +260,10 @@ const (
 	MatchStale              MatchStatus = "STALE"
 	MatchIncompatible       MatchStatus = "INCOMPATIBLE"
 	MatchExpired            MatchStatus = "EXPIRED"
+	MatchInvalid            MatchStatus = "INVALID"
 	ReasonExpired           Reason      = "EXPIRED"
+	ReasonFuture            Reason      = "FUTURE_RECORDED_AT"
+	ReasonInvalid           Reason      = "INVALID_HISTORY"
 	ReasonInvalidated       Reason      = "INVALIDATED"
 	ReasonProbeChanged      Reason      = "PROBE_CHANGED"
 	ReasonContractChanged   Reason      = "TARGET_CONTRACT_CHANGED"
@@ -242,6 +273,7 @@ const (
 	ReasonStrategyChanged   Reason      = "STRATEGY_CHANGED"
 	ReasonBackendChanged    Reason      = "BACKEND_CHANGED"
 	ReasonCapabilityChanged Reason      = "CAPABILITY_CHANGED"
+	ReasonCapabilityMissing Reason      = "CAPABILITY_IDENTITY_REQUIRED_FOR_POSITIVE_REUSE"
 	ReasonContextChanged    Reason      = "CONTEXT_CHANGED"
 	ReasonContextMissing    Reason      = "CONTEXT_REQUIRED_FOR_POSITIVE_REUSE"
 )
@@ -269,10 +301,21 @@ type Match struct {
 // MatchEntry supplies only compatibility evidence for future callers. It never
 // returns an execution target, edge, recommendation, or Apply instruction.
 func MatchEntry(entry OutcomeEntry, query Query) Match {
-	match := Match{Entry: entry, Confidence: decayedConfidence(entry, query.Now)}
-	if query.Now.IsZero() {
+	match := Match{Entry: entry, Confidence: attribution.ConfidenceLow}
+	if err := entry.Validate(); err != nil {
+		match.Status = MatchInvalid
+		match.Reasons = []Reason{ReasonInvalid}
+		return match
+	}
+	if err := validateQuery(query); err != nil {
+		match.Status = MatchInvalid
+		match.Reasons = []Reason{ReasonInvalid}
+		return match
+	}
+	match.Confidence = decayedConfidence(entry, query.Now)
+	if query.Now.Before(entry.RecordedAt) {
 		match.Status = MatchStale
-		match.Reasons = []Reason{ReasonExpired}
+		match.Reasons = []Reason{ReasonFuture}
 		return match
 	}
 	if !entry.ExpiresAt.After(query.Now) {
@@ -288,7 +331,7 @@ func MatchEntry(entry OutcomeEntry, query Query) Match {
 	for _, check := range []struct {
 		same   bool
 		reason Reason
-	}{{entry.ProbeIdentity == query.ProbeIdentity, ReasonProbeChanged}, {entry.ServiceID == query.ServiceID, ReasonServiceChanged}, {entry.TargetContractRevision == query.TargetContractRevision, ReasonContractChanged}, {entry.Transport == query.Transport, ReasonTransportChanged}, {entry.AddressFamily == query.AddressFamily, ReasonFamilyChanged}, {entry.StrategyFingerprint == query.StrategyFingerprint, ReasonStrategyChanged}, {entry.Backend == query.Backend && entry.BackendFingerprint == query.BackendFingerprint, ReasonBackendChanged}, {entry.CapabilityFingerprint == query.CapabilityFingerprint, ReasonCapabilityChanged}} {
+	}{{entry.ProbeIdentity == query.ProbeIdentity, ReasonProbeChanged}, {entry.ServiceID == query.ServiceID, ReasonServiceChanged}, {entry.TargetContractRevision == query.TargetContractRevision, ReasonContractChanged}, {entry.Transport == query.Transport, ReasonTransportChanged}, {entry.AddressFamily == query.AddressFamily, ReasonFamilyChanged}} {
 		if !check.same {
 			match.Status = MatchIncompatible
 			match.Reasons = []Reason{check.reason}
@@ -300,16 +343,59 @@ func MatchEntry(entry OutcomeEntry, query Query) Match {
 		match.Reasons = []Reason{ReasonContextChanged}
 		return match
 	}
+	if entry.Outcome != autotunevnext.OutcomeDirectBecameReachable {
+		if entry.StrategyFingerprint != query.StrategyFingerprint {
+			match.Status = MatchIncompatible
+			match.Reasons = []Reason{ReasonStrategyChanged}
+			return match
+		}
+		if entry.Backend != query.Backend || (entry.BackendFingerprint != "" && entry.BackendFingerprint != query.BackendFingerprint) {
+			match.Status = MatchIncompatible
+			match.Reasons = []Reason{ReasonBackendChanged}
+			return match
+		}
+		if entry.CapabilityFingerprint != "" && entry.CapabilityFingerprint != query.CapabilityFingerprint {
+			match.Status = MatchIncompatible
+			match.Reasons = []Reason{ReasonCapabilityChanged}
+			return match
+		}
+	}
 	if entry.Outcome == autotunevnext.OutcomeVerifiedFixed && entry.ContextKey == "" {
 		match.Status = MatchStale
 		match.Reasons = []Reason{ReasonContextMissing}
+		return match
+	}
+	if entry.Outcome == autotunevnext.OutcomeVerifiedFixed && entry.CapabilityFingerprint == "" {
+		match.Status = MatchStale
+		match.Reasons = []Reason{ReasonCapabilityMissing}
 		return match
 	}
 	match.Status = MatchCompatible
 	return match
 }
 
+func validateQuery(query Query) error {
+	if query.Now.IsZero() || query.ProbeIdentity == "" || query.ServiceID == "" || query.TargetContractRevision == "" || !validTransport(query.Transport) || !validFamily(query.AddressFamily) {
+		return fmt.Errorf("query has missing required identity")
+	}
+	if err := safeContextKey(query.ContextKey); err != nil {
+		return err
+	}
+	if query.StrategyFingerprint != "" {
+		if err := safeStrategyFingerprint(query.StrategyFingerprint); err != nil {
+			return err
+		}
+	}
+	if err := safeOpaqueFingerprint("backend", query.BackendFingerprint); err != nil {
+		return err
+	}
+	return safeOpaqueFingerprint("capability", query.CapabilityFingerprint)
+}
+
 func QueryLedger(ledger Ledger, query Query) []Match {
+	if err := ledger.Validate(); err != nil {
+		return nil
+	}
 	out := make([]Match, 0, len(ledger.Entries))
 	for _, entry := range ledger.Entries {
 		out = append(out, MatchEntry(entry, query))
@@ -324,13 +410,10 @@ func QueryLedger(ledger Ledger, query Query) []Match {
 }
 
 func decayedConfidence(entry OutcomeEntry, now time.Time) attribution.Confidence {
-	if now.IsZero() || !entry.ExpiresAt.After(now) {
+	if now.IsZero() || now.Before(entry.RecordedAt) || !entry.ExpiresAt.After(now) {
 		return attribution.ConfidenceLow
 	}
 	base := entry.DiagnosisConfidence
-	if base == "" {
-		base = attribution.ConfidenceLow
-	}
 	lifetime := entry.ExpiresAt.Sub(entry.RecordedAt)
 	age := now.Sub(entry.RecordedAt)
 	if age < lifetime/3 {
@@ -354,16 +437,15 @@ func Add(ledger Ledger, entry OutcomeEntry, policy Policy, now time.Time) (Ledge
 	if now.IsZero() {
 		return Ledger{}, fmt.Errorf("compaction time is required")
 	}
-	if ledger.SchemaVersion == 0 {
+	if len(ledger.Entries) == 0 && ledger.Fingerprint == "" && (ledger.SchemaVersion == 0 || ledger.SchemaVersion == SchemaVersion) {
 		ledger.SchemaVersion = SchemaVersion
-	}
-	if ledger.SchemaVersion != SchemaVersion {
-		return Ledger{}, fmt.Errorf("unsupported ledger schema version %d", ledger.SchemaVersion)
+	} else if err := ledger.Validate(); err != nil {
+		return Ledger{}, fmt.Errorf("invalid source ledger: %w", err)
 	}
 	entries := append([]OutcomeEntry(nil), ledger.Entries...)
 	for index := range entries {
 		if entries[index].EntryID == entry.EntryID {
-			return Compact(Ledger{SchemaVersion: SchemaVersion, Entries: entries}, policy, now)
+			return compactEntries(entries, policy, now)
 		}
 	}
 	for index := range entries {
@@ -374,37 +456,66 @@ func Add(ledger Ledger, entry OutcomeEntry, policy Policy, now time.Time) (Ledge
 		}
 	}
 	entries = append(entries, entry)
-	return Compact(Ledger{SchemaVersion: SchemaVersion, Entries: entries}, policy, now)
+	return compactEntries(entries, policy, now)
 }
+
 func contradicts(old, newer OutcomeEntry) bool {
-	if old.Outcome != autotunevnext.OutcomeVerifiedFixed || !sameReuseScope(old, newer) {
+	if old.Outcome != autotunevnext.OutcomeVerifiedFixed || !newerEvent(old, newer) {
 		return false
 	}
 	if newer.Outcome == autotunevnext.OutcomeDirectBecameReachable {
-		return true
+		return sameTargetScope(old, newer)
 	}
-	return old.StrategyFingerprint == newer.StrategyFingerprint && (newer.Outcome == autotunevnext.OutcomeRegressionObserved || newer.Outcome == autotunevnext.OutcomeStillFailing)
+	return (newer.Outcome == autotunevnext.OutcomeRegressionObserved || newer.Outcome == autotunevnext.OutcomeStillFailing) && sameStrategyScope(old, newer)
 }
-func sameReuseScope(left, right OutcomeEntry) bool {
-	return left.ProbeIdentity == right.ProbeIdentity && left.ServiceID == right.ServiceID && left.TargetContractRevision == right.TargetContractRevision && left.Transport == right.Transport && left.AddressFamily == right.AddressFamily && left.Backend == right.Backend && left.BackendFingerprint == right.BackendFingerprint && left.CapabilityFingerprint == right.CapabilityFingerprint && left.ContextKey == right.ContextKey
+
+func newerEvent(old, newer OutcomeEntry) bool {
+	return newer.RecordedAt.After(old.RecordedAt) || newer.RecordedAt.Equal(old.RecordedAt) && newer.EntryID > old.EntryID
+}
+
+func sameTargetScope(left, right OutcomeEntry) bool {
+	return left.ProbeIdentity == right.ProbeIdentity && left.ServiceID == right.ServiceID && left.TargetContractRevision == right.TargetContractRevision && left.Transport == right.Transport && left.AddressFamily == right.AddressFamily && left.ContextKey == right.ContextKey
+}
+
+func sameStrategyScope(left, right OutcomeEntry) bool {
+	return sameTargetScope(left, right) && left.StrategyFingerprint == right.StrategyFingerprint && left.Backend == right.Backend && left.BackendFingerprint == right.BackendFingerprint && left.CapabilityFingerprint == right.CapabilityFingerprint
 }
 
 func Invalidate(ledger Ledger, entryID string, reason InvalidationReason, at time.Time) (Ledger, error) {
-	if at.IsZero() || reason == "" {
-		return Ledger{}, fmt.Errorf("invalidation reason and time are required")
+	if err := ledger.Validate(); err != nil {
+		return Ledger{}, fmt.Errorf("invalid source ledger: %w", err)
+	}
+	if entryID == "" || !validInvalidationReason(reason) || at.IsZero() {
+		return Ledger{}, fmt.Errorf("valid entry ID, invalidation reason, and time are required")
 	}
 	copy := Ledger{SchemaVersion: ledger.SchemaVersion, Entries: append([]OutcomeEntry(nil), ledger.Entries...)}
 	for index := range copy.Entries {
-		if copy.Entries[index].EntryID == entryID {
-			value := at.UTC()
-			copy.Entries[index].InvalidatedAt = &value
-			copy.Entries[index].InvalidationReason = reason
+		if copy.Entries[index].EntryID != entryID {
+			continue
 		}
+		value := at.UTC()
+		if value.Before(copy.Entries[index].RecordedAt) || copy.Entries[index].InvalidatedAt != nil && value.Before(*copy.Entries[index].InvalidatedAt) {
+			return Ledger{}, fmt.Errorf("invalidation time precedes recorded history")
+		}
+		copy.Entries[index].InvalidatedAt = &value
+		copy.Entries[index].InvalidationReason = reason
+		return finalize(copy)
 	}
-	return finalize(copy)
+	return Ledger{}, fmt.Errorf("outcome entry %q not found", entryID)
+}
+
+func validInvalidationReason(reason InvalidationReason) bool {
+	return reason == InvalidationExplicit || reason == InvalidationContradicted || reason == InvalidationContextChanged
 }
 
 func Compact(ledger Ledger, policy Policy, now time.Time) (Ledger, error) {
+	if err := ledger.Validate(); err != nil {
+		return Ledger{}, fmt.Errorf("invalid source ledger: %w", err)
+	}
+	return compactEntries(ledger.Entries, policy, now)
+}
+
+func compactEntries(entries []OutcomeEntry, policy Policy, now time.Time) (Ledger, error) {
 	policy, err := policy.normalized()
 	if err != nil {
 		return Ledger{}, err
@@ -412,20 +523,7 @@ func Compact(ledger Ledger, policy Policy, now time.Time) (Ledger, error) {
 	if now.IsZero() {
 		return Ledger{}, fmt.Errorf("compaction time is required")
 	}
-	if ledger.SchemaVersion != SchemaVersion {
-		return Ledger{}, fmt.Errorf("unsupported ledger schema version %d", ledger.SchemaVersion)
-	}
-	seen := map[string]bool{}
-	entries := make([]OutcomeEntry, 0, len(ledger.Entries))
-	for _, entry := range ledger.Entries {
-		if err := entry.Validate(); err != nil {
-			return Ledger{}, err
-		}
-		if !seen[entry.EntryID] {
-			seen[entry.EntryID] = true
-			entries = append(entries, entry)
-		}
-	}
+	entries = append([]OutcomeEntry(nil), entries...)
 	sort.Slice(entries, func(i, j int) bool {
 		left, right := evictionRank(entries[i], now), evictionRank(entries[j], now)
 		if left != right {
@@ -461,29 +559,45 @@ func (entry OutcomeEntry) Validate() error {
 	if entry.EntryID == "" || entry.ProbeIdentity == "" || entry.ServiceID == "" || entry.TargetContractRevision == "" || entry.Transport == "" || entry.AddressFamily == "" || entry.DiagnosisID == "" || entry.DiagnosisKind == "" || entry.DiagnosisConfidence == "" || len(entry.EvidenceFingerprints) == 0 || !persistedOutcome(entry.Outcome) || entry.RecordedAt.IsZero() || entry.ExpiresAt.IsZero() || !entry.ExpiresAt.After(entry.RecordedAt) {
 		return fmt.Errorf("outcome entry has missing or invalid required fields")
 	}
-	if !validTransport(entry.Transport) || !validFamily(entry.AddressFamily) || !validDiagnosisKind(entry.DiagnosisKind) {
-		return fmt.Errorf("outcome entry has unsupported protocol or diagnosis identity")
+	if !validTransport(entry.Transport) || !validFamily(entry.AddressFamily) || !validDiagnosisKind(entry.DiagnosisKind) || !outcomeCompatibleDiagnosis(entry.Outcome, entry.DiagnosisKind) {
+		return fmt.Errorf("outcome entry has unsupported or inconsistent diagnosis identity")
 	}
-	if requiresStrategy(entry.Outcome) && (entry.StrategyID == "" || entry.StrategyFingerprint == "" || entry.Backend == "" || entry.BackendFingerprint == "") {
+	if requiresStrategy(entry.Outcome) && (entry.StrategyID == "" || entry.StrategyFingerprint == "" || entry.Backend == "") {
 		return fmt.Errorf("executed outcome lacks strategy or backend identity")
+	}
+	if entry.Outcome == autotunevnext.OutcomeDirectBecameReachable && (entry.StrategyID != "" || entry.StrategyFingerprint != "" || entry.Backend != "" || entry.BackendFingerprint != "" || entry.CapabilityFingerprint != "") {
+		return fmt.Errorf("direct reachability must not carry strategy or backend identity")
 	}
 	if entry.DiagnosisConfidence != attribution.ConfidenceLow && entry.DiagnosisConfidence != attribution.ConfidenceMedium && entry.DiagnosisConfidence != attribution.ConfidenceHigh {
 		return fmt.Errorf("invalid diagnosis confidence")
 	}
-	if entry.InvalidatedAt != nil && (entry.InvalidatedAt.Before(entry.RecordedAt) || entry.InvalidationReason == "") {
+	if entry.InvalidatedAt != nil && (entry.InvalidatedAt.Before(entry.RecordedAt) || !validInvalidationReason(entry.InvalidationReason)) {
 		return fmt.Errorf("invalid outcome invalidation metadata")
+	}
+	if entry.InvalidatedAt == nil && entry.InvalidationReason != "" {
+		return fmt.Errorf("outcome invalidation reason lacks timestamp")
 	}
 	if err := safeContextKey(entry.ContextKey); err != nil {
 		return err
 	}
-	if err := safeFingerprint("strategy", entry.StrategyFingerprint); err != nil {
+	if entry.StrategyFingerprint != "" {
+		if err := safeStrategyFingerprint(entry.StrategyFingerprint); err != nil {
+			return err
+		}
+	}
+	if err := safeOpaqueFingerprint("backend", entry.BackendFingerprint); err != nil {
 		return err
 	}
-	if err := safeFingerprint("backend", entry.BackendFingerprint); err != nil {
+	if err := safeOpaqueFingerprint("capability", entry.CapabilityFingerprint); err != nil {
 		return err
 	}
-	if err := safeFingerprint("capability", entry.CapabilityFingerprint); err != nil {
+	if err := safePrefixedHash("diagnosis", entry.DiagnosisID); err != nil {
 		return err
+	}
+	for _, fingerprint := range entry.EvidenceFingerprints {
+		if err := safePrefixedHash("evidence", fingerprint); err != nil {
+			return err
+		}
 	}
 	if !sameStrings(entry.EvidenceFingerprints, sortedStrings(entry.EvidenceFingerprints)) {
 		return fmt.Errorf("evidence fingerprints are not canonical")
@@ -514,13 +628,22 @@ func validDiagnosisKind(value diagnosis.Kind) bool {
 		return false
 	}
 }
+
 func (ledger Ledger) Validate() error {
 	if ledger.SchemaVersion != SchemaVersion {
 		return fmt.Errorf("unsupported ledger schema version %d", ledger.SchemaVersion)
 	}
-	for _, entry := range ledger.Entries {
+	seen := make(map[string]struct{}, len(ledger.Entries))
+	for index, entry := range ledger.Entries {
 		if err := entry.Validate(); err != nil {
 			return err
+		}
+		if _, exists := seen[entry.EntryID]; exists {
+			return fmt.Errorf("duplicate outcome entry ID %q", entry.EntryID)
+		}
+		seen[entry.EntryID] = struct{}{}
+		if index > 0 && entryOrder(ledger.Entries[index], ledger.Entries[index-1]) {
+			return fmt.Errorf("ledger entries are not canonical")
 		}
 	}
 	fingerprint, err := ledgerFingerprint(ledger)
@@ -532,21 +655,26 @@ func (ledger Ledger) Validate() error {
 	}
 	return nil
 }
+
+func entryOrder(left, right OutcomeEntry) bool {
+	return left.RecordedAt.Before(right.RecordedAt) || left.RecordedAt.Equal(right.RecordedAt) && left.EntryID < right.EntryID
+}
+
 func finalize(ledger Ledger) (Ledger, error) {
 	ledger.SchemaVersion = SchemaVersion
-	sort.Slice(ledger.Entries, func(i, j int) bool {
-		if !ledger.Entries[i].RecordedAt.Equal(ledger.Entries[j].RecordedAt) {
-			return ledger.Entries[i].RecordedAt.Before(ledger.Entries[j].RecordedAt)
-		}
-		return ledger.Entries[i].EntryID < ledger.Entries[j].EntryID
-	})
+	ledger.Entries = append([]OutcomeEntry(nil), ledger.Entries...)
+	sort.Slice(ledger.Entries, func(i, j int) bool { return entryOrder(ledger.Entries[i], ledger.Entries[j]) })
 	fingerprint, err := ledgerFingerprint(ledger)
 	if err != nil {
 		return Ledger{}, err
 	}
 	ledger.Fingerprint = fingerprint
+	if err := ledger.Validate(); err != nil {
+		return Ledger{}, err
+	}
 	return ledger, nil
 }
+
 func entryID(entry OutcomeEntry) (string, error) {
 	copy := entry
 	copy.EntryID = ""
@@ -559,6 +687,7 @@ func entryID(entry OutcomeEntry) (string, error) {
 	sum := sha256.Sum256(data)
 	return "outcome-v1-" + hex.EncodeToString(sum[:]), nil
 }
+
 func ledgerFingerprint(ledger Ledger) (string, error) {
 	copy := ledger
 	copy.Fingerprint = ""
@@ -569,6 +698,7 @@ func ledgerFingerprint(ledger Ledger) (string, error) {
 	sum := sha256.Sum256(data)
 	return "ledger-v1-" + hex.EncodeToString(sum[:]), nil
 }
+
 func sortedStrings(values []string) []string {
 	out := append([]string(nil), values...)
 	sort.Strings(out)
@@ -581,6 +711,7 @@ func sortedStrings(values []string) []string {
 	}
 	return result
 }
+
 func sameStrings(left, right []string) bool {
 	if len(left) != len(right) {
 		return false
@@ -592,10 +723,20 @@ func sameStrings(left, right []string) bool {
 	}
 	return true
 }
-func safeFingerprint(kind, value string) error {
-	if value == "" {
-		return nil
+
+func safeStrategyFingerprint(value string) error {
+	if len(value) != 64 {
+		return fmt.Errorf("invalid strategy fingerprint")
 	}
+	for _, char := range value {
+		if !strings.ContainsRune("0123456789abcdef", char) {
+			return fmt.Errorf("invalid strategy fingerprint")
+		}
+	}
+	return nil
+}
+
+func safePrefixedHash(kind, value string) error {
 	prefix := kind + "-v1-"
 	if len(value) != len(prefix)+64 || !strings.HasPrefix(value, prefix) {
 		return fmt.Errorf("invalid %s fingerprint", kind)
@@ -607,11 +748,22 @@ func safeFingerprint(kind, value string) error {
 	}
 	return nil
 }
+
+func safeOpaqueFingerprint(kind, value string) error {
+	if value == "" {
+		return nil
+	}
+	if len(value) > 128 || strings.TrimSpace(value) != value || strings.ContainsAny(value, " \r\n\t") {
+		return fmt.Errorf("%s fingerprint must be a bounded opaque identifier", kind)
+	}
+	return nil
+}
+
 func safeContextKey(value string) error {
 	if value == "" {
 		return nil
 	}
-	return safeFingerprint("context", value)
+	return safePrefixedHash("context", value)
 }
 
 type LoadState string
