@@ -495,6 +495,16 @@ func (a *App) StartEngine(engineName string, profileName string) (err error) {
 
 	logger := engine.GetLogger()
 	notifMgr := engine.GetNotificationManager()
+	if !a.beginManualProfileChange() {
+		return fmt.Errorf("application is shutting down")
+	}
+	manualChangeStarted = true
+	defer func() {
+		if manualChangeStarted {
+			a.endManualProfileChange()
+			manualChangeStarted = false
+		}
+	}()
 
 	if engineName == "" || engineName == " " {
 		engines := a.manager.GetEngineNames()
@@ -544,19 +554,6 @@ func (a *App) StartEngine(engineName string, profileName string) (err error) {
 
 	logger.Info("App", "Administrator privileges confirmed")
 
-	if !a.beginManualProfileChange() {
-		return fmt.Errorf("application is shutting down")
-	}
-	defer func() {
-		if manualChangeStarted {
-			a.endManualProfileChange()
-			manualChangeStarted = false
-		}
-	}()
-	manualChangeStarted = true
-	if err := a.disableManagedVNextIntent(a.ctx); err != nil {
-		return err
-	}
 	logger.Info("App", "Stopping current engine if running...")
 	a.manager.Stop()
 	time.Sleep(500 * time.Millisecond)
