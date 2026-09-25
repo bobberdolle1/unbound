@@ -170,7 +170,7 @@ void updateNativeTray(const char *statusText, const char *pingText, int isRunnin
             [menu addItem:disconnItem];
         }
 
-        NSMenuItem *autoTuneItem = [[NSMenuItem alloc] initWithTitle:@"Автоподбор" action:@selector(menuAction:) keyEquivalent:@""];
+        NSMenuItem *autoTuneItem = [[NSMenuItem alloc] initWithTitle:@"Legacy AutoTune" action:@selector(menuAction:) keyEquivalent:@""];
         autoTuneItem.target = globalTrayDelegate;
         autoTuneItem.tag = 5;
         [menu addItem:autoTuneItem];

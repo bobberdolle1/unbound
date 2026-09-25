@@ -730,6 +730,12 @@ func deriveRequirements(strategy strategyir.Strategy, backend Backend) engine.St
 			requirements.IPv6 = true
 		}
 	}
+	for _, operation := range strategy.Operations {
+		if operation.Fake != nil && operation.Fake.TCPTimestamp {
+			requirements.TCPTimestamps = engine.TimestampsRequired
+			break
+		}
+	}
 	return requirements
 }
 

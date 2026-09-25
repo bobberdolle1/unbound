@@ -12,6 +12,14 @@
 - Restore every captured macOS SOCKS proxy state transactionally on stop.
 - Add build identity metadata and publish the v0.6.9 release-identity audit.
 - Gate privileged Windows engine, network, and AutoTune tests behind `UNBOUND_RUN_WINDOWS_NETWORK_E2E=1`; ordinary `go test ./...` is hermetic.
+- Add the primary AutoTune vNext UI with product-owned HTTPS presets, protected Cloudflare control, redacted managed state, and an explicit `Legacy AutoTune` fallback.
+- Add managed-intent suspend-on-shutdown, explicit-revert clearing, current-edge drift revalidation without widening exact capture, lifetime health monitoring with bounded recovery, restoration-ownership retries, and factual persistence failure states. Quit's failsafe now waits the bounded vNext operation and restoration window. Natural-network effectiveness remains unproven.
+
+- Add provider-independent Linux, Windows, and macOS CI entrypoints plus a Buildkite queue pipeline; GitHub Actions and release validation now consume the same repository-owned checks.
+- Correct the vNext Linux rule argv construction so Go 1.26 `vet` accepts the production parser path without changing its arguments.
+
+- Promote AutoTune vNext to the primary managed strategy flow while retaining `Legacy AutoTune` as an explicit compatibility path.
+- Add backend-owned verified-selection grants, fresh exact-edge Apply revalidation, atomic logical activation intent, startup drift checks, managed Revert ownership, and factual tray/UI status. Hermetic tests cover these lifecycle paths; natural-network effectiveness remains unproven.
 
 ## [0.6.9] - 2026-09-11
 ### Windows release-correctness hotfix

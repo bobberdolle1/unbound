@@ -37,15 +37,18 @@ func main() {
 	cliMode := flag.Bool("cli", false, "Run in headless CLI mode")
 	profileName := flag.String("profile", "", "Profile to use in CLI mode (default: interactive selection)")
 	autoTuneMode := flag.Bool("autotune", false, "Run AutoTune benchmark in CLI mode and start the best profile")
+	autoTuneVNextMode := flag.Bool("autotune-vnext", false, "Run experimental AutoTune vNext without activating a selected strategy")
+	autoTuneVNextTarget := flag.String("autotune-vnext-target", "", "Explicit HTTPS target for --autotune-vnext")
 	testMode := flag.Bool("test", false, "Run quick connectivity diagnostic probe for targets and exit")
 	observeURL := flag.String("observe", "", "Run a read-only TCP/TLS/HTTP observation for an HTTPS URL")
 	observeProtocol := flag.String("observe-protocol", "tcp", "Observation transport: tcp or quic")
 	observeFamily := flag.String("observe-ip-family", "any", "Observation address family: 4, 6, or any")
 	observeTimeout := flag.Duration("observe-timeout", 0, "Overall read-only observation timeout")
 	observeSave := flag.Bool("observe-save", false, "Persist a redacted observation JSON under Unbound data")
-	var attributeFiles, attributeControlFiles stringList
+	var attributeFiles, attributeControlFiles, autoTuneVNextControls stringList
 	flag.Var(&attributeFiles, "attribute", "Read an observation JSON file for pure failure attribution; repeat for multiple target files")
 	flag.Var(&attributeControlFiles, "attribute-control", "Read an observation JSON file as a compatible control cohort; repeat as needed")
+	flag.Var(&autoTuneVNextControls, "autotune-vnext-control", "HTTPS control target for --autotune-vnext; repeat as needed")
 	installService := flag.Bool("install-service", false, "Register autostart service for Unbound")
 	uninstallService := flag.Bool("uninstall-service", false, "Remove autostart service for Unbound")
 	jsonOutput := flag.Bool("json", false, "Output profile list, status, or observation in JSON format")
@@ -64,6 +67,7 @@ func main() {
 		fmt.Println("\nExamples:")
 		fmt.Println("  unbound --cli                                Run headless CLI mode")
 		fmt.Println("  unbound --cli --autotune                     Run AutoTune in CLI and start best profile")
+		fmt.Println("  unbound --cli --autotune-vnext --autotune-vnext-target https://example.com")
 		fmt.Println("  unbound --cli --profile=\"Alternative 2\"       Start CLI with specific profile")
 		fmt.Println("  unbound --test                               Run quick connectivity diagnostic probe")
 		fmt.Println("  unbound --observe https://example.com --json Run read-only stage observation")
@@ -75,7 +79,7 @@ func main() {
 
 	flag.Parse()
 	if !isBindingsBuild() {
-		if relaunched, err := relaunchElevatedIfNeeded(requiresElevationForMode(*showVersion, *testMode, *observeURL != "", len(attributeFiles) > 0, *listProfiles, *cliMode, *autoTuneMode, *installService, *uninstallService, *controlMode, *acceptanceTest)); err != nil {
+		if relaunched, err := relaunchElevatedIfNeeded(requiresElevationForMode(*showVersion, *testMode, *observeURL != "", len(attributeFiles) > 0, *listProfiles, *cliMode, *autoTuneMode || *autoTuneVNextMode, *installService, *uninstallService, *controlMode, *acceptanceTest)); err != nil {
 			log.Fatalf("Failed to request administrator privileges: %v", err)
 		} else if relaunched {
 			return
@@ -142,8 +146,8 @@ func main() {
 		return
 	}
 
-	if *cliMode || *autoTuneMode {
-		runHeadlessMode(*profileName, *autoTuneMode, *debugMode, *runDuration)
+	if *cliMode || *autoTuneMode || *autoTuneVNextMode {
+		runHeadlessMode(*profileName, *autoTuneMode, *autoTuneVNextMode, *autoTuneVNextTarget, autoTuneVNextControls, *debugMode, *runDuration)
 		return
 	}
 	app := NewApp()
@@ -398,7 +402,7 @@ func runTestProbe() {
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 }
 
-func runHeadlessMode(profileName string, runAutoTune bool, debugMode bool, runDuration time.Duration) {
+func runHeadlessMode(profileName string, runAutoTune, runAutoTuneVNext bool, autoTuneVNextTarget string, autoTuneVNextControls stringList, debugMode bool, runDuration time.Duration) {
 	attachConsole()
 
 	fmt.Println("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -429,6 +433,19 @@ func runHeadlessMode(profileName string, runAutoTune bool, debugMode bool, runDu
 
 	manager, assets := newHeadlessManager(debugMode)
 	defer func() { _ = engine.CleanupExtractedAssets() }()
+	if runAutoTuneVNext {
+		if runAutoTune {
+			log.Fatal("--autotune and --autotune-vnext are distinct modes")
+		}
+		if strings.TrimSpace(autoTuneVNextTarget) == "" {
+			log.Fatal("--autotune-vnext requires --autotune-vnext-target")
+		}
+		result := newProductVNextService(manager, assets).Run(context.Background(), AutoTuneVNextRequest{Target: autoTuneVNextTarget, Controls: []string(autoTuneVNextControls)})
+		if err := json.NewEncoder(os.Stdout).Encode(result); err != nil {
+			log.Fatalf("encode AutoTune vNext result: %v", err)
+		}
+		return
+	}
 
 	engineNames := manager.GetEngineNames()
 	if len(engineNames) == 0 {
@@ -752,10 +769,10 @@ func runControlCenterMenu(debugMode bool) {
 
 		switch choice {
 		case "1":
-			runHeadlessMode("", true, debugMode, 0)
+			runHeadlessMode("", true, false, "", nil, debugMode, 0)
 			return
 		case "2":
-			runHeadlessMode("", false, debugMode, 0)
+			runHeadlessMode("", false, false, "", nil, debugMode, 0)
 			return
 		case "3":
 			runTestProbe()

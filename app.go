@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"unbound/engine"
+	"unbound/engine/autotunevnext"
 	"unbound/engine/providers"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -21,6 +22,9 @@ import (
 type App struct {
 	ctx                 context.Context
 	manager             *providers.ProviderManager
+	assets              *engine.AssetPaths
+	newVNextService     func(*providers.ProviderManager, *engine.AssetPaths) *productVNextService
+	vNextService        *productVNextService
 	startMinimized      bool
 	debugMode           bool
 	autoTuneCancel      context.CancelFunc
@@ -29,6 +33,8 @@ type App struct {
 	autoReconnectWG     sync.WaitGroup
 	startupCancel       context.CancelFunc
 	startupWG           sync.WaitGroup
+	managedHealthCancel context.CancelFunc
+	managedHealthWG     sync.WaitGroup
 	autoReconnectID     uint64
 	profileChangeMu     sync.Mutex
 	profileChange       bool
@@ -51,9 +57,28 @@ type App struct {
 	doctorState  *engine.DoctorRunState
 }
 
+const (
+	vNextShutdownFailsafeMargin = 5 * time.Second
+)
+
+var vNextShutdownFailsafeDelay = autotunevnext.DefaultPolicy().MaxDuration + autotunevnext.ManagedCleanupTimeout + vNextShutdownFailsafeMargin
+
+var (
+	appCheckAdminPrivileges     = checkAdminPrivileges
+	appRuntimeEventsEmit        = wailsruntime.EventsEmit
+	appRuntimeLogError          = wailsruntime.LogError
+	appRuntimeLogErrorf         = wailsruntime.LogErrorf
+	appRuntimeLogInfo           = wailsruntime.LogInfo
+	appRuntimeLogInfof          = wailsruntime.LogInfof
+	appRuntimeQuit              = wailsruntime.Quit
+	appScheduleShutdownFailsafe = time.AfterFunc
+	appForceProcessExit         = os.Exit
+)
+
 func NewApp() *App {
 	return &App{
 		manager:           providers.NewProviderManager(),
+		newVNextService:   newProductVNextService,
 		trayUpdateTrigger: make(chan struct{}, 1),
 	}
 }
@@ -103,6 +128,9 @@ func (a *App) startup(ctx context.Context) {
 	}
 
 	logger.Info("App", "Startup validation passed")
+	a.mu.Lock()
+	a.assets = assets
+	a.mu.Unlock()
 
 	// Apply system settings
 	settings, _ := engine.GetSettings()
@@ -139,76 +167,16 @@ func (a *App) startup(ctx context.Context) {
 	// Log registered engines and notify frontend
 	engines := a.manager.GetEngineNames()
 	logger.Infof("App", "Registered engines: %v", engines)
-	wailsruntime.EventsEmit(ctx, "engines_changed", engines)
-	// Auto-start profile: activate the user-selected strategy on every launch
-	// (boot or manual). This is independent of settings.AutoStart, which only
-	// registers the OS-level launch.
-	if settings != nil && settings.AutoStartProfile {
-		startupCtx, cancelStartup := context.WithCancel(ctx)
-		a.mu.Lock()
-		a.startupCancel = cancelStartup
-		a.startupWG.Add(1)
-		a.mu.Unlock()
-		go func() {
-			defer a.startupWG.Done()
-			defer cancelStartup()
-			timer := time.NewTimer(3 * time.Second)
-			defer timer.Stop()
-			select {
-			case <-startupCtx.Done():
-				return
-			case <-timer.C:
-			}
-			if strings.EqualFold(strings.TrimSpace(settings.StartupProfileMode), "autotune") ||
-				strings.TrimSpace(settings.StartupProfileMode) == "Автоподбор" {
-				a.AutoTune()
-				return
-			}
-			if len(engines) == 0 {
-				return
-			}
-			engineName := engines[0]
-			profiles := a.manager.GetProfiles(engineName)
-			if len(profiles) == 0 {
-				return
-			}
-			profileName := settings.DefaultProfile
-			if contains(profiles, settings.StartupProfileMode) {
-				profileName = settings.StartupProfileMode
-			}
-			if !contains(profiles, profileName) {
-				profileName = profiles[0]
-			}
-			logger.Info("Startup", fmt.Sprintf("Auto-recovery: trying profile %s", profileName))
-			if err := a.manager.Start(startupCtx, engineName, profileName); err != nil {
-				logger.Warnf("Startup", "Profile %s failed: %v, running AutoTune", profileName, err)
-				autoProfile := a.AutoTune()
-				if autoProfile != "Failed" && autoProfile != "Already running" && autoProfile != "Shutting down" {
-					logger.Info("Startup", fmt.Sprintf("Auto-recovery: switched to %s", autoProfile))
-				}
-				return
-			}
-			_ = engine.SaveLastProfile(profileName)
-			if settings.AutoReconnect {
-				a.AutoReconnectMonitor()
-			}
-			timer.Reset(5 * time.Second)
-			select {
-			case <-startupCtx.Done():
-				return
-			case <-timer.C:
-			}
-			ping := a.GetLivePing()
-			status, _ := ping["status"].(string)
-			if status == "blocked" || status == "disconnected" {
-				logger.Warn("Startup", "Profile started but connectivity blocked, running AutoTune")
-				_ = a.manager.Stop()
-				autoProfile := a.AutoTune()
-				if autoProfile != "Failed" && autoProfile != "Already running" && autoProfile != "Shutting down" {
-					logger.Info("Startup", fmt.Sprintf("Auto-recovery: switched to %s", autoProfile))
-				}
-			}
-		}()
+
+	// Persisted managed intent has deterministic precedence over legacy
+	// AutoStartProfile. They are separate ownership models and never race.
+	_, managedIntentPresent, managedIntentErr := loadVNextManagedState()
+	if managedIntentPresent {
+		a.startManagedVNextRevalidation(ctx)
+	} else if settings != nil && settings.AutoStartProfile {
+		a.startLegacyProfileStartup(ctx, settings, engines)
+	} else if managedIntentErr != nil {
+		engine.GetLogger().Warnf("AutoTuneVNext", "managed intent ignored: %v", managedIntentErr)
 	}
 
 	a.setupTray()
@@ -221,12 +189,183 @@ func (a *App) startup(ctx context.Context) {
 	wailsruntime.LogInfo(ctx, "UNBOUND initialized")
 }
 
+func (a *App) startManagedVNextRevalidation(parent context.Context) {
+	if _, present, err := loadVNextManagedState(); err != nil || !present {
+		return
+	}
+	a.mu.Lock()
+	if a.closing || a.assets == nil {
+		a.mu.Unlock()
+		return
+	}
+	service := a.vNextService
+	if service == nil {
+		factory := a.newVNextService
+		if factory == nil {
+			factory = newProductVNextService
+		}
+		service = factory(a.manager, a.assets)
+		a.vNextService = service
+	}
+	ctx, cancel := context.WithCancel(parent)
+	a.startupCancel = cancel
+	a.startupWG.Add(1)
+	a.mu.Unlock()
+	go func() {
+		defer a.startupWG.Done()
+		defer cancel()
+		timer := time.NewTimer(3 * time.Second)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+		}
+		a.profileChangeMu.Lock()
+		defer a.profileChangeMu.Unlock()
+		if ctx.Err() != nil {
+			return
+		}
+		status := service.RevalidateSaved(ctx)
+		engine.GetLogger().Infof("AutoTuneVNext", "startup revalidation state=%s", status.State)
+		if status.Active {
+			a.startManagedVNextHealthMonitor(parent, service)
+		}
+		a.TriggerTrayUpdate()
+	}()
+}
+
+// startLegacyProfileStartup retains legacy AutoStartProfile behavior only when
+// no persisted vNext intent owns startup.
+func (a *App) startLegacyProfileStartup(parent context.Context, settings *engine.Settings, engines []string) {
+	ctx, cancel := context.WithCancel(parent)
+	a.mu.Lock()
+	a.startupCancel = cancel
+	a.startupWG.Add(1)
+	a.mu.Unlock()
+	go func() {
+		startupDone := false
+		defer func() {
+			if !startupDone {
+				a.startupWG.Done()
+			}
+		}()
+		defer cancel()
+		timer := time.NewTimer(3 * time.Second)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+		}
+		if strings.EqualFold(strings.TrimSpace(settings.StartupProfileMode), "autotune") || strings.TrimSpace(settings.StartupProfileMode) == "Автоподбор" {
+			a.startupWG.Done()
+			startupDone = true
+			_ = a.AutoTune()
+			return
+		}
+		if len(engines) == 0 {
+			return
+		}
+		profile := settings.DefaultProfile
+		if contains(a.manager.GetProfiles(engines[0]), settings.StartupProfileMode) {
+			profile = settings.StartupProfileMode
+		}
+		if !contains(a.manager.GetProfiles(engines[0]), profile) {
+			profiles := a.manager.GetProfiles(engines[0])
+			if len(profiles) == 0 {
+				return
+			}
+			profile = profiles[0]
+		}
+		a.profileChangeMu.Lock()
+		defer a.profileChangeMu.Unlock()
+		if ctx.Err() == nil {
+			if err := a.manager.Start(ctx, engines[0], profile); err == nil {
+				_ = engine.SaveLastProfile(profile)
+				if settings.AutoReconnect {
+					a.AutoReconnectMonitor()
+				}
+			}
+		}
+	}()
+}
+
+const (
+	managedHealthInterval      = 30 * time.Second
+	managedHealthFailureLimit  = 2
+	managedHealthRecoveryLimit = 2
+)
+
+// startManagedVNextHealthMonitor observes the retained exact edge for the
+// lifetime of a successfully applied candidate. Recovery attempts are bounded;
+// after that bound, it suspends the candidate rather than leaving it active
+// without monitoring.
+func (a *App) startManagedVNextHealthMonitor(parent context.Context, service *productVNextService) {
+	a.mu.Lock()
+	if a.closing {
+		a.mu.Unlock()
+		return
+	}
+	if a.managedHealthCancel != nil {
+		a.managedHealthCancel()
+	}
+	ctx, cancel := context.WithCancel(parent)
+	a.managedHealthCancel = cancel
+	a.managedHealthWG.Add(1)
+	a.mu.Unlock()
+	go func() {
+		defer a.managedHealthWG.Done()
+		defer cancel()
+		ticker := time.NewTicker(managedHealthInterval)
+		defer ticker.Stop()
+		failures, recoveries := 0, 0
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+			a.profileChangeMu.Lock()
+			if ctx.Err() != nil || !service.Status().Active {
+				a.profileChangeMu.Unlock()
+				return
+			}
+			if service.ManagedHealthy(ctx) {
+				failures = 0
+				a.profileChangeMu.Unlock()
+				continue
+			}
+			failures++
+			if failures < managedHealthFailureLimit {
+				a.profileChangeMu.Unlock()
+				continue
+			}
+			if recoveries >= managedHealthRecoveryLimit {
+				service.Suspend(ctx)
+				a.profileChangeMu.Unlock()
+				a.TriggerTrayUpdate()
+				return
+			}
+			status := service.RevalidateActive(ctx)
+			recoveries++
+			failures = 0
+			a.profileChangeMu.Unlock()
+			a.TriggerTrayUpdate()
+			if !status.Active {
+				return
+			}
+		}
+	}()
+}
+
 func (a *App) shutdown(ctx context.Context) {
 	a.mu.Lock()
 	a.closing = true
 	autoTuneCancel := a.autoTuneCancel
 	autoReconnectCancel := a.autoReconnectCancel
 	startupCancel := a.startupCancel
+	managedHealthCancel := a.managedHealthCancel
 	trayCancel := a.trayCancel
 	doctorCancel := a.doctorCancel
 	a.mu.Unlock()
@@ -242,14 +381,27 @@ func (a *App) shutdown(ctx context.Context) {
 	if startupCancel != nil {
 		startupCancel()
 	}
+	if managedHealthCancel != nil {
+		managedHealthCancel()
+	}
 	if autoReconnectCancel != nil {
 		autoReconnectCancel()
 	}
-	a.profileChangeMu.Lock()
-	a.profileChangeMu.Unlock()
 	a.startupWG.Wait()
+	a.managedHealthWG.Wait()
 	a.autoTuneWG.Wait()
 	a.autoReconnectWG.Wait()
+	a.profileChangeMu.Lock()
+	defer a.profileChangeMu.Unlock()
+	a.mu.Lock()
+	vNextService := a.vNextService
+	a.mu.Unlock()
+	if vNextService != nil {
+		vNextService.InvalidateGrants()
+		if state := vNextService.Suspend(ctx); state.State == "STATE_RESTORE_FAILED" {
+			engine.GetLogger().Error("App", "Managed vNext restoration failed during shutdown")
+		}
+	}
 	_ = a.manager.Stop()
 	if err := engine.CleanupExtractedAssets(); err != nil {
 		engine.GetLogger().Warnf("App", "Runtime cleanup failed: %v", err)
@@ -288,11 +440,53 @@ func (a *App) GetEngineNames() []string {
 	return a.manager.GetEngineNames()
 }
 
+// disableManagedVNextIntent runs inside the mutation coordinator for explicit
+// legacy takeover. It clears dormant intent as well as live managed ownership.
+func (a *App) disableManagedVNextIntent(ctx context.Context) error {
+	a.mu.Lock()
+	service := a.vNextService
+	a.mu.Unlock()
+	if service == nil {
+		return clearVNextManagedState()
+	}
+	service.InvalidateGrants()
+	state := service.Revert(ctx)
+	if state.State == "STATE_RESTORE_FAILED" {
+		return errors.New("managed vNext restore failed")
+	}
+	if state.State == "PERSISTENCE_UPDATE_FAILED" {
+		return errors.New("managed vNext persistence update failed")
+	}
+	return nil
+}
+
 func (a *App) GetProfiles(engineName string) []string {
 	return a.manager.GetProfiles(engineName)
 }
 
 func (a *App) beginManualProfileChange() bool {
+	a.mu.Lock()
+	startupCancel := a.startupCancel
+	managedHealthCancel := a.managedHealthCancel
+	autoTuneCancel := a.autoTuneCancel
+	autoReconnectCancel := a.autoReconnectCancel
+	a.mu.Unlock()
+	if startupCancel != nil {
+		startupCancel()
+	}
+	if managedHealthCancel != nil {
+		managedHealthCancel()
+	}
+	if autoTuneCancel != nil {
+		autoTuneCancel()
+	}
+	if autoReconnectCancel != nil {
+		autoReconnectCancel()
+	}
+	a.startupWG.Wait()
+	a.managedHealthWG.Wait()
+	a.autoTuneWG.Wait()
+	a.autoReconnectWG.Wait()
 	a.profileChangeMu.Lock()
 	a.mu.Lock()
 	if a.closing {
@@ -301,17 +495,7 @@ func (a *App) beginManualProfileChange() bool {
 		return false
 	}
 	a.profileChange = true
-	autoTuneCancel := a.autoTuneCancel
-	autoReconnectCancel := a.autoReconnectCancel
 	a.mu.Unlock()
-	if autoTuneCancel != nil {
-		autoTuneCancel()
-	}
-	if autoReconnectCancel != nil {
-		autoReconnectCancel()
-	}
-	a.autoTuneWG.Wait()
-	a.autoReconnectWG.Wait()
 	return true
 }
 
@@ -330,12 +514,22 @@ func (a *App) StartEngine(engineName string, profileName string) (err error) {
 				a.endManualProfileChange()
 			}
 			err = fmt.Errorf("StartEngine panic: %v", r)
-			wailsruntime.LogErrorf(a.ctx, "%v", err)
+			appRuntimeLogErrorf(a.ctx, "%v", err)
 		}
 	}()
 
 	logger := engine.GetLogger()
 	notifMgr := engine.GetNotificationManager()
+	if !a.beginManualProfileChange() {
+		return fmt.Errorf("application is shutting down")
+	}
+	manualChangeStarted = true
+	defer func() {
+		if manualChangeStarted {
+			a.endManualProfileChange()
+			manualChangeStarted = false
+		}
+	}()
 
 	if engineName == "" || engineName == " " {
 		engines := a.manager.GetEngineNames()
@@ -352,63 +546,57 @@ func (a *App) StartEngine(engineName string, profileName string) (err error) {
 	}
 
 	logger.Infof("App", "StartEngine called: engine=%s, profile=%s", engineName, profileName)
-	wailsruntime.LogInfof(a.ctx, "StartEngine called: engine=%s, profile=%s", engineName, profileName)
+	appRuntimeLogInfof(a.ctx, "StartEngine called: engine=%s, profile=%s", engineName, profileName)
 
 	// Check admin privileges
 	logger.Info("App", "Checking administrator privileges...")
-	wailsruntime.LogInfo(a.ctx, "Checking admin privileges...")
+	appRuntimeLogInfo(a.ctx, "Checking admin privileges...")
 
-	hasPriv, err := checkAdminPrivileges()
+	hasPriv, err := appCheckAdminPrivileges()
 	if err != nil {
 		logger.Errorf("App", "Privilege check error: %v", err)
-		wailsruntime.LogErrorf(a.ctx, "Privilege check error: %v", err)
+		appRuntimeLogErrorf(a.ctx, "Privilege check error: %v", err)
 		notifMgr.Error("Ошибка прав", "Не удалось проверить права администратора")
-		wailsruntime.EventsEmit(a.ctx, "privilege_error", fmt.Sprintf("Privilege check failed: %v", err))
+		appRuntimeEventsEmit(a.ctx, "privilege_error", fmt.Sprintf("Privilege check failed: %v", err))
 		return err
 	}
 
 	logger.Infof("App", "Privilege check result: admin=%v", hasPriv)
-	wailsruntime.LogInfof(a.ctx, "Privilege check result: %v", hasPriv)
+	appRuntimeLogInfof(a.ctx, "Privilege check result: %v", hasPriv)
 
 	if !hasPriv {
 		logger.Error("App", "Administrator privileges required but not granted")
-		wailsruntime.LogError(a.ctx, "Administrator privileges required")
+		appRuntimeLogError(a.ctx, "Administrator privileges required")
 		if runtime.GOOS == "darwin" {
 			notifMgr.Error("Ошибка прав", "Запустите приложение с правами sudo/root")
-			wailsruntime.EventsEmit(a.ctx, "privilege_error", "Требуются права root (sudo). Перезапустите приложение с правами root для управления pf.")
+			appRuntimeEventsEmit(a.ctx, "privilege_error", "Требуются права root (sudo). Перезапустите приложение с правами root для управления pf.")
 		} else {
 			notifMgr.Error("Ошибка прав", "Запустите приложение от имени администратора")
-			wailsruntime.EventsEmit(a.ctx, "privilege_error", "Требуются права администратора. Перезапустите приложение от имени администратора.")
+			appRuntimeEventsEmit(a.ctx, "privilege_error", "Требуются права администратора. Перезапустите приложение от имени администратора.")
 		}
 		return fmt.Errorf("administrator privileges required")
 	}
 
 	logger.Info("App", "Administrator privileges confirmed")
 
-	if !a.beginManualProfileChange() {
-		return fmt.Errorf("application is shutting down")
+	if err := a.disableManagedVNextIntent(a.ctx); err != nil {
+		logger.Errorf("App", "Managed vNext takeover failed: %v", err)
+		return fmt.Errorf("managed vNext takeover failed: %w", err)
 	}
-	defer func() {
-		if manualChangeStarted {
-			a.endManualProfileChange()
-			manualChangeStarted = false
-		}
-	}()
-	manualChangeStarted = true
+
 	logger.Info("App", "Stopping current engine if running...")
-	wailsruntime.LogInfo(a.ctx, "Stopping current engine if running...")
 	a.manager.Stop()
 	time.Sleep(500 * time.Millisecond)
 
 	logger.Infof("App", "Starting engine: %s with profile: %s", engineName, profileName)
 	logger.Infof("App", "Available engines: %v", a.manager.GetEngineNames())
-	wailsruntime.LogInfof(a.ctx, "Starting engine: %s with profile: %s", engineName, profileName)
-	wailsruntime.LogInfof(a.ctx, "Available engines: %v", a.manager.GetEngineNames())
+	appRuntimeLogInfof(a.ctx, "Starting engine: %s with profile: %s", engineName, profileName)
+	appRuntimeLogInfof(a.ctx, "Available engines: %v", a.manager.GetEngineNames())
 
-	wailsruntime.LogInfo(a.ctx, "About to call manager.Start...")
+	appRuntimeLogInfo(a.ctx, "About to call manager.Start...")
 	err = a.manager.Start(a.ctx, engineName, profileName)
 	logger.Infof("App", "Manager.Start returned: err=%v", err)
-	wailsruntime.LogInfof(a.ctx, "Manager.Start returned: err=%v", err)
+	appRuntimeLogInfof(a.ctx, "Manager.Start returned: err=%v", err)
 
 	// nil means started cleanly; also treat "already running same profile" as
 	// a silent success — the engine IS up, just a second concurrent Start lost
@@ -420,22 +608,22 @@ func (a *App) StartEngine(engineName string, profileName string) (err error) {
 		if saveErr := engine.SaveLastProfile(profileName); saveErr != nil {
 			logger.Warnf("App", "Could not persist last profile: %v", saveErr)
 		}
-		wailsruntime.EventsEmit(a.ctx, "profile_changed", profileName)
+		appRuntimeEventsEmit(a.ctx, "profile_changed", profileName)
 		notifMgr.Success("Успешный запуск", fmt.Sprintf("Профиль: %s", profileName))
-		wailsruntime.EventsEmit(a.ctx, "status_changed", "Running")
-		wailsruntime.LogInfof(a.ctx, "Started: %s", profileName)
+		appRuntimeEventsEmit(a.ctx, "status_changed", "Running")
+		appRuntimeLogInfof(a.ctx, "Started: %s", profileName)
 	} else if engineIsRunning {
 		// A concurrent Start already finished successfully for this profile.
 		// The engine is running — don't show an error toast; just sync UI.
 		logger.Infof("App", "Engine already running (%s), concurrent Start was a no-op: %v", profileName, err)
-		wailsruntime.EventsEmit(a.ctx, "profile_changed", profileName)
-		wailsruntime.EventsEmit(a.ctx, "status_changed", "Running")
+		appRuntimeEventsEmit(a.ctx, "profile_changed", profileName)
+		appRuntimeEventsEmit(a.ctx, "status_changed", "Running")
 		err = nil
 	} else {
 		logger.Errorf("App", "Failed to start engine: %v", err)
 		notifMgr.Error("Ошибка запуска", fmt.Sprintf("Не удалось произвести запуск: %v", err))
-		wailsruntime.LogErrorf(a.ctx, "Start failed: %v", err)
-		wailsruntime.EventsEmit(a.ctx, "engine_error", err.Error())
+		appRuntimeLogErrorf(a.ctx, "Start failed: %v", err)
+		appRuntimeEventsEmit(a.ctx, "engine_error", err.Error())
 	}
 	a.endManualProfileChange()
 	manualChangeStarted = false
@@ -449,7 +637,6 @@ func (a *App) StartEngine(engineName string, profileName string) (err error) {
 func (a *App) AddDefenderExclusion() error {
 	return engine.AddDefenderExclusion()
 }
-
 func (a *App) StopEngine() (err error) {
 	if !a.beginManualProfileChange() {
 		return fmt.Errorf("application is shutting down")
@@ -460,6 +647,9 @@ func (a *App) StopEngine() (err error) {
 			a.endManualProfileChange()
 		}
 	}()
+	if err := a.disableManagedVNextIntent(a.ctx); err != nil {
+		return err
+	}
 	err = a.manager.Stop()
 	a.endManualProfileChange()
 	changeEnded = true
@@ -945,24 +1135,22 @@ func persistSettings(next *engine.Settings) error {
 func (a *App) AutoTune() string {
 	logger := engine.GetLogger()
 	notifMgr := engine.GetNotificationManager()
-
-	a.mu.Lock()
-	if a.closing {
-		a.mu.Unlock()
-		logger.Warn("App", "AutoTune rejected during shutdown")
+	if !a.beginManualProfileChange() {
 		return "Shutting down"
 	}
-	if a.profileChange {
-		a.mu.Unlock()
-		logger.Warn("App", "AutoTune rejected during manual profile change")
-		return "Already running"
+	defer a.endManualProfileChange()
+
+	if err := a.disableManagedVNextIntent(a.ctx); err != nil {
+		logger.Warnf("App", "Legacy AutoTune blocked by managed vNext state: %v", err)
+		return "Failed"
 	}
+
+	a.mu.Lock()
 	if a.autoTuneCancel != nil {
 		a.mu.Unlock()
 		logger.Warn("App", "AutoTune already running")
 		return "Already running"
 	}
-
 	tuneCtx, cancel := context.WithCancel(a.ctx)
 	a.autoTuneCancel = cancel
 	a.autoTuneWG.Add(1)
@@ -1100,6 +1288,158 @@ func (a *App) AutoTune() string {
 	return result.ProfileName
 }
 
+// AutoTuneVNext runs the primary product vNext experiment path.
+func (a *App) AutoTuneVNext(target string, controls []string) AutoTuneVNextResult {
+	if !a.beginManualProfileChange() {
+		return productVNextFailure(autotunevnext.StatusCancelled, "", "", "APPLICATION_SHUTTING_DOWN")
+	}
+	defer a.endManualProfileChange()
+	a.mu.Lock()
+	if a.closing || a.autoTuneCancel != nil {
+		a.mu.Unlock()
+		return productVNextFailure(autotunevnext.StatusInconclusive, "", "", "OPERATION_CONFLICT")
+	}
+	parent := a.ctx
+	if parent == nil {
+		parent = context.Background()
+	}
+	runCtx, cancel := context.WithCancel(parent)
+	a.autoTuneCancel = cancel
+	a.autoTuneWG.Add(1)
+	assets := a.assets
+	service := a.vNextService
+	newService := a.newVNextService
+	if service == nil && assets != nil {
+		if newService == nil {
+			newService = newProductVNextService
+		}
+		service = newService(a.manager, assets)
+		a.vNextService = service
+	}
+	a.mu.Unlock()
+	defer func() {
+		cancel()
+		a.mu.Lock()
+		a.autoTuneCancel = nil
+		a.mu.Unlock()
+		a.autoTuneWG.Done()
+	}()
+	if assets == nil || service == nil {
+		return productVNextFailure(autotunevnext.StatusPreflightFailed, "", "", "PRODUCT_ASSETS_UNAVAILABLE")
+	}
+	result := service.Run(runCtx, AutoTuneVNextRequest{Target: target, Controls: controls})
+	engine.GetLogger().Infof("AutoTuneVNext", "status=%s backend=%s restored=%t", result.Status, result.Backend, result.StateRestored)
+	return result
+}
+
+// GetAutoTuneVNextExperimentConfig exposes product-owned target presets for
+// the primary vNext flow. Legacy AutoTune targets remain untouched.
+func (a *App) GetAutoTuneVNextExperimentConfig() AutoTuneVNextExperimentConfig {
+	return productVNextExperimentConfig()
+}
+
+// RunExperimentalAutoTuneVNext resolves a product preset or validated custom
+// HTTPS URL and always supplies the protected product control.
+func (a *App) RunExperimentalAutoTuneVNext(presetID string, customTarget string) AutoTuneVNextResult {
+	target, controls, _, err := resolveProductVNextExperimentTarget(presetID, customTarget)
+	if err != nil {
+		return productVNextFailure(autotunevnext.StatusPreflightFailed, "", "", "INVALID_EXPERIMENTAL_TARGET")
+	}
+	return a.AutoTuneVNext(target, controls)
+}
+
+func (a *App) ApplyAutoTuneVNextSelection(token string) AutoTuneVNextManagedStatus {
+	if !a.beginManualProfileChange() {
+		return AutoTuneVNextManagedStatus{State: "NOT_APPLIED"}
+	}
+	defer a.endManualProfileChange()
+	a.mu.Lock()
+	if a.closing || a.autoTuneCancel != nil {
+		a.mu.Unlock()
+		return AutoTuneVNextManagedStatus{State: "NOT_APPLIED"}
+	}
+	service := a.vNextService
+	parent := a.ctx
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithCancel(parent)
+	a.autoTuneCancel = cancel
+	a.autoTuneWG.Add(1)
+	a.mu.Unlock()
+	defer func() {
+		cancel()
+		a.mu.Lock()
+		a.autoTuneCancel = nil
+		a.mu.Unlock()
+		a.autoTuneWG.Done()
+		a.TriggerTrayUpdate()
+	}()
+	if service == nil {
+		return AutoTuneVNextManagedStatus{State: "NOT_APPLIED"}
+	}
+	status := service.Apply(ctx, token)
+	if status.State == "APPLIED" && status.Active {
+		a.startManagedVNextHealthMonitor(parent, service)
+	}
+	return status
+}
+
+// RevertAutoTuneVNext is the explicit user semantic: restore direct state and
+// clear persisted managed intent.
+func (a *App) RevertAutoTuneVNext() AutoTuneVNextManagedStatus {
+	if !a.beginManualProfileChange() {
+		return AutoTuneVNextManagedStatus{State: "NOT_APPLIED"}
+	}
+	defer a.endManualProfileChange()
+	a.mu.Lock()
+	if a.closing || a.autoTuneCancel != nil {
+		a.mu.Unlock()
+		return AutoTuneVNextManagedStatus{State: "NOT_APPLIED"}
+	}
+	service := a.vNextService
+	parent := a.ctx
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithCancel(parent)
+	a.autoTuneCancel = cancel
+	a.autoTuneWG.Add(1)
+	a.mu.Unlock()
+	defer func() {
+		cancel()
+		a.mu.Lock()
+		a.autoTuneCancel = nil
+		a.mu.Unlock()
+		a.autoTuneWG.Done()
+		a.TriggerTrayUpdate()
+	}()
+	if service == nil {
+		if err := clearVNextManagedState(); err != nil {
+			return AutoTuneVNextManagedStatus{State: "PERSISTENCE_UPDATE_FAILED"}
+		}
+		return AutoTuneVNextManagedStatus{State: "DIRECT"}
+	}
+	return service.Revert(ctx)
+}
+
+func (a *App) GetAutoTuneVNextManagedStatus() AutoTuneVNextManagedStatus {
+	a.mu.Lock()
+	service := a.vNextService
+	a.mu.Unlock()
+	if service != nil {
+		return service.Status()
+	}
+	state, present, err := loadVNextManagedState()
+	if err != nil {
+		return AutoTuneVNextManagedStatus{State: "SAVED_STRATEGY_STALE", NeedsRevalidation: true}
+	}
+	if present {
+		return AutoTuneVNextManagedStatus{State: "SAVED_REVALIDATION_PENDING", NeedsRevalidation: true, Target: state.Target, StrategyID: state.StrategyID, Fingerprint: shortManagedFingerprint(state.Fingerprint), Backend: state.Backend}
+	}
+	return AutoTuneVNextManagedStatus{State: "DIRECT"}
+}
+
 func (a *App) CancelAutoTune() {
 	a.mu.Lock()
 	cancel := a.autoTuneCancel
@@ -1110,7 +1450,11 @@ func (a *App) CancelAutoTune() {
 }
 
 func (a *App) GetLivePing() map[string]interface{} {
+	managed := a.GetAutoTuneVNextManagedStatus()
 	if a.manager.GetStatus() != providers.StatusRunning {
+		if managed.Active {
+			return map[string]interface{}{"active": true, "latency": 0, "status": "managed_active", "services": map[string]int64{}, "serviceStatus": map[string]string{}}
+		}
 		return map[string]interface{}{"active": true, "latency": 0, "status": "disconnected", "services": map[string]int64{}, "serviceStatus": map[string]string{}}
 	}
 	targets := []struct{ Name, URL string }{
@@ -1209,10 +1553,10 @@ func (a *App) IsAutoStartEnabled() bool {
 //
 // The actual teardown lives in App.shutdown (wails OnShutdown): it waits for
 // autotune/reconnect/startup goroutines, stops the engine and removes the
-// per-process runtime directory. onBeforeClose lets the quit through only
-// when a.quitting is set — otherwise runtime.Quit is vetoed and the window
-// just hides to tray. The 5s failsafe guarantees process death even if the
-// webview teardown wedges.
+// per-process runtime directory. vNext cancellation can enter one
+// MaxDuration-bounded operation followed by an uncancelled
+// ManagedCleanupTimeout restoration transaction. The failsafe therefore adds
+// both bounds and a margin before it can force process exit.
 func (a *App) QuitApp() {
 	logger := engine.GetLogger()
 	logger.Info("App", "QuitApp requested by user")
@@ -1220,11 +1564,11 @@ func (a *App) QuitApp() {
 	a.quitting = true
 	a.closing = true
 	a.mu.Unlock()
-	time.AfterFunc(5*time.Second, func() {
+	appScheduleShutdownFailsafe(vNextShutdownFailsafeDelay, func() {
 		logger.Warn("App", "graceful shutdown timed out, forcing exit")
-		os.Exit(0)
+		appForceProcessExit(0)
 	})
-	wailsruntime.Quit(a.ctx)
+	appRuntimeQuit(a.ctx)
 }
 
 func (a *App) CheckPrivileges() bool {

@@ -10,8 +10,8 @@ import { LogJournalDrawer } from './components/terminal/LogJournalDrawer';
 import { ModalHost } from './components/modals/ModalHost';
 
 import { backendService } from './services/backend';
-import { windowService } from './services/window';
-import { engine as WailsEngine } from '../wailsjs/go/models';
+import { eventBus, windowService } from './services/window';
+import { engine as WailsEngine, main as WailsMain } from '../wailsjs/go/models';
 
 import { usePlatform } from './hooks/usePlatform';
 import { useEngineController } from './hooks/useEngineController';
@@ -42,7 +42,8 @@ export default function App() {
   const engine = useEngineController(paramStatus === 'active' ? 'Running' : 'Stopped');
   const { state: engineState, actions: engineActions } = engine;
 
-  const { livePingData, pingHistory } = usePingPolling(engineState.status);
+  const [managedVNextState, setManagedVNextState] = useState<WailsMain.AutoTuneVNextManagedStatus>(new WailsMain.AutoTuneVNextManagedStatus({ state: 'DIRECT', active: false, needs_revalidation: false }));
+  const { livePingData, pingHistory } = usePingPolling(engineState.status, managedVNextState.active);
   const logJournal = useLogJournal(engineState.status, engineState.isScanning);
   const hostlistsEditor = useHostlists();
   const { state: hostlistState, actions: hostlistActions } = hostlistsEditor;
@@ -72,7 +73,8 @@ export default function App() {
   const [isDiscordCleanModalOpen, setIsDiscordCleanModalOpen] = useState(false);
   const [discordRunningProcs, setDiscordRunningProcs] = useState<string[]>([]);
   const [isStrategyLabOpen, setIsStrategyLabOpen] = useState(false);
-
+  const [isAutoTuneVNextOpen, setIsAutoTuneVNextOpen] = useState(false);
+  const [isAutoTuneVNextRunning, setIsAutoTuneVNextRunning] = useState(false);
   // Operations States
   const [isVerifyingAssets, setIsVerifyingAssets] = useState<boolean>(false);
   const [isGeneratingReport, setIsGeneratingReport] = useState<boolean>(false);
@@ -170,6 +172,20 @@ export default function App() {
     });
   }, [platform]);
 
+  useEffect(() => {
+    let mounted = true;
+    const refresh = () => Promise.resolve()
+      .then(() => backendService.getAutoTuneVNextManagedStatus())
+      .then((status) => mounted && setManagedVNextState(status))
+      .catch(() => {});
+    refresh();
+    const interval = window.setInterval(refresh, 2000);
+    return () => {
+      mounted = false;
+      window.clearInterval(interval);
+    };
+  }, []);
+
   // Event Subscriptions
   useEngineEvents({
     onStatusChange: engineActions.setStatus,
@@ -197,6 +213,11 @@ export default function App() {
     },
   });
 
+
+  useEffect(() => eventBus.onOpenAutoTuneVNext(() => {
+    setActiveTab('main');
+    setIsAutoTuneVNextOpen(true);
+  }), []);
   // Shortcuts Hook
   useKeyboardShortcuts(
     useCallback(() => {
@@ -330,9 +351,10 @@ export default function App() {
     return () => timers.forEach((t) => clearTimeout(t));
   }, [toasts, removeToast]);
 
-  const isConnected = engineState.status === 'Running';
+  const isManagedVNextActive = managedVNextState.active;
+  const isConnected = engineState.status === 'Running' || isManagedVNextActive;
   const isConnecting = engineState.status === 'Starting';
-  const disableMain = isConnecting || engineState.isScanning;
+  const disableMain = isConnecting || engineState.isScanning || isAutoTuneVNextRunning;
 
   const statusLedState =
     livePingData.status === 'error'
@@ -399,12 +421,16 @@ export default function App() {
             handleToggleFavorite={engineActions.handleToggleFavorite}
             favoriteProfiles={engineState.favoriteProfiles}
             handleAutoTune={engineActions.handleAutoTune}
+            openAutoTuneVNext={() => setIsAutoTuneVNextOpen(true)}
+            vNextRunning={isAutoTuneVNextRunning}
             isScanning={engineState.isScanning}
             scanProgress={engineState.scanProgress}
             autotuneProgress={engineState.autotuneProgress}
             handleCancelAutoTune={engineActions.cancelAutoTune}
             livePingData={livePingData}
             pingHistory={pingHistory}
+            managedState={managedVNextState}
+            revertManaged={() => backendService.revertAutoTuneVNext().then(setManagedVNextState)}
           />
         )}
 
@@ -485,6 +511,9 @@ export default function App() {
         onConfirmDiscordClean={() => executeDiscordClean(true)}
         isStrategyLabOpen={isStrategyLabOpen}
         onCloseStrategyLab={() => setIsStrategyLabOpen(false)}
+        isAutoTuneVNextOpen={isAutoTuneVNextOpen}
+        onCloseAutoTuneVNext={() => setIsAutoTuneVNextOpen(false)}
+        onAutoTuneVNextRunningChange={setIsAutoTuneVNextRunning}
         onSaveDiscoveredProfileSuccess={(name) => {
           engineActions.setSelectedProfile(name);
           addToast({

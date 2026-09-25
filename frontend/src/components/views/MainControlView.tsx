@@ -17,12 +17,16 @@ interface MainControlViewProps {
   handleToggleFavorite: () => void;
   favoriteProfiles: string[];
   handleAutoTune: () => void;
+  openAutoTuneVNext: () => void;
+  vNextRunning: boolean;
   isScanning: boolean;
   scanProgress: string;
   autotuneProgress: { percent?: number; msg?: string } | null;
   handleCancelAutoTune: () => void;
   livePingData: { active: boolean; latency: number; status: string };
   pingHistory: number[];
+  managedState?: { state: string; active: boolean; needs_revalidation: boolean; strategy_id?: string; target?: string };
+  revertManaged?: () => void;
 }
 
 export const MainControlView: React.FC<MainControlViewProps> = ({
@@ -38,23 +42,33 @@ export const MainControlView: React.FC<MainControlViewProps> = ({
   handleToggleFavorite,
   favoriteProfiles,
   handleAutoTune,
+  openAutoTuneVNext,
+  vNextRunning,
   isScanning,
   scanProgress,
   autotuneProgress,
   handleCancelAutoTune,
   livePingData,
   pingHistory,
+  managedState = { state: 'DIRECT', active: false, needs_revalidation: false },
+  revertManaged = () => {},
 }) => {
   const isFavorite = favoriteProfiles.includes(selectedProfile);
-
+  const managedActive = managedState.active;
+  const managedRestoreFailure = managedState.state === 'STATE_RESTORE_FAILED';
+  const managedDormant = !managedActive && managedState.state === 'SAVED_NOT_CURRENTLY_NEEDED';
   return (
     <div className="flex-1 flex flex-col gap-4">
       {/* CONNECTION CARD */}
       <div className="bg-[var(--ui-surface-elevated)] border border-[var(--ui-border)] rounded-[var(--ui-radius)] p-5 flex flex-col items-center gap-4 text-center">
         <div className="flex items-center gap-2 text-xs font-semibold text-[var(--ui-text-muted)]">
-          <span className={cn('status-dot-led', statusLedState)} />
+          <span className={cn('status-dot-led', managedActive ? 'connected' : managedRestoreFailure ? 'error' : statusLedState)} />
           <span>
-            {statusLedState === 'connected'
+            {managedRestoreFailure
+              ? 'Не подтверждено восстановление исходного состояния'
+              : managedActive
+              ? 'Управляемая стратегия активна'
+              : statusLedState === 'connected'
               ? 'Обход активен'
               : statusLedState === 'connecting'
               ? 'Инициализация драйвера...'
@@ -63,22 +77,24 @@ export const MainControlView: React.FC<MainControlViewProps> = ({
               : 'Служба остановлена'}
           </span>
         </div>
-
         <button
-          onClick={toggleConnection}
+          onClick={managedActive || managedRestoreFailure ? revertManaged : toggleConnection}
           disabled={disableMain}
           className="btn-ui-primary max-w-[280px]"
         >
           <UINetwork className="w-4 h-4" />
-          <span>{isConnected ? 'Отключить' : isConnecting ? 'Подключение...' : 'Подключить'}</span>
+          <span>{managedRestoreFailure ? 'Повторить восстановление' : managedActive ? 'Отключить управляемую стратегию' : isConnected ? 'Отключить' : isConnecting ? 'Подключение...' : 'Подключить'}</span>
         </button>
 
         <div className="text-xs text-[var(--ui-text-muted)] truncate max-w-full">
           Стратегия:{' '}
           <strong className="text-[var(--ui-text)] font-semibold">
-            {selectedProfile || 'Автоматическая'}
+            {managedActive ? managedState.strategy_id || 'Проверенная стратегия' : selectedProfile || 'Автоматическая'}
           </strong>
         </div>
+        {managedActive && <div className="text-xs text-[var(--ui-text-muted)] truncate max-w-full">Цель: {managedState.target || '—'}</div>}
+        {managedDormant && <div className="text-xs text-amber-300">Сохранённая стратегия сейчас не требуется и будет перепроверена при следующем запуске.</div>}
+        {managedRestoreFailure && <div className="text-xs text-red-300">Критично: требуется подтвердить восстановление исходного состояния.</div>}
       </div>
 
       {/* PROFILE SELECTOR & AUTOTUNE (RESPONSIVE GRID) */}
@@ -108,12 +124,26 @@ export const MainControlView: React.FC<MainControlViewProps> = ({
         </div>
 
         <button
-          onClick={handleAutoTune}
-          disabled={disableMain || isScanning}
+          onClick={openAutoTuneVNext}
+          disabled={disableMain || isScanning || vNextRunning}
           className="btn-ui-secondary w-full justify-center"
         >
           <UIZap className="w-4 h-4" />
-          <span>{isScanning ? 'Сканирование...' : 'Автоподбор стратегии'}</span>
+          <span>{vNextRunning ? 'Проверка стратегии...' : 'Автоподбор стратегии'}</span>
+        </button>
+      </div>
+
+      <div className="rounded-[var(--ui-radius)] border border-dashed border-[var(--ui-border)] p-3 flex items-center justify-between gap-3">
+        <div>
+          <div className="text-xs font-semibold">Совместимость</div>
+          <div className="mt-0.5 text-xs text-[var(--ui-text-muted)]">Legacy AutoTune остаётся доступным для существующих профилей.</div>
+        </div>
+        <button
+          onClick={handleAutoTune}
+          disabled={disableMain || isScanning || vNextRunning}
+          className="btn-ui-secondary shrink-0 text-xs"
+        >
+          Legacy AutoTune
         </button>
       </div>
 
