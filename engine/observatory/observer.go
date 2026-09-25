@@ -86,8 +86,8 @@ func (o *DirectTCPHTTPSObserver) Observe(ctx context.Context, rawURL string, opt
 	defer cancel()
 	emitter := &serializedEmitter{callback: options.Progress}
 
-	if options.Transport == TransportQUIC {
-		result = o.observeQUICUnsupported(overallCtx, result, parsed, options, emitter)
+	if options.Transport == TransportQUIC || options.Transport == TransportUDP {
+		result = o.observeTransportUnsupported(overallCtx, result, parsed, options, emitter)
 		result.FinishedAt = time.Now().UTC()
 		return result, nil
 	}
@@ -249,15 +249,23 @@ func observeHTTP(ctx context.Context, conn *tls.Conn, target *url.URL, timeout t
 	return evidence
 }
 
-func (o *DirectTCPHTTPSObserver) observeQUICUnsupported(ctx context.Context, result ObservationResult, target *url.URL, options Options, emitter *serializedEmitter) ObservationResult {
+func (o *DirectTCPHTTPSObserver) observeTransportUnsupported(ctx context.Context, result ObservationResult, target *url.URL, options Options, emitter *serializedEmitter) ObservationResult {
 	addresses, resolve := resolveAddresses(ctx, target.Hostname(), options, options.Timeouts.normalized().DNS)
 	result.ResolvedAddresses = toResolvedAddresses(addresses)
-	attempt := ConnectionAttempt{Transport: TransportQUIC, Stages: []StageEvidence{resolve}}
+	attempt := ConnectionAttempt{Transport: options.Transport, Stages: []StageEvidence{resolve}}
 	emitter.emit(resolve)
 	if resolve.Status == StatusPass && len(addresses) > 0 {
 		attempt.ResolvedIP, attempt.AddressFamily = addresses[0].String(), familyForIP(addresses[0])
 	}
-	unsupported := failureEvidence(StageConnect, time.Now().UTC(), StatusSkippedUnsupported, ClassQUICUnsupported, "quic_not_implemented", "QUIC observation requires a real QUIC handshake implementation")
+	classification := ClassQUICUnsupported
+	code := "quic_not_implemented"
+	detail := "QUIC observation requires a real QUIC handshake implementation"
+	if options.Transport == TransportUDP {
+		classification = ClassUDPUnsupported
+		code = "udp_not_implemented"
+		detail = "UDP observation requires a real UDP probe implementation"
+	}
+	unsupported := failureEvidence(StageConnect, time.Now().UTC(), StatusSkippedUnsupported, classification, code, detail)
 	attempt.Stages = append(attempt.Stages, unsupported)
 	emitter.emit(unsupported)
 	attempt.Stages = append(attempt.Stages, unsupportedStages(time.Now().UTC(), StageHello, StageHandshake, StageHTTP)...)
@@ -266,7 +274,7 @@ func (o *DirectTCPHTTPSObserver) observeQUICUnsupported(ctx context.Context, res
 	primary := 0
 	result.PrimaryAttemptIndex = &primary
 	result.FinalBoundary = StageConnect
-	result.Classification = ClassQUICUnsupported
+	result.Classification = classification
 	return result
 }
 

@@ -56,6 +56,7 @@ const (
 	ClassHTTPReset             Classification = "HTTP_RESET"
 	ClassHTTPProtocolFailure   Classification = "HTTP_PROTOCOL_FAILURE"
 	ClassQUICUnsupported       Classification = "QUIC_UNSUPPORTED"
+	ClassUDPUnsupported        Classification = "UDP_UNSUPPORTED"
 	ClassQUICHandshakeTimeout  Classification = "QUIC_HANDSHAKE_TIMEOUT"
 	ClassQUICHandshakeFailure  Classification = "QUIC_HANDSHAKE_FAILURE"
 	ClassTransportFailure      Classification = "TRANSPORT_FAILURE"
@@ -76,6 +77,7 @@ type Transport string
 const (
 	TransportTCP  Transport = "tcp"
 	TransportQUIC Transport = "quic"
+	TransportUDP  Transport = "udp"
 )
 
 // Target is a generic endpoint, not a service verdict. URL is sanitized before
