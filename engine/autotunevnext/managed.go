@@ -32,14 +32,15 @@ type ManagedRequest struct {
 	Policy       Policy
 }
 
-// ManagedActivation owns one live runtime candidate and its original product
-// snapshot. Revert is the only path that may clear this ownership.
+// ManagedActivation owns the product snapshot after a mutation may have
+// started. Candidate activity and pending snapshot restoration are separate:
+// an unsuccessful activation can still require a later Restore retry.
 type ManagedActivation struct {
-	executor  Executor
-	snapshot  StateSnapshot
-	candidate ExecutableCandidate
-	parent    context.Context
-	active    bool
+	executor        Executor
+	snapshot        StateSnapshot
+	candidate       ExecutableCandidate
+	candidateActive bool
+	restorePending  bool
 }
 
 // Candidate returns only logical candidate identity. It never exposes argv.
@@ -51,26 +52,33 @@ func (a *ManagedActivation) Candidate() ExecutableCandidate {
 	}
 }
 
-// Revert deactivates the owned candidate and restores the exact snapshot. A
-// restoration failure leaves ownership intact so callers cannot falsely report
-// direct state.
+// Revert restores the exact snapshot even when candidate activation never
+// completed. It clears ownership only after Restore and VerifyRestored succeed.
 func (a *ManagedActivation) Revert(ctx context.Context) error {
-	if a == nil || !a.active {
+	if a == nil || !a.restorePending {
 		return nil
 	}
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
-	if err := a.executor.Deactivate(cleanupCtx); err != nil {
-		return fmt.Errorf("DEACTIVATION_FAILED: %w", err)
+	var cleanupErr error
+	if a.candidateActive {
+		if err := a.executor.Deactivate(cleanupCtx); err != nil {
+			cleanupErr = fmt.Errorf("DEACTIVATION_FAILED: %w", err)
+		}
 	}
 	if err := a.executor.Restore(cleanupCtx, a.snapshot); err != nil {
-		return fmt.Errorf("RESTORE_FAILED: %w", err)
+		if cleanupErr == nil {
+			cleanupErr = fmt.Errorf("RESTORE_FAILED: %w", err)
+		}
+	} else if err := a.executor.VerifyRestored(cleanupCtx, a.snapshot); err != nil {
+		if cleanupErr == nil {
+			cleanupErr = fmt.Errorf("RESTORE_VERIFY_FAILED: %w", err)
+		}
+	} else {
+		a.restorePending = false
+		a.candidateActive = false
 	}
-	if err := a.executor.VerifyRestored(cleanupCtx, a.snapshot); err != nil {
-		return fmt.Errorf("RESTORE_VERIFY_FAILED: %w", err)
-	}
-	a.active = false
-	return nil
+	return cleanupErr
 }
 
 // ApplyVerified performs a fresh exact-edge revalidation before retaining a
@@ -97,29 +105,15 @@ func ApplyVerified(ctx context.Context, request ManagedRequest, observer Observe
 	if err != nil {
 		return nil, fmt.Errorf("NOT_APPLIED: SNAPSHOT_FAILED: %w", err)
 	}
-	activation = &ManagedActivation{executor: executor, snapshot: snapshot, parent: ctx}
+	activation = &ManagedActivation{executor: executor, snapshot: snapshot, restorePending: true}
 	owned := activation
 	committed := false
 	defer func() {
 		if committed {
 			return
 		}
-		cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-		defer cleanupCancel()
-		var cleanupErr error
-		if owned.active {
-			if deactivateErr := executor.Deactivate(cleanupCtx); deactivateErr != nil {
-				cleanupErr = deactivateErr
-			}
-		}
-		if restoreErr := executor.Restore(cleanupCtx, snapshot); restoreErr != nil && cleanupErr == nil {
-			cleanupErr = restoreErr
-		}
-		if verifyErr := executor.VerifyRestored(cleanupCtx, snapshot); verifyErr != nil && cleanupErr == nil {
-			cleanupErr = verifyErr
-		}
-		if cleanupErr != nil {
-			activation = nil
+		if cleanupErr := owned.Revert(ctx); cleanupErr != nil {
+			activation = owned
 			err = fmt.Errorf("%w: %v", ErrManagedStateRestoreFailed, cleanupErr)
 		}
 	}()
@@ -181,7 +175,7 @@ func ApplyVerified(ctx context.Context, request ManagedRequest, observer Observe
 	plan := compiled.Plan
 	plan.EngineArgv = argv
 	activation.candidate = ExecutableCandidate{Strategy: canonical, Fingerprint: request.Fingerprint, Backend: request.Backend, Plan: plan, Assets: resolved, TargetEdge: append(net.IP(nil), (*edge)...), TargetFamily: selectedFamily(before)}
-	activation.active = true
+	activation.candidateActive = true
 	if err := executor.Activate(operationCtx, activation.candidate); err != nil {
 		return nil, fmt.Errorf("NOT_APPLIED: ACTIVATION_FAILED: %w", err)
 	}

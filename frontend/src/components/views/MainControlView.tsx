@@ -55,16 +55,18 @@ export const MainControlView: React.FC<MainControlViewProps> = ({
 }) => {
   const isFavorite = favoriteProfiles.includes(selectedProfile);
   const managedActive = managedState.active;
+  const managedRestoreFailure = managedState.state === 'STATE_RESTORE_FAILED';
   const managedDormant = !managedActive && managedState.state === 'SAVED_NOT_CURRENTLY_NEEDED';
-
   return (
     <div className="flex-1 flex flex-col gap-4">
       {/* CONNECTION CARD */}
       <div className="bg-[var(--ui-surface-elevated)] border border-[var(--ui-border)] rounded-[var(--ui-radius)] p-5 flex flex-col items-center gap-4 text-center">
         <div className="flex items-center gap-2 text-xs font-semibold text-[var(--ui-text-muted)]">
-          <span className={cn('status-dot-led', managedActive ? 'connected' : statusLedState)} />
+          <span className={cn('status-dot-led', managedActive ? 'connected' : managedRestoreFailure ? 'error' : statusLedState)} />
           <span>
-            {managedActive
+            {managedRestoreFailure
+              ? 'Не подтверждено восстановление исходного состояния'
+              : managedActive
               ? 'Управляемая стратегия активна'
               : statusLedState === 'connected'
               ? 'Обход активен'
@@ -76,12 +78,12 @@ export const MainControlView: React.FC<MainControlViewProps> = ({
           </span>
         </div>
         <button
-          onClick={managedActive ? revertManaged : toggleConnection}
+          onClick={managedActive || managedRestoreFailure ? revertManaged : toggleConnection}
           disabled={disableMain}
           className="btn-ui-primary max-w-[280px]"
         >
           <UINetwork className="w-4 h-4" />
-          <span>{managedActive ? 'Отключить управляемую стратегию' : isConnected ? 'Отключить' : isConnecting ? 'Подключение...' : 'Подключить'}</span>
+          <span>{managedRestoreFailure ? 'Повторить восстановление' : managedActive ? 'Отключить управляемую стратегию' : isConnected ? 'Отключить' : isConnecting ? 'Подключение...' : 'Подключить'}</span>
         </button>
 
         <div className="text-xs text-[var(--ui-text-muted)] truncate max-w-full">
@@ -92,6 +94,7 @@ export const MainControlView: React.FC<MainControlViewProps> = ({
         </div>
         {managedActive && <div className="text-xs text-[var(--ui-text-muted)] truncate max-w-full">Цель: {managedState.target || '—'}</div>}
         {managedDormant && <div className="text-xs text-amber-300">Сохранённая стратегия сейчас не требуется и будет перепроверена при следующем запуске.</div>}
+        {managedRestoreFailure && <div className="text-xs text-red-300">Критично: требуется подтвердить восстановление исходного состояния.</div>}
       </div>
 
       {/* PROFILE SELECTOR & AUTOTUNE (RESPONSIVE GRID) */}

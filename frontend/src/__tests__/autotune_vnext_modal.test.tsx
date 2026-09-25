@@ -80,5 +80,10 @@ describe('AutoTune cutover', () => {
     expect(revert).toHaveBeenCalledTimes(1);
     rerender(<MainControlView statusLedState="disconnected" isConnected={false} isConnecting={false} disableMain={false} toggleConnection={vi.fn()} selectedProfile="" setSelectedProfile={vi.fn()} sortedProfiles={[]} selectedEngine="zapret" handleToggleFavorite={vi.fn()} favoriteProfiles={[]} handleAutoTune={vi.fn()} openAutoTuneVNext={vi.fn()} vNextRunning={false} isScanning={false} scanProgress="" autotuneProgress={null} handleCancelAutoTune={vi.fn()} livePingData={{ active: false, latency: 0, status: 'disconnected' }} pingHistory={[]} managedState={{ state: 'SAVED_NOT_CURRENTLY_NEEDED', active: false, needs_revalidation: true }} revertManaged={revert} />);
     expect(screen.getByText(/Сохранённая стратегия сейчас не требуется/)).toBeDefined();
+    rerender(<MainControlView statusLedState="disconnected" isConnected={false} isConnecting={false} disableMain={false} toggleConnection={vi.fn()} selectedProfile="" setSelectedProfile={vi.fn()} sortedProfiles={[]} selectedEngine="zapret" handleToggleFavorite={vi.fn()} favoriteProfiles={[]} handleAutoTune={vi.fn()} openAutoTuneVNext={vi.fn()} vNextRunning={false} isScanning={false} scanProgress="" autotuneProgress={null} handleCancelAutoTune={vi.fn()} livePingData={{ active: false, latency: 0, status: 'disconnected' }} pingHistory={[]} managedState={{ state: 'STATE_RESTORE_FAILED', active: false, needs_revalidation: false }} revertManaged={revert} />);
+    expect(screen.getByText('Не подтверждено восстановление исходного состояния')).toBeDefined();
+    expect(screen.queryByText('Управляемая стратегия активна')).toBeNull();
+    fireEvent.click(screen.getByText('Повторить восстановление'));
+    expect(revert).toHaveBeenCalledTimes(2);
   });
 });

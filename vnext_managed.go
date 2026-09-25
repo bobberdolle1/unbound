@@ -244,18 +244,28 @@ func (s *productVNextService) Apply(ctx context.Context, token string) AutoTuneV
 	activation, err := autotunevnext.ApplyVerified(ctx, autotunevnext.ManagedRequest{Target: grant.target, Controls: grant.controls, Strategy: strategy, Fingerprint: grant.fingerprint, Backend: runtimeBinding.backend, NetworkLabel: "product-autotune-vnext"}, s.deps.observer, runtimeBinding.executor, runtimeBinding.preflight, resolver)
 	if err != nil {
 		if errors.Is(err, autotunevnext.ErrManagedStateRestoreFailed) {
-			return managedStatusForGrant("STATE_RESTORE_FAILED", true, grant)
+			status := managedStatusForGrant("STATE_RESTORE_FAILED", false, grant)
+			s.mu.Lock()
+			if activation != nil {
+				s.active = &managedVNextActivation{activation: activation, grant: grant}
+			}
+			s.fault = status
+			s.dormant = AutoTuneVNextManagedStatus{}
+			s.mu.Unlock()
+			return status
 		}
 		return AutoTuneVNextManagedStatus{State: "NOT_APPLIED"}
 	}
 	state := persistedVNextState{SchemaVersion: vNextManagedSchema, Enabled: true, Target: grant.publicTarget, StrategyID: grant.strategyID, Fingerprint: grant.fingerprint, Backend: string(runtimeBinding.backend), SavedAt: time.Now().UTC().Format(time.RFC3339Nano)}
 	if err := saveVNextManagedState(state); err != nil {
 		if revertErr := activation.Revert(context.Background()); revertErr != nil {
+			status := managedStatusForGrant("STATE_RESTORE_FAILED", false, grant)
 			s.mu.Lock()
 			s.active = &managedVNextActivation{activation: activation, grant: grant}
+			s.fault = status
 			s.dormant = AutoTuneVNextManagedStatus{}
 			s.mu.Unlock()
-			return managedStatusForGrant("STATE_RESTORE_FAILED", true, grant)
+			return status
 		}
 		return managedStatusForGrant("PERSISTENCE_UPDATE_FAILED", false, grant)
 	}
@@ -265,6 +275,7 @@ func (s *productVNextService) Apply(ctx context.Context, token string) AutoTuneV
 		s.grants[token] = current
 	}
 	s.active = &managedVNextActivation{activation: activation, grant: grant}
+	s.fault = AutoTuneVNextManagedStatus{}
 	s.dormant = AutoTuneVNextManagedStatus{}
 	s.mu.Unlock()
 	return managedStatusForGrant("APPLIED", true, grant)
@@ -279,12 +290,19 @@ func (s *productVNextService) DeactivateManaged(ctx context.Context, preserveInt
 	s.mu.Unlock()
 	if active != nil {
 		if err := active.activation.Revert(ctx); err != nil {
-			return managedStatusForGrant("STATE_RESTORE_FAILED", true, active.grant)
+			status := managedStatusForGrant("STATE_RESTORE_FAILED", false, active.grant)
+			s.mu.Lock()
+			if s.active == active {
+				s.fault = status
+			}
+			s.mu.Unlock()
+			return status
 		}
 		s.mu.Lock()
 		if s.active == active {
 			s.active = nil
 		}
+		s.fault = AutoTuneVNextManagedStatus{}
 		s.invalidateGrantsLocked()
 		s.mu.Unlock()
 	}
@@ -344,8 +362,12 @@ func (s *productVNextService) rememberDormant(status AutoTuneVNextManagedStatus)
 func (s *productVNextService) Status() AutoTuneVNextManagedStatus {
 	s.mu.Lock()
 	active := s.active
+	fault := s.fault
 	dormant := s.dormant
 	s.mu.Unlock()
+	if fault.State != "" {
+		return fault
+	}
 	if active != nil {
 		return managedStatusForGrant("VNEXT_MANAGED_ACTIVE", true, active.grant)
 	}

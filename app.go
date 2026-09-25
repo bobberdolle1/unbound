@@ -57,6 +57,15 @@ type App struct {
 	doctorState  *engine.DoctorRunState
 }
 
+var appCheckAdminPrivileges = checkAdminPrivileges
+var (
+	appRuntimeEventsEmit = wailsruntime.EventsEmit
+	appRuntimeLogError   = wailsruntime.LogError
+	appRuntimeLogErrorf  = wailsruntime.LogErrorf
+	appRuntimeLogInfo    = wailsruntime.LogInfo
+	appRuntimeLogInfof   = wailsruntime.LogInfof
+)
+
 func NewApp() *App {
 	return &App{
 		manager:           providers.NewProviderManager(),
@@ -277,11 +286,12 @@ const (
 	managedHealthInterval      = 30 * time.Second
 	managedHealthFailureLimit  = 2
 	managedHealthRecoveryLimit = 2
-	managedHealthCheckLimit    = 20
 )
 
-// startManagedVNextHealthMonitor is a bounded, target-specific monitor. It
-// uses the managed exact edge only; it cannot rotate legacy profiles.
+// startManagedVNextHealthMonitor observes the retained exact edge for the
+// lifetime of a successfully applied candidate. Recovery attempts are bounded;
+// after that bound, it suspends the candidate rather than leaving it active
+// without monitoring.
 func (a *App) startManagedVNextHealthMonitor(parent context.Context, service *productVNextService) {
 	a.mu.Lock()
 	if a.closing {
@@ -301,7 +311,7 @@ func (a *App) startManagedVNextHealthMonitor(parent context.Context, service *pr
 		ticker := time.NewTicker(managedHealthInterval)
 		defer ticker.Stop()
 		failures, recoveries := 0, 0
-		for checks := 0; checks < managedHealthCheckLimit && recoveries < managedHealthRecoveryLimit; checks++ {
+		for {
 			select {
 			case <-ctx.Done():
 				return
@@ -321,6 +331,12 @@ func (a *App) startManagedVNextHealthMonitor(parent context.Context, service *pr
 			if failures < managedHealthFailureLimit {
 				a.profileChangeMu.Unlock()
 				continue
+			}
+			if recoveries >= managedHealthRecoveryLimit {
+				service.Suspend(ctx)
+				a.profileChangeMu.Unlock()
+				a.TriggerTrayUpdate()
+				return
 			}
 			status := service.RevalidateActive(ctx)
 			recoveries++
@@ -489,7 +505,7 @@ func (a *App) StartEngine(engineName string, profileName string) (err error) {
 				a.endManualProfileChange()
 			}
 			err = fmt.Errorf("StartEngine panic: %v", r)
-			wailsruntime.LogErrorf(a.ctx, "%v", err)
+			appRuntimeLogErrorf(a.ctx, "%v", err)
 		}
 	}()
 
@@ -521,38 +537,43 @@ func (a *App) StartEngine(engineName string, profileName string) (err error) {
 	}
 
 	logger.Infof("App", "StartEngine called: engine=%s, profile=%s", engineName, profileName)
-	wailsruntime.LogInfof(a.ctx, "StartEngine called: engine=%s, profile=%s", engineName, profileName)
+	appRuntimeLogInfof(a.ctx, "StartEngine called: engine=%s, profile=%s", engineName, profileName)
 
 	// Check admin privileges
 	logger.Info("App", "Checking administrator privileges...")
-	wailsruntime.LogInfo(a.ctx, "Checking admin privileges...")
+	appRuntimeLogInfo(a.ctx, "Checking admin privileges...")
 
-	hasPriv, err := checkAdminPrivileges()
+	hasPriv, err := appCheckAdminPrivileges()
 	if err != nil {
 		logger.Errorf("App", "Privilege check error: %v", err)
-		wailsruntime.LogErrorf(a.ctx, "Privilege check error: %v", err)
+		appRuntimeLogErrorf(a.ctx, "Privilege check error: %v", err)
 		notifMgr.Error("Ошибка прав", "Не удалось проверить права администратора")
-		wailsruntime.EventsEmit(a.ctx, "privilege_error", fmt.Sprintf("Privilege check failed: %v", err))
+		appRuntimeEventsEmit(a.ctx, "privilege_error", fmt.Sprintf("Privilege check failed: %v", err))
 		return err
 	}
 
 	logger.Infof("App", "Privilege check result: admin=%v", hasPriv)
-	wailsruntime.LogInfof(a.ctx, "Privilege check result: %v", hasPriv)
+	appRuntimeLogInfof(a.ctx, "Privilege check result: %v", hasPriv)
 
 	if !hasPriv {
 		logger.Error("App", "Administrator privileges required but not granted")
-		wailsruntime.LogError(a.ctx, "Administrator privileges required")
+		appRuntimeLogError(a.ctx, "Administrator privileges required")
 		if runtime.GOOS == "darwin" {
 			notifMgr.Error("Ошибка прав", "Запустите приложение с правами sudo/root")
-			wailsruntime.EventsEmit(a.ctx, "privilege_error", "Требуются права root (sudo). Перезапустите приложение с правами root для управления pf.")
+			appRuntimeEventsEmit(a.ctx, "privilege_error", "Требуются права root (sudo). Перезапустите приложение с правами root для управления pf.")
 		} else {
 			notifMgr.Error("Ошибка прав", "Запустите приложение от имени администратора")
-			wailsruntime.EventsEmit(a.ctx, "privilege_error", "Требуются права администратора. Перезапустите приложение от имени администратора.")
+			appRuntimeEventsEmit(a.ctx, "privilege_error", "Требуются права администратора. Перезапустите приложение от имени администратора.")
 		}
 		return fmt.Errorf("administrator privileges required")
 	}
 
 	logger.Info("App", "Administrator privileges confirmed")
+
+	if err := a.disableManagedVNextIntent(a.ctx); err != nil {
+		logger.Errorf("App", "Managed vNext takeover failed: %v", err)
+		return fmt.Errorf("managed vNext takeover failed: %w", err)
+	}
 
 	logger.Info("App", "Stopping current engine if running...")
 	a.manager.Stop()
@@ -560,13 +581,13 @@ func (a *App) StartEngine(engineName string, profileName string) (err error) {
 
 	logger.Infof("App", "Starting engine: %s with profile: %s", engineName, profileName)
 	logger.Infof("App", "Available engines: %v", a.manager.GetEngineNames())
-	wailsruntime.LogInfof(a.ctx, "Starting engine: %s with profile: %s", engineName, profileName)
-	wailsruntime.LogInfof(a.ctx, "Available engines: %v", a.manager.GetEngineNames())
+	appRuntimeLogInfof(a.ctx, "Starting engine: %s with profile: %s", engineName, profileName)
+	appRuntimeLogInfof(a.ctx, "Available engines: %v", a.manager.GetEngineNames())
 
-	wailsruntime.LogInfo(a.ctx, "About to call manager.Start...")
+	appRuntimeLogInfo(a.ctx, "About to call manager.Start...")
 	err = a.manager.Start(a.ctx, engineName, profileName)
 	logger.Infof("App", "Manager.Start returned: err=%v", err)
-	wailsruntime.LogInfof(a.ctx, "Manager.Start returned: err=%v", err)
+	appRuntimeLogInfof(a.ctx, "Manager.Start returned: err=%v", err)
 
 	// nil means started cleanly; also treat "already running same profile" as
 	// a silent success — the engine IS up, just a second concurrent Start lost
@@ -578,22 +599,22 @@ func (a *App) StartEngine(engineName string, profileName string) (err error) {
 		if saveErr := engine.SaveLastProfile(profileName); saveErr != nil {
 			logger.Warnf("App", "Could not persist last profile: %v", saveErr)
 		}
-		wailsruntime.EventsEmit(a.ctx, "profile_changed", profileName)
+		appRuntimeEventsEmit(a.ctx, "profile_changed", profileName)
 		notifMgr.Success("Успешный запуск", fmt.Sprintf("Профиль: %s", profileName))
-		wailsruntime.EventsEmit(a.ctx, "status_changed", "Running")
-		wailsruntime.LogInfof(a.ctx, "Started: %s", profileName)
+		appRuntimeEventsEmit(a.ctx, "status_changed", "Running")
+		appRuntimeLogInfof(a.ctx, "Started: %s", profileName)
 	} else if engineIsRunning {
 		// A concurrent Start already finished successfully for this profile.
 		// The engine is running — don't show an error toast; just sync UI.
 		logger.Infof("App", "Engine already running (%s), concurrent Start was a no-op: %v", profileName, err)
-		wailsruntime.EventsEmit(a.ctx, "profile_changed", profileName)
-		wailsruntime.EventsEmit(a.ctx, "status_changed", "Running")
+		appRuntimeEventsEmit(a.ctx, "profile_changed", profileName)
+		appRuntimeEventsEmit(a.ctx, "status_changed", "Running")
 		err = nil
 	} else {
 		logger.Errorf("App", "Failed to start engine: %v", err)
 		notifMgr.Error("Ошибка запуска", fmt.Sprintf("Не удалось произвести запуск: %v", err))
-		wailsruntime.LogErrorf(a.ctx, "Start failed: %v", err)
-		wailsruntime.EventsEmit(a.ctx, "engine_error", err.Error())
+		appRuntimeLogErrorf(a.ctx, "Start failed: %v", err)
+		appRuntimeEventsEmit(a.ctx, "engine_error", err.Error())
 	}
 	a.endManualProfileChange()
 	manualChangeStarted = false
@@ -1349,7 +1370,7 @@ func (a *App) ApplyAutoTuneVNextSelection(token string) AutoTuneVNextManagedStat
 		return AutoTuneVNextManagedStatus{State: "NOT_APPLIED"}
 	}
 	status := service.Apply(ctx, token)
-	if status.Active {
+	if status.State == "APPLIED" && status.Active {
 		a.startManagedVNextHealthMonitor(parent, service)
 	}
 	return status

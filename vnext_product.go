@@ -150,6 +150,7 @@ type productVNextService struct {
 	mu      sync.Mutex
 	grants  map[string]verifiedSelectionGrant
 	active  *managedVNextActivation
+	fault   AutoTuneVNextManagedStatus
 	dormant AutoTuneVNextManagedStatus
 }
 

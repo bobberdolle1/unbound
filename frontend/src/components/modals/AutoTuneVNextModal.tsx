@@ -78,6 +78,7 @@ export const AutoTuneVNextModal: React.FC<AutoTuneVNextModalProps> = ({ isOpen, 
   const selectedCustom = presetID === 'custom';
   const canStart = !running && Boolean(config) && Boolean(presetID) && (!selectedCustom || customTarget.trim() !== '') && !managed?.active;
   const restoreFailure = result?.status === 'STATE_RESTORE_FAILED' || managed?.state === 'STATE_RESTORE_FAILED';
+  const canRevert = Boolean(managed?.active || restoreFailure);
 
   const start = async () => {
     if (!canStart) return;
@@ -108,8 +109,7 @@ export const AutoTuneVNextModal: React.FC<AutoTuneVNextModalProps> = ({ isOpen, 
   };
 
   const revert = async () => {
-    if (!managed?.active || running) return;
-    setRunning(true);
+    if (!canRevert || running) return;
     onRunningChange(true);
     try {
       setManaged(await backendService.revertAutoTuneVNext());
@@ -142,8 +142,14 @@ export const AutoTuneVNextModal: React.FC<AutoTuneVNextModalProps> = ({ isOpen, 
             <button onClick={revert} disabled={running} className="btn-ui-secondary w-full justify-center">Отключить / Вернуть прямое подключение</button>
           </div>
         )}
+        {restoreFailure && !managed?.active && (
+          <div className="rounded-lg border border-red-500/40 bg-red-500/10 p-4 space-y-2 text-sm text-red-100">
+            <div className="font-semibold">Восстановление состояния ожидает повторной проверки</div>
+            <button onClick={revert} disabled={running} className="btn-ui-secondary w-full justify-center">Повторить восстановление</button>
+          </div>
+        )}
 
-        {config && !running && !result && !managed?.active && (
+        {config && !running && !result && !managed?.active && !restoreFailure && (
           <div className="space-y-3">
             <div><div className="text-xs font-semibold text-[var(--ui-text-muted)] mb-2">Целевой сервис</div><div className="flex flex-wrap gap-2">
               {config.targets.map((preset) => <button key={preset.id} onClick={() => setPresetID(preset.id)} className={presetID === preset.id ? 'btn-ui-primary text-xs' : 'btn-ui-secondary text-xs'}>{preset.label}</button>)}

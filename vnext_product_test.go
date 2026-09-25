@@ -206,7 +206,11 @@ func containsAll(value string, parts ...string) bool {
 	return true
 }
 
-type productVNextNoopExecutor struct{ calls []string }
+type productVNextNoopExecutor struct {
+	calls             []string
+	restoreErr        error
+	verifyRestoredErr error
+}
 
 func (e *productVNextNoopExecutor) Snapshot(context.Context) (autotunevnext.StateSnapshot, error) {
 	e.calls = append(e.calls, "snapshot")
@@ -229,11 +233,11 @@ func (e *productVNextNoopExecutor) Deactivate(context.Context) error {
 }
 func (e *productVNextNoopExecutor) Restore(context.Context, autotunevnext.StateSnapshot) error {
 	e.calls = append(e.calls, "restore")
-	return nil
+	return e.restoreErr
 }
 func (e *productVNextNoopExecutor) VerifyRestored(context.Context, autotunevnext.StateSnapshot) error {
 	e.calls = append(e.calls, "verify-restored")
-	return nil
+	return e.verifyRestoredErr
 }
 
 type productVNextSupportedPreflight struct{}

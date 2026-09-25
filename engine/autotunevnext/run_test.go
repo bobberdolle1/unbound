@@ -71,12 +71,12 @@ func (f *fakeObserver) Observe(ctx context.Context, _ string, options observator
 }
 
 type fakeExecutor struct {
-	calls                                                   []string
-	activateErr, verifyActiveErr, deactivateErr, restoreErr error
-	snapshot                                                StateSnapshot
-	directErrAt                                             int
-	directCalls                                             int
-	deactivateContextCancelled                              bool
+	calls                                                                      []string
+	activateErr, verifyActiveErr, deactivateErr, restoreErr, verifyRestoredErr error
+	snapshot                                                                   StateSnapshot
+	directErrAt                                                                int
+	directCalls                                                                int
+	deactivateContextCancelled                                                 bool
 }
 
 func (f *fakeExecutor) Snapshot(context.Context) (StateSnapshot, error) {
@@ -110,7 +110,7 @@ func (f *fakeExecutor) Restore(context.Context, StateSnapshot) error {
 }
 func (f *fakeExecutor) VerifyRestored(context.Context, StateSnapshot) error {
 	f.calls = append(f.calls, "verify-restored")
-	return nil
+	return f.verifyRestoredErr
 }
 
 type supportedPreflight struct{ status PreflightStatus }

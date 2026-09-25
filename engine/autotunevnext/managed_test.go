@@ -60,7 +60,7 @@ func TestApplyVerifiedFailureRestoresAndDoesNotReturnOwner(t *testing.T) {
 	}
 }
 
-func TestApplyVerifiedCleanupRestoreFailureTakesPrecedence(t *testing.T) {
+func TestApplyVerifiedCleanupRestoreFailureRetainsOwnerForRetry(t *testing.T) {
 	strategy := tlsStrategy("managed-cleanup-failure")
 	fingerprint, err := strategyir.Fingerprint(strategy)
 	if err != nil {
@@ -72,18 +72,45 @@ func TestApplyVerifiedCleanupRestoreFailureTakesPrecedence(t *testing.T) {
 		observation("before", false, "192.0.2.1", "https://blocked.test/"),
 	}}
 	activation, err := ApplyVerified(context.Background(), ManagedRequest{Target: Target{URL: "https://blocked.test/"}, Strategy: strategy, Fingerprint: fingerprint, Backend: backendcap.Zapret2Windows}, observer, executor, supportedPreflight{PreflightSupported}, fakeAssets{})
-	if activation != nil || !errors.Is(err, ErrManagedStateRestoreFailed) {
+	if activation == nil || !errors.Is(err, ErrManagedStateRestoreFailed) {
 		t.Fatalf("activation=%#v err=%v", activation, err)
+	}
+	executor.restoreErr = nil
+	if err := activation.Revert(context.Background()); err != nil {
+		t.Fatalf("retry restore: %v", err)
+	}
+	if err := activation.Revert(context.Background()); err != nil {
+		t.Fatalf("cleared ownership retry: %v", err)
+	}
+}
+
+func TestApplyVerifiedPreActivationRestoreFailureRetainsOwnerForRetry(t *testing.T) {
+	strategy := tlsStrategy("managed-pre-activation-failure")
+	fingerprint, err := strategyir.Fingerprint(strategy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	executor := &fakeExecutor{restoreErr: errors.New("restore")}
+	activation, err := ApplyVerified(context.Background(), ManagedRequest{Target: Target{URL: "https://blocked.test/"}, Strategy: strategy, Fingerprint: fingerprint, Backend: backendcap.Zapret2Windows}, &fakeObserver{}, executor, supportedPreflight{PreflightSupported}, fakeAssets{})
+	if activation == nil || !errors.Is(err, ErrManagedStateRestoreFailed) {
+		t.Fatalf("activation=%#v err=%v", activation, err)
+	}
+	if slices.Contains(executor.calls, "activate") || slices.Contains(executor.calls, "deactivate") {
+		t.Fatalf("pre-activation cleanup touched candidate lifecycle: %v", executor.calls)
+	}
+	executor.restoreErr = nil
+	if err := activation.Revert(context.Background()); err != nil {
+		t.Fatalf("pre-activation restore retry: %v", err)
 	}
 }
 
 func TestManagedRevertRetainsOwnershipWhenRestoreFails(t *testing.T) {
 	executor := &fakeExecutor{restoreErr: errors.New("restore")}
-	activation := &ManagedActivation{executor: executor, snapshot: StateSnapshot{ID: "snapshot"}, active: true}
+	activation := &ManagedActivation{executor: executor, snapshot: StateSnapshot{ID: "snapshot"}, restorePending: true}
 	if err := activation.Revert(context.Background()); err == nil {
 		t.Fatal("restore failure was reported as success")
 	}
-	if !activation.active {
+	if !activation.restorePending {
 		t.Fatal("restore failure cleared managed ownership")
 	}
 }

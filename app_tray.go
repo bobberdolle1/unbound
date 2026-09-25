@@ -71,6 +71,11 @@ func (tc *trayController) sync(current trayStateSnapshot) {
 			tc.mConnect.Disable()
 			tc.mDisconnect.Disable()
 			tc.mAutoTune.Disable()
+		case current.managed.State == "STATE_RESTORE_FAILED":
+			statusTitle = "Статус: Требуется восстановление исходного состояния"
+			tc.mConnect.Disable()
+			tc.mDisconnect.Enable()
+			tc.mAutoTune.Disable()
 		case current.managed.Active:
 			statusTitle = fmt.Sprintf("Статус: Управляемая стратегия (%s)", current.managed.StrategyID)
 			tc.mConnect.Disable()
