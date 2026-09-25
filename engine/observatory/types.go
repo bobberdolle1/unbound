@@ -58,6 +58,7 @@ const (
 	ClassQUICUnsupported       Classification = "QUIC_UNSUPPORTED"
 	ClassUDPUnsupported        Classification = "UDP_UNSUPPORTED"
 	ClassQUICHandshakeTimeout  Classification = "QUIC_HANDSHAKE_TIMEOUT"
+	ClassQUICHandshakeFailure  Classification = "QUIC_HANDSHAKE_FAILURE"
 	ClassTransportFailure      Classification = "TRANSPORT_FAILURE"
 	ClassRemoteFailure         Classification = "REMOTE_FAILURE"
 	ClassUnknown               Classification = "UNKNOWN"

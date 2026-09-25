@@ -72,6 +72,12 @@ func TestProbeSpecValidationAndStableIdentity(t *testing.T) {
 	}
 }
 
+func TestQUICHandshakeFailureClassificationRemainsCompatible(t *testing.T) {
+	if ClassQUICHandshakeFailure != "QUIC_HANDSHAKE_FAILURE" {
+		t.Fatalf("QUIC handshake failure classification changed: %q", ClassQUICHandshakeFailure)
+	}
+}
+
 func TestObserveProbeWrapsV1TCPHTTPSEvidence(t *testing.T) {
 	server := httptest.NewUnstartedServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writer.WriteHeader(http.StatusNoContent)
@@ -139,6 +145,76 @@ func TestEvidencePreservesIPv4AndIPv6SelectedFamilies(t *testing.T) {
 				t.Fatalf("family collapsed: %#v", run)
 			}
 		})
+	}
+}
+
+func TestEvidenceEnforcesAddressFamilyPolicy(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		policy  AddressFamily
+		family  AddressFamily
+		ip      string
+		wantErr bool
+	}{
+		{name: "ipv4 accepts ipv4", policy: AddressFamilyIPv4, family: AddressFamilyIPv4, ip: "192.0.2.10"},
+		{name: "ipv6 accepts ipv6", policy: AddressFamilyIPv6, family: AddressFamilyIPv6, ip: "2001:db8::10"},
+		{name: "any accepts ipv4", policy: AddressFamilyAny, family: AddressFamilyIPv4, ip: "192.0.2.10"},
+		{name: "any accepts ipv6", policy: AddressFamilyAny, family: AddressFamilyIPv6, ip: "2001:db8::10"},
+		{name: "ipv4 rejects ipv6", policy: AddressFamilyIPv4, family: AddressFamilyIPv6, ip: "2001:db8::10", wantErr: true},
+		{name: "ipv6 rejects ipv4", policy: AddressFamilyIPv6, family: AddressFamilyIPv4, ip: "192.0.2.10", wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			spec := testProbeSpec(t, "https://example.test/ok", TransportTCP, test.policy)
+			observation := testObservation(spec, "family-"+test.name, test.ip, test.family, ClassSuccess, completedStages(http.StatusNoContent))
+			_, err := BuildEvidenceRecord(spec, EvidenceInput{Observations: []ObservationResult{observation}})
+			if (err != nil) != test.wantErr {
+				t.Fatalf("BuildEvidenceRecord error = %v, wantErr %t", err, test.wantErr)
+			}
+		})
+	}
+
+	spec := testProbeSpec(t, "https://example.test/ok", TransportTCP, AddressFamilyIPv4)
+	dnsFailure := ObservationResult{SchemaVersion: SchemaVersion, RunID: "dns-no-selected-attempt", Target: spec.Target, FinalBoundary: StageResolve, Classification: ClassDNSFailure}
+	if _, err := BuildEvidenceRecord(spec, EvidenceInput{Observations: []ObservationResult{dnsFailure}}); err != nil {
+		t.Fatalf("DNS failure without a selected attempt was rejected: %v", err)
+	}
+	invalidIndex := testObservation(spec, "invalid-primary", "192.0.2.10", AddressFamilyIPv4, ClassSuccess, completedStages(http.StatusNoContent))
+	invalid := 1
+	invalidIndex.PrimaryAttemptIndex = &invalid
+	if _, err := BuildEvidenceRecord(spec, EvidenceInput{Observations: []ObservationResult{invalidIndex}}); err == nil {
+		t.Fatal("invalid primary attempt index was accepted")
+	}
+}
+
+func TestEvidenceRunOrderingIsChronologicalAndCanonical(t *testing.T) {
+	spec := testProbeSpec(t, "https://example.test/ok", TransportTCP, AddressFamilyIPv4)
+	earlier := testObservation(spec, "z-earlier", "192.0.2.10", AddressFamilyIPv4, ClassSuccess, completedStages(http.StatusNoContent))
+	earlier.StartedAt = time.Unix(10, 0).UTC()
+	earlier.FinishedAt = time.Unix(11, 0).UTC()
+	later := testObservation(spec, "a-later", "192.0.2.11", AddressFamilyIPv4, ClassSuccess, completedStages(http.StatusNoContent))
+	later.StartedAt = time.Unix(12, 0).UTC()
+	later.FinishedAt = time.Unix(13, 0).UTC()
+
+	left, err := BuildEvidenceRecord(spec, EvidenceInput{Observations: []ObservationResult{later, earlier}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	right, err := BuildEvidenceRecord(spec, EvidenceInput{Observations: []ObservationResult{earlier, later}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if left.Fingerprint != right.Fingerprint || left.Runs[0].Observation.RunID != "z-earlier" || left.Runs[1].Observation.RunID != "a-later" {
+		t.Fatalf("runs were not canonically chronological: %#v", left.Runs)
+	}
+	transportMismatch := testObservation(spec, "transport-mismatch", "192.0.2.10", AddressFamilyIPv4, ClassSuccess, completedStages(http.StatusNoContent))
+	transportMismatch.Attempts[0].Transport = TransportQUIC
+	if _, err := BuildEvidenceRecord(spec, EvidenceInput{Observations: []ObservationResult{transportMismatch}}); err == nil {
+		t.Fatal("mismatched attempt transport was accepted")
+	}
+	missingBoundary := testObservation(spec, "missing-boundary", "192.0.2.10", AddressFamilyIPv4, ClassSuccess, completedStages(http.StatusNoContent))
+	missingBoundary.FinalBoundary = StageCarry
+	if _, err := BuildEvidenceRecord(spec, EvidenceInput{Observations: []ObservationResult{missingBoundary}}); err == nil {
+		t.Fatal("selected attempt without final boundary was accepted")
 	}
 }
 
@@ -280,15 +356,21 @@ func TestEvidenceResponseSemanticsAndTransferContracts(t *testing.T) {
 }
 
 func TestObserveProbeKeepsQUICAndUDPExplicitlyUnsupported(t *testing.T) {
-	for _, transport := range []Transport{TransportQUIC, TransportUDP} {
-		t.Run(string(transport), func(t *testing.T) {
-			spec := testProbeSpec(t, "https://localhost:443/", transport, AddressFamilyIPv4)
+	for _, test := range []struct {
+		transport Transport
+		class     Classification
+	}{
+		{transport: TransportQUIC, class: ClassQUICUnsupported},
+		{transport: TransportUDP, class: ClassUDPUnsupported},
+	} {
+		t.Run(string(test.transport), func(t *testing.T) {
+			spec := testProbeSpec(t, "https://localhost:443/", test.transport, AddressFamilyIPv4)
 			record, err := NewDirectTCPHTTPSObserver().ObserveProbe(context.Background(), spec, Options{ResolvedIP: net.ParseIP("127.0.0.1")}, EvidenceInput{})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if record.Runs[0].Measurement != MeasurementUnsupported || record.Runs[0].Observation.Classification == ClassSuccess {
-				t.Fatalf("unsupported transport represented as success: %#v", record.Runs[0])
+			if record.Runs[0].Measurement != MeasurementUnsupported || record.Runs[0].Observation.Classification != test.class {
+				t.Fatalf("unsupported transport evidence = %#v", record.Runs[0])
 			}
 		})
 	}

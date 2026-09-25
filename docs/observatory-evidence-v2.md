@@ -10,13 +10,13 @@ V2.1 adds a versioned observation contract. It collects facts for later stages; 
 - a redacted HTTPS target, transport, and IPv4/IPv6/any policy;
 - `HTTPS_GET` mode and the exact allowed HTTP status/path-completion semantics;
 - primary-target, healthy-control, or neutral-control role; and
-- optional audited `TransferContract` identity, revision, and positive expected byte count.
+- optional audited `TransferContract` identity, revision, and positive expected byte count. `AuditID` is trusted configuration metadata, not cryptographic proof that an endpoint was audited.
 
 `ProbeSpec.Identity()` canonically fingerprints every semantic field, including the target-contract revision. Unknown schema versions are rejected. TCP is implemented through the existing direct TCP/TLS/HTTP observer. QUIC and UDP remain representable contracts but the observer records their measurement as `UNSUPPORTED`; V2.1 does not claim a QUIC or UDP handshake observation.
 
 ## EvidenceRecord
 
-`BuildEvidenceRecord` wraps one or more existing `ObservationResult` values. V1 consumers keep using `ObservationResult` unchanged. Each redacted evidence run preserves the factual selected edge, actual address family, execution context, timestamps, protocol stages, and a typed measurement status:
+`BuildEvidenceRecord` wraps one or more existing `ObservationResult` values. V1 consumers keep using `ObservationResult` unchanged. Runs are a canonical chronological sequence: `StartedAt`, then `FinishedAt`, then RunID and canonical observation content break ties. Each redacted evidence run preserves the factual selected edge, actual address family, execution context, timestamps, protocol stages, and a typed measurement status:
 
 - `COMPLETED`
 - `PARTIAL`
@@ -32,7 +32,7 @@ Optional transfer facts use the same explicit status and carry expected/actual b
 
 DNS evidence can record resolver failure, no usable answer, resolver-selected edge, and actual family. It does not encode `DNS_INTERCEPTION`. TLS evidence can record TCP connection, ClientHello emission, handshake/certificate facts, and normalized failures. It does not encode `TLS_FINGERPRINT_FILTERING`.
 
-`EvidenceRecord` serialization rejects unsafe data. It removes URL userinfo/query/fragment, target display names, local interface/address/gateway/resolver/network-label identifiers, attempt local addresses, stage details, redirects, and headers except bounded `content-type`. It never contains raw response bodies, cookies, authorization headers, arbitrary request payloads, packet dumps, or certificate private material. `MarshalEvidenceRecord`, `ParseEvidenceRecord`, and `CanonicalJSON` validate schema, redaction, ordered runs, probe identity, and a stable SHA-256-based record fingerprint.
+`EvidenceRecord` serialization rejects unsafe data. It removes URL userinfo/query/fragment, target display names, local interface/address/gateway/resolver/network-label identifiers, attempt local addresses, stage details, redirects, and headers except bounded `content-type`. The target hostname, port, and path remain intentionally as **sanitized**, not anonymized, probe identity needed to interpret the evidence. It never contains raw response bodies, cookies, authorization headers, arbitrary request payloads, packet dumps, or certificate private material. `MarshalEvidenceRecord`, `ParseEvidenceRecord`, and `CanonicalJSON` validate schema, chronological run order, probe identity, and a stable SHA-256-based evidence-event fingerprint. The fingerprint identifies this serialized evidence event; it is not a cross-session outcome identity.
 
 ## Evidence limits
 

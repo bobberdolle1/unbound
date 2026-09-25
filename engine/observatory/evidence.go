@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/netip"
 	"net/url"
 	"reflect"
 	"sort"
@@ -262,8 +263,8 @@ type EvidenceRecord struct {
 }
 
 // BuildEvidenceRecord wraps one or more compatible ObservationResults without
-// modifying their V1 consumers. The result is ordered, redacted, and carries a
-// deterministic fingerprint.
+// modifying their V1 consumers. It orders runs chronologically with stable
+// tie-breakers, redacts them, and carries a deterministic fingerprint.
 func BuildEvidenceRecord(spec ProbeSpec, input EvidenceInput) (EvidenceRecord, error) {
 	normalizedSpec, err := normalizeProbeSpec(spec)
 	if err != nil {
@@ -464,6 +465,9 @@ func evidenceRunFromObservation(spec ProbeSpec, observation ObservationResult) (
 	if observation.Target.RequestedProtocol != spec.Transport || !strings.EqualFold(observation.Target.Hostname, spec.Target.Hostname) || observation.Target.Port != spec.Target.Port || sanitizeEvidenceURL(observation.Target.URL) != spec.Target.URL {
 		return EvidenceRun{}, fmt.Errorf("observation target does not match probe spec")
 	}
+	if err := validateObservationForEvidence(spec, observation); err != nil {
+		return EvidenceRun{}, err
+	}
 	observation = sanitizeEvidenceObservation(observation)
 	attempt, ok := selectedAttempt(observation)
 	selectedEdge := ""
@@ -501,6 +505,54 @@ func validateEvidenceRun(spec ProbeSpec, run EvidenceRun) (EvidenceRun, error) {
 		return EvidenceRun{}, fmt.Errorf("evidence run facts do not match observation")
 	}
 	return expected, nil
+}
+
+func validateObservationForEvidence(spec ProbeSpec, observation ObservationResult) error {
+	if observation.SchemaVersion != SchemaVersion {
+		return fmt.Errorf("unsupported observation schema version %d", observation.SchemaVersion)
+	}
+	primaryIndex := -1
+	if observation.PrimaryAttemptIndex != nil {
+		primaryIndex = *observation.PrimaryAttemptIndex
+		if primaryIndex < 0 || primaryIndex >= len(observation.Attempts) {
+			return fmt.Errorf("observation primary attempt index is invalid")
+		}
+	}
+	for index, attempt := range observation.Attempts {
+		if attempt.Transport != spec.Transport {
+			return fmt.Errorf("observation attempt %d transport does not match probe spec", index)
+		}
+		if attempt.ResolvedIP == "" {
+			if attempt.AddressFamily != "" {
+				return fmt.Errorf("observation attempt %d has an address family without a selected edge", index)
+			}
+			continue
+		}
+		address, err := netip.ParseAddr(attempt.ResolvedIP)
+		if err != nil {
+			return fmt.Errorf("observation attempt %d selected edge is invalid: %w", index, err)
+		}
+		family := AddressFamilyIPv6
+		if address.Is4() {
+			family = AddressFamilyIPv4
+		}
+		if attempt.AddressFamily != family {
+			return fmt.Errorf("observation attempt %d address family does not match selected edge", index)
+		}
+	}
+	if primaryIndex < 0 {
+		return nil
+	}
+	primary := observation.Attempts[primaryIndex]
+	if primary.ResolvedIP != "" && spec.AddressFamilyPolicy != AddressFamilyAny && primary.AddressFamily != spec.AddressFamilyPolicy {
+		return fmt.Errorf("observation selected address family does not match probe policy")
+	}
+	if observation.FinalBoundary != "" {
+		if _, ok := evidenceStage(primary, observation.FinalBoundary); !ok {
+			return fmt.Errorf("observation final boundary is absent from selected attempt")
+		}
+	}
+	return nil
 }
 
 func selectedAttempt(observation ObservationResult) (ConnectionAttempt, bool) {
@@ -670,7 +722,7 @@ func sameHeaderMap(left, right map[string]string) bool {
 
 func evidenceRunSortKey(run EvidenceRun) string {
 	data, _ := json.Marshal(run.Observation)
-	return run.Observation.RunID + "\n" + string(data)
+	return run.Timing.StartedAt.UTC().Format(time.RFC3339Nano) + "\n" + run.Timing.FinishedAt.UTC().Format(time.RFC3339Nano) + "\n" + run.Observation.RunID + "\n" + string(data)
 }
 
 func validIdentifier(value string, limit int) bool {
