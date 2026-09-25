@@ -18,6 +18,10 @@ flowchart LR
   AB --> S[Safety policy selection]
 ```
 
+## V2.1 observatory evidence
+
+V2.1 adds additive, versioned `ProbeSpec` and `EvidenceRecord` contracts around the existing `ObservationResult`; it does not alter V1 attribution, Planner eligibility, controlled A/B execution, or managed lifecycle. TCP/HTTPS evidence is implemented through the current observer. QUIC and UDP remain explicit unsupported measurements. See [V2.1 observatory evidence](observatory-evidence-v2.md) for contract, privacy, transfer, and terminology limits.
+
 ## Controlled experiment
 
 The request explicitly supplies a target, optional protected controls, StrategyIR candidates, backend, scope snapshot, network label, evidence options, and a policy. The policy has explicit defaults for candidate count, total duration, and per-observation timeout.
