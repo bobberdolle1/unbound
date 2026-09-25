@@ -239,3 +239,28 @@ func inputFor(record observatory.EvidenceRecord, finding attribution.Finding) In
 	target := record.Probe.Target
 	return Input{Target: []observatory.EvidenceRecord{record}, Attribution: attribution.AttributionReport{SchemaVersion: attribution.SchemaVersion, AttributionID: "attr", InputRunIDs: []string{record.Runs[0].Observation.RunID}, Target: attribution.TargetRef{Scheme: "https", Hostname: target.Hostname, Port: target.Port, Path: "/ok", RequestedProtocol: target.RequestedProtocol}, PrimaryFinding: finding, Findings: []attribution.Finding{finding}}}
 }
+
+func TestReportValidateRejectsTampering(t *testing.T) {
+	record := record(t, "validate-report", observatory.TransportTCP, observatory.StageConnect, observatory.ClassTCPConnectTimeout, nil)
+	finding := attribution.Finding{Code: attribution.FindingTCPPathFailureSuspected, Confidence: attribution.ConfidenceHigh, Stage: observatory.StageConnect, SupportingEvidence: []attribution.EvidenceRef{{RunID: record.Runs[0].Observation.RunID, AttemptIndex: 0, Stage: observatory.StageConnect}}}
+	report, err := Diagnose(inputFor(record, finding))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := report.Validate(); err != nil {
+		t.Fatalf("original report rejected: %v", err)
+	}
+	for _, mutate := range []func(*Report){
+		func(report *Report) { report.Kind = KindNoAnomaly },
+		func(report *Report) { report.Confidence = attribution.ConfidenceLow },
+		func(report *Report) { report.EvidenceFingerprints[0] = "evidence-v1-tampered" },
+		func(report *Report) { report.DiagnosisID = "diagnosis-v1-tampered" },
+	} {
+		tampered := report
+		tampered.EvidenceFingerprints = append([]string(nil), report.EvidenceFingerprints...)
+		mutate(&tampered)
+		if err := tampered.Validate(); err == nil {
+			t.Fatalf("tampered report accepted: %#v", tampered)
+		}
+	}
+}

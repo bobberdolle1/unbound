@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -63,6 +64,53 @@ type Report struct {
 	EvidenceFingerprints []string               `json:"evidence_fingerprints"`
 	AttributionID        string                 `json:"attribution_id"`
 	EffectiveAt          time.Time              `json:"effective_at"`
+}
+
+// Validate verifies that a report is a supported, canonical diagnosis event.
+// It is intentionally independent of the original evidence payload so callers
+// that retain only a report can still reject tampering before reuse.
+func (report Report) Validate() error {
+	if report.SchemaVersion != SchemaVersion {
+		return fmt.Errorf("unsupported diagnosis schema version %d", report.SchemaVersion)
+	}
+	if report.DiagnosisID == "" || report.ProbeIdentity == "" || report.AttributionID == "" || report.EffectiveAt.IsZero() || len(report.EvidenceFingerprints) == 0 {
+		return fmt.Errorf("diagnosis report has missing required fields")
+	}
+	if !validKind(report.Kind) || !validConfidence(report.Confidence) || !validStage(report.AffectedStage) {
+		return fmt.Errorf("diagnosis report has invalid classification")
+	}
+	canonical := report
+	canonical.DiagnosisID = ""
+	expected, err := finish(canonical)
+	if err != nil {
+		return err
+	}
+	if !reflect.DeepEqual(report, expected) {
+		return fmt.Errorf("diagnosis report is not canonical or its ID does not match content")
+	}
+	return nil
+}
+
+func validKind(kind Kind) bool {
+	switch kind {
+	case KindNoAnomaly, KindDNSPathAnomaly, KindTCPPathFailure, KindTLSHandshakePathFailure, KindHTTPApplicationFailure, KindPartialTransferAnomaly, KindEdgeDependentFailure, KindNetworkContextFailure, KindInsufficientEvidence, KindUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+func validConfidence(confidence attribution.Confidence) bool {
+	return confidence == attribution.ConfidenceLow || confidence == attribution.ConfidenceMedium || confidence == attribution.ConfidenceHigh
+}
+
+func validStage(stage observatory.Stage) bool {
+	switch stage {
+	case "", observatory.StageResolve, observatory.StageConnect, observatory.StageHello, observatory.StageHandshake, observatory.StageHTTP, observatory.StageCarry:
+		return true
+	default:
+		return false
+	}
 }
 
 // Diagnose validates correlation first, then applies explicit precedence:
