@@ -14,7 +14,7 @@ Entry IDs and ledger fingerprints are deterministic hashes. Ledger entry order i
 
 Contradictory later failures or direct reachability invalidate older compatible positive entries according to event time, not insertion order. Direct reachability compares target/family/context scope but intentionally ignores a bypass strategy/backend. Storage evicts expired, invalidated/old, and low-value evidence before fresh positive evidence. `Save` writes `autotune_vnext_outcomes.json` through a same-directory temporary file and replacement rename; malformed, tampered, non-canonical, or future-schema files load as unavailable history and never produce reusable results.
 
-Historical edge data is not stored. Current execution must always resolve and observe the current edge/family. V2.3's query API returns compatibility evidence only; it cannot rank a strategy, recommend activation, Apply anything, alter planner behavior, or skip current validation.
+Historical edge data is not stored. Current execution must always resolve and observe the current edge/family. V2.4's query API returns compatibility evidence that may only reorder Planner-eligible candidates; it cannot create eligibility, recommend activation, Apply anything, alter Planner behavior, or skip current validation.
 
 `HISTORICAL_VERIFIED_FIXED != CURRENT_VERIFIED_FIXED`.
 
