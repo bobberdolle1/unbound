@@ -140,7 +140,7 @@ func TestNormalizeVNextTargetRejectsUnsafeInputs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if target.URL != "https://example.test/path?token=secret" || public != "https://example.test/path" {
+	if target.URL != "https://example.test/path" || public != "https://example.test/path" {
 		t.Fatalf("target=%q public=%q", target.URL, public)
 	}
 }

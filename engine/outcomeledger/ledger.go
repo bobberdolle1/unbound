@@ -43,27 +43,28 @@ type Ledger struct {
 // OutcomeEntry contains only redacted identifiers. It intentionally has no
 // edge, hostname, URL, interface, gateway, resolver, local address, or body.
 type OutcomeEntry struct {
-	EntryID                string                    `json:"entry_id"`
-	ProbeIdentity          string                    `json:"probe_identity"`
-	ServiceID              string                    `json:"service_id"`
-	TargetContractRevision string                    `json:"target_contract_revision"`
-	Transport              observatory.Transport     `json:"transport"`
-	AddressFamily          observatory.AddressFamily `json:"address_family"`
-	StrategyID             string                    `json:"strategy_id,omitempty"`
-	StrategyFingerprint    string                    `json:"strategy_fingerprint,omitempty"`
-	Backend                backendcap.Backend        `json:"backend,omitempty"`
-	BackendFingerprint     string                    `json:"backend_fingerprint,omitempty"`
-	CapabilityFingerprint  string                    `json:"capability_fingerprint,omitempty"`
-	DiagnosisID            string                    `json:"diagnosis_id"`
-	DiagnosisKind          diagnosis.Kind            `json:"diagnosis_kind"`
-	DiagnosisConfidence    attribution.Confidence    `json:"diagnosis_confidence"`
-	EvidenceFingerprints   []string                  `json:"evidence_fingerprints"`
-	Outcome                autotunevnext.Outcome     `json:"outcome"`
-	RecordedAt             time.Time                 `json:"recorded_at"`
-	ExpiresAt              time.Time                 `json:"expires_at"`
-	ContextKey             string                    `json:"context_key,omitempty"`
-	InvalidatedAt          *time.Time                `json:"invalidated_at,omitempty"`
-	InvalidationReason     InvalidationReason        `json:"invalidation_reason,omitempty"`
+	EntryID                        string                    `json:"entry_id"`
+	ProbeIdentity                  string                    `json:"probe_identity"`
+	ServiceID                      string                    `json:"service_id"`
+	TargetContractRevision         string                    `json:"target_contract_revision"`
+	Transport                      observatory.Transport     `json:"transport"`
+	AddressFamily                  observatory.AddressFamily `json:"address_family"`
+	StrategyID                     string                    `json:"strategy_id,omitempty"`
+	StrategyFingerprint            string                    `json:"strategy_fingerprint,omitempty"`
+	Backend                        backendcap.Backend        `json:"backend,omitempty"`
+	BackendFingerprint             string                    `json:"backend_fingerprint,omitempty"`
+	CapabilityFingerprint          string                    `json:"capability_fingerprint,omitempty"`
+	DiagnosisID                    string                    `json:"diagnosis_id"`
+	DiagnosisKind                  diagnosis.Kind            `json:"diagnosis_kind"`
+	DiagnosisConfidence            attribution.Confidence    `json:"diagnosis_confidence"`
+	EvidenceFingerprints           []string                  `json:"evidence_fingerprints"`
+	ValidationEvidenceFingerprints []string                  `json:"validation_evidence_fingerprints,omitempty"`
+	Outcome                        autotunevnext.Outcome     `json:"outcome"`
+	RecordedAt                     time.Time                 `json:"recorded_at"`
+	ExpiresAt                      time.Time                 `json:"expires_at"`
+	ContextKey                     string                    `json:"context_key,omitempty"`
+	InvalidatedAt                  *time.Time                `json:"invalidated_at,omitempty"`
+	InvalidationReason             InvalidationReason        `json:"invalidation_reason,omitempty"`
 }
 
 type Policy struct {
@@ -102,7 +103,11 @@ func (policy Policy) normalized() (Policy, error) {
 }
 
 type BuildInput struct {
-	Evidence              []observatory.EvidenceRecord
+	Evidence []observatory.EvidenceRecord
+	// ValidationEvidence is separate from diagnosis evidence. V2.4 product
+	// callers attach direct-before/active/direct-after evidence here so an
+	// effectiveness entry is auditable without reinterpreting diagnosis input.
+	ValidationEvidence    []observatory.EvidenceRecord
 	Diagnosis             diagnosis.Report
 	StrategyID            string
 	StrategyFingerprint   string
@@ -193,6 +198,24 @@ func NewEntry(input BuildInput, policy Policy) (OutcomeEntry, error) {
 	if !sameStrings(fingerprints, sortedStrings(input.Diagnosis.EvidenceFingerprints)) {
 		return OutcomeEntry{}, fmt.Errorf("diagnosis does not reference supplied evidence")
 	}
+	validationFingerprints := make([]string, 0, len(input.ValidationEvidence))
+	for index := range input.ValidationEvidence {
+		record := &input.ValidationEvidence[index]
+		if err := record.Validate(); err != nil {
+			return OutcomeEntry{}, fmt.Errorf("invalid validation evidence: %w", err)
+		}
+		if record.StrategyFingerprint != "" && input.StrategyFingerprint != "" && record.StrategyFingerprint != input.StrategyFingerprint {
+			return OutcomeEntry{}, fmt.Errorf("strategy fingerprint does not match validation evidence")
+		}
+		if record.BackendFingerprint != "" && input.BackendFingerprint != "" && record.BackendFingerprint != input.BackendFingerprint {
+			return OutcomeEntry{}, fmt.Errorf("backend fingerprint does not match validation evidence")
+		}
+		validationFingerprints = append(validationFingerprints, record.Fingerprint)
+	}
+	validationFingerprints = sortedStrings(validationFingerprints)
+	if effectivenessRankingOutcome(input.Outcome) && len(validationFingerprints) == 0 {
+		return OutcomeEntry{}, fmt.Errorf("effectiveness outcome requires validation evidence")
+	}
 	if !outcomeCompatibleDiagnosis(input.Outcome, input.Diagnosis.Kind) {
 		return OutcomeEntry{}, fmt.Errorf("outcome %q is inconsistent with diagnosis %q", input.Outcome, input.Diagnosis.Kind)
 	}
@@ -211,7 +234,7 @@ func NewEntry(input BuildInput, policy Policy) (OutcomeEntry, error) {
 		input.BackendFingerprint = ""
 		input.CapabilityFingerprint = ""
 	}
-	entry := OutcomeEntry{ProbeIdentity: target.ProbeIdentity, ServiceID: target.Probe.ServiceID, TargetContractRevision: target.Probe.TargetContractRevision, Transport: target.Probe.Transport, AddressFamily: family, StrategyID: input.StrategyID, StrategyFingerprint: input.StrategyFingerprint, Backend: input.Backend, BackendFingerprint: input.BackendFingerprint, CapabilityFingerprint: input.CapabilityFingerprint, DiagnosisID: input.Diagnosis.DiagnosisID, DiagnosisKind: input.Diagnosis.Kind, DiagnosisConfidence: input.Diagnosis.Confidence, EvidenceFingerprints: fingerprints, Outcome: input.Outcome, RecordedAt: input.RecordedAt.UTC(), ExpiresAt: input.RecordedAt.UTC().Add(policy.ttl(input.Outcome)), ContextKey: input.ContextKey}
+	entry := OutcomeEntry{ProbeIdentity: target.ProbeIdentity, ServiceID: target.Probe.ServiceID, TargetContractRevision: target.Probe.TargetContractRevision, Transport: target.Probe.Transport, AddressFamily: family, StrategyID: input.StrategyID, StrategyFingerprint: input.StrategyFingerprint, Backend: input.Backend, BackendFingerprint: input.BackendFingerprint, CapabilityFingerprint: input.CapabilityFingerprint, DiagnosisID: input.Diagnosis.DiagnosisID, DiagnosisKind: input.Diagnosis.Kind, DiagnosisConfidence: input.Diagnosis.Confidence, EvidenceFingerprints: fingerprints, ValidationEvidenceFingerprints: validationFingerprints, Outcome: input.Outcome, RecordedAt: input.RecordedAt.UTC(), ExpiresAt: input.RecordedAt.UTC().Add(policy.ttl(input.Outcome)), ContextKey: input.ContextKey}
 	entry.EntryID, err = entryID(entry)
 	if err != nil {
 		return OutcomeEntry{}, err
@@ -256,26 +279,28 @@ type MatchStatus string
 type Reason string
 
 const (
-	MatchCompatible         MatchStatus = "COMPATIBLE"
-	MatchStale              MatchStatus = "STALE"
-	MatchIncompatible       MatchStatus = "INCOMPATIBLE"
-	MatchExpired            MatchStatus = "EXPIRED"
-	MatchInvalid            MatchStatus = "INVALID"
-	ReasonExpired           Reason      = "EXPIRED"
-	ReasonFuture            Reason      = "FUTURE_RECORDED_AT"
-	ReasonInvalid           Reason      = "INVALID_HISTORY"
-	ReasonInvalidated       Reason      = "INVALIDATED"
-	ReasonProbeChanged      Reason      = "PROBE_CHANGED"
-	ReasonContractChanged   Reason      = "TARGET_CONTRACT_CHANGED"
-	ReasonServiceChanged    Reason      = "SERVICE_CHANGED"
-	ReasonTransportChanged  Reason      = "TRANSPORT_CHANGED"
-	ReasonFamilyChanged     Reason      = "ADDRESS_FAMILY_CHANGED"
-	ReasonStrategyChanged   Reason      = "STRATEGY_CHANGED"
-	ReasonBackendChanged    Reason      = "BACKEND_CHANGED"
-	ReasonCapabilityChanged Reason      = "CAPABILITY_CHANGED"
-	ReasonCapabilityMissing Reason      = "CAPABILITY_IDENTITY_REQUIRED_FOR_POSITIVE_REUSE"
-	ReasonContextChanged    Reason      = "CONTEXT_CHANGED"
-	ReasonContextMissing    Reason      = "CONTEXT_REQUIRED_FOR_POSITIVE_REUSE"
+	MatchCompatible                  MatchStatus = "COMPATIBLE"
+	MatchStale                       MatchStatus = "STALE"
+	MatchIncompatible                MatchStatus = "INCOMPATIBLE"
+	MatchExpired                     MatchStatus = "EXPIRED"
+	MatchInvalid                     MatchStatus = "INVALID"
+	ReasonExpired                    Reason      = "EXPIRED"
+	ReasonFuture                     Reason      = "FUTURE_RECORDED_AT"
+	ReasonInvalid                    Reason      = "INVALID_HISTORY"
+	ReasonInvalidated                Reason      = "INVALIDATED"
+	ReasonProbeChanged               Reason      = "PROBE_CHANGED"
+	ReasonContractChanged            Reason      = "TARGET_CONTRACT_CHANGED"
+	ReasonServiceChanged             Reason      = "SERVICE_CHANGED"
+	ReasonTransportChanged           Reason      = "TRANSPORT_CHANGED"
+	ReasonFamilyChanged              Reason      = "ADDRESS_FAMILY_CHANGED"
+	ReasonDiagnosisChanged           Reason      = "DIAGNOSIS_CHANGED"
+	ReasonValidationEvidenceRequired Reason      = "VALIDATION_EVIDENCE_REQUIRED"
+	ReasonStrategyChanged            Reason      = "STRATEGY_CHANGED"
+	ReasonBackendChanged             Reason      = "BACKEND_CHANGED"
+	ReasonCapabilityChanged          Reason      = "CAPABILITY_CHANGED"
+	ReasonCapabilityMissing          Reason      = "CAPABILITY_IDENTITY_REQUIRED_FOR_POSITIVE_REUSE"
+	ReasonContextChanged             Reason      = "CONTEXT_CHANGED"
+	ReasonContextMissing             Reason      = "CONTEXT_REQUIRED_FOR_POSITIVE_REUSE"
 )
 
 type Query struct {
@@ -284,6 +309,7 @@ type Query struct {
 	TargetContractRevision string
 	Transport              observatory.Transport
 	AddressFamily          observatory.AddressFamily
+	DiagnosisKind          diagnosis.Kind
 	StrategyFingerprint    string
 	Backend                backendcap.Backend
 	BackendFingerprint     string
@@ -338,6 +364,18 @@ func MatchEntry(entry OutcomeEntry, query Query) Match {
 			return match
 		}
 	}
+	if effectivenessRankingOutcome(entry.Outcome) {
+		if entry.DiagnosisKind != query.DiagnosisKind {
+			match.Status = MatchIncompatible
+			match.Reasons = []Reason{ReasonDiagnosisChanged}
+			return match
+		}
+		if len(entry.ValidationEvidenceFingerprints) == 0 {
+			match.Status = MatchStale
+			match.Reasons = []Reason{ReasonValidationEvidenceRequired}
+			return match
+		}
+	}
 	if entry.ContextKey != query.ContextKey {
 		match.Status = MatchIncompatible
 		match.Reasons = []Reason{ReasonContextChanged}
@@ -375,7 +413,7 @@ func MatchEntry(entry OutcomeEntry, query Query) Match {
 }
 
 func validateQuery(query Query) error {
-	if query.Now.IsZero() || query.ProbeIdentity == "" || query.ServiceID == "" || query.TargetContractRevision == "" || !validTransport(query.Transport) || !validFamily(query.AddressFamily) {
+	if query.Now.IsZero() || query.ProbeIdentity == "" || query.ServiceID == "" || query.TargetContractRevision == "" || !validTransport(query.Transport) || !validFamily(query.AddressFamily) || !validDiagnosisKind(query.DiagnosisKind) {
 		return fmt.Errorf("query has missing required identity")
 	}
 	if err := safeContextKey(query.ContextKey); err != nil {
@@ -390,6 +428,15 @@ func validateQuery(query Query) error {
 		return err
 	}
 	return safeOpaqueFingerprint("capability", query.CapabilityFingerprint)
+}
+
+func effectivenessRankingOutcome(outcome autotunevnext.Outcome) bool {
+	switch outcome {
+	case autotunevnext.OutcomeVerifiedFixed, autotunevnext.OutcomeStillFailing, autotunevnext.OutcomeRegressionObserved:
+		return true
+	default:
+		return false
+	}
 }
 
 func QueryLedger(ledger Ledger, query Query) []Match {
@@ -598,6 +645,14 @@ func (entry OutcomeEntry) Validate() error {
 		if err := safePrefixedHash("evidence", fingerprint); err != nil {
 			return err
 		}
+	}
+	for _, fingerprint := range entry.ValidationEvidenceFingerprints {
+		if err := safePrefixedHash("evidence", fingerprint); err != nil {
+			return err
+		}
+	}
+	if !sameStrings(entry.ValidationEvidenceFingerprints, sortedStrings(entry.ValidationEvidenceFingerprints)) {
+		return fmt.Errorf("validation evidence fingerprints are not canonical")
 	}
 	if !sameStrings(entry.EvidenceFingerprints, sortedStrings(entry.EvidenceFingerprints)) {
 		return fmt.Errorf("evidence fingerprints are not canonical")

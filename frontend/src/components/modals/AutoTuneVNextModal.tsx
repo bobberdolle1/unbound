@@ -166,7 +166,13 @@ export const AutoTuneVNextModal: React.FC<AutoTuneVNextModalProps> = ({ isOpen, 
         {result && !running && !managed?.active && (
           <div className="space-y-3">
             <div className="rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface-elevated)] p-4 font-medium">{resultMessages[result.status] || 'Получен неизвестный результат проверки.'}</div>
-            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 text-xs"><dt className="text-[var(--ui-text-muted)]">Цель</dt><dd>{redactTarget(result.target)}</dd><dt className="text-[var(--ui-text-muted)]">Стратегия</dt><dd>{strategyLabel(result.selected_strategy_id)}</dd><dt className="text-[var(--ui-text-muted)]">Исходное состояние</dt><dd>{result.state_restored ? 'восстановлено' : 'не подтверждено'}</dd></dl>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 text-xs">
+              <dt className="text-[var(--ui-text-muted)]">Цель</dt><dd>{redactTarget(result.target)}</dd>
+              <dt className="text-[var(--ui-text-muted)]">Диагноз</dt><dd>{result.diagnosis?.kind ? `${result.diagnosis.kind} · ${result.diagnosis.confidence || 'LOW'}` : 'не сформирован'}</dd>
+              <dt className="text-[var(--ui-text-muted)]">Стратегия</dt><dd>{strategyLabel(result.selected_strategy_id)}</dd>
+              <dt className="text-[var(--ui-text-muted)]">Исходное состояние</dt><dd>{result.state_restored ? 'восстановлено' : 'не подтверждено'}</dd>
+            </dl>
+            {result.recommendation?.history_used && <div className="rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface-elevated)] p-3 text-xs text-[var(--ui-text-muted)]">Порядок проверки учитывал предыдущий совместимый результат: {(result.recommendation.reason_codes || []).join(', ') || 'совместимая история'}. Это не является гарантией результата.</div>}
             {result.status === 'COMPLETED_SELECTED' && result.apply_available && <button onClick={apply} className="btn-ui-primary w-full justify-center">Применить</button>}
             {result.status === 'COMPLETED_SELECTED' && !result.apply_available && <div className="text-sm text-red-300">Проверенная стратегия не получила разрешение на применение.</div>}
             <button onClick={onClose} className="btn-ui-secondary w-full justify-center">Закрыть результат</button>

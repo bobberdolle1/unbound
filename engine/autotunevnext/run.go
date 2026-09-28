@@ -50,6 +50,12 @@ func Run(ctx context.Context, request Request, observer Observer, executor Execu
 		controlBaselines = append(controlBaselines, controlBaseline{target: control, observation: observation, edge: selectedEdge(observation)})
 	}
 	result.BaselineAttribution = attribution.AnalyzeCohort(attribution.Cohort{Target: []observatory.ObservationResult{baseline}, Controls: observationsFromControls(controlBaselines)})
+	if diagnosisReport, evidence, diagnosisErr := buildBaselineDiagnosis(request, result.BaselineAttribution, baseline, controlBaselines); diagnosisErr != nil {
+		result.Limitations = append(result.Limitations, "V2_EVIDENCE_UNAVAILABLE")
+	} else {
+		result.DiagnosisReport = diagnosisReport
+		result.BaselineEvidence = evidence
+	}
 	scope := scopeForBaseline(request.ScopeSnapshot, baseline)
 	result.PlannerReport = planner.Plan(planner.Request{Attribution: result.BaselineAttribution, Backend: request.Backend, Strategies: request.Strategies, Scope: scope, Evidence: planner.EvidenceContext{AddressFamily: selectedFamily(baseline)}})
 	result.Limitations = append(result.Limitations, result.PlannerReport.Limitations...)
@@ -73,6 +79,13 @@ func Run(ctx context.Context, request Request, observer Observer, executor Execu
 		return result
 	}
 
+	if result.DiagnosisReport.DiagnosisID != "" {
+		if disposition := diagnosisDisposition(result.DiagnosisReport); disposition != RecommendationExperimentCandidates {
+			result.Recommendation = Advice{SchemaVersion: advisorSchemaVersion, DiagnosisID: result.DiagnosisReport.DiagnosisID, PlannerAttributionID: result.PlannerReport.AttributionID, Disposition: disposition}
+			result.Status = terminalStatus(disposition)
+			return result
+		}
+	}
 	edge := selectedEdge(baseline)
 	if edge == nil {
 		result.Status = StatusInconclusive
@@ -80,6 +93,21 @@ func Run(ctx context.Context, request Request, observer Observer, executor Execu
 		return result
 	}
 	candidates := candidateInputs(result.PlannerReport, request.Strategies)
+	if request.Advisor != nil && result.DiagnosisReport.DiagnosisID != "" {
+		context := advisorContext(result.DiagnosisReport, result.PlannerReport, candidates, selectedFamily(baseline))
+		advice := request.Advisor.Advise(context)
+		if ordered, disposition, valid := validateAndOrderAdvice(advice, context, candidates); valid {
+			result.Recommendation = advice
+			result.Limitations = append(result.Limitations, advice.Limitations...)
+			if disposition != RecommendationExperimentCandidates {
+				result.Status = terminalStatus(disposition)
+				return result
+			}
+			candidates = ordered
+		} else {
+			result.Limitations = append(result.Limitations, "RECOMMENDATION_INVALID_FALLBACK")
+		}
+	}
 	for i := range candidates {
 		input := candidates[i]
 		if experimentCtx.Err() != nil {
@@ -97,6 +125,9 @@ func Run(ctx context.Context, request Request, observer Observer, executor Execu
 		}
 		experiment := runCandidate(experimentCtx, request, policy, observer, executor, preflight, assets, snapshot, *edge, controlBaselines, input)
 		result.Experiments = append(result.Experiments, experiment)
+		if len(experiment.validationEvidence) != 0 {
+			result.OutcomeEvidence = append(result.OutcomeEvidence, OutcomeEvidence{StrategyFingerprint: experiment.Fingerprint, Outcome: experiment.Outcome, Validation: experiment.validationEvidence})
+		}
 		if experiment.Outcome == OutcomeLifecycleFailure {
 			result.Status = StatusLifecycleFailed
 			return result
@@ -180,8 +211,9 @@ func cloneScopeMembers(source map[string][]string) map[string][]string {
 }
 
 type candidateInput struct {
-	assessment planner.CandidateAssessment
-	strategy   strategyir.Strategy
+	assessment           planner.CandidateAssessment
+	strategy             strategyir.Strategy
+	recommendationReason []string
 }
 
 func candidateInputs(report planner.PlannerReport, strategies []strategyir.Strategy) []candidateInput {
@@ -254,7 +286,16 @@ func aggressivenessRank(value string) int {
 
 func runCandidate(ctx context.Context, request Request, policy Policy, observer Observer, executor Executor, preflight HostPreflight, assets AssetResolver, snapshot StateSnapshot, edge net.IP, controls []controlBaseline, input candidateInput) (experiment CandidateExperiment) {
 	assessment, strategy := input.assessment, input.strategy
-	experiment = CandidateExperiment{StrategyID: assessment.StrategyID, Fingerprint: assessment.StrategyFingerprint, PlannerStatus: assessment.Status, CompileStatus: assessment.CompileStatus, PreflightStatus: PreflightNotRun, Safety: assessment.Safety}
+	experiment = CandidateExperiment{StrategyID: assessment.StrategyID, Fingerprint: assessment.StrategyFingerprint, PlannerStatus: assessment.Status, CompileStatus: assessment.CompileStatus, PreflightStatus: PreflightNotRun, Safety: assessment.Safety, RecommendationReason: append([]string(nil), input.recommendationReason...)}
+	var validationObservations []observatory.ObservationResult
+	defer func() {
+		records, err := buildCandidateValidationEvidence(request, experiment.Fingerprint, validationObservations, controls, experiment.ControlResults)
+		if err != nil {
+			experiment.Limitations = append(experiment.Limitations, "V2_VALIDATION_EVIDENCE_UNAVAILABLE")
+			return
+		}
+		experiment.validationEvidence = records
+	}()
 	compiled := backendcap.Compile(strategy, request.Backend)
 	experiment.CompileStatus = compiled.Status
 	if compiled.Status != backendcap.StatusCompiled {
@@ -310,6 +351,7 @@ func runCandidate(ctx context.Context, request Request, policy Policy, observer 
 		return inconclusive(experiment, "DIRECT_BEFORE_OBSERVATION_FAILED", err)
 	}
 	experiment.DirectBeforeRunIDs = []string{before.RunID}
+	validationObservations = append(validationObservations, before)
 	candidate.TargetEdge = append(net.IP(nil), edge...)
 	candidate.TargetFamily = selectedFamily(before)
 	if !sameEdge(before, edge) {
@@ -340,6 +382,7 @@ func runCandidate(ctx context.Context, request Request, policy Policy, observer 
 		return inconclusive(experiment, "ACTIVE_OBSERVATION_FAILED", err)
 	}
 	experiment.ActiveRunIDs = []string{activeObservation.RunID}
+	validationObservations = append(validationObservations, activeObservation)
 	if !sameEdge(activeObservation, edge) || !sameFamily(before, activeObservation) {
 		experiment.Outcome = OutcomeInconclusive
 		experiment.Limitations = append(experiment.Limitations, "SAME_EDGE_OR_ADDRESS_FAMILY_REQUIRED")
@@ -364,6 +407,7 @@ func runCandidate(ctx context.Context, request Request, policy Policy, observer 
 		return inconclusive(experiment, "DIRECT_AFTER_OBSERVATION_FAILED", err)
 	}
 	experiment.DirectAfterRunIDs = []string{after.RunID}
+	validationObservations = append(validationObservations, after)
 	experiment.Attribution = attribution.Analyze([]observatory.ObservationResult{before, activeObservation, after})
 	if !sameEdge(after, edge) || !sameFamily(before, after) {
 		experiment.Outcome = OutcomeInconclusive
@@ -409,6 +453,7 @@ func observeControl(ctx context.Context, observer Observer, request Request, pol
 		return result
 	}
 	result.ActiveRunID = active.RunID
+	result.activeObservation = &active
 	if !sameEdge(active, *baseline.edge) || !sameFamily(baseline.observation, active) || !profileApplicable(baseline.observation, active) {
 		result.Outcome = OutcomeInconclusive
 		result.Reasons = []Reason{{Code: "CONTROL_COMPARISON_INAPPLICABLE"}}

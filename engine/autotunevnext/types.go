@@ -10,6 +10,7 @@ import (
 	"unbound/engine"
 	"unbound/engine/attribution"
 	"unbound/engine/backendcap"
+	"unbound/engine/diagnosis"
 	"unbound/engine/observatory"
 	"unbound/engine/planner"
 	"unbound/engine/strategyir"
@@ -108,6 +109,57 @@ type Request struct {
 	NetworkLabel  string                `json:"network_label,omitempty"`
 	Evidence      EvidenceOptions       `json:"evidence,omitempty"`
 	Policy        Policy                `json:"experiment_policy,omitempty"`
+	// Probe contracts are optional for compatibility. When provided they are
+	// fixed before observing and enable the V2 diagnosis/advisor path.
+	TargetProbe   *observatory.ProbeSpec  `json:"-"`
+	ControlProbes []observatory.ProbeSpec `json:"-"`
+	Advisor       CandidateAdvisor        `json:"-"`
+}
+
+// CandidateIdentity is the narrow advisor input. It contains only candidates
+// Planner already marked ELIGIBLE and cannot convey executable strategy data.
+type CandidateIdentity struct {
+	StrategyID          string                  `json:"strategy_id"`
+	StrategyFingerprint string                  `json:"strategy_fingerprint"`
+	Safety              strategyir.SafetyPolicy `json:"safety"`
+}
+
+type AdvisorContext struct {
+	Diagnosis diagnosis.Report          `json:"diagnosis"`
+	Planner   planner.PlannerReport     `json:"planner"`
+	Family    observatory.AddressFamily `json:"family"`
+	Eligible  []CandidateIdentity       `json:"eligible"`
+}
+
+type CandidateAdvice struct {
+	StrategyFingerprint string   `json:"strategy_fingerprint"`
+	ReasonCodes         []string `json:"reason_codes,omitempty"`
+	HistoryUsed         bool     `json:"history_used"`
+}
+
+type RecommendationDisposition string
+
+const (
+	RecommendationExperimentCandidates RecommendationDisposition = "EXPERIMENT_CANDIDATES"
+	RecommendationNoAction             RecommendationDisposition = "NO_ACTION"
+	RecommendationNoPacketStrategy     RecommendationDisposition = "NO_PACKET_STRATEGY"
+	RecommendationInsufficientEvidence RecommendationDisposition = "INSUFFICIENT_EVIDENCE"
+	RecommendationNoEligibleCandidates RecommendationDisposition = "NO_ELIGIBLE_CANDIDATES"
+)
+
+type Advice struct {
+	SchemaVersion        int                       `json:"schema_version"`
+	DiagnosisID          string                    `json:"diagnosis_id"`
+	PlannerAttributionID string                    `json:"planner_attribution_id"`
+	Disposition          RecommendationDisposition `json:"disposition"`
+	Candidates           []CandidateAdvice         `json:"candidates,omitempty"`
+	Limitations          []string                  `json:"limitations,omitempty"`
+}
+
+// CandidateAdvisor is product-injected. It can order only the supplied
+// candidates; AutoTune validates every response and otherwise falls back.
+type CandidateAdvisor interface {
+	Advise(AdvisorContext) Advice
 }
 
 // Observer remains provider-neutral. Supplying ResolvedIP pins an observation
@@ -182,29 +234,40 @@ type AssetResolver interface {
 var ErrMissingAsset = errors.New("missing trusted logical asset")
 
 type ControlResult struct {
-	Target      Target   `json:"target"`
-	DirectRunID string   `json:"direct_run_id,omitempty"`
-	ActiveRunID string   `json:"active_run_id,omitempty"`
-	Outcome     Outcome  `json:"outcome"`
-	Reasons     []Reason `json:"reasons,omitempty"`
+	Target            Target   `json:"target"`
+	DirectRunID       string   `json:"direct_run_id,omitempty"`
+	ActiveRunID       string   `json:"active_run_id,omitempty"`
+	Outcome           Outcome  `json:"outcome"`
+	Reasons           []Reason `json:"reasons,omitempty"`
+	activeObservation *observatory.ObservationResult
 }
 
 type CandidateExperiment struct {
-	StrategyID         string                        `json:"strategy_id"`
-	Fingerprint        string                        `json:"fingerprint,omitempty"`
-	ExperimentExecuted bool                          `json:"experiment_executed"`
-	PlannerStatus      planner.CandidateStatus       `json:"planner_status"`
-	CompileStatus      backendcap.CompileStatus      `json:"compile_status,omitempty"`
-	PreflightStatus    PreflightStatus               `json:"preflight_status"`
-	DirectBeforeRunIDs []string                      `json:"direct_before_run_ids,omitempty"`
-	ActiveRunIDs       []string                      `json:"active_run_ids,omitempty"`
-	DirectAfterRunIDs  []string                      `json:"direct_after_run_ids,omitempty"`
-	Attribution        attribution.AttributionReport `json:"attribution,omitempty"`
-	ControlResults     []ControlResult               `json:"control_results,omitempty"`
-	Outcome            Outcome                       `json:"outcome"`
-	Safety             strategyir.SafetyPolicy       `json:"safety"`
-	RejectionReasons   []Reason                      `json:"rejection_reasons,omitempty"`
-	Limitations        []string                      `json:"limitations,omitempty"`
+	StrategyID           string                        `json:"strategy_id"`
+	Fingerprint          string                        `json:"fingerprint,omitempty"`
+	ExperimentExecuted   bool                          `json:"experiment_executed"`
+	PlannerStatus        planner.CandidateStatus       `json:"planner_status"`
+	CompileStatus        backendcap.CompileStatus      `json:"compile_status,omitempty"`
+	PreflightStatus      PreflightStatus               `json:"preflight_status"`
+	DirectBeforeRunIDs   []string                      `json:"direct_before_run_ids,omitempty"`
+	ActiveRunIDs         []string                      `json:"active_run_ids,omitempty"`
+	DirectAfterRunIDs    []string                      `json:"direct_after_run_ids,omitempty"`
+	Attribution          attribution.AttributionReport `json:"attribution,omitempty"`
+	ControlResults       []ControlResult               `json:"control_results,omitempty"`
+	Outcome              Outcome                       `json:"outcome"`
+	Safety               strategyir.SafetyPolicy       `json:"safety"`
+	RecommendationReason []string                      `json:"recommendation_reason,omitempty"`
+	RejectionReasons     []Reason                      `json:"rejection_reasons,omitempty"`
+	Limitations          []string                      `json:"limitations,omitempty"`
+	validationEvidence   []observatory.EvidenceRecord
+}
+
+// OutcomeEvidence is internal redacted provenance for product-owned ledger
+// persistence. It never appears in the product or frontend result contract.
+type OutcomeEvidence struct {
+	StrategyFingerprint string                       `json:"-"`
+	Outcome             Outcome                      `json:"-"`
+	Validation          []observatory.EvidenceRecord `json:"-"`
 }
 
 type Lifecycle struct {
@@ -221,7 +284,9 @@ type Result struct {
 	Target              Target                        `json:"target"`
 	Backend             backendcap.Backend            `json:"backend"`
 	BaselineAttribution attribution.AttributionReport `json:"baseline_attribution,omitempty"`
+	DiagnosisReport     diagnosis.Report              `json:"diagnosis_report,omitempty"`
 	PlannerReport       planner.PlannerReport         `json:"planner_report,omitempty"`
+	Recommendation      Advice                        `json:"recommendation,omitempty"`
 	Experiments         []CandidateExperiment         `json:"experiments,omitempty"`
 	SelectedStrategyID  string                        `json:"selected_strategy_id,omitempty"`
 	SelectedFingerprint string                        `json:"selected_fingerprint,omitempty"`
@@ -229,4 +294,6 @@ type Result struct {
 	Limitations         []string                      `json:"limitations,omitempty"`
 	Lifecycle           Lifecycle                     `json:"lifecycle"`
 	StateRestored       bool                          `json:"state_restored"`
+	BaselineEvidence    []observatory.EvidenceRecord  `json:"-"`
+	OutcomeEvidence     []OutcomeEvidence             `json:"-"`
 }
