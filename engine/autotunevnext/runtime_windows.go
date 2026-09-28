@@ -432,10 +432,15 @@ func windowsProcessAlive(pid int) (bool, error) {
 	return exitCode == windowsStillActive, nil
 }
 
+func windowsWinDivertServiceMissing(output string) bool {
+	text := strings.ToUpper(output)
+	return strings.Contains(text, "FAILED 1060") || strings.Contains(text, "DOES NOT EXIST") || strings.Contains(text, "1060")
+}
+
 func windowsWinDivertRunning() (bool, error) {
 	output, err := exec.Command("sc.exe", "query", "WinDivert").CombinedOutput()
 	text := strings.ToUpper(string(output))
-	if strings.Contains(text, "FAILED 1060") || strings.Contains(text, "DOES NOT EXIST") {
+	if windowsWinDivertServiceMissing(string(output)) {
 		return false, nil
 	}
 	if err != nil {
