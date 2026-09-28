@@ -21,14 +21,15 @@ var ErrManagedStateRestoreFailed = errors.New("STATE_RESTORE_FAILED")
 // the strategy identity selected by an earlier experiment; it never accepts
 // executable arguments or a pre-resolved edge.
 type ManagedRequest struct {
-	Target       Target
-	Controls     []Target
-	Strategy     strategyir.Strategy
-	Fingerprint  string
-	Backend      backendcap.Backend
-	NetworkLabel string
-	Evidence     EvidenceOptions
-	Policy       Policy
+	Target         Target
+	Controls       []Target
+	Strategy       strategyir.Strategy
+	Fingerprint    string
+	Backend        backendcap.Backend
+	NetworkLabel   string
+	Evidence       EvidenceOptions
+	Policy         Policy
+	ValidatedScope ServiceScopeSnapshot
 }
 
 // ManagedActivation owns the product snapshot after a mutation may have
@@ -47,8 +48,17 @@ func (a *ManagedActivation) Candidate() ExecutableCandidate {
 	return ExecutableCandidate{
 		Strategy: a.candidate.Strategy, Fingerprint: a.candidate.Fingerprint,
 		Backend: a.candidate.Backend, TargetEdge: append(net.IP(nil), a.candidate.TargetEdge...),
-		TargetFamily: a.candidate.TargetFamily,
+		TargetFamily: a.candidate.TargetFamily, TargetEdges: cloneScopeEdges(a.candidate.TargetEdges),
 	}
+}
+
+// VerifyActive proves the executor still owns its activation without exposing
+// runtime arguments or current addresses.
+func (a *ManagedActivation) VerifyActive(ctx context.Context) error {
+	if a == nil || !a.candidateActive {
+		return errors.New("managed activation is not active")
+	}
+	return a.executor.VerifyActive(ctx, a.candidate)
 }
 
 // Revert restores the exact snapshot even when candidate activation never

@@ -19,6 +19,7 @@ type LinuxNFQueueSpec struct {
 	Queue  uint16
 	Marker string
 	Edge   net.IP
+	Edges  []net.IP
 	Family observatory.AddressFamily
 	Ports  []strategyir.PortRange
 }
@@ -40,6 +41,29 @@ func NewLinuxNFQueueSpec(capture backendcap.CapturePlan, edge net.IP, family obs
 		}
 	}
 	return LinuxNFQueueSpec{Table: table, Queue: queue, Marker: marker, Edge: append(net.IP(nil), edge...), Family: family, Ports: ports}, nil
+}
+
+// NewLinuxServiceScopeNFQueueSpec owns one exact nft rule over a bounded
+// same-family edge set. It never creates or reuses a persistent system set.
+func NewLinuxServiceScopeNFQueueSpec(capture backendcap.CapturePlan, edges []ServiceScopeEdge, table string, queue uint16, marker string) (LinuxNFQueueSpec, error) {
+	canonical, err := canonicalCaptureEdges(edges)
+	if err != nil {
+		return LinuxNFQueueSpec{}, err
+	}
+	family := canonical[0].Family
+	ips := make([]net.IP, 0, len(canonical))
+	for _, edge := range canonical {
+		if edge.Family != family || !captureIncludesFamily(capture.IPFamilies, edge.Family) {
+			return LinuxNFQueueSpec{}, fmt.Errorf("mixed-family or unsupported Linux service scope")
+		}
+		ips = append(ips, append(net.IP(nil), edge.IP...))
+	}
+	spec, err := NewLinuxNFQueueSpec(capture, ips[0], family, table, queue, marker)
+	if err != nil {
+		return LinuxNFQueueSpec{}, err
+	}
+	spec.Edges = ips
+	return spec, nil
 }
 
 func (s LinuxNFQueueSpec) iptablesPorts() string {
@@ -79,7 +103,19 @@ func (s LinuxNFQueueSpec) nftScript() string {
 	if family == "ip6" {
 		address = "ip6 daddr"
 	}
-	return fmt.Sprintf("add table %s %s\nadd chain %s %s output { type filter hook output priority mangle; policy accept; }\nadd rule %s %s output %s %s tcp dport %s meta mark and 0x40000000 != 0x40000000 queue num %d bypass comment \"%s\"\n", family, s.Table, family, s.Table, family, s.Table, address, s.Edge.String(), s.nftPorts(), s.Queue, s.Marker)
+	edges := s.Edges
+	if len(edges) == 0 {
+		edges = []net.IP{s.Edge}
+	}
+	values := make([]string, 0, len(edges))
+	for _, edge := range edges {
+		values = append(values, edge.String())
+	}
+	addressExpr := values[0]
+	if len(values) > 1 {
+		addressExpr = "{ " + strings.Join(values, ", ") + " }"
+	}
+	return fmt.Sprintf("add table %s %s\nadd chain %s %s output { type filter hook output priority mangle; policy accept; }\nadd rule %s %s output %s %s tcp dport %s meta mark and 0x40000000 != 0x40000000 queue num %d bypass comment \"%s\"\n", family, s.Table, family, s.Table, family, s.Table, address, addressExpr, s.nftPorts(), s.Queue, s.Marker)
 }
 
 func (s LinuxNFQueueSpec) iptablesArgs(operation string) []string {

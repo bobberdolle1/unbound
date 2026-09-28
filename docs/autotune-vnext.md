@@ -39,6 +39,14 @@ A candidate is `VERIFIED_FIXED` only when all of these hold:
 
 `ELIGIBLE` means structurally applicable, not effective. `VERIFIED_FIXED` applies only to the tested edge and context, not a service universally. `SELECTED` means the deterministic safety-first policy chose one verified candidate; it does not activate it permanently.
 
+## Bounded current service scope
+
+Production vNext resolves a fresh, normalized target hostname into a deterministic snapshot of at most eight exact A/AAAA endpoints. Duplicate addresses are removed, addresses are ordered by family then numeric address, and empty, malformed, or over-limit results fail closed; the implementation never truncates a DNS answer set.
+
+The snapshot is ephemeral. It is neither persisted in managed intent nor retained as restart authority, and history cannot validate a newly observed address. Candidate evidence probes every current endpoint independently: direct-before, one bounded active phase over the complete exact set, protected-control validation, direct-after, then aggregate classification. `SERVICE_SCOPE_VERIFIED_FIXED` requires every directly failing endpoint to be fixed, every directly reachable endpoint to remain reachable, no regression or inconclusive endpoint, at least one fixed endpoint, successful controls, and restoration.
+
+Apply resolves again immediately. A current scope may be a subset of the short-lived validated scope, but any new endpoint returns `SERVICE_SCOPE_CHANGED_REVALIDATION_REQUIRED`; it is never captured automatically. Managed health repeats that structural comparison before bounded exact-edge active observations. New endpoints report revalidation-needed rather than an opaque healthy result. Windows renders only exact address alternatives in the WinDivert filter; Linux nft mode uses one executor-owned ephemeral exact-address rule and refuses multi-edge iptables capture.
+
 ## Gates and policy
 
 Planner is the only eligibility authority. The core recompiles an eligible StrategyIR candidate and fails closed if its compile status, backend, or fingerprint disagrees with Planner. A narrow host-preflight boundary checks factual runtime readiness, including logical assets and capture requirements, without making a network-effectiveness probe.

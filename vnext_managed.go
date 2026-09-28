@@ -35,6 +35,7 @@ type verifiedSelectionGrant struct {
 	strategyID   string
 	fingerprint  string
 	backend      backendcap.Backend
+	scope        autotunevnext.ServiceScopeSnapshot
 	createdAt    time.Time
 	expiresAt    time.Time
 	consumed     bool
@@ -55,6 +56,14 @@ type AutoTuneVNextManagedStatus struct {
 	Fingerprint       string `json:"fingerprint,omitempty"`
 	Backend           string `json:"backend,omitempty"`
 }
+
+type ManagedHealthState string
+
+const (
+	ManagedHealthHealthy           ManagedHealthState = "HEALTHY"
+	ManagedHealthNeedsRevalidation ManagedHealthState = "NEEDS_REVALIDATION"
+	ManagedHealthFault             ManagedHealthState = "FAULT"
+)
 
 type persistedVNextState struct {
 	SchemaVersion int    `json:"schema_version"`
@@ -160,9 +169,12 @@ func (s *productVNextService) issueVerifiedGrant(result autotunevnext.Result, ta
 	if result.Status != autotunevnext.StatusCompletedSelected || !result.StateRestored || result.SelectedStrategyID == "" || result.SelectedFingerprint == "" {
 		return ""
 	}
+	if len(result.ValidatedScope.Edges) > 0 && (result.ServiceScope.Status != autotunevnext.ServiceScopeVerifiedFixed || len(result.ValidatedScope.Edges) == 0) {
+		return ""
+	}
 	verified := false
 	for _, experiment := range result.Experiments {
-		if experiment.StrategyID == result.SelectedStrategyID && experiment.Fingerprint == result.SelectedFingerprint && experiment.Outcome == autotunevnext.OutcomeVerifiedFixed {
+		if experiment.StrategyID == result.SelectedStrategyID && experiment.Fingerprint == result.SelectedFingerprint && (experiment.ScopeValidation.Status == autotunevnext.ServiceScopeVerifiedFixed || (len(result.ValidatedScope.Edges) == 0 && experiment.Outcome == autotunevnext.OutcomeVerifiedFixed)) {
 			verified = true
 			break
 		}
@@ -178,7 +190,7 @@ func (s *productVNextService) issueVerifiedGrant(result autotunevnext.Result, ta
 	defer s.mu.Unlock()
 	s.invalidateGrantsLocked()
 	now := time.Now()
-	s.grants[token] = verifiedSelectionGrant{token: token, target: target, publicTarget: public, controls: append([]autotunevnext.Target(nil), controls...), strategyID: result.SelectedStrategyID, fingerprint: result.SelectedFingerprint, backend: result.Backend, createdAt: now, expiresAt: now.Add(vNextGrantTTL)}
+	s.grants[token] = verifiedSelectionGrant{token: token, target: target, publicTarget: public, controls: append([]autotunevnext.Target(nil), controls...), strategyID: result.SelectedStrategyID, fingerprint: result.SelectedFingerprint, backend: result.Backend, scope: result.ValidatedScope, createdAt: now, expiresAt: now.Add(vNextGrantTTL)}
 	return token
 }
 
@@ -242,7 +254,17 @@ func (s *productVNextService) Apply(ctx context.Context, token string) AutoTuneV
 	if err != nil {
 		return AutoTuneVNextManagedStatus{State: "NOT_APPLIED"}
 	}
-	activation, err := autotunevnext.ApplyVerified(ctx, autotunevnext.ManagedRequest{Target: grant.target, Controls: grant.controls, Strategy: strategy, Fingerprint: grant.fingerprint, Backend: runtimeBinding.backend, NetworkLabel: "product-autotune-vnext"}, s.deps.observer, runtimeBinding.executor, runtimeBinding.preflight, resolver)
+	request := autotunevnext.ManagedRequest{Target: grant.target, Controls: grant.controls, Strategy: strategy, Fingerprint: grant.fingerprint, Backend: runtimeBinding.backend, NetworkLabel: "product-autotune-vnext", ValidatedScope: grant.scope}
+	var activation *autotunevnext.ManagedActivation
+	if s.deps.scopeResolver != nil {
+		currentScope, scopeErr := s.deps.scopeResolver.ResolveServiceScope(ctx, grant.target)
+		if scopeErr != nil || !currentScope.IsSubsetOf(grant.scope) {
+			return managedStatusForGrant("SERVICE_SCOPE_CHANGED_REVALIDATION_REQUIRED", false, grant)
+		}
+		activation, err = autotunevnext.ApplyVerifiedServiceScope(ctx, request, currentScope, s.deps.observer, runtimeBinding.executor, runtimeBinding.preflight, resolver)
+	} else {
+		activation, err = autotunevnext.ApplyVerified(ctx, request, s.deps.observer, runtimeBinding.executor, runtimeBinding.preflight, resolver)
+	}
 	if err != nil {
 		if errors.Is(err, autotunevnext.ErrManagedStateRestoreFailed) {
 			status := managedStatusForGrant("STATE_RESTORE_FAILED", false, grant)
@@ -363,6 +385,7 @@ func (s *productVNextService) rememberDormant(status AutoTuneVNextManagedStatus)
 func (s *productVNextService) Status() AutoTuneVNextManagedStatus {
 	s.mu.Lock()
 	active := s.active
+	health := s.health
 	fault := s.fault
 	dormant := s.dormant
 	s.mu.Unlock()
@@ -370,6 +393,11 @@ func (s *productVNextService) Status() AutoTuneVNextManagedStatus {
 		return fault
 	}
 	if active != nil {
+		if health == ManagedHealthNeedsRevalidation {
+			status := managedStatusForGrant("SERVICE_SCOPE_CHANGED_REVALIDATION_REQUIRED", true, active.grant)
+			status.NeedsRevalidation = true
+			return status
+		}
 		return managedStatusForGrant("VNEXT_MANAGED_ACTIVE", true, active.grant)
 	}
 	if dormant.State != "" {
@@ -385,32 +413,63 @@ func (s *productVNextService) Status() AutoTuneVNextManagedStatus {
 	return AutoTuneVNextManagedStatus{State: "SAVED_REVALIDATION_PENDING", NeedsRevalidation: true, Target: state.Target, StrategyID: state.StrategyID, Fingerprint: shortManagedFingerprint(state.Fingerprint), Backend: state.Backend}
 }
 
-// ManagedHealthy resolves the target's current edge without pinning it to the
-// retained capture edge. Any edge or family drift requires revalidation; the
-// active capture rule remains exact-edge scoped until Suspend restores it.
-func (s *productVNextService) ManagedHealthy(ctx context.Context) bool {
+// ManagedHealth resolves fresh current scope and checks it against the
+// in-memory activation scope. New DNS edges are never captured implicitly.
+func (s *productVNextService) ManagedHealth(ctx context.Context) ManagedHealthState {
 	s.mu.Lock()
 	active := s.active
 	s.mu.Unlock()
-	if active == nil {
-		return false
+	if active == nil || active.activation.VerifyActive(ctx) != nil {
+		s.setManagedHealth(ManagedHealthFault)
+		return ManagedHealthFault
 	}
 	candidate := active.activation.Candidate()
+	if len(candidate.TargetEdges) > 0 {
+		if s.deps.scopeResolver == nil {
+			s.setManagedHealth(ManagedHealthFault)
+			return ManagedHealthFault
+		}
+		current, err := s.deps.scopeResolver.ResolveServiceScope(ctx, active.grant.target)
+		if err != nil || !current.IsSubsetOf(active.grant.scope) {
+			s.setManagedHealth(ManagedHealthNeedsRevalidation)
+			return ManagedHealthNeedsRevalidation
+		}
+		observations, err := autotunevnext.ObserveServiceScope(ctx, s.deps.observer, active.grant.target, current)
+		if err != nil || !autotunevnext.ServiceScopeObservationsHealthy(observations) {
+			s.setManagedHealth(ManagedHealthFault)
+			return ManagedHealthFault
+		}
+		s.setManagedHealth(ManagedHealthHealthy)
+		return ManagedHealthHealthy
+	}
 	if len(candidate.TargetEdge) == 0 || candidate.TargetFamily == "" {
-		return false
+		s.setManagedHealth(ManagedHealthFault)
+		return ManagedHealthFault
 	}
 	healthCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
-	observation, err := s.deps.observer.Observe(healthCtx, active.grant.target.URL, observatory.Options{
-		AddressFamily: active.grant.target.AddressFamily,
-		Transport:     active.grant.target.Transport,
-		NetworkLabel:  "product-autotune-vnext",
-	})
+	observation, err := s.deps.observer.Observe(healthCtx, active.grant.target.URL, observatory.Options{AddressFamily: active.grant.target.AddressFamily, Transport: active.grant.target.Transport, NetworkLabel: "product-autotune-vnext"})
 	if err != nil || observation.Classification != observatory.ClassSuccess {
-		return false
+		s.setManagedHealth(ManagedHealthFault)
+		return ManagedHealthFault
 	}
 	currentEdge, currentFamily, ok := concreteManagedObservationEdge(observation)
-	return ok && currentEdge.Equal(candidate.TargetEdge) && currentFamily == candidate.TargetFamily
+	if ok && currentEdge.Equal(candidate.TargetEdge) && currentFamily == candidate.TargetFamily {
+		s.setManagedHealth(ManagedHealthHealthy)
+		return ManagedHealthHealthy
+	}
+	s.setManagedHealth(ManagedHealthNeedsRevalidation)
+	return ManagedHealthNeedsRevalidation
+}
+
+func (s *productVNextService) ManagedHealthy(ctx context.Context) bool {
+	return s.ManagedHealth(ctx) == ManagedHealthHealthy
+}
+
+func (s *productVNextService) setManagedHealth(state ManagedHealthState) {
+	s.mu.Lock()
+	s.health = state
+	s.mu.Unlock()
 }
 
 func concreteManagedObservationEdge(observation observatory.ObservationResult) (net.IP, observatory.AddressFamily, bool) {

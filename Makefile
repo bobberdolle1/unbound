@@ -28,6 +28,11 @@ ifeq ($(GOOS_HOST),darwin)
 export CGO_LDFLAGS := -framework UniformTypeIdentifiers
 endif
 
+DESKTOP_TAGS := desktop,production
+ifeq ($(GOOS_HOST),linux)
+DESKTOP_TAGS := $(DESKTOP_TAGS),webkit2_41
+endif
+
 .DEFAULT_GOAL := help
 .PHONY: help check quick fmt vet test frontend build gui clean install-hooks
 
@@ -63,14 +68,14 @@ frontend: ## Build the desktop UI (required before any Go build)
 # main.go embeds frontend/dist, so the Go build cannot run before the UI is
 # built. Depending on it here avoids a confusing //go:embed failure.
 build: frontend ## Build the desktop GUI binary for the host platform
-	@go build -trimpath -tags desktop,production -ldflags="$(LDFLAGS)" -o build/bin/$(BIN_NAME) .
+	@go build -trimpath -tags $(DESKTOP_TAGS) -ldflags="$(LDFLAGS)" -o build/bin/$(BIN_NAME) .
 	@echo "built build/bin/$(BIN_NAME) ($(VERSION))"
 
 gui: ## Build the native desktop app via Wails
 	@command -v wails >/dev/null || { \
 		echo "wails not installed: go install github.com/wailsapp/wails/v2/cmd/wails@v2.13.0"; \
 		exit 1; }
-	@wails build -clean -ldflags "$(LDFLAGS)"
+	@wails build -clean $(if $(filter linux,$(GOOS_HOST)),-tags webkit2_41,) -ldflags "$(LDFLAGS)"
 	@if [ "$(GOOS_HOST)" = "darwin" ]; then \
 		app="build/bin/unbound.app"; \
 		[ -d "$$app" ] || app="build/bin/Unbound.app"; \

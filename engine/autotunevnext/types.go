@@ -199,6 +199,7 @@ type ExecutableCandidate struct {
 	Assets       []ResolvedAsset           `json:"assets"`
 	TargetEdge   net.IP                    `json:"-"`
 	TargetFamily observatory.AddressFamily `json:"target_family"`
+	TargetEdges  []ServiceScopeEdge        `json:"-"`
 }
 
 // Executor owns all machine mutation. It must restore and prove original state.
@@ -259,6 +260,7 @@ type CandidateExperiment struct {
 	RecommendationReason []string                      `json:"recommendation_reason,omitempty"`
 	RejectionReasons     []Reason                      `json:"rejection_reasons,omitempty"`
 	Limitations          []string                      `json:"limitations,omitempty"`
+	ScopeValidation      ServiceScopeValidation        `json:"service_scope_validation,omitempty"`
 	validationEvidence   []observatory.EvidenceRecord
 }
 
@@ -296,4 +298,6 @@ type Result struct {
 	StateRestored       bool                          `json:"state_restored"`
 	BaselineEvidence    []observatory.EvidenceRecord  `json:"-"`
 	OutcomeEvidence     []OutcomeEvidence             `json:"-"`
+	ServiceScope        ServiceScopeValidation        `json:"service_scope,omitempty"`
+	ValidatedScope      ServiceScopeSnapshot          `json:"-"`
 }

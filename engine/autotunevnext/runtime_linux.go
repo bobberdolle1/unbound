@@ -185,7 +185,15 @@ func (e *LinuxRuntime) Activate(ctx context.Context, candidate ExecutableCandida
 	if err != nil {
 		return err
 	}
-	spec, err := NewLinuxNFQueueSpec(plan.Capture, candidate.TargetEdge, candidate.TargetFamily, table, queue, marker)
+	var spec LinuxNFQueueSpec
+	if len(candidate.TargetEdges) > 0 {
+		if mode != "nft" && len(candidate.TargetEdges) > 1 {
+			return fmt.Errorf("Linux service scope requires nft for multi-edge exact capture")
+		}
+		spec, err = NewLinuxServiceScopeNFQueueSpec(plan.Capture, candidate.TargetEdges, table, queue, marker)
+	} else {
+		spec, err = NewLinuxNFQueueSpec(plan.Capture, candidate.TargetEdge, candidate.TargetFamily, table, queue, marker)
+	}
 	if err != nil {
 		return err
 	}

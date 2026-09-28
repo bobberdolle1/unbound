@@ -169,6 +169,7 @@ export const AutoTuneVNextModal: React.FC<AutoTuneVNextModalProps> = ({ isOpen, 
             <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 text-xs">
               <dt className="text-[var(--ui-text-muted)]">Цель</dt><dd>{redactTarget(result.target)}</dd>
               <dt className="text-[var(--ui-text-muted)]">Диагноз</dt><dd>{result.diagnosis?.kind ? `${result.diagnosis.kind} · ${result.diagnosis.confidence || 'LOW'}` : 'не сформирован'}</dd>
+              <dt className="text-[var(--ui-text-muted)]">Текущие endpoints</dt><dd>{result.scope_edge_count ? `${result.scope_edge_count} проверено · ${result.scope_status || 'PENDING'}` : 'не сформировано'}</dd>
               <dt className="text-[var(--ui-text-muted)]">Стратегия</dt><dd>{strategyLabel(result.selected_strategy_id)}</dd>
               <dt className="text-[var(--ui-text-muted)]">Исходное состояние</dt><dd>{result.state_restored ? 'восстановлено' : 'не подтверждено'}</dd>
             </dl>
