@@ -256,3 +256,12 @@ func TestWindowsJobAttachFailureRetainsPostStartOwnership(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestWindowsWinDivertServiceMissingRecognizesSystemErrorCode(t *testing.T) {
+	if !windowsWinDivertServiceMissing("[SC] EnumQueryServicesStatus:OpenService: error: 1060:") {
+		t.Fatal("WinDivert service error 1060 must mean the driver is absent")
+	}
+	if windowsWinDivertServiceMissing("SERVICE_NAME: WinDivert\nSTATE: 4 RUNNING") {
+		t.Fatal("running WinDivert service must not be treated as absent")
+	}
+}
