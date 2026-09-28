@@ -48,7 +48,7 @@ func TestResolveProductVNextExperimentTargetValidatesCustomHTTPS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if target != "https://example.test/path?token=secret" || public != "https://example.test/path" || len(controls) != 1 {
+	if target != "https://example.test/path" || public != target || len(controls) != 1 {
 		t.Fatalf("target=%q public=%q controls=%v", target, public, controls)
 	}
 	for _, raw := range []string{

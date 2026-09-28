@@ -78,6 +78,24 @@ func TestRecommendConservativeDiagnosisAndMalformedIdentity(t *testing.T) {
 	}
 }
 
+func TestRecommendUsesNewestEffectivenessEventAndConfidencePolicy(t *testing.T) {
+	input := testInput()
+	input.Matches = map[string][]outcomeledger.Match{
+		"a": {
+			{Status: outcomeledger.MatchCompatible, Confidence: attribution.ConfidenceHigh, Entry: outcomeledger.OutcomeEntry{EntryID: "negative", Outcome: "STILL_FAILING", RecordedAt: testNow}},
+			{Status: outcomeledger.MatchCompatible, Confidence: attribution.ConfidenceHigh, Entry: outcomeledger.OutcomeEntry{EntryID: "inconclusive", Outcome: "INCONCLUSIVE", RecordedAt: testNow.Add(time.Minute)}},
+		},
+		"b": {{Status: outcomeledger.MatchCompatible, Confidence: attribution.ConfidenceLow, Entry: outcomeledger.OutcomeEntry{EntryID: "weak-positive", Outcome: "VERIFIED_FIXED", RecordedAt: testNow.Add(time.Minute)}}},
+	}
+	report := Recommend(input)
+	if report.CandidateRecommendations[0].StrategyFingerprint != "b" || report.CandidateRecommendations[0].HistoryUsed {
+		t.Fatalf("low-confidence verified history must remain neutral: %#v", report.CandidateRecommendations)
+	}
+	if report.CandidateRecommendations[1].StrategyFingerprint != "a" || report.CandidateRecommendations[1].PriorityTier != PriorityRecentNegative {
+		t.Fatalf("newer non-effectiveness history masked negative evidence: %#v", report.CandidateRecommendations)
+	}
+}
+
 var testNow = time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 
 func testInput() Input {

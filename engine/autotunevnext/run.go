@@ -79,6 +79,13 @@ func Run(ctx context.Context, request Request, observer Observer, executor Execu
 		return result
 	}
 
+	if result.DiagnosisReport.DiagnosisID != "" {
+		if disposition := diagnosisDisposition(result.DiagnosisReport); disposition != RecommendationExperimentCandidates {
+			result.Recommendation = Advice{SchemaVersion: advisorSchemaVersion, DiagnosisID: result.DiagnosisReport.DiagnosisID, PlannerAttributionID: result.PlannerReport.AttributionID, Disposition: disposition}
+			result.Status = terminalStatus(disposition)
+			return result
+		}
+	}
 	edge := selectedEdge(baseline)
 	if edge == nil {
 		result.Status = StatusInconclusive
@@ -89,9 +96,14 @@ func Run(ctx context.Context, request Request, observer Observer, executor Execu
 	if request.Advisor != nil && result.DiagnosisReport.DiagnosisID != "" {
 		context := advisorContext(result.DiagnosisReport, result.PlannerReport, candidates, selectedFamily(baseline))
 		advice := request.Advisor.Advise(context)
-		if ordered, valid := validateAndOrderAdvice(advice, context, candidates); valid {
-			candidates = ordered
+		if ordered, disposition, valid := validateAndOrderAdvice(advice, context, candidates); valid {
 			result.Recommendation = advice
+			result.Limitations = append(result.Limitations, advice.Limitations...)
+			if disposition != RecommendationExperimentCandidates {
+				result.Status = terminalStatus(disposition)
+				return result
+			}
+			candidates = ordered
 		} else {
 			result.Limitations = append(result.Limitations, "RECOMMENDATION_INVALID_FALLBACK")
 		}
@@ -277,17 +289,12 @@ func runCandidate(ctx context.Context, request Request, policy Policy, observer 
 	experiment = CandidateExperiment{StrategyID: assessment.StrategyID, Fingerprint: assessment.StrategyFingerprint, PlannerStatus: assessment.Status, CompileStatus: assessment.CompileStatus, PreflightStatus: PreflightNotRun, Safety: assessment.Safety, RecommendationReason: append([]string(nil), input.recommendationReason...)}
 	var validationObservations []observatory.ObservationResult
 	defer func() {
-		if request.TargetProbe == nil || len(validationObservations) != 3 {
-			return
-		}
-		record, err := observatory.BuildEvidenceRecord(*request.TargetProbe, observatory.EvidenceInput{
-			Observations: validationObservations, ExperimentID: "candidate-" + experiment.Fingerprint, StrategyFingerprint: experiment.Fingerprint,
-		})
+		records, err := buildCandidateValidationEvidence(request, experiment.Fingerprint, validationObservations, controls, experiment.ControlResults)
 		if err != nil {
 			experiment.Limitations = append(experiment.Limitations, "V2_VALIDATION_EVIDENCE_UNAVAILABLE")
 			return
 		}
-		experiment.validationEvidence = []observatory.EvidenceRecord{record}
+		experiment.validationEvidence = records
 	}()
 	compiled := backendcap.Compile(strategy, request.Backend)
 	experiment.CompileStatus = compiled.Status
@@ -446,6 +453,7 @@ func observeControl(ctx context.Context, observer Observer, request Request, pol
 		return result
 	}
 	result.ActiveRunID = active.RunID
+	result.activeObservation = &active
 	if !sameEdge(active, *baseline.edge) || !sameFamily(baseline.observation, active) || !profileApplicable(baseline.observation, active) {
 		result.Outcome = OutcomeInconclusive
 		result.Reasons = []Reason{{Code: "CONTROL_COMPARISON_INAPPLICABLE"}}

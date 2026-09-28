@@ -48,17 +48,54 @@ func advisorContext(report diagnosis.Report, plan planner.PlannerReport, candida
 	return context
 }
 
-func validateAndOrderAdvice(advice Advice, context AdvisorContext, candidates []candidateInput) ([]candidateInput, bool) {
-	if advice.SchemaVersion != advisorSchemaVersion || advice.DiagnosisID == "" || advice.DiagnosisID != context.Diagnosis.DiagnosisID || advice.PlannerAttributionID == "" || advice.PlannerAttributionID != context.Planner.AttributionID || len(advice.Candidates) != len(context.Eligible) {
-		return candidates, false
+func diagnosisDisposition(report diagnosis.Report) RecommendationDisposition {
+	switch report.Kind {
+	case diagnosis.KindNoAnomaly:
+		return RecommendationNoAction
+	case diagnosis.KindHTTPApplicationFailure, diagnosis.KindNetworkContextFailure:
+		return RecommendationNoPacketStrategy
+	case diagnosis.KindUnknown, diagnosis.KindInsufficientEvidence:
+		return RecommendationInsufficientEvidence
+	default:
+		return RecommendationExperimentCandidates
+	}
+}
+
+func terminalStatus(disposition RecommendationDisposition) Status {
+	switch disposition {
+	case RecommendationNoAction:
+		return StatusCompletedNoActionNeeded
+	case RecommendationNoEligibleCandidates:
+		return StatusCompletedNoEligibleCandidates
+	default:
+		return StatusInconclusive
+	}
+}
+
+func validateAndOrderAdvice(advice Advice, context AdvisorContext, candidates []candidateInput) ([]candidateInput, RecommendationDisposition, bool) {
+	if advice.SchemaVersion != advisorSchemaVersion || advice.DiagnosisID == "" || advice.DiagnosisID != context.Diagnosis.DiagnosisID || advice.PlannerAttributionID == "" || advice.PlannerAttributionID != context.Planner.AttributionID {
+		return candidates, "", false
+	}
+	switch advice.Disposition {
+	case RecommendationNoAction, RecommendationNoPacketStrategy, RecommendationInsufficientEvidence, RecommendationNoEligibleCandidates:
+		if len(advice.Candidates) != 0 {
+			return candidates, "", false
+		}
+		return candidates, advice.Disposition, true
+	case RecommendationExperimentCandidates:
+	default:
+		return candidates, "", false
+	}
+	if len(advice.Candidates) != len(context.Eligible) {
+		return candidates, "", false
 	}
 	byFingerprint := make(map[string]CandidateAdvice, len(advice.Candidates))
 	for _, candidate := range advice.Candidates {
 		if candidate.StrategyFingerprint == "" {
-			return candidates, false
+			return candidates, "", false
 		}
 		if _, duplicate := byFingerprint[candidate.StrategyFingerprint]; duplicate {
-			return candidates, false
+			return candidates, "", false
 		}
 		byFingerprint[candidate.StrategyFingerprint] = candidate
 	}
@@ -68,7 +105,7 @@ func validateAndOrderAdvice(advice Advice, context AdvisorContext, candidates []
 	}
 	for fingerprint := range byFingerprint {
 		if _, ok := eligible[fingerprint]; !ok {
-			return candidates, false
+			return candidates, "", false
 		}
 	}
 	ordered := append([]candidateInput(nil), candidates...)
@@ -92,5 +129,37 @@ func validateAndOrderAdvice(advice Advice, context AdvisorContext, candidates []
 		}
 		return safetyLess(ordered[i], ordered[j])
 	})
-	return ordered, true
+	return ordered, advice.Disposition, true
+}
+
+func buildCandidateValidationEvidence(request Request, fingerprint string, target []observatory.ObservationResult, controls []controlBaseline, results []ControlResult) ([]observatory.EvidenceRecord, error) {
+	if request.TargetProbe == nil || len(target) != 3 {
+		return nil, nil
+	}
+	targetRecord, err := observatory.BuildEvidenceRecord(*request.TargetProbe, observatory.EvidenceInput{Observations: target, ExperimentID: "candidate-" + fingerprint, StrategyFingerprint: fingerprint})
+	if err != nil {
+		return nil, fmt.Errorf("target validation evidence: %w", err)
+	}
+	records := []observatory.EvidenceRecord{targetRecord}
+	if len(controls) != len(results) || len(request.ControlProbes) != len(controls) {
+		if len(controls) == 0 {
+			return records, nil
+		}
+		return nil, fmt.Errorf("control validation contracts do not match observations")
+	}
+	for index := range controls {
+		active := results[index].activeObservation
+		if active == nil {
+			return nil, fmt.Errorf("control active validation observation is absent")
+		}
+		record, err := observatory.BuildEvidenceRecord(request.ControlProbes[index], observatory.EvidenceInput{
+			Observations: []observatory.ObservationResult{controls[index].observation, *active},
+			ExperimentID: "candidate-" + fingerprint, StrategyFingerprint: fingerprint,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("control validation evidence: %w", err)
+		}
+		records = append(records, record)
+	}
+	return records, nil
 }

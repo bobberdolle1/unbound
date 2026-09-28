@@ -48,6 +48,31 @@ func TestNewEntryDeterminismAndCorrelation(t *testing.T) {
 	}
 }
 
+func TestRecommendationCompatibilityRequiresDiagnosisAndValidationProvenance(t *testing.T) {
+	at := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	entry, err := NewEntry(testInput(t, at, autotunevnext.OutcomeStillFailing), DefaultPolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := queryFor(entry, at.Add(time.Hour))
+	if match := MatchEntry(entry, query); match.Status != MatchCompatible {
+		t.Fatalf("matching diagnosis was not compatible: %#v", match)
+	}
+	query.DiagnosisKind = diagnosis.KindTLSHandshakePathFailure
+	if match := MatchEntry(entry, query); match.Status != MatchIncompatible || match.Reasons[0] != ReasonDiagnosisChanged {
+		t.Fatalf("cross-diagnosis history was reusable: %#v", match)
+	}
+	entry.ValidationEvidenceFingerprints = nil
+	entry.EntryID, err = entryID(entry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	query = queryFor(entry, at.Add(time.Hour))
+	if match := MatchEntry(entry, query); match.Status != MatchStale || match.Reasons[0] != ReasonValidationEvidenceRequired {
+		t.Fatalf("provenance-free effectiveness history was reusable: %#v", match)
+	}
+}
+
 func TestTTLDecayAndCompatibility(t *testing.T) {
 	at := time.Date(2026, 1, 2, 3, 0, 0, 0, time.UTC)
 	policy := DefaultPolicy()
@@ -499,7 +524,7 @@ func testInput(t *testing.T, at time.Time, outcome autotunevnext.Outcome) BuildI
 	if err != nil {
 		t.Fatal(err)
 	}
-	return BuildInput{Evidence: []observatory.EvidenceRecord{evidence}, Diagnosis: diagnosisReport, StrategyID: strategy.ID, StrategyFingerprint: strategyFingerprint, Backend: backendcap.Zapret2Windows, BackendFingerprint: "backend-current", CapabilityFingerprint: "capability-current", Outcome: outcome, RecordedAt: diagnosisReport.EffectiveAt, ContextKey: fingerprint("context", "d")}
+	return BuildInput{Evidence: []observatory.EvidenceRecord{evidence}, ValidationEvidence: []observatory.EvidenceRecord{evidence}, Diagnosis: diagnosisReport, StrategyID: strategy.ID, StrategyFingerprint: strategyFingerprint, Backend: backendcap.Zapret2Windows, BackendFingerprint: "backend-current", CapabilityFingerprint: "capability-current", Outcome: outcome, RecordedAt: diagnosisReport.EffectiveAt, ContextKey: fingerprint("context", "d")}
 }
 
 func testDiagnosis(t *testing.T, evidence observatory.EvidenceRecord) diagnosis.Report {
@@ -527,6 +552,6 @@ func testEvidence(t *testing.T, at time.Time) observatory.EvidenceRecord {
 	return record
 }
 func queryFor(entry OutcomeEntry, now time.Time) Query {
-	return Query{ProbeIdentity: entry.ProbeIdentity, ServiceID: entry.ServiceID, TargetContractRevision: entry.TargetContractRevision, Transport: entry.Transport, AddressFamily: entry.AddressFamily, StrategyFingerprint: entry.StrategyFingerprint, Backend: entry.Backend, BackendFingerprint: entry.BackendFingerprint, CapabilityFingerprint: entry.CapabilityFingerprint, ContextKey: entry.ContextKey, Now: now}
+	return Query{ProbeIdentity: entry.ProbeIdentity, ServiceID: entry.ServiceID, TargetContractRevision: entry.TargetContractRevision, Transport: entry.Transport, AddressFamily: entry.AddressFamily, DiagnosisKind: entry.DiagnosisKind, StrategyFingerprint: entry.StrategyFingerprint, Backend: entry.Backend, BackendFingerprint: entry.BackendFingerprint, CapabilityFingerprint: entry.CapabilityFingerprint, ContextKey: entry.ContextKey, Now: now}
 }
 func fingerprint(kind, digit string) string { return kind + "-v1-" + strings.Repeat(digit, 64) }

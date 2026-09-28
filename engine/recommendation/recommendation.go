@@ -152,17 +152,17 @@ func eligibleCandidates(input Input) []Candidate {
 }
 
 func historySignal(matches []outcomeledger.Match) (PriorityTier, []string, bool) {
-	compatible := make([]outcomeledger.Match, 0, len(matches))
+	effectiveness := make([]outcomeledger.Match, 0, len(matches))
 	for _, match := range matches {
-		if match.Status == outcomeledger.MatchCompatible {
-			compatible = append(compatible, match)
+		if match.Status == outcomeledger.MatchCompatible && isEffectivenessOutcome(string(match.Entry.Outcome)) {
+			effectiveness = append(effectiveness, match)
 		}
 	}
-	if len(compatible) == 0 {
-		return PriorityNeutral, []string{"NO_COMPATIBLE_HISTORY"}, false
+	if len(effectiveness) == 0 {
+		return PriorityNeutral, []string{"NO_COMPATIBLE_EFFECTIVENESS_HISTORY"}, false
 	}
-	sort.Slice(compatible, func(i, j int) bool {
-		left, right := compatible[i], compatible[j]
+	sort.Slice(effectiveness, func(i, j int) bool {
+		left, right := effectiveness[i], effectiveness[j]
 		if !left.Entry.RecordedAt.Equal(right.Entry.RecordedAt) {
 			return left.Entry.RecordedAt.After(right.Entry.RecordedAt)
 		}
@@ -171,15 +171,22 @@ func historySignal(matches []outcomeledger.Match) (PriorityTier, []string, bool)
 		}
 		return left.Entry.EntryID < right.Entry.EntryID
 	})
-	newest := compatible[0]
+	newest := effectiveness[0]
 	switch newest.Entry.Outcome {
 	case "VERIFIED_FIXED":
+		if newest.Confidence == attribution.ConfidenceLow {
+			return PriorityNeutral, []string{"COMPATIBLE_LOW_CONFIDENCE_VERIFIED"}, false
+		}
 		return PriorityRecentVerified, []string{"COMPATIBLE_RECENT_VERIFIED"}, true
 	case "STILL_FAILING", "REGRESSION_OBSERVED":
 		return PriorityRecentNegative, []string{"COMPATIBLE_RECENT_NEGATIVE"}, true
 	default:
-		return PriorityNeutral, []string{"COMPATIBLE_NON_EFFECTIVENESS_HISTORY"}, true
+		return PriorityNeutral, []string{"NO_COMPATIBLE_EFFECTIVENESS_HISTORY"}, false
 	}
+}
+
+func isEffectivenessOutcome(outcome string) bool {
+	return outcome == "VERIFIED_FIXED" || outcome == "STILL_FAILING" || outcome == "REGRESSION_OBSERVED"
 }
 
 func confidenceRank(value attribution.Confidence) int {

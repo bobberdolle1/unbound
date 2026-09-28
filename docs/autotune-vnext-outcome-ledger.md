@@ -1,6 +1,6 @@
-# AutoTune vNext V2.3 outcome ledger
+# AutoTune vNext V2.4 outcome ledger
 
-V2.3 provides `engine/outcomeledger`: local, versioned, bounded history of redacted, evidence-linked experiment outcomes. It is separate from `autotune_vnext_state.json`, which remains managed activation **intent** only.
+V2.4 provides `engine/outcomeledger`: local, versioned, bounded history of redacted, evidence-linked experiment outcomes. It is separate from `autotune_vnext_state.json`, which remains managed activation **intent** only.
 
 The ledger records only validated effectiveness outcomes: `VERIFIED_FIXED`, `STILL_FAILING`, `REGRESSION_OBSERVED`, `DIRECT_BECAME_REACHABLE`, `INCONCLUSIVE`, and `LIFECYCLE_FAILURE`. It rejects capability, policy, and not-run states as effectiveness evidence.
 
@@ -20,6 +20,6 @@ Historical edge data is not stored. Current execution must always resolve and ob
 
 `HISTORY != APPLY_PERMISSION`.
 
-Future reuse requires a fresh observation, current edge/family discovery, current capability and planner checks, bounded candidate validation, direct-before/active/direct-after semantics, controls, and verified restoration. Explicit managed Revert still clears only managed intent; V2.3 exposes invalidation primitives but does not wire Revert to ledger mutation.
+Future reuse requires a fresh observation, current edge/family discovery, current capability and planner checks, bounded candidate validation, direct-before/active/direct-after semantics, controls, and verified restoration. Explicit managed Revert still clears only managed intent; V2.4 exposes invalidation primitives but does not wire Revert to ledger mutation.
 
-V2.4 adds an optional `validation_evidence_fingerprints` field for product-produced entries. It is separate from the diagnosis evidence fingerprint set: direct-before, active, and direct-after evidence can audit the actual candidate outcome without falsely claiming that baseline diagnosis evidence itself proved effectiveness. Older canonical entries retain their original V2.3 semantics; no old field is reinterpreted.
+V2.4 requires `validation_evidence_fingerprints` for new effectiveness entries. They are separate from diagnosis evidence: direct-before, active, direct-after, and protected-control observations audit the candidate outcome without claiming that baseline diagnosis evidence proved effectiveness. Provenance-free historical entries remain loadable for forensics but are stale for recommendation reuse. A reusable effectiveness entry must also match the current diagnosis kind. Corrupt or future-schema ledger files are read-only unavailable history: current-run results remain usable, but no file is overwritten.

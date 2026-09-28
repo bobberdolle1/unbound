@@ -213,6 +213,9 @@ func NewEntry(input BuildInput, policy Policy) (OutcomeEntry, error) {
 		validationFingerprints = append(validationFingerprints, record.Fingerprint)
 	}
 	validationFingerprints = sortedStrings(validationFingerprints)
+	if effectivenessRankingOutcome(input.Outcome) && len(validationFingerprints) == 0 {
+		return OutcomeEntry{}, fmt.Errorf("effectiveness outcome requires validation evidence")
+	}
 	if !outcomeCompatibleDiagnosis(input.Outcome, input.Diagnosis.Kind) {
 		return OutcomeEntry{}, fmt.Errorf("outcome %q is inconsistent with diagnosis %q", input.Outcome, input.Diagnosis.Kind)
 	}
@@ -276,26 +279,28 @@ type MatchStatus string
 type Reason string
 
 const (
-	MatchCompatible         MatchStatus = "COMPATIBLE"
-	MatchStale              MatchStatus = "STALE"
-	MatchIncompatible       MatchStatus = "INCOMPATIBLE"
-	MatchExpired            MatchStatus = "EXPIRED"
-	MatchInvalid            MatchStatus = "INVALID"
-	ReasonExpired           Reason      = "EXPIRED"
-	ReasonFuture            Reason      = "FUTURE_RECORDED_AT"
-	ReasonInvalid           Reason      = "INVALID_HISTORY"
-	ReasonInvalidated       Reason      = "INVALIDATED"
-	ReasonProbeChanged      Reason      = "PROBE_CHANGED"
-	ReasonContractChanged   Reason      = "TARGET_CONTRACT_CHANGED"
-	ReasonServiceChanged    Reason      = "SERVICE_CHANGED"
-	ReasonTransportChanged  Reason      = "TRANSPORT_CHANGED"
-	ReasonFamilyChanged     Reason      = "ADDRESS_FAMILY_CHANGED"
-	ReasonStrategyChanged   Reason      = "STRATEGY_CHANGED"
-	ReasonBackendChanged    Reason      = "BACKEND_CHANGED"
-	ReasonCapabilityChanged Reason      = "CAPABILITY_CHANGED"
-	ReasonCapabilityMissing Reason      = "CAPABILITY_IDENTITY_REQUIRED_FOR_POSITIVE_REUSE"
-	ReasonContextChanged    Reason      = "CONTEXT_CHANGED"
-	ReasonContextMissing    Reason      = "CONTEXT_REQUIRED_FOR_POSITIVE_REUSE"
+	MatchCompatible                  MatchStatus = "COMPATIBLE"
+	MatchStale                       MatchStatus = "STALE"
+	MatchIncompatible                MatchStatus = "INCOMPATIBLE"
+	MatchExpired                     MatchStatus = "EXPIRED"
+	MatchInvalid                     MatchStatus = "INVALID"
+	ReasonExpired                    Reason      = "EXPIRED"
+	ReasonFuture                     Reason      = "FUTURE_RECORDED_AT"
+	ReasonInvalid                    Reason      = "INVALID_HISTORY"
+	ReasonInvalidated                Reason      = "INVALIDATED"
+	ReasonProbeChanged               Reason      = "PROBE_CHANGED"
+	ReasonContractChanged            Reason      = "TARGET_CONTRACT_CHANGED"
+	ReasonServiceChanged             Reason      = "SERVICE_CHANGED"
+	ReasonTransportChanged           Reason      = "TRANSPORT_CHANGED"
+	ReasonFamilyChanged              Reason      = "ADDRESS_FAMILY_CHANGED"
+	ReasonDiagnosisChanged           Reason      = "DIAGNOSIS_CHANGED"
+	ReasonValidationEvidenceRequired Reason      = "VALIDATION_EVIDENCE_REQUIRED"
+	ReasonStrategyChanged            Reason      = "STRATEGY_CHANGED"
+	ReasonBackendChanged             Reason      = "BACKEND_CHANGED"
+	ReasonCapabilityChanged          Reason      = "CAPABILITY_CHANGED"
+	ReasonCapabilityMissing          Reason      = "CAPABILITY_IDENTITY_REQUIRED_FOR_POSITIVE_REUSE"
+	ReasonContextChanged             Reason      = "CONTEXT_CHANGED"
+	ReasonContextMissing             Reason      = "CONTEXT_REQUIRED_FOR_POSITIVE_REUSE"
 )
 
 type Query struct {
@@ -304,6 +309,7 @@ type Query struct {
 	TargetContractRevision string
 	Transport              observatory.Transport
 	AddressFamily          observatory.AddressFamily
+	DiagnosisKind          diagnosis.Kind
 	StrategyFingerprint    string
 	Backend                backendcap.Backend
 	BackendFingerprint     string
@@ -358,6 +364,18 @@ func MatchEntry(entry OutcomeEntry, query Query) Match {
 			return match
 		}
 	}
+	if effectivenessRankingOutcome(entry.Outcome) {
+		if entry.DiagnosisKind != query.DiagnosisKind {
+			match.Status = MatchIncompatible
+			match.Reasons = []Reason{ReasonDiagnosisChanged}
+			return match
+		}
+		if len(entry.ValidationEvidenceFingerprints) == 0 {
+			match.Status = MatchStale
+			match.Reasons = []Reason{ReasonValidationEvidenceRequired}
+			return match
+		}
+	}
 	if entry.ContextKey != query.ContextKey {
 		match.Status = MatchIncompatible
 		match.Reasons = []Reason{ReasonContextChanged}
@@ -395,7 +413,7 @@ func MatchEntry(entry OutcomeEntry, query Query) Match {
 }
 
 func validateQuery(query Query) error {
-	if query.Now.IsZero() || query.ProbeIdentity == "" || query.ServiceID == "" || query.TargetContractRevision == "" || !validTransport(query.Transport) || !validFamily(query.AddressFamily) {
+	if query.Now.IsZero() || query.ProbeIdentity == "" || query.ServiceID == "" || query.TargetContractRevision == "" || !validTransport(query.Transport) || !validFamily(query.AddressFamily) || !validDiagnosisKind(query.DiagnosisKind) {
 		return fmt.Errorf("query has missing required identity")
 	}
 	if err := safeContextKey(query.ContextKey); err != nil {
@@ -410,6 +428,15 @@ func validateQuery(query Query) error {
 		return err
 	}
 	return safeOpaqueFingerprint("capability", query.CapabilityFingerprint)
+}
+
+func effectivenessRankingOutcome(outcome autotunevnext.Outcome) bool {
+	switch outcome {
+	case autotunevnext.OutcomeVerifiedFixed, autotunevnext.OutcomeStillFailing, autotunevnext.OutcomeRegressionObserved:
+		return true
+	default:
+		return false
+	}
 }
 
 func QueryLedger(ledger Ledger, query Query) []Match {

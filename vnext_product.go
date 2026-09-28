@@ -229,7 +229,7 @@ func (s *productVNextService) Run(ctx context.Context, input AutoTuneVNextReques
 	if err != nil {
 		return productVNextFailureWithCatalog(autotunevnext.StatusPreflightFailed, publicTarget, string(runtimeBinding.backend), "PRODUCT_PROBE_CONTRACT_INVALID", productVNextCatalogStatus)
 	}
-	ledger, historyLimitations := loadProductOutcomeLedger()
+	history := loadProductOutcomeLedger()
 	request := autotunevnext.Request{
 		Target:        target,
 		Controls:      controls,
@@ -238,17 +238,17 @@ func (s *productVNextService) Run(ctx context.Context, input AutoTuneVNextReques
 		NetworkLabel:  "product-autotune-vnext",
 		TargetProbe:   &targetProbe,
 		ControlProbes: controlProbes,
-		Advisor:       productHistoryAdvisor{ledger: ledger, probe: targetProbe, backend: runtimeBinding.backend, now: time.Now},
+		Advisor:       productHistoryAdvisor{ledger: history.ledger, probe: targetProbe, backend: runtimeBinding.backend, now: time.Now},
 	}
 	result, err := s.deps.run(ctx, request, s.deps.observer, runtimeBinding.executor, runtimeBinding.preflight, resolver)
 	if err != nil {
 		return productVNextFailureWithCatalog(autotunevnext.StatusInconclusive, publicTarget, string(runtimeBinding.backend), "OPERATION_CONFLICT", productVNextCatalogStatus)
 	}
 	mapped := mapAutoTuneVNextResult(result, publicTarget)
-	if persistenceLimitation := persistProductOutcomes(result, ledger); persistenceLimitation != "" {
+	if persistenceLimitation := persistProductOutcomes(result, history); persistenceLimitation != "" {
 		mapped.Limitations = append(mapped.Limitations, persistenceLimitation)
 	}
-	mapped.Limitations = append(mapped.Limitations, historyLimitations...)
+	mapped.Limitations = append(mapped.Limitations, history.limitations...)
 	if token := s.issueVerifiedGrant(result, target, publicTarget, controls); token != "" {
 		mapped.ApplyAvailable = true
 		mapped.ApplyToken = token
@@ -379,6 +379,8 @@ func normalizeVNextTarget(raw string) (autotunevnext.Target, string, error) {
 	if err := validateVNextHostname(parsed.Hostname()); err != nil {
 		return autotunevnext.Target{}, "", err
 	}
+	parsed.RawQuery = ""
+	parsed.ForceQuery = false
 	parsed.Fragment = ""
 	parsed.RawFragment = ""
 	parsed.Scheme = "https"

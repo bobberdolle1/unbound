@@ -84,53 +84,66 @@ func (advisor productHistoryAdvisor) Advise(context autotunevnext.AdvisorContext
 	if err != nil {
 		return autotunevnext.Advice{}
 	}
+	now := advisor.now().UTC()
 	candidates := make([]recommendation.Candidate, 0, len(context.Eligible))
 	matches := make(map[string][]outcomeledger.Match, len(context.Eligible))
 	for _, candidate := range context.Eligible {
 		candidates = append(candidates, recommendation.Candidate{StrategyID: candidate.StrategyID, StrategyFingerprint: candidate.StrategyFingerprint, Safety: candidate.Safety})
-		matches[candidate.StrategyFingerprint] = outcomeledger.QueryLedger(advisor.ledger, outcomeledger.Query{ProbeIdentity: identity, ServiceID: advisor.probe.ServiceID, TargetContractRevision: advisor.probe.TargetContractRevision, Transport: advisor.probe.Transport, AddressFamily: context.Family, StrategyFingerprint: candidate.StrategyFingerprint, Backend: advisor.backend, Now: advisor.now().UTC()})
+		matches[candidate.StrategyFingerprint] = outcomeledger.QueryLedger(advisor.ledger, outcomeledger.Query{ProbeIdentity: identity, ServiceID: advisor.probe.ServiceID, TargetContractRevision: advisor.probe.TargetContractRevision, Transport: advisor.probe.Transport, AddressFamily: context.Family, DiagnosisKind: context.Diagnosis.Kind, StrategyFingerprint: candidate.StrategyFingerprint, Backend: advisor.backend, Now: now})
 	}
 	report := recommendation.Recommend(recommendation.Input{Diagnosis: context.Diagnosis, Planner: context.Planner, Candidates: candidates, Matches: matches})
-	advice := autotunevnext.Advice{SchemaVersion: report.SchemaVersion, DiagnosisID: report.DiagnosisID, PlannerAttributionID: report.PlannerAttributionID, Limitations: append([]string(nil), report.Limitations...)}
+	advice := autotunevnext.Advice{SchemaVersion: report.SchemaVersion, DiagnosisID: report.DiagnosisID, PlannerAttributionID: report.PlannerAttributionID, Disposition: autotunevnext.RecommendationDisposition(report.Disposition), Limitations: append([]string(nil), report.Limitations...)}
 	for _, candidate := range report.CandidateRecommendations {
 		advice.Candidates = append(advice.Candidates, autotunevnext.CandidateAdvice{StrategyFingerprint: candidate.StrategyFingerprint, ReasonCodes: append([]string(nil), candidate.ReasonCodes...), HistoryUsed: candidate.HistoryUsed})
 	}
 	return advice
 }
 
-func loadProductOutcomeLedger() (outcomeledger.Ledger, []string) {
+type productOutcomeLedger struct {
+	ledger      outcomeledger.Ledger
+	writable    bool
+	limitations []string
+}
+
+func loadProductOutcomeLedger() productOutcomeLedger {
 	path, err := getVNextOutcomeLedgerPath()
 	if err != nil {
-		return outcomeledger.Ledger{SchemaVersion: outcomeledger.SchemaVersion}, []string{"HISTORY_UNAVAILABLE_LOAD_FAILED"}
+		return productOutcomeLedger{ledger: outcomeledger.Ledger{SchemaVersion: outcomeledger.SchemaVersion}, limitations: []string{"HISTORY_UNAVAILABLE_LOAD_FAILED"}}
 	}
 	loaded := outcomeledger.Load(path)
 	switch loaded.State {
 	case outcomeledger.LoadValid, outcomeledger.LoadEmpty:
-		return loaded.Ledger, []string{"CONTEXT_IDENTITY_UNAVAILABLE", "CAPABILITY_IDENTITY_UNAVAILABLE"}
+		return productOutcomeLedger{ledger: loaded.Ledger, writable: true, limitations: []string{"CONTEXT_IDENTITY_UNAVAILABLE", "CAPABILITY_IDENTITY_UNAVAILABLE"}}
 	case outcomeledger.LoadCorrupt:
-		return outcomeledger.Ledger{SchemaVersion: outcomeledger.SchemaVersion}, []string{"HISTORY_UNAVAILABLE_CORRUPT", "CONTEXT_IDENTITY_UNAVAILABLE", "CAPABILITY_IDENTITY_UNAVAILABLE"}
+		return productOutcomeLedger{ledger: outcomeledger.Ledger{SchemaVersion: outcomeledger.SchemaVersion}, limitations: []string{"HISTORY_UNAVAILABLE_CORRUPT", "CONTEXT_IDENTITY_UNAVAILABLE", "CAPABILITY_IDENTITY_UNAVAILABLE"}}
 	default:
-		return outcomeledger.Ledger{SchemaVersion: outcomeledger.SchemaVersion}, []string{"HISTORY_UNAVAILABLE_UNSUPPORTED_VERSION", "CONTEXT_IDENTITY_UNAVAILABLE", "CAPABILITY_IDENTITY_UNAVAILABLE"}
+		return productOutcomeLedger{ledger: outcomeledger.Ledger{SchemaVersion: outcomeledger.SchemaVersion}, limitations: []string{"HISTORY_UNAVAILABLE_UNSUPPORTED_VERSION", "CONTEXT_IDENTITY_UNAVAILABLE", "CAPABILITY_IDENTITY_UNAVAILABLE"}}
 	}
 }
 
 // persistProductOutcomes is deliberately after fresh current execution. A
 // persistence failure changes only history availability, never the result,
 // lifecycle, VERIFIED_FIXED finding, or Apply grant of that current run.
-func persistProductOutcomes(result autotunevnext.Result, ledger outcomeledger.Ledger) string {
-	if result.DiagnosisReport.DiagnosisID == "" || len(result.BaselineEvidence) == 0 || len(result.OutcomeEvidence) == 0 {
+func persistProductOutcomes(result autotunevnext.Result, history productOutcomeLedger) string {
+	if len(result.OutcomeEvidence) == 0 {
 		return ""
+	}
+	if !history.writable {
+		return "HISTORY_PERSIST_SKIPPED_HISTORY_UNAVAILABLE"
+	}
+	if result.DiagnosisReport.DiagnosisID == "" || len(result.BaselineEvidence) == 0 {
+		return "HISTORY_ENTRY_REJECTED"
 	}
 	byFingerprint := make(map[string]autotunevnext.CandidateExperiment, len(result.Experiments))
 	for _, experiment := range result.Experiments {
 		byFingerprint[experiment.Fingerprint] = experiment
 	}
-	updated := ledger
+	updated := history.ledger
 	changed := false
 	for _, provenance := range result.OutcomeEvidence {
 		experiment, exists := byFingerprint[provenance.StrategyFingerprint]
 		if !exists {
-			continue
+			return "HISTORY_ENTRY_REJECTED"
 		}
 		entry, err := outcomeledger.NewEntry(outcomeledger.BuildInput{
 			Evidence: result.BaselineEvidence, ValidationEvidence: provenance.Validation, Diagnosis: result.DiagnosisReport,
@@ -138,7 +151,7 @@ func persistProductOutcomes(result autotunevnext.Result, ledger outcomeledger.Le
 			Outcome: provenance.Outcome, RecordedAt: result.DiagnosisReport.EffectiveAt,
 		}, outcomeledger.DefaultPolicy())
 		if err != nil {
-			continue
+			return "HISTORY_ENTRY_REJECTED"
 		}
 		updated, err = outcomeledger.Add(updated, entry, outcomeledger.DefaultPolicy(), result.DiagnosisReport.EffectiveAt)
 		if err != nil {

@@ -137,12 +137,23 @@ type CandidateAdvice struct {
 	HistoryUsed         bool     `json:"history_used"`
 }
 
+type RecommendationDisposition string
+
+const (
+	RecommendationExperimentCandidates RecommendationDisposition = "EXPERIMENT_CANDIDATES"
+	RecommendationNoAction             RecommendationDisposition = "NO_ACTION"
+	RecommendationNoPacketStrategy     RecommendationDisposition = "NO_PACKET_STRATEGY"
+	RecommendationInsufficientEvidence RecommendationDisposition = "INSUFFICIENT_EVIDENCE"
+	RecommendationNoEligibleCandidates RecommendationDisposition = "NO_ELIGIBLE_CANDIDATES"
+)
+
 type Advice struct {
-	SchemaVersion        int               `json:"schema_version"`
-	DiagnosisID          string            `json:"diagnosis_id"`
-	PlannerAttributionID string            `json:"planner_attribution_id"`
-	Candidates           []CandidateAdvice `json:"candidates"`
-	Limitations          []string          `json:"limitations,omitempty"`
+	SchemaVersion        int                       `json:"schema_version"`
+	DiagnosisID          string                    `json:"diagnosis_id"`
+	PlannerAttributionID string                    `json:"planner_attribution_id"`
+	Disposition          RecommendationDisposition `json:"disposition"`
+	Candidates           []CandidateAdvice         `json:"candidates,omitempty"`
+	Limitations          []string                  `json:"limitations,omitempty"`
 }
 
 // CandidateAdvisor is product-injected. It can order only the supplied
@@ -223,11 +234,12 @@ type AssetResolver interface {
 var ErrMissingAsset = errors.New("missing trusted logical asset")
 
 type ControlResult struct {
-	Target      Target   `json:"target"`
-	DirectRunID string   `json:"direct_run_id,omitempty"`
-	ActiveRunID string   `json:"active_run_id,omitempty"`
-	Outcome     Outcome  `json:"outcome"`
-	Reasons     []Reason `json:"reasons,omitempty"`
+	Target            Target   `json:"target"`
+	DirectRunID       string   `json:"direct_run_id,omitempty"`
+	ActiveRunID       string   `json:"active_run_id,omitempty"`
+	Outcome           Outcome  `json:"outcome"`
+	Reasons           []Reason `json:"reasons,omitempty"`
+	activeObservation *observatory.ObservationResult
 }
 
 type CandidateExperiment struct {
