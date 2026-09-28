@@ -51,6 +51,19 @@ describe('primary AutoTune vNext modal', () => {
     expect(screen.queryByText('Применить')).toBeNull();
   });
 
+  it('reports redacted diagnosis and compatible-history influence without promising success', async () => {
+    vi.spyOn(backendService, 'runExperimentalAutoTuneVNext').mockResolvedValue(result({
+      status: 'COMPLETED_NO_VERIFIED_CANDIDATE', apply_available: false,
+      diagnosis: { kind: 'TLS_HANDSHAKE_PATH_FAILURE', confidence: 'MEDIUM' },
+      recommendation: { history_used: true, reason_codes: ['COMPATIBLE_RECENT_NEGATIVE'] },
+    }));
+    await openModal();
+    fireEvent.click(screen.getByText('Проверить стратегии'));
+    expect(await screen.findByText(/TLS_HANDSHAKE_PATH_FAILURE/)).toBeDefined();
+    expect(screen.getByText(/предыдущий совместимый результат/i)).toBeDefined();
+    expect(screen.getByText(/не является гарантией/i)).toBeDefined();
+  });
+
   it('shows managed strategy and reverts through the managed backend API', async () => {
     vi.spyOn(backendService, 'getAutoTuneVNextManagedStatus').mockResolvedValue(status({ state: 'VNEXT_MANAGED_ACTIVE', active: true, strategy_id: 'prod-tls-multisplit-1-v1', target: 'https://example.test/path' }));
     const revert = vi.spyOn(backendService, 'revertAutoTuneVNext').mockResolvedValue(status({ state: 'REVERTED' }));

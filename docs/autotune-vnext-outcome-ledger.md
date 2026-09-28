@@ -21,3 +21,5 @@ Historical edge data is not stored. Current execution must always resolve and ob
 `HISTORY != APPLY_PERMISSION`.
 
 Future reuse requires a fresh observation, current edge/family discovery, current capability and planner checks, bounded candidate validation, direct-before/active/direct-after semantics, controls, and verified restoration. Explicit managed Revert still clears only managed intent; V2.3 exposes invalidation primitives but does not wire Revert to ledger mutation.
+
+V2.4 adds an optional `validation_evidence_fingerprints` field for product-produced entries. It is separate from the diagnosis evidence fingerprint set: direct-before, active, and direct-after evidence can audit the actual candidate outcome without falsely claiming that baseline diagnosis evidence itself proved effectiveness. Older canonical entries retain their original V2.3 semantics; no old field is reinterpreted.

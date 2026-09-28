@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
-
+	"time"
 	"unbound/engine"
 	"unbound/engine/attribution"
 	"unbound/engine/autotunevnext"
@@ -100,10 +100,21 @@ type AutoTuneVNextAttribution struct {
 }
 
 type AutoTuneVNextCandidateOutcome struct {
-	StrategyID    string `json:"strategy_id"`
-	Fingerprint   string `json:"fingerprint,omitempty"`
-	PlannerStatus string `json:"planner_status,omitempty"`
-	Outcome       string `json:"outcome"`
+	StrategyID           string   `json:"strategy_id"`
+	Fingerprint          string   `json:"fingerprint,omitempty"`
+	PlannerStatus        string   `json:"planner_status,omitempty"`
+	Outcome              string   `json:"outcome"`
+	RecommendationReason []string `json:"recommendation_reason,omitempty"`
+}
+
+type AutoTuneVNextDiagnosis struct {
+	Kind       string `json:"kind,omitempty"`
+	Confidence string `json:"confidence,omitempty"`
+}
+
+type AutoTuneVNextRecommendation struct {
+	HistoryUsed bool     `json:"history_used"`
+	ReasonCodes []string `json:"reason_codes,omitempty"`
 }
 
 type AutoTuneVNextLifecycleError struct {
@@ -118,6 +129,8 @@ type AutoTuneVNextResult struct {
 	Target              string                          `json:"target,omitempty"`
 	Backend             string                          `json:"backend,omitempty"`
 	BaselineAttribution AutoTuneVNextAttribution        `json:"baseline_attribution,omitempty"`
+	Diagnosis           AutoTuneVNextDiagnosis          `json:"diagnosis,omitempty"`
+	Recommendation      AutoTuneVNextRecommendation     `json:"recommendation,omitempty"`
 	PlannerDisposition  string                          `json:"planner_disposition,omitempty"`
 	CatalogStatus       string                          `json:"catalog_status"`
 	CandidateOutcomes   []AutoTuneVNextCandidateOutcome `json:"candidate_outcomes,omitempty"`
@@ -212,18 +225,30 @@ func (s *productVNextService) Run(ctx context.Context, input AutoTuneVNextReques
 	if err != nil {
 		return productVNextFailureWithCatalog(autotunevnext.StatusPreflightFailed, publicTarget, string(runtimeBinding.backend), "PRODUCT_ASSETS_UNAVAILABLE", productVNextCatalogStatus)
 	}
+	targetProbe, controlProbes, err := productProbeContracts(input.Target, target, controls)
+	if err != nil {
+		return productVNextFailureWithCatalog(autotunevnext.StatusPreflightFailed, publicTarget, string(runtimeBinding.backend), "PRODUCT_PROBE_CONTRACT_INVALID", productVNextCatalogStatus)
+	}
+	ledger, historyLimitations := loadProductOutcomeLedger()
 	request := autotunevnext.Request{
-		Target:       target,
-		Controls:     controls,
-		Strategies:   catalog,
-		Backend:      runtimeBinding.backend,
-		NetworkLabel: "product-autotune-vnext",
+		Target:        target,
+		Controls:      controls,
+		Strategies:    catalog,
+		Backend:       runtimeBinding.backend,
+		NetworkLabel:  "product-autotune-vnext",
+		TargetProbe:   &targetProbe,
+		ControlProbes: controlProbes,
+		Advisor:       productHistoryAdvisor{ledger: ledger, probe: targetProbe, backend: runtimeBinding.backend, now: time.Now},
 	}
 	result, err := s.deps.run(ctx, request, s.deps.observer, runtimeBinding.executor, runtimeBinding.preflight, resolver)
 	if err != nil {
 		return productVNextFailureWithCatalog(autotunevnext.StatusInconclusive, publicTarget, string(runtimeBinding.backend), "OPERATION_CONFLICT", productVNextCatalogStatus)
 	}
 	mapped := mapAutoTuneVNextResult(result, publicTarget)
+	if persistenceLimitation := persistProductOutcomes(result, ledger); persistenceLimitation != "" {
+		mapped.Limitations = append(mapped.Limitations, persistenceLimitation)
+	}
+	mapped.Limitations = append(mapped.Limitations, historyLimitations...)
 	if token := s.issueVerifiedGrant(result, target, publicTarget, controls); token != "" {
 		mapped.ApplyAvailable = true
 		mapped.ApplyToken = token
@@ -246,16 +271,24 @@ func mapAutoTuneVNextResult(result autotunevnext.Result, publicTarget string) Au
 		Target:              publicTarget,
 		Backend:             string(result.Backend),
 		BaselineAttribution: mapAttribution(result.BaselineAttribution),
+		Diagnosis:           AutoTuneVNextDiagnosis{Kind: string(result.DiagnosisReport.Kind), Confidence: string(result.DiagnosisReport.Confidence)},
 		PlannerDisposition:  string(result.PlannerReport.Disposition),
 		CatalogStatus:       productVNextCatalogStatus,
 		SelectedStrategyID:  result.SelectedStrategyID,
 		SelectedFingerprint: result.SelectedFingerprint,
 		Limitations:         append([]string(nil), result.Limitations...),
 	}
+	for _, candidate := range result.Recommendation.Candidates {
+		if candidate.HistoryUsed {
+			mapped.Recommendation.HistoryUsed = true
+		}
+		mapped.Recommendation.ReasonCodes = append(mapped.Recommendation.ReasonCodes, candidate.ReasonCodes...)
+	}
 	for _, experiment := range result.Experiments {
 		mapped.CandidateOutcomes = append(mapped.CandidateOutcomes, AutoTuneVNextCandidateOutcome{
 			StrategyID: experiment.StrategyID, Fingerprint: experiment.Fingerprint,
 			PlannerStatus: string(experiment.PlannerStatus), Outcome: string(experiment.Outcome),
+			RecommendationReason: append([]string(nil), experiment.RecommendationReason...),
 		})
 	}
 	for _, lifecycle := range result.Lifecycle.Errors {

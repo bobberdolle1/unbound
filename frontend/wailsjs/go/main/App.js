@@ -10,6 +10,10 @@ export function AddDefenderExclusion() {
   return window['go']['main']['App']['AddDefenderExclusion']();
 }
 
+export function ApplyAutoTuneVNextSelection(arg1) {
+  return window['go']['main']['App']['ApplyAutoTuneVNextSelection'](arg1);
+}
+
 export function AutoReconnectMonitor() {
   return window['go']['main']['App']['AutoReconnectMonitor']();
 }
@@ -20,10 +24,6 @@ export function AutoTune() {
 
 export function AutoTuneVNext(arg1, arg2) {
   return window['go']['main']['App']['AutoTuneVNext'](arg1, arg2);
-}
-
-export function ApplyAutoTuneVNextSelection(arg1) {
-  return window['go']['main']['App']['ApplyAutoTuneVNextSelection'](arg1);
 }
 
 export function CancelAutoTune() {
@@ -214,6 +214,10 @@ export function ResetAdaptiveHostState() {
   return window['go']['main']['App']['ResetAdaptiveHostState']();
 }
 
+export function RevertAutoTuneVNext() {
+  return window['go']['main']['App']['RevertAutoTuneVNext']();
+}
+
 export function RollbackEngineUpdate() {
   return window['go']['main']['App']['RollbackEngineUpdate']();
 }
@@ -232,10 +236,6 @@ export function RunDoctor(arg1) {
 
 export function RunExperimentalAutoTuneVNext(arg1, arg2) {
   return window['go']['main']['App']['RunExperimentalAutoTuneVNext'](arg1, arg2);
-}
-
-export function RevertAutoTuneVNext() {
-  return window['go']['main']['App']['RevertAutoTuneVNext']();
 }
 
 export function RunStrategyLab(arg1, arg2, arg3, arg4) {

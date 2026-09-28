@@ -7,13 +7,13 @@ export function AddAutoHostlistDomain(arg1:string,arg2:string):Promise<void>;
 
 export function AddDefenderExclusion():Promise<void>;
 
+export function ApplyAutoTuneVNextSelection(arg1:string):Promise<main.AutoTuneVNextManagedStatus>;
+
 export function AutoReconnectMonitor():Promise<void>;
 
 export function AutoTune():Promise<string>;
 
 export function AutoTuneVNext(arg1:string,arg2:Array<string>):Promise<main.AutoTuneVNextResult>;
-
-export function ApplyAutoTuneVNextSelection(arg1:string):Promise<main.AutoTuneVNextManagedStatus>;
 
 export function CancelAutoTune():Promise<void>;
 
@@ -109,6 +109,8 @@ export function RemoveAutoHostlistDomain(arg1:string):Promise<void>;
 
 export function ResetAdaptiveHostState():Promise<void>;
 
+export function RevertAutoTuneVNext():Promise<main.AutoTuneVNextManagedStatus>;
+
 export function RollbackEngineUpdate():Promise<void>;
 
 export function RunBypassComparison():Promise<engine.BypassComparisonResult>;
@@ -118,8 +120,6 @@ export function RunDiagnostics():Promise<Array<engine.DiagnosticResult>>;
 export function RunDoctor(arg1:string):Promise<engine.DoctorResult>;
 
 export function RunExperimentalAutoTuneVNext(arg1:string,arg2:string):Promise<main.AutoTuneVNextResult>;
-
-export function RevertAutoTuneVNext():Promise<main.AutoTuneVNextManagedStatus>;
 
 export function RunStrategyLab(arg1:string,arg2:string,arg3:string,arg4:Array<string>):Promise<engine.StrategyLabReport>;
 
