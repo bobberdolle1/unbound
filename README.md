@@ -114,6 +114,10 @@ sudo ./unbound --cli --profile ultimate   # macOS/Linux
 sudo ./unbound --cli --profile rec        # Windows: Recommended
 ```
 
+### Экспериментальный Linux `amd64` архив следующего релиза
+
+Следующий релиз будет готовить CLI-only архив `unbound-v<VERSION>-linux-amd64.tar.gz`; Linux GUI в него не входит. Для перехвата нужны `x86_64` Linux, root, ядро с `NFQUEUE` и предпочтительно `nft` (`iptables` — fallback). После распаковки сначала проверьте `./unbound --version --json` и `./unbound --list-profiles --json`; запуск профиля выполняйте только из повышенного терминала. Linux-артефакт остаётся **EXPERIMENTAL** и не гарантирует доступность конкретного сервиса или дистрибутива.
+
 ---
 
 ## 📦 Сборка из исходников

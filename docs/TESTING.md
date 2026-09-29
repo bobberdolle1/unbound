@@ -37,6 +37,19 @@ go test -v ./engine/providers/...
 sudo UNBOUND_FIREWALL_TEST=1 go test -v ./engine/providers/ -run Live
 ```
 
+### Экспериментальный Linux `amd64` пакет
+
+Пакетирование выполняется только на Linux `x86_64`; оно не публикует артефакт:
+
+```bash
+commit="$(git rev-parse HEAD)"
+version="$(node -p "require('./wails.json').info.productVersion")"
+./scripts/build/package_linux_release.sh \
+  --version "$version" --expected-commit "$commit" --mode local
+```
+
+Скрипт создаёт локальный archive, извлекает его в временную директорию, проверяет `BUNDLE_SHA256SUMS.txt`, identity, права и команды `--version`, `--version --json`, `--help`, `--list-profiles --json`, `--test`. Для будущего release candidate используйте только чистый checkout и `scripts/release/local_release_linux.sh <VERSION> <COMMIT>`.
+
 ---
 
 ## 3. Пошаговый Чек-лист Ручного Тестирования (Manual QA)

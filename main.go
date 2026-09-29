@@ -33,7 +33,10 @@ var assets embed.FS
 
 func main() {
 	attachConsole()
-
+	if err := verifyAdjacentBundle(); err != nil {
+		fmt.Fprintf(os.Stderr, "Ошибка целостности пакета UNBOUND: %v\n", err)
+		os.Exit(1)
+	}
 	cliMode := flag.Bool("cli", false, "Run in headless CLI mode")
 	profileName := flag.String("profile", "", "Profile to use in CLI mode (default: interactive selection)")
 	autoTuneMode := flag.Bool("autotune", false, "Run AutoTune benchmark in CLI mode and start the best profile")

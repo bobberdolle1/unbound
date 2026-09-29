@@ -24,6 +24,20 @@ SUMS="$DIRECTORY/SHA256SUMS.txt"
 VERSION="$VERSION" COMMIT="$COMMIT" MANIFEST="$MANIFEST" node - <<'NODE'
 const fs = require('fs');
 const manifest = JSON.parse(fs.readFileSync(process.env.MANIFEST, 'utf8'));
-if (manifest.version !== process.env.VERSION || manifest.source_commit !== process.env.COMMIT || manifest.tag !== `v${process.env.VERSION}` || manifest.build_channel !== 'release' || !Array.isArray(manifest.artifacts) || manifest.artifacts.length !== 4 || !manifest.artifacts.every(artifact => artifact.name && artifact.sha256 && artifact.platform && artifact.architecture && artifact.build_host_role && artifact.built_at)) process.exit(1);
+const expected = new Map([
+  ['windows', {count: 1, architecture: 'amd64', experimental: false}],
+  ['macos', {count: 3, experimental: false}],
+  ['linux', {count: 1, architecture: 'amd64', experimental: true}],
+]);
+if (manifest.version !== process.env.VERSION || manifest.source_commit !== process.env.COMMIT || manifest.tag !== `v${process.env.VERSION}` || manifest.build_channel !== 'release' || !Array.isArray(manifest.artifacts) || manifest.artifacts.length !== 5) process.exit(1);
+const counts = new Map();
+for (const artifact of manifest.artifacts) {
+  const contract = expected.get(artifact.platform);
+  if (!contract || !artifact.name || !artifact.sha256 || !artifact.architecture || !artifact.build_host_role || !artifact.built_at || artifact.experimental !== contract.experimental || (contract.architecture && artifact.architecture !== contract.architecture)) process.exit(1);
+  counts.set(artifact.platform, (counts.get(artifact.platform) || 0) + 1);
+}
+for (const [platform, contract] of expected) {
+  if (counts.get(platform) !== contract.count) process.exit(1);
+}
 NODE
 printf 'LOCAL_RELEASE_ARTIFACT_VERIFICATION=PASS directory=%s\n' "$DIRECTORY"

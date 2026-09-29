@@ -4,8 +4,11 @@ package providers
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
+	"sync/atomic"
+	"time"
 )
 
 // linuxFirewall installs and removes the netfilter rules that divert traffic
@@ -24,15 +27,17 @@ type linuxFirewall interface {
 }
 
 func newLinuxFirewall() (linuxFirewall, error) {
+	// nftables is the primary Linux path: one owned inet table describes both
+	// address families atomically. iptables remains a compatibility fallback.
+	if _, err := exec.LookPath("nft"); err == nil {
+		return newNftablesFirewall(), nil
+	}
 	if _, err := exec.LookPath("iptables"); err == nil {
 		return &iptablesFirewall{}, nil
 	}
-	if _, err := exec.LookPath("nft"); err == nil {
-		return &nftablesFirewall{}, nil
-	}
 	return nil, fmt.Errorf(
-		"не найдены ни iptables, ни nft; установите iptables (пакет iptables) " +
-			"или nftables, чтобы Unbound мог направлять трафик в NFQUEUE")
+		"не найдены ни nft, ни iptables; установите nftables (предпочтительно) " +
+			"или iptables, чтобы Unbound мог направлять трафик в NFQUEUE")
 }
 
 // run executes a firewall command and folds its output into the error, which
@@ -148,12 +153,19 @@ func (f *iptablesFirewall) Flush() error {
 
 // ─── nftables ───────────────────────────────────────────────────────────────
 
-// nftTable is a dedicated table so Flush can drop everything Unbound added in
-// a single atomic operation without touching the user's own ruleset.
-const nftTable = "unbound"
+var nftTableSequence uint64
 
+// nftablesFirewall owns a unique, process-scoped table. Flush deletes only
+// that table, so it cannot remove a foreign table named by another process.
 type nftablesFirewall struct {
+	table   string
 	created bool
+}
+
+func newNftablesFirewall() *nftablesFirewall {
+	return &nftablesFirewall{
+		table: fmt.Sprintf("unbound_%d_%d_%d", os.Getpid(), time.Now().UnixNano(), atomic.AddUint64(&nftTableSequence, 1)),
+	}
 }
 
 func (f *nftablesFirewall) Name() string { return "nftables" }
@@ -179,19 +191,19 @@ func nftRule(table, chain string, pf packetFilter) string {
 		// the original direction, which is all DPI inspects.
 		rule += " ct original packets 1-6"
 	}
-	rule += fmt.Sprintf(" meta mark and 0x40000000 != 0x40000000 queue num %s bypass", nfqueueNum)
+	rule += fmt.Sprintf(" meta mark and 0x40000000 != 0x40000000 counter queue num %s bypass", nfqueueNum)
 	return rule
 }
 
 func (f *nftablesFirewall) Apply(filters []packetFilter) error {
 	var b strings.Builder
-	// inet covers IPv4 and IPv6 from one table, so IPv6 traffic cannot slip
-	// past the bypass.
-	fmt.Fprintf(&b, "add table inet %s\n", nftTable)
-	fmt.Fprintf(&b, "add chain inet %s postrouting { type filter hook postrouting priority mangle; policy accept; }\n", nftTable)
+	// inet covers IPv4 and IPv6 from one owned table, so IPv6 traffic cannot
+	// slip past the bypass.
+	fmt.Fprintf(&b, "add table inet %s\n", f.table)
+	fmt.Fprintf(&b, "add chain inet %s postrouting { type filter hook postrouting priority mangle; policy accept; }\n", f.table)
 
 	for _, pf := range filters {
-		b.WriteString(nftRule(nftTable, "postrouting", pf) + "\n")
+		b.WriteString(nftRule(f.table, "postrouting", pf) + "\n")
 	}
 
 	cmd := exec.Command("nft", "-f", "-")
@@ -214,9 +226,7 @@ func (f *nftablesFirewall) Flush() error {
 		return nil
 	}
 	f.created = false
-	// Deleting our own table removes every rule at once and cannot disturb
-	// rules the user or their firewall manager installed elsewhere.
-	if err := run("nft", "delete", "table", "inet", nftTable); err != nil {
+	if err := run("nft", "delete", "table", "inet", f.table); err != nil {
 		if strings.Contains(err.Error(), "No such file or directory") {
 			return nil // already gone
 		}

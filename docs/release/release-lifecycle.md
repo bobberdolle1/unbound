@@ -16,9 +16,9 @@ GitHub release immutability is not currently enforced by repository settings, so
 
 ## Local release gates
 
-The release coordinator invokes `scripts/release/local_release_windows.ps1 VERSION EXPECTED_COMMIT` on the Windows release host and `scripts/release/local_release_macos.sh VERSION EXPECTED_COMMIT` on the macOS release host. Both reject a dirty or wrong checkout, run the repository-owned canonical platform gate, inject release identity, build only the supported platform artifact set, verify the embedded identity, and write machine-readable evidence.
+Локальный coordinator запускает `scripts/release/local_release_windows.ps1 VERSION EXPECTED_COMMIT` на Windows release-host, `scripts/release/local_release_macos.sh VERSION EXPECTED_COMMIT` на macOS release-host и `scripts/release/local_release_linux.sh VERSION EXPECTED_COMMIT` на Linux `x86_64` release-host. Каждый отклоняет dirty/wrong checkout, запускает repository-owned canonical gate, внедряет release identity, собирает только поддерживаемый артефакт, проверяет embedded identity и пишет machine-readable evidence. Linux coordinator создаёт только экспериментальный CLI `tar.gz`; он не включает GUI.
 
-Use `scripts/release/assemble_local_release.sh VERSION EXPECTED_COMMIT OUTPUT_DIRECTORY ARTIFACT...` to construct `SHA256SUMS.txt` and `RELEASE_MANIFEST.json`; it requires factual `UNBOUND_WINDOWS_BUILT_AT` and `UNBOUND_MACOS_BUILT_AT` values from the platform evidence. Run `scripts/release/verify_release_artifacts.sh VERSION EXPECTED_COMMIT OUTPUT_DIRECTORY` before upload and after download. These scripts do not call GitHub Actions.
+Для сборки единого `SHA256SUMS.txt` и `RELEASE_MANIFEST.json` используйте `scripts/release/assemble_local_release.sh VERSION EXPECTED_COMMIT OUTPUT_DIRECTORY ARTIFACT...`; ему нужны фактические `UNBOUND_WINDOWS_BUILT_AT`, `UNBOUND_MACOS_BUILT_AT` и `UNBOUND_LINUX_BUILT_AT` из platform evidence. Linux entry имеет `platform=linux`, `architecture=amd64`, `experimental=true`. До и после upload запускайте `scripts/release/verify_release_artifacts.sh VERSION EXPECTED_COMMIT OUTPUT_DIRECTORY`. Эти scripts не используют GitHub Actions как release authority.
 
 
 ## Build identity

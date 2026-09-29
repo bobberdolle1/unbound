@@ -15,9 +15,10 @@ expected=(
     "unbound-v${VERSION}-macos-universal.zip"
     "unbound-v${VERSION}-macos-universal.dmg"
     "unbound-v${VERSION}-macOS-Installer.pkg"
+    "unbound-v${VERSION}-linux-amd64.tar.gz"
 )
-[[ $(($# - 3)) -eq ${#expected[@]} ]] || { printf 'exactly the four supported release artifacts are required\n' >&2; exit 1; }
-[[ -n "${UNBOUND_WINDOWS_BUILT_AT:-}" && -n "${UNBOUND_MACOS_BUILT_AT:-}" ]] || { printf 'UNBOUND_WINDOWS_BUILT_AT and UNBOUND_MACOS_BUILT_AT are required from verified platform evidence\n' >&2; exit 1; }
+[[ $(($# - 3)) -eq ${#expected[@]} ]] || { printf 'exactly the five supported release artifacts are required\n' >&2; exit 1; }
+[[ -n "${UNBOUND_WINDOWS_BUILT_AT:-}" && -n "${UNBOUND_MACOS_BUILT_AT:-}" && -n "${UNBOUND_LINUX_BUILT_AT:-}" ]] || { printf 'UNBOUND_WINDOWS_BUILT_AT, UNBOUND_MACOS_BUILT_AT, and UNBOUND_LINUX_BUILT_AT are required from verified platform evidence\n' >&2; exit 1; }
 
 shift 3
 mkdir -p "$OUTPUT"
@@ -54,10 +55,11 @@ const path = require('path');
 const output = process.env.OUTPUT;
 const artifacts = fs.readFileSync(path.join(output, 'SHA256SUMS.txt'), 'utf8').trim().split('\n').filter(Boolean).map(line => {
   const [sha256, name] = line.split(/\s{2,}/);
-  const platform = name.includes('-windows-') ? 'windows' : name.includes('-macos-') || name.includes('-macOS-') ? 'macos' : 'unknown';
-  const built_at = platform === 'windows' ? process.env.UNBOUND_WINDOWS_BUILT_AT : process.env.UNBOUND_MACOS_BUILT_AT;
-  const build_host_role = platform === 'windows' ? 'windows-release-host' : 'macos-release-host';
-  return {name, sha256, platform, architecture: name.includes('windows-amd64') ? 'amd64' : name.includes('macos-universal') || name.includes('macOS-Installer') ? 'universal' : 'unknown', build_host_role, built_at};
+  const platform = name.includes('-windows-') ? 'windows' : name.includes('-macos-') || name.includes('-macOS-') ? 'macos' : name.includes('-linux-') ? 'linux' : 'unknown';
+  const built_at = platform === 'windows' ? process.env.UNBOUND_WINDOWS_BUILT_AT : platform === 'macos' ? process.env.UNBOUND_MACOS_BUILT_AT : process.env.UNBOUND_LINUX_BUILT_AT;
+  const build_host_role = platform === 'windows' ? 'windows-release-host' : platform === 'macos' ? 'macos-release-host' : 'linux-release-host';
+  const architecture = name.includes('windows-amd64') || name.includes('linux-amd64') ? 'amd64' : name.includes('macos-universal') || name.includes('macOS-Installer') ? 'universal' : 'unknown';
+  return {name, sha256, platform, architecture, experimental: platform === 'linux', build_host_role, built_at};
 });
 const manifest = {version: process.env.VERSION, source_commit: process.env.COMMIT, tag: `v${process.env.VERSION}`, build_channel: 'release', artifacts};
 fs.writeFileSync(path.join(output, 'RELEASE_MANIFEST.json'), JSON.stringify(manifest, null, 2) + '\n');

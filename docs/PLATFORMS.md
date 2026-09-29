@@ -20,7 +20,7 @@ Windows YouTube evidence from 2026-09-22 resolved `www.youtube.com` to Google ed
 | Платформа | Движок / перехват | Релизный формат | Поддерживаемый трафик |
 |-----------|-------------------|-----------------|------------------------|
 | 🪟 **Windows 10/11 x64** | Zapret 2 `winws2.exe` + WinDivert | Wails GUI + CLI | TCP и UDP/QUIC согласно профилю |
-| 🐧 **Linux amd64/arm64** | Zapret 2 `nfqws2` + NFQUEUE | CLI | TCP и UDP/QUIC согласно профилю |
+| 🐧 **Linux amd64** | Zapret 2 `nfqws2` + NFQUEUE | Следующий релиз: экспериментальный CLI `tar.gz`; v0.7.0 asset отсутствует | TCP и UDP/QUIC согласно профилю |
 | 🍎 **macOS 11+ Intel/Apple Silicon** | Zapret `tpws --socks` + system SOCKS; profile-specific PF UDP/443 fallback | Universal Wails GUI + CLI | TCP only |
 
 ---
@@ -37,11 +37,12 @@ Windows YouTube evidence from 2026-09-22 resolved `www.youtube.com` to Google ed
 
 ## 🐧 Linux
 
-**Требования:** ядро с `NFQUEUE`, права root, `nft` либо `iptables`; для запуска GUI из исходников дополнительно нужны зависимости Wails/WebKit.
+**Требования:** `x86_64` Linux, ядро с `NFQUEUE`, root для перехвата и `nft`; `iptables` используется как fallback там, где его поддерживает runtime.
 
-- Встроенный `nfqws2` создаёт NFQUEUE-процесс, а UNBOUND устанавливает изолированные правила `nftables` с фолбэком на `iptables`.
-- Linux остаётся экспериментальным. Физически подтверждены жизненный цикл `nfqws2`/NFQUEUE и очистка firewall; для v0.7.0 Linux-бинарник не публикуется.
-- systemd autostart и `.sh`-запускатели остаются исходниковой функциональностью, но не являются обещанием релизного архива.
+- Следующий релиз готовит только **EXPERIMENTAL** CLI-архив `linux/amd64` в `tar.gz`. Wails GUI, `linux/arm64` и distro package formats в этот target не входят.
+- Упакованный `nfqws2` создаёт NFQUEUE-процесс, а UNBOUND устанавливает изолированные правила `nftables` с фолбэком на `iptables`. Перед запуском CLI проверяет `BUNDLE_SHA256SUMS.txt`.
+- Непривилегированные команды `--version`, `--help`, `--list-profiles --json` и `--test` не требуют перехвата; запуск профиля требует root. Linux не обещает поддержку каждого дистрибутива или результат для конкретного сервиса.
+- Для v0.7.0 Linux-бинарник не публикуется. Подробная предыдущая физическая приёмка: [`release/linux-v0.6.9-acceptance.md`](release/linux-v0.6.9-acceptance.md).
 
 ## 🍎 macOS
 
