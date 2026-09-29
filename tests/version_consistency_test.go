@@ -42,7 +42,24 @@ func TestReleaseVisibleVersionsMatchWailsMetadata(t *testing.T) {
 		t.Errorf("frontend version = %q, want canonical %q", frontend.Version, version)
 	}
 
-	for _, path := range []string{"README.md", "CHANGELOG.md", filepath.Join("frontend", "package-lock.json")} {
+	lockBytes, err := os.ReadFile(filepath.Join(root, "frontend", "package-lock.json"))
+	if err != nil {
+		t.Fatalf("read frontend/package-lock.json: %v", err)
+	}
+	var lock struct {
+		Version  string `json:"version"`
+		Packages map[string]struct {
+			Version string `json:"version"`
+		} `json:"packages"`
+	}
+	if err := json.Unmarshal(lockBytes, &lock); err != nil {
+		t.Fatalf("parse frontend/package-lock.json: %v", err)
+	}
+	if lock.Version != version || lock.Packages[""].Version != version {
+		t.Errorf("frontend/package-lock.json version = %q/%q, want canonical %q", lock.Version, lock.Packages[""].Version, version)
+	}
+
+	for _, path := range []string{"README.md", "CHANGELOG.md"} {
 		contents, err := os.ReadFile(filepath.Join(root, path))
 		if err != nil {
 			t.Errorf("read %s: %v", path, err)

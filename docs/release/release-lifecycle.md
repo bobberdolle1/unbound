@@ -12,8 +12,13 @@
 
 A released binary is never silently replaced under the same version. A binary defect requires a new source commit and a new version/tag.
 
-GitHub immutable releases are available as a repository setting: **Settings → General → Releases → Enable release immutability**. Enable it before the next release. Immutable releases require the draft-upload-publish sequence because assets and metadata become locked at publication. The current v0.6.9 Release API reports `immutable=false`; policy and workflow safeguards apply until the GitHub setting is enabled.
-Manual `workflow_dispatch` runs may build and package a ref, but publication is forbidden unless the workflow runs on an existing annotated tag that passed commit and version gates.
+GitHub release immutability is not currently enforced by repository settings, so policy safeguards apply: annotated tag, no retarget, draft upload, remote download verification, and a single publication. GitHub Actions is unavailable on the linked account and is never a release authority; local canonical gates are authoritative.
+
+## Local release gates
+
+The release coordinator invokes `scripts/release/local_release_windows.ps1 VERSION EXPECTED_COMMIT` on the Windows release host and `scripts/release/local_release_macos.sh VERSION EXPECTED_COMMIT` on the macOS release host. Both reject a dirty or wrong checkout, run the repository-owned canonical platform gate, inject release identity, build only the supported platform artifact set, verify the embedded identity, and write machine-readable evidence.
+
+Use `scripts/release/assemble_local_release.sh VERSION EXPECTED_COMMIT OUTPUT_DIRECTORY ARTIFACT...` to construct `SHA256SUMS.txt` and `RELEASE_MANIFEST.json`; it requires factual `UNBOUND_WINDOWS_BUILT_AT` and `UNBOUND_MACOS_BUILT_AT` values from the platform evidence. Run `scripts/release/verify_release_artifacts.sh VERSION EXPECTED_COMMIT OUTPUT_DIRECTORY` before upload and after download. These scripts do not call GitHub Actions.
 
 
 ## Build identity
@@ -21,17 +26,17 @@ Manual `workflow_dispatch` runs may build and package a ref, but publication is 
 `unbound --version` remains human-readable:
 
 ```text
-unbound 0.7.0-dev (windows/amd64)
+unbound 0.7.0 (windows/amd64)
 ```
 
-`unbound --version --json` emits:
+`unbound --version --json` for a release artifact emits:
 
 ```json
 {
-  "version": "0.7.0-dev",
+  "version": "0.7.0",
   "commit": "0123456789abcdef0123456789abcdef01234567",
   "dirty": false,
-  "channel": "development",
+  "channel": "release",
   "os": "windows",
   "arch": "amd64"
 }

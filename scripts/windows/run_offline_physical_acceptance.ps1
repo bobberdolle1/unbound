@@ -6,20 +6,25 @@ param(
     [int]$CleanWaitSeconds = 600,
     [int]$ProfileSeconds = 45,
     [int]$AutoTuneSeconds = 420,
-    [string]$LogSink = 'bobpc@192.168.0.236',
-    [string]$SshKeyPath,
     [string]$CandidateCommit,
     [string]$ArchivePath,
     [ValidateSet('Acceptance', 'DetachedWorker', 'ForcedFailure', 'DnsBaseline', 'StatusWindow')] [string]$SmokeMode = 'Acceptance',
     [ValidateRange(1, 60)] [int]$SmokeSleepSeconds = 3,
-    [switch]$SimulateNotificationFailure,
-    [switch]$SimulateLogSinkFailure
+    [switch]$SimulateNotificationFailure
 )
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+$candidatePath = Join-Path $CandidateDirectory 'CANDIDATE.json'
+if (-not (Test-Path $candidatePath -PathType Leaf)) { throw "Candidate manifest missing: $candidatePath" }
+$candidate = Get-Content $candidatePath -Raw | ConvertFrom-Json
+if ([string]::IsNullOrWhiteSpace($candidate.version) -or [string]::IsNullOrWhiteSpace($candidate.candidate_commit)) { throw 'Candidate manifest has no release identity.' }
+if ($CandidateCommit -and $CandidateCommit -ne $candidate.candidate_commit) { throw 'Candidate commit does not match manifest.' }
+$CandidateCommit = $candidate.candidate_commit
+$candidateVersion = $candidate.version
+
 $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$bundle = Join-Path $OutputRoot "v0.6.9-$timestamp-$SmokeMode-$([Guid]::NewGuid().ToString('N'))"
+$bundle = Join-Path $OutputRoot "v$($candidateVersion)-$timestamp-$SmokeMode-$([Guid]::NewGuid().ToString('N'))"
 $logPath = Join-Path $bundle 'progress.log'
 $resultPath = Join-Path $bundle 'result.json'
 $statusPath = Join-Path $bundle 'status.json'
@@ -138,7 +143,7 @@ function Invoke-WebProbes {
     foreach ($target in $targets) {
         $watch = [Diagnostics.Stopwatch]::StartNew()
         try {
-            $request = [Net.HttpWebRequest]::Create($target.url); $request.Timeout = 10000; $request.ReadWriteTimeout = 10000; $request.AllowAutoRedirect = $true; $request.UserAgent = 'UnboundAcceptance/0.6.9'
+            $request = [Net.HttpWebRequest]::Create($target.url); $request.Timeout = 10000; $request.ReadWriteTimeout = 10000; $request.AllowAutoRedirect = $true; $request.UserAgent = "UnboundAcceptance/$candidateVersion"
             $response = $request.GetResponse(); $code = [int]$response.StatusCode; $response.Close()
             [pscustomobject]@{ name=$target.name; url=$target.url; ok=($code -ge 200 -and $code -lt 400); httpStatus=$code; elapsedMs=$watch.ElapsedMilliseconds; error=$null }
         } catch { [pscustomobject]@{ name=$target.name; url=$target.url; ok=$false; httpStatus=$null; elapsedMs=$watch.ElapsedMilliseconds; error=$_.Exception.Message } }
@@ -332,7 +337,7 @@ function Invoke-ProfileOwnershipSmoke([string]$FilePath, [int]$DurationSeconds) 
     return [pscustomobject]@{ status=$status; error=$error; records=$records; maxConcurrentWinws2=$maxConcurrentWinws2; startConflicts=$startConflicts; runningEmptyProfile=$runningEmptyProfile; finalWinws2=$finalWinws2 }
 }
 
-$results = [ordered]@{ version='0.6.9'; mode=$SmokeMode; startedAt=(Get-Date).ToString('o'); candidateDirectory=$CandidateDirectory; candidateCommit=$CandidateCommit; archivePath=$ArchivePath; stages=@(); execution_state='RUNNING'; acceptance_verdict='INVALID' }
+$results = [ordered]@{ version=$candidateVersion; mode=$SmokeMode; startedAt=(Get-Date).ToString('o'); candidateDirectory=$CandidateDirectory; candidateCommit=$CandidateCommit; archivePath=$ArchivePath; stages=@(); execution_state='RUNNING'; acceptance_verdict='INVALID' }
 try {
     if ($SmokeMode -in 'Acceptance', 'StatusWindow') {
         Start-AcceptanceStatusWindow
@@ -476,7 +481,7 @@ function Invoke-LauncherSmoke([string]$LauncherPath) {
     Write-Host "ACCEPTANCE $($results.acceptance_verdict)" -ForegroundColor Green
     Write-Host 'Acceptance evidence is available in the local bundle.' -ForegroundColor Green
     if ($SimulateNotificationFailure) {
-        Show-LocalStatus "ACCEPTANCE $($results.acceptance_verdict)`nEvidence is available in the local bundle." 'UNBOUND v0.6.9 acceptance'
+        Show-LocalStatus "ACCEPTANCE $($results.acceptance_verdict)`nEvidence is available in the local bundle." "UNBOUND v$candidateVersion acceptance"
     }
 }
 if ($results.acceptance_verdict -ne 'PASS') { exit 1 }
