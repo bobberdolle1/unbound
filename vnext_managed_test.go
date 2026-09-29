@@ -449,16 +449,38 @@ func TestHealthRevalidationReactivatesExactSavedStrategy(t *testing.T) {
 func TestManagedHealthySameEdgeHealthy(t *testing.T) {
 	restore := engine.SetConfigDirForTest(t.TempDir())
 	defer restore()
-	service, _, _ := appliedManagedVNextService(t)
+	service, executor, _ := appliedManagedVNextService(t)
 	observer := service.deps.observer.(*managedVNextSequenceObserver)
 	start := len(observer.calls)
 	observer.results = []observatory.ObservationResult{managedVNextObservation(true)}
+	if err := service.active.activation.VerifyActive(context.Background()); err != nil {
+		t.Fatalf("product Apply returned with dead managed process: %v", err)
+	}
+	if !executor.processAlive {
+		t.Fatal("product Apply did not retain an active managed process")
+	}
 
 	if !service.ManagedHealthy(context.Background()) {
 		t.Fatal("managed health rejected the current exact edge")
 	}
 	if got := observer.calls[start]; len(got.ResolvedIP) != 0 || got.AddressFamily != observatory.AddressFamilyAny {
 		t.Fatalf("health observation was not current-edge discovery: %#v", got)
+	}
+}
+
+func TestManagedHealthyRejectsDeadManagedProcessBeforeObservation(t *testing.T) {
+	restore := engine.SetConfigDirForTest(t.TempDir())
+	defer restore()
+	service, executor, _ := appliedManagedVNextService(t)
+	observer := service.deps.observer.(*managedVNextSequenceObserver)
+	start := len(observer.calls)
+	executor.processAlive = false
+
+	if service.ManagedHealthy(context.Background()) {
+		t.Fatal("managed health accepted a dead managed process")
+	}
+	if len(observer.calls) != start {
+		t.Fatalf("managed health observed the network after the process gate: %v", observer.calls[start:])
 	}
 }
 
