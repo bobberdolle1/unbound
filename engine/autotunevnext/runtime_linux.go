@@ -21,7 +21,6 @@ import (
 
 	"unbound/engine"
 	"unbound/engine/backendcap"
-	"unbound/engine/observatory"
 	"unbound/engine/providers"
 )
 
