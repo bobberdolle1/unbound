@@ -2,6 +2,13 @@
 
 Все значимые изменения проекта документируются в этом файле.
 
+## Unreleased
+
+### Экспериментальный Linux `amd64` target
+
+- Добавлены локальные reproducible build/package/coordinator для будущего CLI-only `linux/amd64` `tar.gz`, проверка release identity, `BUNDLE_SHA256SUMS.txt`, provenance и распакованного smoke.
+- Unified локальные `SHA256SUMS.txt` и `RELEASE_MANIFEST.json` теперь принимают Linux-артефакт как `experimental=true`; Linux GUI и `linux/arm64` в release surface не добавлены.
+
 
 ## [0.7.0] - 2026-09-29
 

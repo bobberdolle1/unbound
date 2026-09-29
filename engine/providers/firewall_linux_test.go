@@ -119,3 +119,15 @@ func TestLiveNftAcceptsGeneratedRuleset(t *testing.T) {
 	}
 	t.Fatalf("nft rejected the generated ruleset:\n%s", msg)
 }
+
+func TestNftablesFirewallUsesUniqueOwnedTable(t *testing.T) {
+	first := newNftablesFirewall()
+	second := newNftablesFirewall()
+	if first.table == second.table || !strings.HasPrefix(first.table, "unbound_") {
+		t.Fatalf("owned nft tables = %q, %q", first.table, second.table)
+	}
+	rule := nftRule(first.table, "postrouting", builtinProfiles["Ultimate Bypass (Multi-Strategy)"].Filters[0])
+	if !strings.Contains(rule, "inet "+first.table+" postrouting") || !strings.Contains(rule, "bypass") {
+		t.Fatalf("owned nft rule = %q", rule)
+	}
+}

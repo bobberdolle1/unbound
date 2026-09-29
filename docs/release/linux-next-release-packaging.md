@@ -1,27 +1,47 @@
-# План экспериментальной упаковки Linux для следующего релиза
+# Экспериментальный Linux `amd64` target следующего релиза
 
-## Решение по первой публичной поставке
+## Релизная поверхность
 
-Первый публичный Linux-артефакт должен быть CLI-only для `linux/amd64` в формате `tar.gz`. Wails GUI пока не входит в релизную поверхность: совместимость WebKit и пакетов дистрибутивов не подтверждена как переносимая между целевыми системами. GUI не будет обещан до отдельной воспроизводимой матрицы дистрибутивов.
+Первый публичный Linux-артефакт следующего релиза — CLI-only `linux/amd64` в формате `unbound-v<VERSION>-linux-amd64.tar.gz`. Он будет явно помечен **EXPERIMENTAL**. Wails GUI не входит в этот архив: переносимая совместимость WebKit и пакетов дистрибутивов не доказана воспроизводимой матрицей. `linux/arm64`, AppImage, Flatpak, Snap, DEB и RPM не входят в эту поставку.
 
-Артефакт помечается **EXPERIMENTAL** в заметках следующего релиза. Это не меняет опубликованные v0.7.0 артефакты и не добавляет Linux-asset к v0.7.0.
+Это только инфраструктура следующего релиза. Она не меняет тег, assets или манифесты опубликованного v0.7.0 и не означает, что Linux-артефакт уже опубликован.
 
-## Состав `linux/amd64` архива
+## Контракт архива
 
-- CLI-бинарник с внедрёнными `version`, `commit`, `dirty=false` и `channel=release`.
-- `nfqws2`, его закреплённая лицензия, `ENGINE_PROVENANCE.json` и проверяемые хеши runtime-ассетов.
-- `README.md`, `CHANGELOG.md`, `LICENSE` и Linux-скрипты управления, необходимые для поддерживаемого CLI-пути.
-- `BUNDLE_SHA256SUMS.txt`; релизный координатор публикует общий `SHA256SUMS.txt` и `RELEASE_MANIFEST.json`.
+Архив содержит единственный корень `unbound-v<VERSION>-linux-amd64/`:
 
-## Обязательные ворота
+- CLI-бинарник `unbound` с внедрёнными `version`, `commit`, `dirty=false`, `channel=release`, `os=linux` и `arch=amd64`.
+- `README.md`, `CHANGELOG.md`, `LICENSE`, `ZAPRET2_LICENSE.txt`, `ZAPRET_LICENSE.txt`, `ENGINE_PROVENANCE.json`, `ENGINE_ASSETS.sha256` и `BUNDLE_SHA256SUMS.txt`.
+- `runtime/` с закрытым набором Linux runtime-ассетов: `nfqws2`, `ip2net`, `mdig`, применяемые Lua-скрипты, payload-файлы и списки.
+- `scripts/` только с поддерживаемыми Linux CLI-лаунчерами.
 
-1. Чистый checkout точного аннотированного тега и проверка вшитой идентичности через `--version --json`.
-2. Воспроизводимая сборка `linux/amd64`, затем `tar.gz` с фиксированным списком файлов.
-3. Проверка распаковки и CLI smoke: `--version --json`, `--list-profiles --json`, `--test` в допустимом непривилегированном режиме.
-4. На выделенном Linux-host с root: запуск `nfqws2` через NFQUEUE, подтверждение счётчиков/владения правилами `nftables` с допустимым fallback на `iptables`.
-5. Проверка очистки: дочерний `nfqws2` остановлен, только принадлежащие кандидату firewall-правила удалены, чужие правила не затронуты.
-6. Машиночитаемое evidence с commit, хешами, платформой и результатами smoke/ownership/cleanup.
+`BUNDLE_SHA256SUMS.txt` покрывает каждый обычный payload-файл, кроме самого себя. CLI до выполнения команды проверяет соседний манифест и отклоняет отсутствующий, добавленный или изменённый payload. В частности, подмена или удаление упакованного `nfqws2` завершается до изменения packet path.
 
-## Необходимая реализация
+## Локальная сборка и проверка
 
-Следующая отдельная implementation PR должна добавить локальный Linux release coordinator и архиватор, пакетные smoke-тесты и лабораторную проверку. Она не должна менять AutoTune, NFQUEUE runtime-логику или опубликованные v0.7.0 assets. Реализацию начинать только при наличии Linux/amd64-host с `nft`, NFQUEUE и root для фактической проверки ownership/cleanup.
+На Linux `x86_64` локальный development-артефакт создаётся без публикации:
+
+```bash
+commit="$(git rev-parse HEAD)"
+version="$(node -p "require('./wails.json').info.productVersion")"
+./scripts/build/package_linux_release.sh \
+  --version "$version" --expected-commit "$commit" --mode local
+```
+
+Release-координатор для будущего тега запускается только из чистого checkout и требует точный commit:
+
+```bash
+./scripts/release/local_release_linux.sh <VERSION> <EXPECTED_COMMIT>
+```
+
+Он выполняет `bash ./scripts/ci/linux.sh all`, собирает архив, проверяет identity, `BUNDLE_SHA256SUMS.txt`, содержимое, права, отсутствие ссылок/опасных путей, распакованный `--version`, `--version --json`, `--help`, `--list-profiles --json` и `--test`, затем пишет `release/linux-release-evidence.json`.
+
+Архив создаётся с сортированными путями, нормализованными owner/group и timestamp commit, а gzip запускается без timestamp. Воспроизводимость относится к одинаковому commit и поддерживаемому toolchain; её нужно подтверждать на Linux release-host для каждого будущего тега.
+
+## Runtime и границы поддержки
+
+Поддерживаемый перехват использует `NFQUEUE` + `nfqws2` v1.0.5.1. Для packet interception требуется root, ядро с NFQUEUE и `nft`; `iptables` остаётся fallback там, где он поддержан runtime. Непривилегированные `--version`, `--help`, `--list-profiles --json` и `--test` не доказывают возможность создать NFQUEUE.
+
+Нативная физическая приёмка следующего артефакта обязана запускаться из распакованного `tar.gz`: проверяются ownership NFQUEUE/firewall, `nft` primary path, cleanup при normal stop/SIGTERM/SIGINT, отсутствие stale state, повторный запуск и сохранение foreign firewall state. Отсутствие подходящего root Linux-host не превращает кросс-сборку в доказательство runtime.
+
+Linux остаётся экспериментальным. Пакет не обещает GUI, поддержку каждого дистрибутива, все пакетные менеджеры или универсальную эффективность обхода для YouTube, Discord либо иного сервиса.
