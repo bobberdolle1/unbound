@@ -138,6 +138,9 @@ type AutoTuneVNextResult struct {
 	SelectedFingerprint string                          `json:"selected_fingerprint,omitempty"`
 	ApplyAvailable      bool                            `json:"apply_available"`
 	ApplyToken          string                          `json:"apply_token,omitempty"`
+	ScopeEdgeCount      int                             `json:"scope_edge_count,omitempty"`
+	ScopeStatus         string                          `json:"scope_status,omitempty"`
+	ScopeChanged        bool                            `json:"scope_changed,omitempty"`
 	Limitations         []string                        `json:"limitations,omitempty"`
 	LifecycleErrors     []AutoTuneVNextLifecycleError   `json:"lifecycle_errors,omitempty"`
 }
@@ -149,10 +152,11 @@ type productVNextRuntime struct {
 }
 
 type productVNextDependencies struct {
-	newRuntime  func(autotunevnext.RuntimeProvider, *engine.AssetPaths, func(autotunevnext.PhysicalLog)) (productVNextRuntime, error)
-	newResolver func(*engine.AssetPaths) (autotunevnext.AssetResolver, error)
-	observer    autotunevnext.Observer
-	run         func(context.Context, autotunevnext.Request, autotunevnext.Observer, autotunevnext.Executor, autotunevnext.HostPreflight, autotunevnext.AssetResolver) (autotunevnext.Result, error)
+	newRuntime    func(autotunevnext.RuntimeProvider, *engine.AssetPaths, func(autotunevnext.PhysicalLog)) (productVNextRuntime, error)
+	newResolver   func(*engine.AssetPaths) (autotunevnext.AssetResolver, error)
+	scopeResolver autotunevnext.ScopeResolver
+	observer      autotunevnext.Observer
+	run           func(context.Context, autotunevnext.Request, autotunevnext.Observer, autotunevnext.Executor, autotunevnext.HostPreflight, autotunevnext.AssetResolver) (autotunevnext.Result, error)
 }
 
 type productVNextService struct {
@@ -163,6 +167,7 @@ type productVNextService struct {
 	mu      sync.Mutex
 	grants  map[string]verifiedSelectionGrant
 	active  *managedVNextActivation
+	health  ManagedHealthState
 	fault   AutoTuneVNextManagedStatus
 	dormant AutoTuneVNextManagedStatus
 }
@@ -173,8 +178,9 @@ func newProductVNextService(manager *providers.ProviderManager, assets *engine.A
 		newResolver: func(paths *engine.AssetPaths) (autotunevnext.AssetResolver, error) {
 			return autotunevnext.NewProductAssetResolver(paths)
 		},
-		observer: observatory.NewDirectTCPHTTPSObserver(),
-		run:      autotunevnext.RunCoordinated,
+		scopeResolver: autotunevnext.DefaultScopeResolver{},
+		observer:      observatory.NewDirectTCPHTTPSObserver(),
+		run:           autotunevnext.RunCoordinated,
 	})
 }
 
@@ -240,7 +246,16 @@ func (s *productVNextService) Run(ctx context.Context, input AutoTuneVNextReques
 		ControlProbes: controlProbes,
 		Advisor:       productHistoryAdvisor{ledger: history.ledger, probe: targetProbe, backend: runtimeBinding.backend, now: time.Now},
 	}
-	result, err := s.deps.run(ctx, request, s.deps.observer, runtimeBinding.executor, runtimeBinding.preflight, resolver)
+	var result autotunevnext.Result
+	if s.deps.scopeResolver != nil {
+		scope, scopeErr := s.deps.scopeResolver.ResolveServiceScope(ctx, target)
+		if scopeErr != nil {
+			return productVNextFailureWithCatalog(autotunevnext.StatusPreflightFailed, publicTarget, string(runtimeBinding.backend), serviceScopeLimitation(scopeErr), productVNextCatalogStatus)
+		}
+		result, err = autotunevnext.RunServiceScopeCoordinated(ctx, request, scope, s.deps.observer, runtimeBinding.executor, runtimeBinding.preflight, resolver)
+	} else {
+		result, err = s.deps.run(ctx, request, s.deps.observer, runtimeBinding.executor, runtimeBinding.preflight, resolver)
+	}
 	if err != nil {
 		return productVNextFailureWithCatalog(autotunevnext.StatusInconclusive, publicTarget, string(runtimeBinding.backend), "OPERATION_CONFLICT", productVNextCatalogStatus)
 	}
@@ -276,6 +291,9 @@ func mapAutoTuneVNextResult(result autotunevnext.Result, publicTarget string) Au
 		CatalogStatus:       productVNextCatalogStatus,
 		SelectedStrategyID:  result.SelectedStrategyID,
 		SelectedFingerprint: result.SelectedFingerprint,
+		ScopeEdgeCount:      result.ServiceScope.EdgeCount,
+		ScopeStatus:         string(result.ServiceScope.Status),
+		ScopeChanged:        result.ServiceScope.Status == autotunevnext.ServiceScopeChanged,
 		Limitations:         append([]string(nil), result.Limitations...),
 	}
 	for _, candidate := range result.Recommendation.Candidates {
@@ -299,6 +317,17 @@ func mapAutoTuneVNextResult(result autotunevnext.Result, publicTarget string) Au
 
 func mapAttribution(report attribution.AttributionReport) AutoTuneVNextAttribution {
 	return AutoTuneVNextAttribution{PrimaryFinding: string(report.PrimaryFinding.Code), Confidence: string(report.Confidence)}
+}
+
+func serviceScopeLimitation(err error) string {
+	switch {
+	case errors.Is(err, autotunevnext.ErrServiceScopeTooLarge):
+		return "SERVICE_SCOPE_TOO_LARGE"
+	case errors.Is(err, autotunevnext.ErrServiceScopeEmpty):
+		return "SERVICE_SCOPE_EMPTY"
+	default:
+		return "SERVICE_SCOPE_INVALID"
+	}
 }
 
 // productionVNextStrategyCatalog is a closed audited catalog. The caller may

@@ -144,7 +144,12 @@ func (e *WindowsRuntime) Activate(ctx context.Context, candidate ExecutableCandi
 	if err != nil {
 		return err
 	}
-	filter, err := RenderWindowsTargetCapture(candidate.Plan.Capture, candidate.TargetEdge, candidate.TargetFamily)
+	var filter string
+	if len(candidate.TargetEdges) > 0 {
+		filter, err = RenderWindowsServiceScopeCapture(candidate.Plan.Capture, candidate.TargetEdges)
+	} else {
+		filter, err = RenderWindowsTargetCapture(candidate.Plan.Capture, candidate.TargetEdge, candidate.TargetFamily)
+	}
 	if err != nil {
 		return fmt.Errorf("exact target-edge capture: %w", err)
 	}

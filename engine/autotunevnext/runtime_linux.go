@@ -21,7 +21,6 @@ import (
 
 	"unbound/engine"
 	"unbound/engine/backendcap"
-	"unbound/engine/observatory"
 	"unbound/engine/providers"
 )
 
@@ -185,7 +184,15 @@ func (e *LinuxRuntime) Activate(ctx context.Context, candidate ExecutableCandida
 	if err != nil {
 		return err
 	}
-	spec, err := NewLinuxNFQueueSpec(plan.Capture, candidate.TargetEdge, candidate.TargetFamily, table, queue, marker)
+	var spec LinuxNFQueueSpec
+	if len(candidate.TargetEdges) > 0 {
+		if mode != "nft" && len(candidate.TargetEdges) > 1 {
+			return fmt.Errorf("Linux service scope requires nft for multi-edge exact capture")
+		}
+		spec, err = NewLinuxServiceScopeNFQueueSpec(plan.Capture, candidate.TargetEdges, table, queue, marker)
+	} else {
+		spec, err = NewLinuxNFQueueSpec(plan.Capture, candidate.TargetEdge, candidate.TargetFamily, table, queue, marker)
+	}
 	if err != nil {
 		return err
 	}
@@ -512,30 +519,13 @@ func (e *LinuxRuntime) verifyRule(ctx context.Context, mode string, spec LinuxNF
 		if err != nil {
 			return fmt.Errorf("audit owned nft table: %w", err)
 		}
-		address := "ip daddr " + spec.Edge.String()
-		if spec.Family == observatory.AddressFamilyIPv6 {
-			address = "ip6 daddr " + spec.Edge.String()
-		}
-		for _, fragment := range []string{
-			nftTableHeader(spec),
-			"hook output",
-			address,
-			spec.Marker,
-		} {
+		for _, fragment := range []string{nftTableHeader(spec), "hook output"} {
 			if !strings.Contains(out, fragment) {
-				return fmt.Errorf("owned nft rule is missing %q", fragment)
+				return fmt.Errorf("owned nft table is missing %q", fragment)
 			}
 		}
-		if _, present := queuesInRuleListing(out)[spec.Queue]; !present {
-			return fmt.Errorf("owned nft rule is missing compiled NFQUEUE target")
-		}
-		portExpression := "tcp dport " + spec.nftPorts()
-		portPresent := strings.Contains(out, portExpression)
-		if len(spec.Ports) == 1 && spec.Ports[0].Start == spec.Ports[0].End {
-			portPresent = portPresent || strings.Contains(out, fmt.Sprintf("tcp dport %d", spec.Ports[0].Start))
-		}
-		if !portPresent {
-			return fmt.Errorf("owned nft rule is missing compiled TCP ports")
+		if err := verifyNFTRuleSemantics(out, spec); err != nil {
+			return err
 		}
 		return nil
 	}

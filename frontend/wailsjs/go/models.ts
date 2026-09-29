@@ -1066,6 +1066,9 @@ export namespace main {
 	    selected_fingerprint?: string;
 	    apply_available: boolean;
 	    apply_token?: string;
+	    scope_edge_count?: number;
+	    scope_status?: string;
+	    scope_changed?: boolean;
 	    limitations?: string[];
 	    lifecycle_errors?: AutoTuneVNextLifecycleError[];
 	
@@ -1089,6 +1092,9 @@ export namespace main {
 	        this.selected_fingerprint = source["selected_fingerprint"];
 	        this.apply_available = source["apply_available"];
 	        this.apply_token = source["apply_token"];
+	        this.scope_edge_count = source["scope_edge_count"];
+	        this.scope_status = source["scope_status"];
+	        this.scope_changed = source["scope_changed"];
 	        this.limitations = source["limitations"];
 	        this.lifecycle_errors = this.convertValues(source["lifecycle_errors"], AutoTuneVNextLifecycleError);
 	    }

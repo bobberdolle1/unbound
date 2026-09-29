@@ -274,7 +274,7 @@ func canonicalOwnedNFTTable(spec LinuxNFQueueSpec) string {
 		nftTableHeader(spec),
 		"chain output {",
 		"type filter hook output priority mangle; policy accept;",
-		`ip daddr 192.0.2.7 tcp dport 443 queue flags bypass to 40000 comment "unbound-autotune-vnext:test"`,
+		`ip daddr 192.0.2.7 tcp dport 443 meta mark and 0x40000000 != 0x40000000 queue num 40000 bypass comment "unbound-autotune-vnext:test"`,
 		"}",
 		"}",
 	}, "\n")
@@ -291,7 +291,7 @@ func TestLinuxVerifyRuleScopesExactOwnedNFTTable(t *testing.T) {
 		{"canonical owned table", canonical, false},
 		{"wrong edge", strings.Replace(canonical, "192.0.2.7", "192.0.2.8", 1), true},
 		{"wrong port", strings.Replace(canonical, "tcp dport 443", "tcp dport 444", 1), true},
-		{"wrong queue", strings.Replace(canonical, "to 40000", "to 40001", 1), true},
+		{"wrong queue", strings.Replace(canonical, "queue num 40000", "queue num 40001", 1), true},
 		{"wrong marker", strings.Replace(canonical, linuxOwnershipPrefix+":test", linuxOwnershipPrefix+":other", 1), true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -410,5 +410,56 @@ func TestLinuxParentDeathAndQueueBypassAreMandatory(t *testing.T) {
 	args := strings.Join(ownedLinuxSpec().iptablesArgs("-I"), " ")
 	if !strings.Contains(args, "--queue-bypass") {
 		t.Fatal("NFQUEUE fail-open bypass was removed")
+	}
+}
+
+func TestLinuxMixedServiceScopeVerificationAndCleanupStayInOneInetTable(t *testing.T) {
+	capture := exactCapture(backendcap.CaptureNFQUEUE, strategyir.IPFamilyAny, strategyir.DirectionOutbound, strategyir.PortRange{Start: 443, End: 443})
+	spec, err := NewLinuxServiceScopeNFQueueSpec(capture, []ServiceScopeEdge{
+		{IP: net.ParseIP("192.0.2.1"), Family: observatory.AddressFamilyIPv4},
+		{IP: net.ParseIP("2001:db8::1"), Family: observatory.AddressFamilyIPv6},
+	}, "unbound_autotune_mixed", 40123, linuxOwnershipPrefix+":mixed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownedTable := "table inet unbound_autotune_mixed { chain output { type filter hook output priority mangle; ip daddr 192.0.2.1 tcp dport 443 meta mark and 0x40000000 != 0x40000000 queue num 40123 bypass comment \"unbound-autotune-vnext:mixed\"; ip6 daddr 2001:db8::1 tcp dport 443 meta mark and 0x40000000 != 0x40000000 queue num 40123 bypass comment \"unbound-autotune-vnext:mixed\"; } }"
+	runner := &linuxRunnerStub{paths: map[string]bool{"nft": true}}
+	runner.runFn = func(name string, args []string) (string, error) {
+		switch strings.Join(append([]string{name}, args...), " ") {
+		case "nft list table inet unbound_autotune_mixed":
+			return ownedTable, nil
+		case "nft list ruleset":
+			return "table inet unrelated { }", nil
+		default:
+			t.Fatalf("unexpected nft command: %s %v", name, args)
+			return "", nil
+		}
+	}
+	runtime := testLinuxRuntime(t, runner)
+	if err := runtime.verifyRule(context.Background(), "nft", spec); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.ownedRuleAbsent(context.Background(), "nft", spec); err != nil {
+		t.Fatal(err)
+	}
+
+	runner.runFn = func(name string, args []string) (string, error) {
+		if strings.Join(append([]string{name}, args...), " ") == "nft list table inet unbound_autotune_mixed" {
+			return strings.Replace(ownedTable, "ip6 daddr 2001:db8::1 ", "", 1), nil
+		}
+		return "", nil
+	}
+	if err := runtime.verifyRule(context.Background(), "nft", spec); err == nil {
+		t.Fatal("verification accepted mixed scope with a missing IPv6 rule")
+	}
+
+	runner.runFn = func(name string, args []string) (string, error) {
+		if strings.Join(append([]string{name}, args...), " ") == "nft list ruleset" {
+			return ownedTable, nil
+		}
+		return "", nil
+	}
+	if err := runtime.ownedRuleAbsent(context.Background(), "nft", spec); err == nil {
+		t.Fatal("cleanup accepted residual inet ownership")
 	}
 }
