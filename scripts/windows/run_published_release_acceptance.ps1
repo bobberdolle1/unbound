@@ -73,7 +73,25 @@ try {
     $recommended=Invoke-BoundedCommand 'recommended-smoke' $exe @('--cli','--profile','rec','--run-duration=30s') 90; Set-Stage RECOMMENDED_SMOKE $(if(!$recommended.timed_out -and $recommended.exit_code -eq 0){'PASS'}elseif($recommended.timed_out){'TIMEOUT'}else{'FAIL'}) "stdout=$($recommended.stdout); stderr=$($recommended.stderr)"
     [void](Test-CommandStage DOCTOR 'doctor' $exe @('--test') 120)
     $autotune=Invoke-BoundedCommand 'autotune' $exe @('--cli','--autotune','--run-duration=20s') $AutoTuneTimeoutSeconds; $autoText=if(Test-Path $autotune.stdout){Get-Content $autotune.stdout -Raw}else{''}; $autoOK=!$autotune.timed_out -and $autotune.exit_code -eq 0 -and @([regex]::Matches($autoText,'(?m)^AUTOTUNE_RESULT_JSON=' )).Count -eq 1; Set-Stage AUTOTUNE $(if($autoOK){'PASS'}elseif($autotune.timed_out){'TIMEOUT'}else{'FAIL'}) "stdout=$($autotune.stdout); stderr=$($autotune.stderr)"
-    $launcherOK=$true; foreach($launcher in Get-ChildItem $extract -Filter '*.cmd') { $record=Invoke-BoundedCommand "launcher-$($launcher.BaseName)" $env:ComSpec @('/d','/c',("`"$($launcher.FullName)`"")) 20; if($record.timed_out){$launcherOK=$false}; Get-Process Unbound,winws2 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue }; Set-Stage LAUNCHERS $(if($launcherOK){'PASS'}else{'FAIL'}) 'Individual launcher records retained.'
+    $launcherPatterns = [ordered]@{
+        'general_recommended.cmd' = 'Engine started successfully'
+        'general_autotune.cmd' = 'AUTOTUNE'
+        'general_universal.cmd' = 'Engine started successfully'
+        'general_alt1_multisplit.cmd' = 'Engine started successfully'
+        'general_alt2_fake_tls.cmd' = 'Engine started successfully'
+        'service_control.cmd' = 'Control'
+    }
+    $launcherOK = $true
+    foreach ($launcherName in $launcherPatterns.Keys) {
+        $launcher = Join-Path $extract $launcherName
+        if (-not (Test-Path $launcher -PathType Leaf)) { $launcherOK = $false; continue }
+        $record = Invoke-BoundedCommand "launcher-$([IO.Path]::GetFileNameWithoutExtension($launcherName))" $env:ComSpec @('/d','/c',("`"$launcher`"")) 20
+        $output = if (Test-Path $record.stdout) { Get-Content $record.stdout -Raw } else { '' }
+        $started = $output -match [regex]::Escape($launcherPatterns[$launcherName])
+        if (-not $started -or -not $record.cleanup_succeeded) { $launcherOK = $false }
+        Get-Process Unbound,winws2 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    }
+    Set-Stage LAUNCHERS $(if($launcherOK){'PASS'}else{'FAIL'}) 'Individual launcher records retained; bounded long-running launchers are terminated after startup evidence.'
 } catch { $results.harness_error=$_.Exception.Message; foreach($stage in 'ARTIFACT_IDENTITY','CLEAN_DATA_PLANE','KERNEL_ACCEPTANCE','PROFILE_LIFECYCLE','RECOMMENDED_SMOKE','DOCTOR','AUTOTUNE','LAUNCHERS'){if(-not $results.stages.Contains($stage)){Set-Stage $stage 'FAIL' "harness error: $($_.Exception.Message)"}} } finally {
     Get-Process Unbound,winws2 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     $left=@(Get-Process Unbound,winws2 -ErrorAction SilentlyContinue); Set-Stage CLEANUP $(if($left.Count -eq 0){'PASS'}else{'FAIL'}) ($left | ConvertTo-Json -Compress)
