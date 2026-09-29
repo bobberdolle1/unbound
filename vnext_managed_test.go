@@ -705,6 +705,26 @@ func TestServiceScopeManagedHealthRequiresFreshProofForNewEdge(t *testing.T) {
 	}
 }
 
+func TestServiceScopeManagedHealthResolverFailureNeedsRevalidation(t *testing.T) {
+	restore := engine.SetConfigDirForTest(t.TempDir())
+	defer restore()
+	service, _, resolver, observer := appliedServiceScopeVNextService(t)
+	resolver.err = errors.New("resolver unavailable")
+	before := len(observer.calls)
+	if state := service.ManagedHealth(context.Background()); state != ManagedHealthNeedsRevalidation {
+		t.Fatalf("resolver failure health=%s", state)
+	}
+	if len(observer.calls) != before {
+		t.Fatalf("health observed under unresolved scope: %#v", observer.calls[before:])
+	}
+	if status := service.Status(); !status.NeedsRevalidation || status.State != "SERVICE_SCOPE_CHANGED_REVALIDATION_REQUIRED" {
+		t.Fatalf("status=%+v", status)
+	}
+	if status := service.Revert(context.Background()); status.State != "REVERTED" || status.Active {
+		t.Fatalf("revert status=%+v", status)
+	}
+}
+
 func TestServiceScopeManagedHealthReappearingValidatedButUncapturedEdgeNeedsRevalidation(t *testing.T) {
 	restore := engine.SetConfigDirForTest(t.TempDir())
 	defer restore()
