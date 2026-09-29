@@ -123,13 +123,23 @@ function Get-DataPlaneState {
     $tunnelDefaultRoutes = @(Get-NetRoute -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.DestinationPrefix -eq '0.0.0.0/0' -and $_.ifIndex -in $tunnelIndices } | Select-Object DestinationPrefix,InterfaceAlias,NextHop,RouteMetric,ifIndex)
     [pscustomobject]@{ xrayOrSingBox = $processes; proxyEnabled = [bool]$proxy.ProxyEnable; proxyServer = $proxy.ProxyServer; happTunnel = $tunnel; happTunnelDefaultRoutes = $tunnelDefaultRoutes; clean = ($processes.Count -eq 0 -and -not [bool]$proxy.ProxyEnable -and $tunnelDefaultRoutes.Count -eq 0) }
 }
+function Invoke-BoundedDiagnostic([string]$Name, [string]$Command, [int]$TimeoutSeconds = 15) {
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes("`$ErrorActionPreference = 'Stop'; & { $Command } | ConvertTo-Json -Depth 6 -Compress"))
+    $captured = Invoke-Captured "diagnostic-$Name" 'powershell.exe' @('-NoProfile','-NonInteractive','-EncodedCommand',$encoded) $TimeoutSeconds
+    $status = if ($captured.timedOut) { 'TIMEOUT' } elseif ($captured.exitCode -eq 0) { 'PASS' } else { 'PARTIAL' }
+    [pscustomobject]@{ name=$Name; status=$status; command=$captured; payload=if($status -eq 'PASS'){Get-Content $captured.stdout -Raw}else{$null} }
+}
 function Get-NetworkSnapshot {
+    $diagnostics = @(
+        Invoke-BoundedDiagnostic 'adapters' 'Get-NetAdapter | Select-Object Name,InterfaceDescription,Status,ifIndex,HardwareInterface,Virtual'
+        Invoke-BoundedDiagnostic 'ipConfiguration' 'Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceIndex,@{Name="IPv4Address";Expression={$_.IPv4Address.IPAddress}},@{Name="IPv4DefaultGateway";Expression={$_.IPv4DefaultGateway.NextHop}},@{Name="DnsServer";Expression={$_.DnsServer.ServerAddresses}}'
+        Invoke-BoundedDiagnostic 'defaultRoutes' 'Get-NetRoute -AddressFamily IPv4 | Where-Object DestinationPrefix -eq "0.0.0.0/0" | Select-Object InterfaceAlias,InterfaceIndex,NextHop,RouteMetric,ifMetric'
+        Invoke-BoundedDiagnostic 'dns' 'Get-DnsClientServerAddress | Select-Object InterfaceAlias,InterfaceIndex,AddressFamily,ServerAddresses'
+    )
     [pscustomobject]@{
         timestamp = (Get-Date).ToString('o')
-        adapters = @(Get-NetAdapter | Select-Object Name,InterfaceDescription,Status,ifIndex,HardwareInterface,Virtual)
-        ipConfiguration = @(Get-NetIPConfiguration | Select-Object InterfaceAlias,InterfaceIndex,@{Name='IPv4Address';Expression={$_.IPv4Address.IPAddress}},@{Name='IPv4DefaultGateway';Expression={$_.IPv4DefaultGateway.NextHop}},@{Name='DnsServer';Expression={$_.DnsServer.ServerAddresses}})
-        defaultRoutes = @(Get-NetRoute -AddressFamily IPv4 | Where-Object DestinationPrefix -eq '0.0.0.0/0' | Select-Object InterfaceAlias,InterfaceIndex,NextHop,RouteMetric,ifMetric)
-        dns = @(Get-DnsClientServerAddress | Select-Object InterfaceAlias,InterfaceIndex,AddressFamily,ServerAddresses)
+        status = if (@($diagnostics | Where-Object status -eq 'TIMEOUT').Count -gt 0) { 'TIMEOUT' } elseif (@($diagnostics | Where-Object status -ne 'PASS').Count -gt 0) { 'PARTIAL' } else { 'PASS' }
+        diagnostics = $diagnostics
         processes = @(Get-Process Happ,xray,'sing-box',winws2,Unbound -ErrorAction SilentlyContinue | Select-Object ProcessName,Id)
     }
 }
