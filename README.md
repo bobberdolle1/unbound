@@ -2,10 +2,10 @@
 
 <img src="./build/logo.svg" alt="UNBOUND Logo" width="120" />
 
-# UNBOUND `v0.7.0-dev`
-**Development build. The latest audited release is `v0.6.9`; see [its identity audit](docs/release/v0.6.9-identity-audit.md).**
+# UNBOUND `v0.7.0`
+**Release source for `v0.7.0`. The latest audited published release is `v0.6.9`; the v0.7.0 identity audit is recorded after publication.**
 
-[![Version](https://img.shields.io/badge/Version-v0.7.0--dev-08090b?style=for-the-badge&logo=rocket)](#)
+[![Version](https://img.shields.io/badge/Version-v0.7.0-08090b?style=for-the-badge&logo=rocket)](#)
 [![Design](https://img.shields.io/badge/Design-Precision_Monochrome-10b981?style=for-the-badge)](#)
 [![Security](https://img.shields.io/badge/Security-SHA256_pinned-10b981?style=for-the-badge&logo=shield)](SECURITY.md)
 [![License](https://img.shields.io/badge/License-GPL--3.0-blue?style=for-the-badge)](LICENSE)
@@ -36,7 +36,7 @@
 - **Strategy Lab (Лаборатория поиска)**: инструмент изолированного поиска неизвестных работающих стратегий на базе алгоритмов BlockCheck2. Применяет строгий фильтр WinDivert `--wf-raw-filter` только к IP-адресам тестируемой цели (нулевое влияние на остальной трафик ПК) и валидирует результаты через Connectivity Engine с возможностью сохранения в пользовательский профиль.
 - **Адаптивный профиль (Adaptive Experimental)**: динамическая оркестрация на базе `zapret-auto.lua` (`circular`), плавно переключающая стратегии для конкретных доменов по подтверждённым сбоям без глобального захвата лишнего трафика.
 - **AutoHostlist**: динамическое пополнение списка заблокированных доменов по обратной связи сети (`--hostlist-auto` в `autodetect.txt`) с управлением, очисткой и переносом доменов в постоянные списки через интерфейс.
-- **Модель возможностей & AutoTune v3**: учёт системных требований стратегий (наличие TCP timestamps, входящий перехват, QUIC) с пропуском несовместимых вариантов и обоснованием выбора победителя.
+- **AutoTune vNext**: evidence-driven closed loop for one normalized hostname and its bounded current DNS scope. It uses fresh per-edge validation, exact managed capture, transactional Apply/Suspend/Revert, and redacted outcome history that may reorder eligible candidates but cannot grant eligibility or Apply authority. Full multi-host/video YouTube coverage and QUIC/UDP vNext evidence are not claimed.
 - **Central Operation Coordinator**: центральный координатор исключительных операций, защищающий от параллельного запуска конфликтующих сетевых задач (Doctor, AutoTune, Lab, A/B).
 - **UNBOUND Doctor**: двухуровневая асинхронная диагностика (быстрая и расширенная) состояния ядра, системных привилегий, сетевого стека, конфликтующих программ и сервисов YouTube, Discord (включая проверку WebSocket Gateway без токенов) и Steam.
 - **Сравнение A/B (Bypass Comparison)**: транзакционный тест эффективности профиля относительно прямого доступа без обхода с гарантированным откатом состояния.
@@ -76,8 +76,8 @@
 | **Windows 11 x64 (`windows/amd64`)** | `WinDivert` + Zapret 2 `winws2.exe` | ✅ Runtime & Network Verified |
 | **macOS Apple Silicon (`darwin/arm64`)** | `pf` redirect + Zapret `dvtws` / `tpws` | ✅ Runtime Verified |
 | **macOS Intel (`darwin/amd64`)** | `pf` redirect + Zapret `dvtws` / `tpws` | ⚠️ Not Tested |
-| **Linux amd64 (`linux/amd64`)** | `NFQUEUE` + `nftables` / `iptables` + `nfqws2` | 🟡 Experimental; lifecycle/NFQUEUE/cleanup verified, no v0.6.9 binary asset |
-| **Linux arm64 (`linux/arm64`)** | `NFQUEUE` + `nftables` / `iptables` + `nfqws2` | 🟡 Experimental; no v0.6.9 binary asset |
+| **Linux amd64 (`linux/amd64`)** | `NFQUEUE` + `nftables` / `iptables` + `nfqws2` | 🟡 Experimental; lifecycle/NFQUEUE/cleanup verified, no v0.7.0 binary asset |
+| **Linux arm64 (`linux/arm64`)** | `NFQUEUE` + `nftables` / `iptables` + `nfqws2` | 🟡 Experimental; no v0.7.0 binary asset |
 
 ## ⚡ Как работает движок
 
@@ -133,9 +133,10 @@ cd unbound
 # 2. Сборка фронтенда
 cd frontend && npm ci && npm run build && cd ..
 
-go build -trimpath -ldflags="-s -w -X unbound/engine.Version=0.6.9" -o build/bin/unbound .
+VERSION="$(node -p "require('./wails.json').info.productVersion")"
+go build -trimpath -ldflags="-s -w -X unbound/engine.Version=$VERSION" -o build/bin/unbound .
 # 4. Сборка Wails GUI
-wails build -clean -ldflags "-X unbound/engine.Version=0.6.9"
+wails build -clean -ldflags "-X unbound/engine.Version=$VERSION"
 ---
 
 ## ⚖️ Лицензия & Отказы

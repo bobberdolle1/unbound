@@ -85,7 +85,7 @@ Managed intent is stored atomically in `autotune_vnext_state.json` as schema ver
 
 The primary screen and tray report managed StrategyIR state separately from legacy profile names. A managed active state remains active even when the legacy ProviderManager is intentionally stopped; the UI exposes managed disconnect through Revert. The tray opens the primary vNext target-selection UI. macOS keeps the factual `MEASUREMENT_PATH_UNSUPPORTED` limitation; no managed vNext activation is synthesized there.
 
-Hermetic tests exercise the direct-fail / active-pass / direct-fail / control-pass sequence and lifecycle failure paths. They prove implementation behavior only. Production effectiveness remains `NO_NATURAL_FAILURE`; no claim is made that the catalog has worked on a naturally failing network.
+Hermetic tests exercise the direct-fail / active-pass / direct-fail / control-pass sequence and lifecycle failure paths. Windows real-world probe-path evidence exists for the tested network's current bounded `www.youtube.com` scope; it does not establish a full YouTube service graph or universal effectiveness.
 
 ## V2.4 closed-loop recommendation
 

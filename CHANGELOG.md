@@ -3,24 +3,30 @@
 Все значимые изменения проекта документируются в этом файле.
 
 
-## [0.7.0-dev] - Unreleased
-### Post-v0.6.9 lab consolidation
+## [0.7.0] - 2026-09-29
 
-- Serialize Doctor progress delivery and make headless CLI E2E execution hermetic.
-- Preserve executable and traversable runtime modes on Linux.
-- Match legacy macOS PF ownership exactly; update the Universal `tpws` source to Zapret commit `d437963452674faadfd45adcd62466272b5a2fcd`.
-- Restore every captured macOS SOCKS proxy state transactionally on stop.
-- Add build identity metadata and publish the v0.6.9 release-identity audit.
-- Gate privileged Windows engine, network, and AutoTune tests behind `UNBOUND_RUN_WINDOWS_NETWORK_E2E=1`; ordinary `go test ./...` is hermetic.
-- Add the primary AutoTune vNext UI with product-owned HTTPS presets, protected Cloudflare control, redacted managed state, and an explicit `Legacy AutoTune` fallback.
-- Add managed-intent suspend-on-shutdown, explicit-revert clearing, current-edge drift revalidation without widening exact capture, lifetime health monitoring with bounded recovery, restoration-ownership retries, and factual persistence failure states. Quit's failsafe now waits the bounded vNext operation and restoration window. Natural-network effectiveness remains unproven.
-- Add AutoTune vNext V2.1 versioned, redacted `ProbeSpec` and `EvidenceRecord` contracts around compatible V1 observations. TCP/HTTPS remains implemented; QUIC and UDP evidence is explicitly unsupported. The change adds no diagnosis, adaptive memory, planner feedback, or real-world effectiveness claim.
+### AutoTune vNext
 
-- Add provider-independent Linux, Windows, and macOS CI entrypoints plus a Buildkite queue pipeline; GitHub Actions and release validation now consume the same repository-owned checks.
-- Correct the vNext Linux rule argv construction so Go 1.26 `vet` accepts the production parser path without changing its arguments.
+- Promote the primary evidence-driven vNext product flow with exact-edge transactional V1 validation, fresh Apply authority, managed Apply/Suspend/Revert, restoration ownership, shutdown/quit cleanup, and the managed-process lifetime correction.
+- Add a bounded service scope for one normalized hostname: at most eight current A/AAAA endpoints, per-edge direct-before/active/direct-after validation, `SERVICE_SCOPE_VERIFIED_FIXED`, exact multi-edge Windows capture, and mixed-family Linux nft rules.
+- Managed health treats the active capture scope as authoritative after Apply. Reappearing or uncovered edges require fresh revalidation; raw edges are never persisted.
 
-- Promote AutoTune vNext to the primary managed strategy flow while retaining `Legacy AutoTune` as an explicit compatibility path.
-- Add backend-owned verified-selection grants, fresh exact-edge Apply revalidation, atomic logical activation intent, startup drift checks, managed Revert ownership, and factual tray/UI status. Hermetic tests cover these lifecycle paths; natural-network effectiveness remains unproven.
+### Observatory, diagnosis, and closed loop
+
+- Add redacted versioned `ProbeSpec`/`EvidenceRecord` contracts with deterministic evidence identity; HTTPS/TCP are implemented and QUIC/UDP evidence is explicitly unsupported.
+- Add deterministic, conservative failure diagnosis as the current diagnosis authority.
+- Add a durable bounded redacted outcome ledger that fails closed on corruption, retains no edge authority, and records positive/negative compatibility semantics.
+- Integrate Planner and recommendation: history may reorder currently eligible candidates but cannot create eligibility, Apply a candidate, or grant `VERIFIED_FIXED`; fresh current diagnosis remains authoritative.
+
+### Real-world validation and release correctness
+
+- Observe a naturally failing production YouTube target and a canonical `VERIFIED_FIXED` probe-path result; confirm Windows native execution and real managed lifecycle behavior.
+- Add locale-safe Windows WinDivert preflight, repository-owned canonical platform checks, injected binary build identity, and local release packaging/acceptance gates independent of GitHub Actions.
+
+### Limitations
+
+- Real-world proof covers one normalized hostname and its bounded current DNS scope on the tested Windows network. Full YouTube video/multi-host service-graph effectiveness is not established.
+- QUIC/UDP vNext evidence remains unsupported. Linux remains experimental and no Linux binary asset is published for v0.7.0.
 
 ## [0.6.9] - 2026-09-11
 ### Windows release-correctness hotfix

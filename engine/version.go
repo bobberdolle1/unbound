@@ -7,8 +7,7 @@ import (
 )
 
 // Version is the application version. Release builds override it at link time.
-// Direct source builds intentionally identify as the next development version.
-var Version = "0.7.0-dev"
+var Version = "0.7.0"
 
 // BuildCommit, BuildDirty, and BuildChannel are injected at build time. They
 // deliberately never consult a packaged .git directory at runtime.
