@@ -449,7 +449,8 @@ func (s *productVNextService) ManagedHealth(ctx context.Context) ManagedHealthSt
 	healthCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
 	if err := active.activation.VerifyActive(healthCtx); err != nil {
-		return false
+		s.setManagedHealth(ManagedHealthFault)
+		return ManagedHealthFault
 	}
 	observation, err := s.deps.observer.Observe(healthCtx, active.grant.target.URL, observatory.Options{
 		AddressFamily: active.grant.target.AddressFamily,

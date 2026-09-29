@@ -15,13 +15,16 @@ const linuxOwnershipPrefix = "unbound-autotune-vnext"
 // LinuxNFQueueSpec is an owned, exact rule description. It is deliberately
 // smaller than CapturePlan: physical v1 supports only factual outbound TCP.
 type LinuxNFQueueSpec struct {
-	Table  string
-	Queue  uint16
-	Marker string
-	Edge   net.IP
-	Edges  []net.IP
-	Family observatory.AddressFamily
-	Ports  []strategyir.PortRange
+	Table     string
+	Queue     uint16
+	Marker    string
+	Edge      net.IP
+	Edges     []net.IP
+	Family    observatory.AddressFamily
+	NFTFamily string
+	IPv4Edges []net.IP
+	IPv6Edges []net.IP
+	Ports     []strategyir.PortRange
 }
 
 func NewLinuxNFQueueSpec(capture backendcap.CapturePlan, edge net.IP, family observatory.AddressFamily, table string, queue uint16, marker string) (LinuxNFQueueSpec, error) {
@@ -44,25 +47,44 @@ func NewLinuxNFQueueSpec(capture backendcap.CapturePlan, edge net.IP, family obs
 }
 
 // NewLinuxServiceScopeNFQueueSpec owns one exact nft rule over a bounded
-// same-family edge set. It never creates or reuses a persistent system set.
+// same-family edge set, or two exact rules in one inet table for a mixed
+// family scope. It never creates or reuses a persistent system set.
 func NewLinuxServiceScopeNFQueueSpec(capture backendcap.CapturePlan, edges []ServiceScopeEdge, table string, queue uint16, marker string) (LinuxNFQueueSpec, error) {
 	canonical, err := canonicalCaptureEdges(edges)
 	if err != nil {
 		return LinuxNFQueueSpec{}, err
 	}
-	family := canonical[0].Family
-	ips := make([]net.IP, 0, len(canonical))
+	var ipv4, ipv6 []net.IP
 	for _, edge := range canonical {
-		if edge.Family != family || !captureIncludesFamily(capture.IPFamilies, edge.Family) {
-			return LinuxNFQueueSpec{}, fmt.Errorf("mixed-family or unsupported Linux service scope")
+		if !captureIncludesFamily(capture.IPFamilies, edge.Family) {
+			return LinuxNFQueueSpec{}, fmt.Errorf("unsupported Linux service scope address family")
 		}
-		ips = append(ips, append(net.IP(nil), edge.IP...))
+		if edge.Family == observatory.AddressFamilyIPv4 {
+			ipv4 = append(ipv4, append(net.IP(nil), edge.IP...))
+			continue
+		}
+		if edge.Family == observatory.AddressFamilyIPv6 {
+			ipv6 = append(ipv6, append(net.IP(nil), edge.IP...))
+			continue
+		}
+		return LinuxNFQueueSpec{}, fmt.Errorf("invalid Linux service scope address family")
 	}
-	spec, err := NewLinuxNFQueueSpec(capture, ips[0], family, table, queue, marker)
+	first := canonical[0]
+	spec, err := NewLinuxNFQueueSpec(capture, first.IP, first.Family, table, queue, marker)
 	if err != nil {
 		return LinuxNFQueueSpec{}, err
 	}
-	spec.Edges = ips
+	if len(ipv4) > 0 && len(ipv6) > 0 {
+		spec.NFTFamily = "inet"
+		spec.IPv4Edges = ipv4
+		spec.IPv6Edges = ipv6
+		return spec, nil
+	}
+	if len(ipv4) > 0 {
+		spec.Edges = ipv4
+		return spec, nil
+	}
+	spec.Edges = ipv6
 	return spec, nil
 }
 
@@ -91,21 +113,19 @@ func (s LinuxNFQueueSpec) nftPorts() string {
 }
 
 func (s LinuxNFQueueSpec) nftFamily() string {
+	if s.NFTFamily != "" {
+		return s.NFTFamily
+	}
 	if s.Family == observatory.AddressFamilyIPv6 {
 		return "ip6"
 	}
 	return "ip"
 }
 
-func (s LinuxNFQueueSpec) nftScript() string {
-	family := s.nftFamily()
+func nftAddressExpression(family string, edges []net.IP) string {
 	address := "ip daddr"
 	if family == "ip6" {
 		address = "ip6 daddr"
-	}
-	edges := s.Edges
-	if len(edges) == 0 {
-		edges = []net.IP{s.Edge}
 	}
 	values := make([]string, 0, len(edges))
 	for _, edge := range edges {
@@ -115,7 +135,30 @@ func (s LinuxNFQueueSpec) nftScript() string {
 	if len(values) > 1 {
 		addressExpr = "{ " + strings.Join(values, ", ") + " }"
 	}
-	return fmt.Sprintf("add table %s %s\nadd chain %s %s output { type filter hook output priority mangle; policy accept; }\nadd rule %s %s output %s %s tcp dport %s meta mark and 0x40000000 != 0x40000000 queue num %d bypass comment \"%s\"\n", family, s.Table, family, s.Table, family, s.Table, address, addressExpr, s.nftPorts(), s.Queue, s.Marker)
+	return address + " " + addressExpr
+}
+
+func (s LinuxNFQueueSpec) nftAddressExpressions() []string {
+	if s.nftFamily() == "inet" {
+		return []string{
+			nftAddressExpression("ip", s.IPv4Edges),
+			nftAddressExpression("ip6", s.IPv6Edges),
+		}
+	}
+	edges := s.Edges
+	if len(edges) == 0 {
+		edges = []net.IP{s.Edge}
+	}
+	return []string{nftAddressExpression(s.nftFamily(), edges)}
+}
+
+func (s LinuxNFQueueSpec) nftScript() string {
+	family := s.nftFamily()
+	var rules strings.Builder
+	for _, address := range s.nftAddressExpressions() {
+		fmt.Fprintf(&rules, "add rule %s %s output %s tcp dport %s meta mark and 0x40000000 != 0x40000000 queue num %d bypass comment %q\n", family, s.Table, address, s.nftPorts(), s.Queue, s.Marker)
+	}
+	return fmt.Sprintf("add table %s %s\nadd chain %s %s output { type filter hook output priority mangle; policy accept; }\n%s", family, s.Table, family, s.Table, rules.String())
 }
 
 func (s LinuxNFQueueSpec) iptablesArgs(operation string) []string {

@@ -34,12 +34,15 @@ func ApplyVerifiedServiceScope(ctx context.Context, request ManagedRequest, curr
 		return nil, fmt.Errorf("NOT_APPLIED: SNAPSHOT_FAILED: %w", err)
 	}
 	activation = &ManagedActivation{executor: executor, snapshot: snapshot, restorePending: true}
+	owned := activation
 	committed := false
 	defer func() {
-		if !committed {
-			if cleanupErr := activation.Revert(ctx); cleanupErr != nil {
-				err = fmt.Errorf("%w: %v", ErrManagedStateRestoreFailed, cleanupErr)
-			}
+		if committed {
+			return
+		}
+		if cleanupErr := owned.Revert(ctx); cleanupErr != nil {
+			activation = owned
+			err = fmt.Errorf("%w: %v", ErrManagedStateRestoreFailed, cleanupErr)
 		}
 	}()
 	if err := executor.EstablishDirect(operationCtx, snapshot); err != nil {
@@ -85,7 +88,10 @@ func ApplyVerifiedServiceScope(ctx context.Context, request ManagedRequest, curr
 	plan.EngineArgv = argv
 	activation.candidate = ExecutableCandidate{Strategy: canonical, Fingerprint: request.Fingerprint, Backend: request.Backend, Plan: plan, Assets: resolved, TargetEdges: cloneScopeEdges(currentScope.Edges)}
 	activation.candidateActive = true
-	if err := executor.Activate(operationCtx, activation.candidate); err != nil {
+	// Successful Apply transfers process ownership to ManagedActivation; the
+	// bounded validation context must not terminate that committed process.
+	managedProcessCtx := context.WithoutCancel(operationCtx)
+	if err := executor.Activate(managedProcessCtx, activation.candidate); err != nil {
 		return nil, fmt.Errorf("NOT_APPLIED: ACTIVATION_FAILED: %w", err)
 	}
 	if err := executor.VerifyActive(operationCtx, activation.candidate); err != nil {

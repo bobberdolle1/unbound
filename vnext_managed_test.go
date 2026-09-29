@@ -123,6 +123,64 @@ func appliedManagedVNextService(t *testing.T) (*productVNextService, *productVNe
 	return service, executor, provider
 }
 
+type managedVNextScopeResolver struct {
+	scope autotunevnext.ServiceScopeSnapshot
+	err   error
+}
+
+func (r *managedVNextScopeResolver) ResolveServiceScope(context.Context, autotunevnext.Target) (autotunevnext.ServiceScopeSnapshot, error) {
+	return r.scope, r.err
+}
+
+func serviceScopeForManagedTarget(target autotunevnext.Target, edges ...string) autotunevnext.ServiceScopeSnapshot {
+	scope := autotunevnext.ServiceScopeSnapshot{Target: target}
+	for _, edge := range edges {
+		scope.Edges = append(scope.Edges, autotunevnext.ServiceScopeEdge{IP: net.ParseIP(edge), Family: observatory.AddressFamilyIPv4})
+	}
+	return scope
+}
+
+func appliedServiceScopeVNextService(t *testing.T) (*productVNextService, *productVNextNoopExecutor, *managedVNextScopeResolver, *managedVNextSequenceObserver) {
+	t.Helper()
+	manager, _ := productVNextTestManager(t)
+	target, publicTarget, err := normalizeVNextTarget("https://target.test/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := productionVNextStrategyCatalog("target.test")
+	if err != nil || len(catalog) == 0 {
+		t.Fatalf("catalog=%v err=%v", catalog, err)
+	}
+	strategy := catalog[0]
+	fingerprint, err := strategyir.Fingerprint(strategy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scopeResolver := &managedVNextScopeResolver{scope: serviceScopeForManagedTarget(target, "192.0.2.1")}
+	executor := &productVNextNoopExecutor{}
+	observer := &managedVNextSequenceObserver{results: []observatory.ObservationResult{
+		managedVNextObservation(false),
+		managedVNextObservation(true),
+	}}
+	service := newProductVNextServiceWith(manager, &engine.AssetPaths{}, productVNextDependencies{
+		newRuntime: func(autotunevnext.RuntimeProvider, *engine.AssetPaths, func(autotunevnext.PhysicalLog)) (productVNextRuntime, error) {
+			return productVNextRuntime{executor: executor, preflight: productVNextSupportedPreflight{}, backend: backendcap.Zapret2Windows}, nil
+		},
+		newResolver: func(*engine.AssetPaths) (autotunevnext.AssetResolver, error) {
+			return managedVNextRequestedAssets{}, nil
+		},
+		scopeResolver: scopeResolver,
+		observer:      observer,
+		run:           autotunevnext.RunCoordinated,
+	})
+	grant := verifiedSelectionGrant{token: "scope-grant", target: target, publicTarget: publicTarget, strategyID: strategy.ID, fingerprint: fingerprint, backend: backendcap.Zapret2Windows, scope: scopeResolver.scope, createdAt: time.Now(), expiresAt: time.Now().Add(time.Minute)}
+	service.grants[grant.token] = grant
+	if status := service.Apply(context.Background(), grant.token); status.State != "APPLIED" || !status.Active {
+		t.Fatalf("apply status=%+v", status)
+	}
+	return service, executor, scopeResolver, observer
+}
+
 func stubStartEngineRuntime(t *testing.T) {
 	t.Helper()
 	previousEventsEmit := appRuntimeEventsEmit
@@ -597,5 +655,139 @@ func TestQuitFailsafeDoesNotPreemptVNextCleanup(t *testing.T) {
 	}
 	if !quitCalled {
 		t.Fatal("QuitApp did not request graceful Wails shutdown")
+	}
+}
+
+func TestServiceScopeManagedHealthRequiresFreshProofForNewEdge(t *testing.T) {
+	restore := engine.SetConfigDirForTest(t.TempDir())
+	defer restore()
+	service, executor, resolver, observer := appliedServiceScopeVNextService(t)
+	if !executor.processAlive {
+		t.Fatal("service-scope Apply returned without an active managed process")
+	}
+	observer.results = []observatory.ObservationResult{managedVNextObservation(true)}
+	if state := service.ManagedHealth(context.Background()); state != ManagedHealthHealthy {
+		t.Fatalf("same-scope health=%s", state)
+	}
+	start := len(observer.calls)
+	resolver.scope = serviceScopeForManagedTarget(resolver.scope.Target, "192.0.2.1", "192.0.2.2")
+	if state := service.ManagedHealth(context.Background()); state != ManagedHealthNeedsRevalidation {
+		t.Fatalf("new-edge health=%s", state)
+	}
+	if len(observer.calls) != start {
+		t.Fatalf("new edge was observed under stale capture authority: %#v", observer.calls[start:])
+	}
+	if status := service.Status(); !status.NeedsRevalidation || status.State != "SERVICE_SCOPE_CHANGED_REVALIDATION_REQUIRED" {
+		t.Fatalf("status=%+v", status)
+	}
+	if status := service.Suspend(context.Background()); status.State != "SAVED_REVALIDATION_PENDING" || status.Active {
+		t.Fatalf("suspend status=%+v", status)
+	}
+}
+
+func TestServiceScopeManagedHealthAcceptsCurrentSubset(t *testing.T) {
+	restore := engine.SetConfigDirForTest(t.TempDir())
+	defer restore()
+	service, _, resolver, observer := appliedServiceScopeVNextService(t)
+	resolver.scope = serviceScopeForManagedTarget(resolver.scope.Target, "192.0.2.1")
+	observer.results = []observatory.ObservationResult{managedVNextObservation(true)}
+	if state := service.ManagedHealth(context.Background()); state != ManagedHealthHealthy {
+		t.Fatalf("subset health=%s", state)
+	}
+	if status := service.Revert(context.Background()); status.State != "REVERTED" || status.Active {
+		t.Fatalf("revert status=%+v", status)
+	}
+}
+
+func TestServiceScopeRestartDoesNotReuseRawEdges(t *testing.T) {
+	restore := engine.SetConfigDirForTest(t.TempDir())
+	defer restore()
+	service, _, _, _ := appliedServiceScopeVNextService(t)
+	path, err := getVNextManagedStatePath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	persisted, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(persisted) == "" || containsAll(string(persisted), "192.0.2.1") {
+		t.Fatalf("persisted state retained raw scope edges: %s", persisted)
+	}
+	restarted := newProductVNextService(nil, nil)
+	if status := restarted.Status(); status.State != "SAVED_REVALIDATION_PENDING" || status.Active || !status.NeedsRevalidation {
+		t.Fatalf("restart status=%+v", status)
+	}
+	if status := service.Suspend(context.Background()); status.State != "SAVED_REVALIDATION_PENDING" || status.Active {
+		t.Fatalf("suspend status=%+v", status)
+	}
+}
+
+type serviceScopeLifecycleObserver struct {
+	executor *productVNextNoopExecutor
+	target   string
+}
+
+func (o serviceScopeLifecycleObserver) Observe(_ context.Context, rawURL string, options observatory.Options) (observatory.ObservationResult, error) {
+	edge := "192.0.2.2"
+	if len(options.ResolvedIP) > 0 {
+		edge = options.ResolvedIP.String()
+	}
+	if rawURL == o.target {
+		return managedVNextObservationAt(o.executor.processAlive, edge), nil
+	}
+	return managedVNextObservationAt(true, edge), nil
+}
+
+func TestServiceScopeRevalidateUsesOnlyFreshCurrentScope(t *testing.T) {
+	restore := engine.SetConfigDirForTest(t.TempDir())
+	defer restore()
+	manager, _ := productVNextTestManager(t)
+	target, publicTarget, err := normalizeVNextTarget("https://target.test/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := productionVNextStrategyCatalog("target.test")
+	if err != nil || len(catalog) == 0 {
+		t.Fatalf("catalog=%v err=%v", catalog, err)
+	}
+	strategy := catalog[0]
+	fingerprint, err := strategyir.Fingerprint(strategy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	executor := &productVNextNoopExecutor{}
+	resolver := &managedVNextScopeResolver{scope: serviceScopeForManagedTarget(target, "192.0.2.1")}
+	service := newProductVNextServiceWith(manager, &engine.AssetPaths{}, productVNextDependencies{
+		newRuntime: func(autotunevnext.RuntimeProvider, *engine.AssetPaths, func(autotunevnext.PhysicalLog)) (productVNextRuntime, error) {
+			return productVNextRuntime{executor: executor, preflight: productVNextSupportedPreflight{}, backend: backendcap.Zapret2Windows}, nil
+		},
+		newResolver: func(*engine.AssetPaths) (autotunevnext.AssetResolver, error) {
+			return managedVNextRequestedAssets{}, nil
+		},
+		scopeResolver: resolver,
+		observer:      serviceScopeLifecycleObserver{executor: executor, target: target.URL},
+		run:           autotunevnext.RunCoordinated,
+	})
+	service.grants["scope-revalidate"] = verifiedSelectionGrant{
+		token: "scope-revalidate", target: target, publicTarget: publicTarget, strategyID: strategy.ID,
+		fingerprint: fingerprint, backend: backendcap.Zapret2Windows, scope: resolver.scope,
+		createdAt: time.Now(), expiresAt: time.Now().Add(time.Minute),
+	}
+	if status := service.Apply(context.Background(), "scope-revalidate"); status.State != "APPLIED" || !status.Active {
+		t.Fatalf("initial Apply=%+v", status)
+	}
+	resolver.scope = serviceScopeForManagedTarget(target, "192.0.2.2")
+	if status := service.RevalidateActive(context.Background()); status.State != "APPLIED" || !status.Active {
+		t.Fatalf("revalidate status=%+v", status)
+	}
+	service.mu.Lock()
+	candidate := service.active.activation.Candidate()
+	service.mu.Unlock()
+	if len(candidate.TargetEdges) != 1 || candidate.TargetEdges[0].IP.String() != "192.0.2.2" {
+		t.Fatalf("revalidation retained historical scope: %#v", candidate.TargetEdges)
+	}
+	if status := service.Revert(context.Background()); status.State != "REVERTED" || status.Active {
+		t.Fatalf("revert status=%+v", status)
 	}
 }

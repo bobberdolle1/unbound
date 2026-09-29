@@ -520,16 +520,13 @@ func (e *LinuxRuntime) verifyRule(ctx context.Context, mode string, spec LinuxNF
 		if err != nil {
 			return fmt.Errorf("audit owned nft table: %w", err)
 		}
-		address := "ip daddr " + spec.Edge.String()
-		if spec.Family == observatory.AddressFamilyIPv6 {
-			address = "ip6 daddr " + spec.Edge.String()
-		}
-		for _, fragment := range []string{
+		fragments := []string{
 			nftTableHeader(spec),
 			"hook output",
-			address,
 			spec.Marker,
-		} {
+		}
+		fragments = append(fragments, spec.nftAddressExpressions()...)
+		for _, fragment := range fragments {
 			if !strings.Contains(out, fragment) {
 				return fmt.Errorf("owned nft rule is missing %q", fragment)
 			}
