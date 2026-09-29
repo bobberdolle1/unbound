@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -28,6 +29,25 @@ func (o *managedVNextSequenceObserver) Observe(_ context.Context, _ string, opti
 	result := o.results[0]
 	o.results = o.results[1:]
 	return result, nil
+}
+
+type managedScopeHealthObserver struct {
+	mu       sync.Mutex
+	executor *productVNextNoopExecutor
+	calls    []observatory.Options
+}
+
+func (o *managedScopeHealthObserver) Observe(_ context.Context, _ string, options observatory.Options) (observatory.ObservationResult, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.calls = append(o.calls, options)
+	return managedVNextObservationAt(o.executor.processAlive, options.ResolvedIP.String()), nil
+}
+
+func (o *managedScopeHealthObserver) callCount() int {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return len(o.calls)
 }
 
 func managedVNextObservation(success bool) observatory.ObservationResult {
@@ -682,6 +702,68 @@ func TestServiceScopeManagedHealthRequiresFreshProofForNewEdge(t *testing.T) {
 	}
 	if status := service.Suspend(context.Background()); status.State != "SAVED_REVALIDATION_PENDING" || status.Active {
 		t.Fatalf("suspend status=%+v", status)
+	}
+}
+
+func TestServiceScopeManagedHealthReappearingValidatedButUncapturedEdgeNeedsRevalidation(t *testing.T) {
+	restore := engine.SetConfigDirForTest(t.TempDir())
+	defer restore()
+	manager, _ := productVNextTestManager(t)
+	target, publicTarget, err := normalizeVNextTarget("https://target.test/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := productionVNextStrategyCatalog("target.test")
+	if err != nil || len(catalog) == 0 {
+		t.Fatalf("catalog=%v err=%v", catalog, err)
+	}
+	strategy := catalog[0]
+	fingerprint, err := strategyir.Fingerprint(strategy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	executor := &productVNextNoopExecutor{}
+	resolver := &managedVNextScopeResolver{scope: serviceScopeForManagedTarget(target, "192.0.2.1", "192.0.2.2")}
+	observer := &managedScopeHealthObserver{executor: executor}
+	service := newProductVNextServiceWith(manager, &engine.AssetPaths{}, productVNextDependencies{
+		newRuntime: func(autotunevnext.RuntimeProvider, *engine.AssetPaths, func(autotunevnext.PhysicalLog)) (productVNextRuntime, error) {
+			return productVNextRuntime{executor: executor, preflight: productVNextSupportedPreflight{}, backend: backendcap.Zapret2Windows}, nil
+		},
+		newResolver: func(*engine.AssetPaths) (autotunevnext.AssetResolver, error) {
+			return managedVNextRequestedAssets{}, nil
+		},
+		scopeResolver: resolver,
+		observer:      observer,
+		run:           autotunevnext.RunCoordinated,
+	})
+	grantScope := serviceScopeForManagedTarget(target, "192.0.2.1", "192.0.2.2", "192.0.2.3")
+	service.grants["reappearing-capture-scope"] = verifiedSelectionGrant{
+		token: "reappearing-capture-scope", target: target, publicTarget: publicTarget, strategyID: strategy.ID,
+		fingerprint: fingerprint, backend: backendcap.Zapret2Windows, scope: grantScope,
+		createdAt: time.Now(), expiresAt: time.Now().Add(time.Minute),
+	}
+	if status := service.Apply(context.Background(), "reappearing-capture-scope"); status.State != "APPLIED" || !status.Active {
+		t.Fatalf("apply status=%+v", status)
+	}
+	service.mu.Lock()
+	captured := service.active.activation.Candidate().TargetEdges
+	service.mu.Unlock()
+	if len(captured) != 2 || captured[0].IP.String() != "192.0.2.1" || captured[1].IP.String() != "192.0.2.2" {
+		t.Fatalf("active capture=%#v", captured)
+	}
+	resolver.scope = grantScope
+	before := observer.callCount()
+	if state := service.ManagedHealth(context.Background()); state != ManagedHealthNeedsRevalidation {
+		t.Fatalf("health=%s", state)
+	}
+	if got := observer.callCount() - before; got != 0 {
+		t.Fatalf("health observed uncaptured reappearing edge: %d observations", got)
+	}
+	if status := service.Status(); !status.NeedsRevalidation || status.State != "SERVICE_SCOPE_CHANGED_REVALIDATION_REQUIRED" {
+		t.Fatalf("status=%+v", status)
+	}
+	if status := service.Revert(context.Background()); status.State != "REVERTED" || status.Active {
+		t.Fatalf("revert status=%+v", status)
 	}
 }
 

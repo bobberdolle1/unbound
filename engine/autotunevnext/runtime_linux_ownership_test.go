@@ -274,7 +274,7 @@ func canonicalOwnedNFTTable(spec LinuxNFQueueSpec) string {
 		nftTableHeader(spec),
 		"chain output {",
 		"type filter hook output priority mangle; policy accept;",
-		`ip daddr 192.0.2.7 tcp dport 443 queue flags bypass to 40000 comment "unbound-autotune-vnext:test"`,
+		`ip daddr 192.0.2.7 tcp dport 443 meta mark and 0x40000000 != 0x40000000 queue num 40000 bypass comment "unbound-autotune-vnext:test"`,
 		"}",
 		"}",
 	}, "\n")
@@ -291,7 +291,7 @@ func TestLinuxVerifyRuleScopesExactOwnedNFTTable(t *testing.T) {
 		{"canonical owned table", canonical, false},
 		{"wrong edge", strings.Replace(canonical, "192.0.2.7", "192.0.2.8", 1), true},
 		{"wrong port", strings.Replace(canonical, "tcp dport 443", "tcp dport 444", 1), true},
-		{"wrong queue", strings.Replace(canonical, "to 40000", "to 40001", 1), true},
+		{"wrong queue", strings.Replace(canonical, "queue num 40000", "queue num 40001", 1), true},
 		{"wrong marker", strings.Replace(canonical, linuxOwnershipPrefix+":test", linuxOwnershipPrefix+":other", 1), true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

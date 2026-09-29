@@ -1,6 +1,7 @@
 package autotunevnext
 
 import (
+	"fmt"
 	"net"
 	"strings"
 	"testing"
@@ -87,5 +88,105 @@ func TestLinuxServiceScopeNFQueueSpecRejectsUnrepresentableScope(t *testing.T) {
 	}
 	if _, err := NewLinuxServiceScopeNFQueueSpec(exactCapture(backendcap.CaptureNFQUEUE, strategyir.IPFamilyAny, strategyir.DirectionOutbound, strategyir.PortRange{Start: 443, End: 443}), overflow, "table", 40123, "marker"); err == nil {
 		t.Fatal("accepted an over-bound service scope")
+	}
+}
+
+func nftListingForSpec(spec LinuxNFQueueSpec) string {
+	rules := make([]string, 0, len(spec.nftAddressExpressions()))
+	for _, address := range spec.nftAddressExpressions() {
+		rules = append(rules, fmt.Sprintf("%s tcp dport %s meta mark and 0x40000000 != 0x40000000 queue num %d bypass comment %q", address, spec.nftPorts(), spec.Queue, spec.Marker))
+	}
+	return fmt.Sprintf("table %s %s { chain output { type filter hook output priority mangle; %s; } }", spec.nftFamily(), spec.Table, strings.Join(rules, "; "))
+}
+
+func mutateNFTRule(listing, family, old, replacement string) string {
+	needle := family + " daddr"
+	start := strings.Index(listing, needle)
+	if start < 0 {
+		panic("missing nft test rule")
+	}
+	end := start + strings.Index(listing[start:], ";")
+	if end < start {
+		panic("unterminated nft test rule")
+	}
+	return listing[:start] + strings.Replace(listing[start:end], old, replacement, 1) + listing[end:]
+}
+
+func TestVerifyNFTRuleSemanticsRequiresCompletePerFamilyRules(t *testing.T) {
+	capture := exactCapture(backendcap.CaptureNFQUEUE, strategyir.IPFamilyAny, strategyir.DirectionOutbound, strategyir.PortRange{Start: 443, End: 443})
+	spec, err := NewLinuxServiceScopeNFQueueSpec(capture, []ServiceScopeEdge{
+		linuxScopeEdge("192.0.2.1", observatory.AddressFamilyIPv4),
+		linuxScopeEdge("192.0.2.2", observatory.AddressFamilyIPv4),
+		linuxScopeEdge("2001:db8::1", observatory.AddressFamilyIPv6),
+	}, "unbound_autotune_mixed", 40123, linuxOwnershipPrefix+":mixed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	listing := nftListingForSpec(spec)
+	if err := verifyNFTRuleSemantics(listing, spec); err != nil {
+		t.Fatalf("complete mixed rules rejected: %v", err)
+	}
+	cases := []struct {
+		name   string
+		family string
+		old    string
+		new    string
+	}{
+		{name: "IPv4 missing queue", family: "ip", old: "queue num 40123 bypass", new: "queue num 40124 bypass"},
+		{name: "IPv4 missing marker", family: "ip", old: `comment "unbound-autotune-vnext:mixed"`, new: `comment "other"`},
+		{name: "IPv4 missing mark", family: "ip", old: "meta mark and 0x40000000 != 0x40000000", new: "meta mark 0"},
+		{name: "IPv4 missing port", family: "ip", old: "tcp dport { 443 }", new: "tcp dport { 80 }"},
+		{name: "IPv4 missing edge", family: "ip", old: "192.0.2.1, ", new: ""},
+		{name: "IPv4 missing bypass", family: "ip", old: "queue num 40123 bypass", new: "queue num 40123"},
+		{name: "IPv6 wrong queue", family: "ip6", old: "queue num 40123 bypass", new: "queue num 40124 bypass"},
+		{name: "IPv6 missing marker", family: "ip6", old: `comment "unbound-autotune-vnext:mixed"`, new: `comment "other"`},
+		{name: "IPv6 missing mark", family: "ip6", old: "meta mark and 0x40000000 != 0x40000000", new: "meta mark 0"},
+		{name: "IPv6 missing port", family: "ip6", old: "tcp dport { 443 }", new: "tcp dport { 80 }"},
+		{name: "IPv6 missing edge", family: "ip6", old: "2001:db8::1", new: "2001:db8::2"},
+		{name: "IPv6 missing bypass", family: "ip6", old: "queue num 40123 bypass", new: "queue num 40123"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := verifyNFTRuleSemantics(mutateNFTRule(listing, tc.family, tc.old, tc.new), spec); err == nil {
+				t.Fatal("accepted incomplete family rule")
+			}
+		})
+	}
+}
+
+func TestVerifyNFTRuleSemanticsRejectsCrossRuleFragments(t *testing.T) {
+	capture := exactCapture(backendcap.CaptureNFQUEUE, strategyir.IPFamilyAny, strategyir.DirectionOutbound, strategyir.PortRange{Start: 443, End: 443})
+	spec, err := NewLinuxServiceScopeNFQueueSpec(capture, []ServiceScopeEdge{
+		linuxScopeEdge("192.0.2.1", observatory.AddressFamilyIPv4),
+		linuxScopeEdge("2001:db8::1", observatory.AddressFamilyIPv6),
+	}, "unbound_autotune_mixed", 40123, linuxOwnershipPrefix+":mixed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	listing := nftListingForSpec(spec)
+	listing = mutateNFTRule(listing, "ip", "queue num 40123 bypass comment \"unbound-autotune-vnext:mixed\"", "")
+	listing = strings.Replace(listing, "; } }", `; ip daddr 198.51.100.7 tcp dport { 443 } meta mark and 0x40000000 != 0x40000000 queue num 40123 bypass comment "unbound-autotune-vnext:mixed"; } }`, 1)
+	if err := verifyNFTRuleSemantics(listing, spec); err == nil {
+		t.Fatal("accepted required fragments split across different rules")
+	}
+}
+
+func TestVerifyNFTRuleSemanticsAcceptsExactSingleAndMultiFamilyRules(t *testing.T) {
+	capture := exactCapture(backendcap.CaptureNFQUEUE, strategyir.IPFamilyAny, strategyir.DirectionOutbound, strategyir.PortRange{Start: 443, End: 443})
+	cases := [][]ServiceScopeEdge{
+		{linuxScopeEdge("192.0.2.1", observatory.AddressFamilyIPv4)},
+		{linuxScopeEdge("192.0.2.1", observatory.AddressFamilyIPv4), linuxScopeEdge("192.0.2.2", observatory.AddressFamilyIPv4)},
+		{linuxScopeEdge("2001:db8::1", observatory.AddressFamilyIPv6)},
+		{linuxScopeEdge("2001:db8::1", observatory.AddressFamilyIPv6), linuxScopeEdge("2001:db8::2", observatory.AddressFamilyIPv6)},
+		{linuxScopeEdge("192.0.2.1", observatory.AddressFamilyIPv4), linuxScopeEdge("2001:db8::1", observatory.AddressFamilyIPv6)},
+	}
+	for _, edges := range cases {
+		spec, err := NewLinuxServiceScopeNFQueueSpec(capture, edges, "unbound_autotune_scope", 40123, linuxOwnershipPrefix+":scope")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := verifyNFTRuleSemantics(nftListingForSpec(spec), spec); err != nil {
+			t.Fatalf("exact rules rejected for %#v: %v", edges, err)
+		}
 	}
 }

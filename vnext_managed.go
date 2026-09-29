@@ -413,6 +413,10 @@ func (s *productVNextService) Status() AutoTuneVNextManagedStatus {
 	return AutoTuneVNextManagedStatus{State: "SAVED_REVALIDATION_PENDING", NeedsRevalidation: true, Target: state.Target, StrategyID: state.StrategyID, Fingerprint: shortManagedFingerprint(state.Fingerprint), Backend: state.Backend}
 }
 
+func activeManagedCaptureScope(target autotunevnext.Target, candidate autotunevnext.ExecutableCandidate) autotunevnext.ServiceScopeSnapshot {
+	return autotunevnext.ServiceScopeSnapshot{Target: target, Edges: candidate.TargetEdges}
+}
+
 // ManagedHealth resolves fresh current scope and checks it against the
 // in-memory activation scope. New DNS edges are never captured implicitly.
 func (s *productVNextService) ManagedHealth(ctx context.Context) ManagedHealthState {
@@ -430,7 +434,7 @@ func (s *productVNextService) ManagedHealth(ctx context.Context) ManagedHealthSt
 			return ManagedHealthFault
 		}
 		current, err := s.deps.scopeResolver.ResolveServiceScope(ctx, active.grant.target)
-		if err != nil || !current.IsSubsetOf(active.grant.scope) {
+		if err != nil || !current.IsSubsetOf(activeManagedCaptureScope(active.grant.target, candidate)) {
 			s.setManagedHealth(ManagedHealthNeedsRevalidation)
 			return ManagedHealthNeedsRevalidation
 		}
