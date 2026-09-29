@@ -7,26 +7,26 @@
 
 ### AutoTune vNext
 
-- Promote the primary evidence-driven vNext product flow with exact-edge transactional V1 validation, fresh Apply authority, managed Apply/Suspend/Revert, restoration ownership, shutdown/quit cleanup, and the managed-process lifetime correction.
-- Add a bounded service scope for one normalized hostname: at most eight current A/AAAA endpoints, per-edge direct-before/active/direct-after validation, `SERVICE_SCOPE_VERIFIED_FIXED`, exact multi-edge Windows capture, and mixed-family Linux nft rules.
-- Managed health treats the active capture scope as authoritative after Apply. Reappearing or uncovered edges require fresh revalidation; raw edges are never persisted.
+- Основной доказательный поток vNext переведён на транзакционную V1-валидацию точных edge, актуальные полномочия Apply, управляемые Apply/Suspend/Revert, владение восстановлением, очистку при shutdown/quit и исправленный срок жизни управляемого процесса.
+- Добавлена ограниченная область сервиса для одного нормализованного hostname: не более восьми текущих A/AAAA endpoint, проверка каждого edge до активации/во время/после, `SERVICE_SCOPE_VERIFIED_FIXED`, точный многоedge-захват в Windows и nft-правила для смешанных семейств в Linux.
+- После Apply ManagedHealth считает активную область захвата авторитетной. Повторно появившиеся или непокрытые edge требуют новой валидации; необработанные edge не сохраняются.
 
-### Observatory, diagnosis, and closed loop
+### Наблюдаемость, диагностика и замкнутый цикл
 
-- Add redacted versioned `ProbeSpec`/`EvidenceRecord` contracts with deterministic evidence identity; HTTPS/TCP are implemented and QUIC/UDP evidence is explicitly unsupported.
-- Add deterministic, conservative failure diagnosis as the current diagnosis authority.
-- Add a durable bounded redacted outcome ledger that fails closed on corruption, retains no edge authority, and records positive/negative compatibility semantics.
-- Integrate Planner and recommendation: history may reorder currently eligible candidates but cannot create eligibility, Apply a candidate, or grant `VERIFIED_FIXED`; fresh current diagnosis remains authoritative.
+- Добавлены редактированные версионированные контракты `ProbeSpec`/`EvidenceRecord` с детерминированной идентичностью доказательств; HTTPS/TCP реализованы, а доказательства QUIC/UDP явно не поддерживаются.
+- Добавлена детерминированная консервативная диагностика сбоев как текущий источник диагностической истины.
+- Добавлен долговечный ограниченный редактированный журнал результатов, который закрывается при повреждении, не сохраняет полномочия edge и фиксирует положительную/отрицательную семантику совместимости.
+- Planner и рекомендации интегрированы так, что история может только менять порядок уже допустимых кандидатов: она не создаёт допустимость, не применяет кандидата и не выдаёт `VERIFIED_FIXED`; авторитетной остаётся свежая текущая диагностика.
 
-### Real-world validation and release correctness
+### Проверка в реальных условиях и корректность релиза
 
-- Observe a naturally failing production YouTube target and a canonical `VERIFIED_FIXED` probe-path result; confirm Windows native execution and real managed lifecycle behavior.
-- Add locale-safe Windows WinDivert preflight, repository-owned canonical platform checks, injected binary build identity, and local release packaging/acceptance gates independent of GitHub Actions.
+- Наблюдались естественно неработающая производственная цель YouTube и канонический результат пути пробы `VERIFIED_FIXED`; подтверждены нативное выполнение в Windows и реальный управляемый жизненный цикл.
+- Добавлены локалезависимый Windows WinDivert preflight, канонические платформенные проверки репозитория, внедряемая идентичность бинарника и локальные ворота упаковки/приёмки, независимые от GitHub Actions.
 
-### Limitations
+### Ограничения
 
-- Real-world proof covers one normalized hostname and its bounded current DNS scope on the tested Windows network. Full YouTube video/multi-host service-graph effectiveness is not established.
-- QUIC/UDP vNext evidence remains unsupported. Linux remains experimental and no Linux binary asset is published for v0.7.0.
+- Реальное доказательство покрывает один нормализованный hostname и его ограниченную текущую DNS-область в проверенной Windows-сети. Эффективность для полного YouTube video/многохостового графа сервиса не установлена.
+- Доказательства QUIC/UDP vNext пока не поддерживаются. Linux остаётся экспериментальным; бинарный Linux-артефакт для v0.7.0 не публикуется.
 
 ## [0.6.9] - 2026-09-11
 ### Windows release-correctness hotfix
