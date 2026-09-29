@@ -742,6 +742,7 @@ func (o serviceScopeLifecycleObserver) Observe(_ context.Context, rawURL string,
 func TestServiceScopeRevalidateUsesOnlyFreshCurrentScope(t *testing.T) {
 	restore := engine.SetConfigDirForTest(t.TempDir())
 	defer restore()
+	defer engine.GetLogger().Close()
 	manager, _ := productVNextTestManager(t)
 	target, publicTarget, err := normalizeVNextTarget("https://target.test/")
 	if err != nil {
@@ -789,5 +790,33 @@ func TestServiceScopeRevalidateUsesOnlyFreshCurrentScope(t *testing.T) {
 	}
 	if status := service.Revert(context.Background()); status.State != "REVERTED" || status.Active {
 		t.Fatalf("revert status=%+v", status)
+	}
+}
+
+func TestServiceScopeShutdownCleansManagedCaptureAndPreservesIntent(t *testing.T) {
+	restore := engine.SetConfigDirForTest(t.TempDir())
+	defer restore()
+	service, executor, _, _ := appliedServiceScopeVNextService(t)
+	app := NewApp()
+	app.ctx = context.Background()
+	app.manager = service.manager
+	app.vNextService = service
+	app.shutdown(context.Background())
+	if executor.processAlive {
+		t.Fatal("shutdown left service-scope managed process active")
+	}
+	if status := service.Status(); status.State != "SAVED_REVALIDATION_PENDING" || status.Active || !status.NeedsRevalidation {
+		t.Fatalf("shutdown status=%+v", status)
+	}
+	path, err := getVNextManagedStatePath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	persisted, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if containsAll(string(persisted), "192.0.2.1") {
+		t.Fatalf("shutdown persisted raw scope edge: %s", persisted)
 	}
 }
