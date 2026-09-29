@@ -210,6 +210,8 @@ type productVNextNoopExecutor struct {
 	calls             []string
 	restoreErr        error
 	verifyRestoredErr error
+	processCtx        context.Context
+	processAlive      bool
 }
 
 func (e *productVNextNoopExecutor) Snapshot(context.Context) (autotunevnext.StateSnapshot, error) {
@@ -220,15 +222,21 @@ func (e *productVNextNoopExecutor) EstablishDirect(context.Context, autotunevnex
 	e.calls = append(e.calls, "direct")
 	return nil
 }
-func (e *productVNextNoopExecutor) Activate(context.Context, autotunevnext.ExecutableCandidate) error {
+func (e *productVNextNoopExecutor) Activate(ctx context.Context, _ autotunevnext.ExecutableCandidate) error {
 	e.calls = append(e.calls, "activate")
+	e.processCtx = ctx
+	e.processAlive = true
 	return nil
 }
 func (e *productVNextNoopExecutor) VerifyActive(context.Context, autotunevnext.ExecutableCandidate) error {
+	if !e.processAlive || e.processCtx.Err() != nil {
+		return errors.New("managed process is not active")
+	}
 	return nil
 }
 func (e *productVNextNoopExecutor) Deactivate(context.Context) error {
 	e.calls = append(e.calls, "deactivate")
+	e.processAlive = false
 	return nil
 }
 func (e *productVNextNoopExecutor) Restore(context.Context, autotunevnext.StateSnapshot) error {

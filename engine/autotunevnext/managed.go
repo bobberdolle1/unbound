@@ -52,11 +52,10 @@ func (a *ManagedActivation) Candidate() ExecutableCandidate {
 	}
 }
 
-// VerifyActive proves the executor still owns its activation without exposing
-// runtime arguments or current addresses.
+// VerifyActive factually checks the runtime-owned process for this activation.
 func (a *ManagedActivation) VerifyActive(ctx context.Context) error {
 	if a == nil || !a.candidateActive {
-		return errors.New("managed activation is not active")
+		return errors.New("no managed candidate is active")
 	}
 	return a.executor.VerifyActive(ctx, a.candidate)
 }
@@ -188,7 +187,10 @@ func ApplyVerified(ctx context.Context, request ManagedRequest, observer Observe
 	plan.EngineArgv = argv
 	activation.candidate = ExecutableCandidate{Strategy: canonical, Fingerprint: request.Fingerprint, Backend: request.Backend, Plan: plan, Assets: resolved, TargetEdge: append(net.IP(nil), (*edge)...), TargetFamily: selectedFamily(before)}
 	activation.candidateActive = true
-	if err := executor.Activate(operationCtx, activation.candidate); err != nil {
+	// Successful Apply transfers process ownership to ManagedActivation; the
+	// bounded validation context must not terminate that committed process.
+	managedProcessCtx := context.WithoutCancel(operationCtx)
+	if err := executor.Activate(managedProcessCtx, activation.candidate); err != nil {
 		return nil, fmt.Errorf("NOT_APPLIED: ACTIVATION_FAILED: %w", err)
 	}
 	if err := executor.VerifyActive(operationCtx, activation.candidate); err != nil {

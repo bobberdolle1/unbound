@@ -448,7 +448,14 @@ func (s *productVNextService) ManagedHealth(ctx context.Context) ManagedHealthSt
 	}
 	healthCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
-	observation, err := s.deps.observer.Observe(healthCtx, active.grant.target.URL, observatory.Options{AddressFamily: active.grant.target.AddressFamily, Transport: active.grant.target.Transport, NetworkLabel: "product-autotune-vnext"})
+	if err := active.activation.VerifyActive(healthCtx); err != nil {
+		return false
+	}
+	observation, err := s.deps.observer.Observe(healthCtx, active.grant.target.URL, observatory.Options{
+		AddressFamily: active.grant.target.AddressFamily,
+		Transport:     active.grant.target.Transport,
+		NetworkLabel:  "product-autotune-vnext",
+	})
 	if err != nil || observation.Classification != observatory.ClassSuccess {
 		s.setManagedHealth(ManagedHealthFault)
 		return ManagedHealthFault
