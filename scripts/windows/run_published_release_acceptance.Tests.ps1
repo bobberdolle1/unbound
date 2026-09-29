@@ -7,7 +7,7 @@ function Import-CoordinatorFunctions([string[]]$Names) {
     $ast.FindAll({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -in $Names }, $true) | ForEach-Object { Invoke-Expression (($_.Extent.Text) -replace '(?m)^function ', 'function global:') }
 }
 Describe 'published release acceptance coordinator' {
-    BeforeAll { Import-CoordinatorFunctions @('Save-Result','Stop-Tree','Invoke-BoundedCommand') }
+    BeforeAll { Import-CoordinatorFunctions @('Save-Result','Stop-Tree','Invoke-BoundedCommand','Test-CleanDataPlane') }
     It 'parses without errors' {
         $tokens = $null; $errors = $null; [void][Management.Automation.Language.Parser]::ParseFile($scriptPath, [ref]$tokens, [ref]$errors); $errors.Count | Should Be 0
     }
