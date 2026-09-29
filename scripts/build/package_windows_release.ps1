@@ -21,6 +21,12 @@ $Archive = "$Bundle.zip"
 if (-not (Test-Path $Binary -PathType Leaf)) {
     throw "Windows binary not found: $Binary"
 }
+$identity = (& $Binary --version --json | Out-String | ConvertFrom-Json)
+$candidateCommit = (git -C $ProjectRoot rev-parse HEAD).Trim()
+if ($identity.version -ne $Version -or $identity.commit -ne $candidateCommit -or $identity.dirty -ne $false -or $identity.channel -ne 'release' -or $identity.os -ne 'windows') {
+    throw 'Windows binary does not have the required release identity.'
+}
+
 
 Remove-Item $Bundle -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item $Archive -Force -ErrorAction SilentlyContinue
@@ -39,13 +45,21 @@ Copy-Item (Join-Path $ProjectRoot "scripts\windows\start_offline_physical_accept
 Copy-Item (Join-Path $ProjectRoot "scripts\windows\show_offline_acceptance_status.ps1") $Bundle
 Copy-Item (Join-Path $ProjectRoot "scripts\windows\run_privileged_preflight.ps1") $Bundle
 Copy-Item (Join-Path $ProjectRoot "scripts\windows\start_privileged_preflight.ps1") $Bundle
-Copy-Item (Join-Path $ProjectRoot "scripts\windows\final_acceptance_v0.6.9.ps1") $Bundle
-Copy-Item (Join-Path $ProjectRoot "scripts\windows\final_acceptance_v0.6.9.cmd") $Bundle
+Copy-Item (Join-Path $ProjectRoot "scripts\windows\final_acceptance.ps1") $Bundle
+Copy-Item (Join-Path $ProjectRoot "scripts\windows\final_acceptance.cmd") $Bundle
 [ordered]@{
-    candidate_commit = (git -C $ProjectRoot rev-parse HEAD).Trim()
+    candidate_commit = $candidateCommit
     version = $Version
     exe_sha256 = (Get-FileHash (Join-Path $Bundle 'Unbound.exe') -Algorithm SHA256).Hash.ToLower()
-} | ConvertTo-Json | Set-Content (Join-Path $Bundle 'CANDIDATE.json') -Encoding utf8
+    identity = [ordered]@{
+        version = $identity.version
+        commit = $identity.commit
+        dirty = [bool]$identity.dirty
+        channel = $identity.channel
+        os = $identity.os
+        arch = $identity.arch
+    }
+} | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $Bundle 'CANDIDATE.json') -Encoding utf8
 Copy-Item (Join-Path $ProjectRoot "scripts\control_windows\*") $Bundle
 
 Get-ChildItem $Bundle -File | Sort-Object Name | ForEach-Object {
@@ -77,8 +91,8 @@ try {
         "general_alt1_multisplit.cmd",
         "general_alt2_fake_tls.cmd",
         "service_control.cmd",
-        "final_acceptance_v0.6.9.ps1",
-        "final_acceptance_v0.6.9.cmd",
+        "final_acceptance.ps1",
+        "final_acceptance.cmd",
         "CANDIDATE.json",
         "BUNDLE_SHA256SUMS.txt"
     )
