@@ -33,9 +33,12 @@ function Invoke-BoundedCommand([string]$Name, [string]$FilePath, [string[]]$Argu
     $results.commands += [pscustomobject]$record; Save-Result; return [pscustomobject]$record
 }
 function Test-CleanDataPlane {
-    $names = @('Unbound','winws2','Happ','xray','sing-box'); $running = @(Get-Process -Name $names -ErrorAction SilentlyContinue | Select-Object ProcessName,Id)
+    $names = @('Unbound','winws2','Happ','xray','sing-box')
+    $running = @(Get-Process -Name $names -ErrorAction SilentlyContinue | Select-Object ProcessName,Id)
     $proxy = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings' -ErrorAction Stop
-    return [pscustomobject]@{clean=($running.Count -eq 0 -and -not [bool]$proxy.ProxyEnable); running=$running; proxy_enabled=[bool]$proxy.ProxyEnable}
+    $proxyProperty = $proxy.PSObject.Properties['ProxyEnable']
+    $proxyEnabled = $null -ne $proxyProperty -and [bool]$proxyProperty.Value
+    return [pscustomobject]@{clean=($running.Count -eq 0 -and -not $proxyEnabled); running=$running; proxy_enabled=$proxyEnabled}
 }
 function Invoke-Diagnostic([string]$Name, [string]$Command) {
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes("`$ErrorActionPreference='Stop'; & { $Command } | ConvertTo-Json -Depth 6 -Compress"))
