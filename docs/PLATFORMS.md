@@ -9,7 +9,7 @@ Lab cycle: **2026-09-22–2026-09-23**. Each result used a dedicated lab target,
 | Target | Runtime path | Physical dataplane | Scope and network context |
 | --- | --- | --- | --- |
 | `windows/amd64` | WinDivert + `winws2.exe` | **PASS** | Dedicated Windows lab. Engine lifecycle and cleanup passed. The YouTube service/strategy case is tracked separately; it does not downgrade platform dataplane acceptance. |
-| `linux/amd64` | NFQUEUE + `nfqws2` | **PASS** | Dedicated Linux lab. NFQUEUE counters advanced and owned firewall rules were restored. |
+| `linux/amd64` | NFQUEUE + `nfqws2` | **PASS** | Dedicated Linux lab (2026-09-29, Ubuntu 24.04 LTS, kernel 6.8.0). Extracted tar.gz package verification, nftables lifecycle, packet path counters, clean stop/SIGTERM/SIGINT, failure rollback, second run, and foreign sentinel safety passed. |
 | `darwin/arm64` | Universal `tpws --socks` + system SOCKS | **PASS** | macOS 27.0 on Apple M1. Local SOCKS dataplane, lifecycle, and exact proxy-state restoration passed. |
 | `darwin/amd64` | Same Universal `tpws` artifact | **NOT VERIFIED** | Universal x86_64 slice and build are verified, but no physical Intel macOS acceptance was run. |
 
@@ -41,8 +41,8 @@ Windows YouTube evidence from 2026-09-22 resolved `www.youtube.com` to Google ed
 
 - Следующий релиз готовит только **EXPERIMENTAL** CLI-архив `linux/amd64` в `tar.gz`. Wails GUI, `linux/arm64` и distro package formats в этот target не входят.
 - Упакованный `nfqws2` создаёт NFQUEUE-процесс, а UNBOUND устанавливает изолированные правила `nftables` с фолбэком на `iptables`. Перед запуском CLI проверяет `BUNDLE_SHA256SUMS.txt`.
-- Непривилегированные команды `--version`, `--help`, `--list-profiles --json` и `--test` не требуют перехвата; запуск профиля требует root. Linux не обещает поддержку каждого дистрибутива или результат для конкретного сервиса.
-- Для v0.7.0 Linux-бинарник не публикуется. Подробная предыдущая физическая приёмка: [`release/linux-v0.6.9-acceptance.md`](release/linux-v0.6.9-acceptance.md).
+- 2026-09-29 на выделенном хосте (`DEDICATED_BARE_METAL`) подтверждены жизненный цикл `nfqws2`/NFQUEUE, продвижение счётчиков правил, штатная очистка (SIGTERM/SIGINT), откат при сбое, второй запуск и сохранность сторонних правил. Непривилегированные команды `--version`, `--help`, `--list-profiles --json` и `--test` не требуют перехвата; запуск профиля требует root.
+- Для v0.7.0 Linux-бинарник не публикуется. Подробная запись физической приёмки следующего тарджета: [`release/linux-next-release-packaging.md`](release/linux-next-release-packaging.md); архивная v0.6.9: [`release/linux-v0.6.9-acceptance.md`](release/linux-v0.6.9-acceptance.md).
 
 ## 🍎 macOS
 
