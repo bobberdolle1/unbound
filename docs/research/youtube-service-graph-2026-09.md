@@ -387,3 +387,91 @@ Persisted Phase-3 evidence содержит reduced DNS/product/cleanup outcomes
 Final lab audit — PASS: Unbound/winws2, research processes, temporary research profiles, WinDivert services и active packet state — ноль; owned remote workspace удалён. Пять посторонних Edge processes сохранены. Proxy/PAC baseline не изменён. Control-plane HAPP service/process identities и proxy совпали с исходным baseline; local network mutations не выполнялись.
 
 `SERVICE_GRAPH_SHAPE=INSUFFICIENT_EVIDENCE`, `FULL_YOUTUBE_SERVICE_EFFECTIVENESS=NOT_ESTABLISHED`, `NEXT_REQUIRED_MISSION=REPEAT_SESSION_DYNAMIC_INTERVENTION`. Повторять следует после разрешения ENTRY authority/budget prerequisite; не возвращаться к globally stable media hostname gate и не считать этот stop доказательством неэффективности media graph.
+
+## PHASE 3B — resolver authority alignment and dynamic intervention
+
+### Исправление research admission model; Phase 3 сохранена
+
+Исторический Phase-3 stop выше не удалён: native A/AAAA действительно дали 16 addresses, и прежний external gate действительно отказал до browser/capture. Отказ был корректен **под тем research gate**, но gate ошибочно считал diagnostic DNS union production packet authority. Он не воспроизводил текущий resolver contract.
+
+Теперь различаются:
+
+- **PRODUCT_SCOPE** — точный текущий canonical set, возвращённый `DefaultScopeResolver.ResolveServiceScope` → `ResolveServiceScope(..., net.DefaultResolver)` для TCP/ANY. Только этот set после validation может авторизовать research capture; `MaxServiceScopeEdges=8` применяется к нему.
+- **DIAGNOSTIC_DNS_SUPERSET** — отдельные native A/AAAA и `ip4`/`ip6` comparisons. Это evidence, не дополнительные packet grants и не admission veto для bounded PRODUCT_SCOPE.
+
+`AddressFamilyAny` не означает обязательный union результатов всех DNS APIs. В текущем `service_scope.go:95–159` canonicalization принимает поддерживаемые семьи из **фактически возвращённого** `LookupNetIP("ip", hostname)` результата, deduplicates и явно отказывает при overflow; silent truncation нет. Production source, resolver, family semantics, Apply, ManagedHealth и capture renderer не изменены.
+
+### Физическое воспроизведение resolver authority — PASS
+
+External temporary Go overlay собран из текущего source master `4e645f47048ecf0a57c8080e3624dae3ae9012e3` и выполнен только на guarded `DESKTOP-MNEHCPT` под `unbound-lab`. Helper прямо вызывает `DefaultScopeResolver`; сразу после него выполняется current WWW product Run. Addresses и exact set comparison существуют только в памяти.
+
+Первый authority-only smoke завершился `PASS` за 82.93 секунды:
+
+| Resolver / authority | IPv4 / A | IPv6 / AAAA | Total | Outcome |
+|---|---:|---:|---:|---|
+| Helper PRODUCT_SCOPE | 8 | 0 | 8 | PASS |
+| Current product Run scope | 8 | 0 | 8 | `SERVICE_SCOPE_VERIFIED_FIXED`; exact equality YES |
+| `net.DefaultResolver.LookupNetIP("ip", host)` | 8 | 0 | 8 | OK |
+| `net.DefaultResolver.LookupNetIP("ip4", host)` | 8 | 0 | 8 | OK |
+| `net.DefaultResolver.LookupNetIP("ip6", host)` | 0 | 0 | 0 | LOOKUP_FAILED; это не native AAAA count |
+| Native `DnsQuery_W` A / AAAA | 8 | 8 | 16 | diagnostic only |
+
+Helper scope fingerprint: `f4ff4c8016ff8c44aa5131b02a0652b66a561ee1f7660823cf2a18ffffc7e480`. Это scope fingerprint, не StrategyIR fingerprint. Product выбрал `prod-tls-hostfakesplit-v1`, восстановил state; Apply не вызывался, unused grant был invalidated. Native-only AAAA не добавлялись в ENTRY. Protected controls до/после — healthy; после smoke owned engine count — ноль.
+
+### IPv6 capability и граница объяснения
+
+Read-only Windows inspection и Go inspection согласны: usable non-link-local IPv6 address отсутствует; IPv6 default route отсутствует. Actual outbound TCP6/443 к healthy control не подключился. Settings, routes, DNS и adapter bindings не менялись.
+
+`IPV6_HOST_USABLE=NO`, `RESOLVER_DISCREPANCY_CLASS=NO_USABLE_IPV6`. На этой lab/network product resolver возвращает восемь IPv4 endpoints, тогда как native diagnostic enumeration дополнительно возвращает восемь AAAA. Эти наблюдения не доказывают точный Windows/Go implementation mechanism, не означают production truncation и не делают IPv6 answers универсально нерелевантными.
+
+### Pre-execution review: исправление прототипа, не browser findings
+
+Read-only security/causal review обнаружил до browser execution дефекты prototype authority ordering, original-request provenance, hard-pause failure handling, directory/PID ownership, response-MIME attribution, pause-only prerequisite, H2 delivery/cancellation gates и same-template accounting. Первый successful authority-only smoke проверял healthy path, не adversarial rejection boundary. Эти source findings не выдаются за физические playback failures; browser/intervention evidence приводится отдельно ниже.
+
+### Executor calibration и baseline surface gate — PASS
+
+Owned ENTRY-only executor откалиброван на guarded `DESKTOP-MNEHCPT` под `unbound-lab`. Session 0 (`BASELINE`) признана `VALID`; `baseline_gate=true`; достигнуты `M2` (target document), `M3` (frame), `M4` (player surface) и `M5A` (classified `PLAYBACK_STREAM` request). Admitted scope остаётся точным product set: 8 addresses, 8 IPv4, 0 IPv6, resolver `status: OK`; `authority: admitted=true, diagnostic_authority=false, equality=PASS`. Media edge budget соблюдён (`admission.media_scope.total <= 8`).
+
+Три дефекта прототипа, найденных и исправленных по ходу, относятся к коду исследования, а не к browser findings, и фиксируются отдельно:
+
+1. `Page.navigate` имел 5-секундный timeout и необработанный reject — CDP acknowledge timeout прерывал session как `CDP_TIMEOUT`. Acknowledgement-timeout не является browser failure; навигация теперь имеет 15-секундный timeout и `.catch(() => {})`.
+2. `SAMPLE` вызывал `playVideo()`/`play()` на каждом 1-секундном тике. При `readyState === 0` это порождало волну `ERR_ABORTED` и подавляло `M5A` во всех arms. Вызов удалён: baseline gate проходит только без него.
+3. `select()` предпочитал `duration === null`, то есть live/premiere/members cards. Live stream возвращает `NO_DIRECT_FORMATS` для guest context, и поскольку `run()` вызывает `select()` только для session 0 (`if (!this.destination)`), один live pick инвалидировал все последующие arms. Выбор теперь требует ограниченный VOD (90–1200 s, затем 90–3600 s) и падает закрыто при его отсутствии; добавлен второй public-www search surface.
+
+### Media boundary: измеренные failure modes
+
+`DYNAMIC_MEDIA_HOSTS_DISCOVERED` подтверждает session-dynamic nature: session 0 открыл 2 media host (`rr3---sn-q4flrne7.googlevideo.com`, `rr5---sn-aigl6nzl.googlevideo.com`), session 1 — другой (`rr4---sn-5hne6nzd.googlevideo.com`). Ни один адрес не совпал между arms. Media requests действительно выдаются браузером и классифицируются: 6 на arm, `mime=VIDEO`, `headers_received=false`.
+
+| Arm | Media host | Requests | Terminal |
+|---|---|---:|---|
+| 0 BASELINE | `rr3---sn-q4flrne7` | 2 | `PENDING` |
+| 0 BASELINE | `rr5---sn-aigl6nzl` | 2 | `FAILED` `ERR_CONNECTION_RESET` |
+| 0 BASELINE | `rr5---sn-aigl6nzl` | 4 | `PENDING` |
+| 1 PAUSE_ONLY | `rr4---sn-5hne6nzd` | 6 | `FAILED` `ERR_NAME_NOT_RESOLVED` |
+
+Итог по обоим arms: `media_headers_count=0`, `aggregate_media_bytes=0`, `media_denied_count=0`. Наблюдаются **два разных механизма** на media boundary — DNS-level (`ERR_NAME_NOT_RESOLVED`) и transport-level (`ERR_CONNECTION_RESET`) — и оба возникают без вмешательства продукта: `admission_attempt_count=0`. Protected controls (`cloudflare.com`, `store.steampowered.com`) healthy до и после каждой session, поэтому отказ target-scoped, а не общий network outage.
+
+### Блокирующий результат: intervention arm недостижим под текущим player delivery
+
+Trigger pause регистрируется только при `associateStream(url, inventory).ok === true` (`dynamic-browser.mjs:577-579`), а inventory строится из `representation()`, который принимает исключительно напрямую адресуемые signed media URLs. Измеренная форма player response:
+
+```
+streaming_data_keys: [expiresInSeconds, adaptiveFormats, serverAbrStreamingUrl]
+format_count: 0    adaptive_format_count: 32    playability_status: OK
+player_reject_shape:   {no_addressable_url: 32, url_without_sparams: 0}
+player_reject_reasons: {UNSUPPORTED_FORMAT: 32}
+cipher_unresolved: 0  representations: 0
+```
+
+Все 32 объявленных формата **server-described**: ни `url`, ни `signatureCipher`. `cipher_unresolved=0` исключает cipher-путь, `url_without_sparams=0` исключает coverage-путь, `serverAbrStreamingUrl` присутствует. Воспроизведено в двух последовательных runs и в обоих arms. Фактический media URL, использованный браузером, получен SABR-протоколом; его воспроизведение или дешифровка прямо вне scope (`// No deciphering or URL synthesis.`), а `signatureCipher` несёт opaque server-computed signature, которую нельзя авторить.
+
+Следствие: доверенный inventory неконструируем **по построению**, а не из-за дефекта. Ни один trigger не регистрируется, `PAUSE_ONLY` даёт корректный true-negative `NO_ORIGINAL_TRIGGER`, и intervention недостижим. Ослабление provenance gate недопустимо: фабрикация pass хуже честного stop.
+
+Прогностическая классификация: `TRUSTED_INVENTORY_ASSOCIATION_UNREACHABLE`, `MEDIA_DELIVERY=SABR_SERVER_DESCRIBED`, `NO_SABR_FORBIDDEN=TRUE`. Это ограничение измерятельного контура, а не доказательство неэффективности media graph.
+
+### Cleanup, controls и граница вывода
+
+`OWNED_CLEANUP_UNVERIFIED` и `GRAPH_CLEANUP_UNVERIFIED` не возникали ни в одном arm: `profile_removed=true`, `owned_job_stopped=true`, `child_exit_observed=true`, `owned_descendants_remaining=0`; `finish: ok=true, controls_ok=true, state_restored=true, owned_process_count=0`; `final_cleanup: actual_engine_process_count=0, driver_registration_restored=true`. Транзакционное восстановление состояния соблюдено во всех прогонах. Privacy сохранена: `Fetch.enable` ограничен `https://*.googlevideo.com/videoplayback*` на `Request` stage и только для non-baseline arms; в evidence попадают counts, key names и status enums — без URL, query parameters, headers и page content.
+
+`PHYSICAL_ACCEPTANCE=NOT_RUN`, `INTERVENTION_ARM=UNREACHABLE_UNDER_SABR_DELIVERY`, `SERVICE_GRAPH_SHAPE=INSUFFICIENT_EVIDENCE`, `FULL_YOUTUBE_SERVICE_EFFECTIVENESS=NOT_ESTABLISHED`. Наблюдённое media-edge blocking (DNS-level и transport-level, target-scoped, controls healthy) документировано; product-graph effectiveness **не** опровергнуто и **не** подтверждено. Требуется отдельная миссия, способная получить доверенный inventory на не-SABR delivery path, либо явное решение владельца о допустимости SABR-уровневой provenance.
+
