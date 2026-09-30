@@ -475,3 +475,19 @@ cipher_unresolved: 0  representations: 0
 
 `PHYSICAL_ACCEPTANCE=NOT_RUN`, `INTERVENTION_ARM=UNREACHABLE_UNDER_SABR_DELIVERY`, `SERVICE_GRAPH_SHAPE=INSUFFICIENT_EVIDENCE`, `FULL_YOUTUBE_SERVICE_EFFECTIVENESS=NOT_ESTABLISHED`. Наблюдённое media-edge blocking (DNS-level и transport-level, target-scoped, controls healthy) документировано; product-graph effectiveness **не** опровергнуто и **не** подтверждено. Требуется отдельная миссия, способная получить доверенный inventory на не-SABR delivery path, либо явное решение владельца о допустимости SABR-уровневой provenance.
 
+### Per-host graph bounds — оценка без изменения production
+
+Production не изменялся; оценка приведена как input для следующей миссии. Измеренная ширина на arm: 2 и 1 media host, до 6 classified media requests, `admission.media_scope.total <= 8` — существующий предел не был достигнут ни разу. Наблюдённые хосты полностью session-dynamic и не пересекались между arms, поэтому **глобально стабильный media hostname не существует** и не может быть gate. Практический вывод: per-host enumeration должна выполняться внутри каждой session, а budget (число хостов, media scope, requests) обязан быть per-session и per-arm; любой фиксированный host или IP не является валидным адресатом. Product-side rendering ограничен `MaxServiceScopeEdges=8`, чего достаточно для наблюдённой ширины, но это не доказательство достаточности для произвольного session — расширение потребовало бы отдельного измерения, а не изменения константы.
+
+### Dynamic discovery authority chain — review
+
+Цепочка полномочий и её границы проверены read-only:
+
+1. **Admission authority** — только PRODUCT_SCOPE из `DefaultScopeResolver`; `diagnostic_authority=false` подтверждает, что diagnostic DNS не участвовал в авторизации.
+2. **Target provenance** — inventory читается только для target frame: watch document и `POST /youtubei/v1/player` на `www.youtube.com`, с проверками `securityState === 'secure'`, TLS 1.2/1.3 либо QUIC+`h3`, `status_class === 2`, отсутствие service worker, disk cache и prefetch. Наружный источник не может подменить player data.
+3. **Media association** — `associateStream` требует совпадения host, path и параметров `id`/`itag`/`expire` с inventory entry; `n` проверяется покрытием `sparams`. Изменение любого из них даёт отказ (покрыто self-test).
+4. **Deactivation authority** — решение о candidate принимает только `associateStream(...).ok === true` **и** `player_provenance === true`, то есть независимое подтверждение того, что страница действительно принадлежит выбранному target video и не показывает рекламу.
+5. **Fail-closed** — при пустом inventory trigger не регистрируется, arm помечается `NO_ORIGINAL_TRIGGER`, а не «успехом». Provenance gate не ослаблен.
+
+Слабое место цепочки — не security, а достижимость: при SABR delivery шаги 2–3 не могут дать non-empty inventory, поэтому вся цепочка корректно останавливается на шаге 3. Это fail-closed поведение, а не обход.
+
