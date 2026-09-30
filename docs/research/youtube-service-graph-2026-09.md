@@ -79,6 +79,8 @@ Protected controls: `cloudflare.com` и `store.steampowered.com`. Отдельн
 
 Все host experiments выполнялись независимо и восстановили состояние. Несколько single-host Apply не склеивались. Пробы CDN использовали фиксированный diagnostic contract, не signed content URL.
 
+Сохранены limitations production reports: `CONTEXT_IDENTITY_UNAVAILABLE`, `CAPABILITY_IDENTITY_UNAVAILABLE`, baseline attribution confidence `LOW`. TLS failure не различает DPI, remote edge, routing, middlebox, local security software и provider policy. Наблюдаемый product verdict не устраняет эти ограничения и не даёт независимого доказательства механизма блокировки.
+
 **Fingerprint caveat:** hostname входит в StrategyIR selector и canonical identity. Разные fingerprints этих четырёх планов не доказывают разные packet operations. Здесь выбран один Strategy ID с одним audited operation chain; scopes различны. Полные fingerprints нельзя приравнять, удалить selector из identity или превратить совпадение операций в verified service graph.
 
 ## Dependency matrix
