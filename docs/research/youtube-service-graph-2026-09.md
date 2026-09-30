@@ -307,3 +307,83 @@ Privacy smoke с synthetic secrets прошёл; фактический audit ш
 Финальный лабораторный audit после переноса reduced evidence — PASS: Unbound/winws2 — 0, owned research processes — 0, temporary profiles — 0, WinDivert services — 0; owned workspace удалён. Пять посторонних Edge processes сохранены; proxy не включён, PAC отсутствует. Control-plane hostname, HAPP service/process identities и proxy совпали с начальным baseline Phase 2; network mutations на control plane не выполнялись.
 
 `FULL_YOUTUBE_SERVICE_EFFECTIVENESS=NOT_ESTABLISHED`. Итог Phase 2 — ограниченное отрицательное causal исследование с улучшенной media/DNS наблюдаемостью; PR #71 остаётся draft, без production cutover.
+
+## PHASE 3 — session-dynamic exact-host causal intervention
+
+**Итог: `INSUFFICIENT_EVIDENCE`; эксперимент остановлен до browser/capture calibration.** Complete fresh ENTRY DNS дал 16 endpoints при research bound восемь на host. Это отказ admission, не отрицательный результат media intervention. PR #71 остаётся **DRAFT**; production source и `MaxServiceScopeEdges=8` не менялись.
+
+### Новый causal unit и неизменная граница authority
+
+Phase 3 сняла прежнее требование одинакового exact media hostname между clean sessions. Causal unit — exact playback-stream host, выбранный браузером **в этой сессии**. План: CDP Fetch request-stage pause, fresh exact DNS, bounded temporary graph, затем continuation **того же** исходного signed request без reload или diagnostic root substitution.
+
+Discovery eligibility была ограничена actual-stream classification Phase 2, registrable domain `googlevideo.com` и anchored rr/sn hostname shape. Pattern предназначался только для consideration; он не должен попадать в WinDivert authority. Packet authority — только independently admitted exact host и его exact current endpoints; никакого wildcard, suffix/range capture или browser-IP fallback.
+
+До запуска был зафиксирован порядок `C-I-I-C-C-I`, одна external WWW-only calibration и одна pause-only calibration. Target pause — восемь секунд, hard maximum — 12; максимум два media hosts, восемь endpoints на host и 16 distinct endpoints в research union. Эти session/intervention правила **не были физически проверены**: ENTRY admission не прошёл.
+
+### Текущий WWW production control — PASS
+
+Исследовался master `4e645f47048ecf0a57c8080e3624dae3ae9012e3`; все networking/runtime действия — только на guarded `DESKTOP-MNEHCPT`, под `unbound-lab`.
+
+- Direct `www.youtube.com`: TCP дошёл до TLS, HTTP success отсутствовал; current failure воспроизведён.
+- Один production vNext Run: `COMPLETED_SELECTED`, `SERVICE_SCOPE_VERIFIED_FIXED`, восемь scope endpoints, `state_restored=true`.
+- Selected semantic template: `prod-tls-hostfakesplit-v1`; WWW-bound canonical fingerprint `1581f92ae2ef902f91d8dd5c261a283a79c1877f33c4ed00c2819f9e9190b973`.
+- Apply не вызывался. Initial Run использовал isolated temporary configuration; его обычная WWW диагностика не является graph grant. Research graph не создавал Apply capability, managed intent, saved graph или media outcome-ledger success.
+- Protected controls до Run и после restoration: `cloudflare.com` — healthy 3xx, `store.steampowered.com` — healthy 2xx.
+
+Первая попытка запуска external test binary завершилась на PowerShell native-argument parsing **до Go test entry**. После исправления аргументов выполнился ровно один production Run; неуспешный launcher не считается network experiment или browser session.
+
+### ENTRY: полный fresh DNS не помещается в host budget
+
+На lab выполнены native Windows `DnsQuery_W` A/AAAA с `DNS_QUERY_BYPASS_CACHE=8`. Адреса существовали только в памяти; в evidence сохранялись counts, TTL range и outcome.
+
+| Наблюдение | A | AAAA | Всего | TTL, секунды | Overflow >8 |
+|---|---:|---:|---:|---|---|
+| Independent fresh native preflight | 8 | 8 | 16 | 110–206 | YES |
+| Native query внутри corrected compiled admission gate | 8 | 8 | 16 | 226–271 | YES |
+| Complete production-equivalent system `LookupNetIP` | 8 | 0 | 8 | API не предоставляет TTL | NO |
+
+System result и fresh native result различались по address-family coverage. Eight-edge production scope не был молча выдан за полный fresh A+AAAA scope research ENTRY. Не выбирались первые восемь addresses, IPv4-only subset либо удобный resolver result; native result не усекался.
+
+Применён conservative fail-closed ENTRY contract: полный fresh A+AAAA answer должен удовлетворять тому же eight-endpoint-per-host budget, что и media host. Для sixteen-endpoint ENTRY этот prerequisite отсутствует. Даже research total limit 16 не отменяет per-host limit восемь.
+
+Corrected external harness физически выдал:
+
+- `ENTRY_NATIVE_SCOPE_OVERFLOW`, `entry_edges=16`, `entry_bound=8`;
+- `research_capture_started=false`, `browser_started=false`, `causal_sessions_started=0`, `truncation_used=false`;
+- после отказа: `product_state_restored=true`, `owned_process_absent=true`, `driver_absent=true`, `ownership_audited=true`.
+
+Lab command завершился с exit 1 через 102.28 секунды на этом единственном admission rejection. Это exercised safety-stop smoke, **не passing CI/test-suite claim**.
+
+Для продолжения нужен complete current ENTRY scope в пределах восьми endpoints либо отдельно разрешённая и validated address-family-specific ENTRY authority. Нельзя молча принять такую policy, изменить production limit или расширить capture, чтобы получить положительный результат. Разница resolver sets сама по себе **не доказывает browser service-discovery-authority mismatch**.
+
+### Какие causal результаты отсутствуют
+
+В Phase 3 — **ноль** browser calibrations, pause-only sessions, CONTROL sessions и INTERVENTION sessions. TEST_VIDEO_A не выбирался; TEST_VIDEO_B, H1/H2, template search и A2 reversal не запускались. Ни один signed playback request не создавался этим экспериментом.
+
+Поэтому:
+
+- Fetch interception и preparation/continuation budget не проверены на живом browser request.
+- Media hosts discovered/resolved/admitted — ноль; observed simultaneous host budget и media edge count — ноль, не evidence для production constant.
+- M5B/M5C/M5D/M6/M7/M8 differential отсутствует. `SAME_TEMPLATE_MEDIA_INEFFECTIVE` не установлен; ограниченный template search не разрешён его prerequisites.
+- SAME_TEMPLATE rebinding остаётся source-level hypothesis, не media effectiveness result. Different bound fingerprint не означает different semantic template.
+- Нет causal REQUIRED hosts, class-level causal proof, tested graph или основания реализовать production service graph.
+
+В обязательном final-report формате `M0`, zero counts и `FAIL` media/Fetch fields означают **NOT_RUN / no verification evidence**, а не физически наблюдавшиеся media failures. `ANY_MEDIA_HOST_OVERFLOW_GT8=NO` не относится к ENTRY: media hosts не исследовались, тогда как ENTRY overflow — YES.
+
+### Adversarial review и backend implications
+
+Read-only security/causal review выявил дефекты в предварительном external tooling до его browser/intervention execution: ENTRY authority substitution, possible uncaptured-path attribution, insufficient complete-block differential, negative-request linkage и pause-bound checks, page-controlled telemetry, process/job cancellation и playback provenance. Эти findings не выдаются за наблюдавшиеся browser failures. ENTRY authority исправлена и её rejection path выполнен; неиспользованные browser/graph prototypes удалены, в git они не попали.
+
+Для future design ответ на «может ли arbitrary page content заставить UNBOUND захватывать произвольный attacker-chosen host?» обязан быть **NO**. Service-definition eligibility, playback-role/provenance constraint, host budget, fresh bounded DNS и independent validation должны предшествовать ACTIVE. Pattern и наличие playback-shaped query не являются cryptographic authentication или самостоятельным capture grant. Эта миссия не реализовала и не проверила такой production механизм.
+
+Успешной Windows graph representation нет. Pinned `--ipset-ip`, `--hostlist-domains=^hostname` и AND-semantics `--wf-raw-filter` остаются documented syntax, не Phase-3 multi-section parser/capture acceptance. [Pinned manual](https://github.com/bol-van/zapret2/blob/a1bca5a85e25ab138e9617a560c262fcf53e969a/docs/manual.en.md#L603-L607), exact-host static syntax — lines 875–877.
+
+Linux проверялся только по source: `engine/autotunevnext/linux_rules.go` и `runtime_linux.go` разделяют exact nft/NFQUEUE acquisition и compiled engine argv, владеют одной table/queue/process lifecycle; production contract остаётся single-target с flat eight-edge bound. Successful per-host graph не получен, физического Linux теста нет; architectural cutover не обоснован.
+
+### Privacy, cleanup и следующий шаг
+
+Persisted Phase-3 evidence содержит reduced DNS/product/cleanup outcomes, а не CDP dumps, URLs/paths/queries/signatures/content IDs, cookies/headers/bodies или remote/local addresses. Synthetic reducer smoke выполнен, но live browser privacy и job behavior не объявляются проверенными: browser не запускался.
+
+Final lab audit — PASS: Unbound/winws2, research processes, temporary research profiles, WinDivert services и active packet state — ноль; owned remote workspace удалён. Пять посторонних Edge processes сохранены. Proxy/PAC baseline не изменён. Control-plane HAPP service/process identities и proxy совпали с исходным baseline; local network mutations не выполнялись.
+
+`SERVICE_GRAPH_SHAPE=INSUFFICIENT_EVIDENCE`, `FULL_YOUTUBE_SERVICE_EFFECTIVENESS=NOT_ESTABLISHED`, `NEXT_REQUIRED_MISSION=REPEAT_SESSION_DYNAMIC_INTERVENTION`. Повторять следует после разрешения ENTRY authority/budget prerequisite; не возвращаться к globally stable media hostname gate и не считать этот stop доказательством неэффективности media graph.
