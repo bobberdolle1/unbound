@@ -497,3 +497,9 @@ Production не изменялся; оценка приведена как input
 
 Слабое место цепочки — не security, а достижимость: при SABR delivery шаги 2–3 не могут дать non-empty inventory, поэтому вся цепочка корректно останавливается на шаге 3. Это fail-closed поведение, а не обход.
 
+### Fresh product DNS drift — проверено, drift отсутствует
+
+Drift проверяется независимо от intervention и потому не зависит от SABR blocker. Два независимых fresh `resolver_diagnostics` (по одному на session) дали идентичный результат: `ip: total 8, ipv4 8, ipv6 0, status OK`; `ip4: 8/8/0 OK`; `ip6: LOOKUP_FAILED`. Admitted `entry.total = 8` в обеих sessions — product scope не изменился между session. В session 1 зарегистрировано 10 pause, и `outcome_drift` для всех десяти равен `SAME`. Session 0 (`BASELINE`) pause не имеет by design, поэтому 0 pause там ожидаемо, а не дефект.
+
+Следствие для интерпретации: ENTRY product DNS не дрейфует, тогда как media hostname полностью ротируется per session (нулевое пересечение между arms). Поэтому недостижимость intervention **не может быть объяснена** ENTRY DNS drift, и `SERVICE_GRAPH_SHAPE=INSUFFICIENT_EVIDENCE` не артефакт resolver drift. Это отделяет измеренную нестабильность media edge от стабильного admission path.
+
