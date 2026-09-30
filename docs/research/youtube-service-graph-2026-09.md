@@ -457,13 +457,19 @@ Trigger pause регистрируется только при `associateStream(
 
 ```
 streaming_data_keys: [expiresInSeconds, adaptiveFormats, serverAbrStreamingUrl]
-format_count: 0    adaptive_format_count: 32    playability_status: OK
-player_reject_shape:   {no_addressable_url: 32, url_without_sparams: 0}
-player_reject_reasons: {UNSUPPORTED_FORMAT: 32}
+format_count: 0    adaptive_format_count: 50    playability_status: OK
+player_reject_shape:   {no_addressable_url: 50, url_without_sparams: 0}
+player_reject_reasons: {UNSUPPORTED_FORMAT: 50}
 cipher_unresolved: 0  representations: 0
+player_xhr: {seen: 0, post_seen: 0, classified: 0, unclassified: 0,
+             inventoried: 0, insecure_rejected: 0, watch_document_inventoried: 1, methods: {}}
 ```
 
-Все 32 объявленных формата **server-described**: ни `url`, ни `signatureCipher`. `cipher_unresolved=0` исключает cipher-путь, `url_without_sparams=0` исключает coverage-путь, `serverAbrStreamingUrl` присутствует. Воспроизведено в двух последовательных runs и в обоих arms. Фактический media URL, использованный браузером, получен SABR-протоколом; его воспроизведение или дешифровка прямо вне scope (`// No deciphering or URL synthesis.`), а `signatureCipher` несёт opaque server-computed signature, которую нельзя авторить.
+`player_xhr.seen = 0` и пустой `methods` — отдельное измерение, закрывающее последний inference: **`/youtubei/v1/player` XHR этим player не выдаётся вовсе**. Счётчики велись независимо от classification (`dynamic-browser.mjs`, ветка `requestWillBeSent`), поэтому состояние «XHR не классифицирован из-за path/method/frame mismatch» (`unclassified > 0`) отделилось бы от состояния «XHR не произошёл» (`seen == 0`). Наблюдено именно `seen == 0`, то есть classification дефекта нет: единственный авторитетный источник player data — watch document, и других нет.
+
+Следовательно утверждение о SABR delivery **измерено на обоих концах**, а не выведено из одного наблюдения: player не запрашивает player endpoint, а встроенный ответ содержит только server-described форматы.
+
+Все 50 объявленных форматов **server-described**: ни `url`, ни `signatureCipher`. `cipher_unresolved=0` исключает cipher-путь, `url_without_sparams=0` исключает coverage-путь, `serverAbrStreamingUrl` присутствует. Воспроизведено в трёх последовательных runs и в обоих arms. Фактический media URL, использованный браузером, получен SABR-протоколом; его воспроизведение или дешифровка прямо вне scope (`// No deciphering or URL synthesis.`), а `signatureCipher` несёт opaque server-computed signature, которую нельзя авторить.
 
 Следствие: доверенный inventory неконструируем **по построению**, а не из-за дефекта. Ни один trigger не регистрируется, `PAUSE_ONLY` даёт корректный true-negative `NO_ORIGINAL_TRIGGER`, и intervention недостижим. Ослабление provenance gate недопустимо: фабрикация pass хуже честного stop.
 
