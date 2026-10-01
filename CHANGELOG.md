@@ -2,19 +2,45 @@
 
 Все значимые изменения проекта документируются в этом файле.
 
-## Unreleased
+## [0.8.0] - 2026-10-01
 
-### Экспериментальный Linux `amd64` target
+### Bounded ServiceGraph
 
-- Добавлены локальные reproducible build/package/coordinator для будущего CLI-only `linux/amd64` `tar.gz`, проверка release identity, `BUNDLE_SHA256SUMS.txt`, provenance и распакованного smoke.
-- Unified локальные `SHA256SUMS.txt` и `RELEASE_MANIFEST.json` теперь принимают Linux-артефакт как `experimental=true`; Linux GUI и `linux/arm64` в release surface не добавлены.
+- Добавлена ограниченная проверяемая модель сервисного графа: до 4 явных точных узлов-хостов, до 8 текущих точных endpoint на каждый хост, без молчаливого усечения.
+- Каждый активный узел привязывается к своему точному хосту независимо; один семантический шаблон стратегии может быть перепривязан к нескольким хостам, что не делает узлы взаимозаменяемыми.
+- Единый процесс `winws2` (Windows) и единый процесс `nfqws2` с одной таблицей `nft` (Linux) несут один точный union-захват и по одной секции на хост.
+- Добавлены эксперимент графа, Apply графа, `ManagedHealth`, транзакционные Suspend/Revert/shutdown и ручной захват управления; исходное состояние машины всегда восстанавливается и проверяется.
+- Граф сохраняется как логическое намерение без адресов и перезапускается только по свежему разрешению: сохранённые edge не дают полномочий захвата.
+- Windows и Linux приняты физически на выделенных лабораториях через реальный asset pipeline, реальный `winws2`/WinDivert и реальную таблицу `nft` с NFQUEUE.
 
-
-### Идентичности истории AutoTune vNext
+### AutoTune history identities
 
 - Каждый прогон получает локальный непрозрачный `ContextKey` (HMAC-SHA256 под локальным 32-байтным ключом), `BackendFingerprint` и `CapabilityFingerprint`; исторический результат переиспользуется только при совместимости всех трёх.
-- Ключ `autotune_vnext_context.key` создаётся атомарно с правами только владельца; повреждённый ключ даёт `CONTEXT_IDENTITY_UNAVAILABLE` и никогда не заменяется молча, Suspend/Revert его не трогают.
-- Сырые сетевые факты не хранятся: только канонизированный набор локальных характеристик, читаемый исключительно read-only. Подробности — в [`docs/autotune-vnext-history-identities.md`](docs/autotune-vnext-history-identities.md).
+- Сырые сетевые факты не хранятся и не логируются: они существуют только в памяти как вход HMAC. Ключ `autotune_vnext_context.key` хранится локально с правами только владельца; потеря или смена ключа безопасно делает старые `ContextKey` несовместимыми, без миграции и угадывания.
+- `BackendFingerprint` покрывает provenance, проверенный хеш бинарника движка, проверенный дайджест runtime-ассетов и явную ревизию контракта исполнения.
+- `CapabilityFingerprint` строится из объявленных backend возможностей с полной сортировкой и дедупликацией списков, поэтому порядок исходных списков не влияет на значение.
+- Текущая диагностика и свежие доказательства остаются авторитетными: история может менять только порядок уже допущенных Planner кандидатов и никогда не выдаёт допустимость, `VERIFIED_FIXED` или Apply.
+- Подробности — в [`docs/autotune-vnext-history-identities.md`](docs/autotune-vnext-history-identities.md).
+
+### Linux experimental release target
+
+- Добавлены локальные reproducible build/package/coordinator для CLI-only `linux/amd64` `tar.gz`, проверка release identity, `BUNDLE_SHA256SUMS.txt`, provenance и распакованного smoke.
+- NFQUEUE/`nft` runtime и multi-host graph приняты физически на выделенном bare-metal Linux.
+- Локальные `SHA256SUMS.txt` и `RELEASE_MANIFEST.json` принимают Linux-артефакт с `experimental=true`.
+- Linux GUI и `linux/arm64` в release surface не добавлены; Linux остаётся **EXPERIMENTAL**.
+
+### Research / service graph evidence
+
+- Динамически определяемые точные медиахосты в исследованных сценариях требуют точной привязки к каждому хосту; инфраструктура ограниченных графов для этого существует.
+- Автоматическое обнаружение сервисного графа и браузерный SABR discovery **не реализованы**.
+
+### Ограничения
+
+- `FULL_YOUTUBE_SERVICE_EFFECTIVENESS=NOT_ESTABLISHED` — универсальный обход DPI не заявлен и не доказан.
+- `BROWSER_DISCOVERY_IMPLEMENTED=NO`.
+- Доказательства QUIC/UDP в vNext не поддерживаются.
+- Физический путь измерения vNext на macOS не поддерживается.
+- Linux остаётся экспериментальным и не гарантирует доступность конкретного сервиса или дистрибутива.
 
 ## [0.7.0] - 2026-09-29
 

@@ -2,10 +2,10 @@
 
 <img src="./build/logo.svg" alt="UNBOUND Logo" width="120" />
 
-# UNBOUND `v0.7.0`
-**Исходный код релиза `v0.7.0`. Аудит идентичности v0.7.0 зафиксирован после публикации.**
+# UNBOUND `v0.8.0`
+**Исходный код релиза `v0.8.0`. Релиз `v0.8.0` подготовлен, но ещё не опубликован: сборка macOS заблокирована недоступностью лаборатории.**
 
-[![Version](https://img.shields.io/badge/Version-v0.7.0-08090b?style=for-the-badge&logo=rocket)](#)
+[![Version](https://img.shields.io/badge/Version-v0.8.0-08090b?style=for-the-badge&logo=rocket)](#)
 [![Design](https://img.shields.io/badge/Design-Precision_Monochrome-10b981?style=for-the-badge)](#)
 [![Security](https://img.shields.io/badge/Security-SHA256_pinned-10b981?style=for-the-badge&logo=shield)](SECURITY.md)
 [![License](https://img.shields.io/badge/License-GPL--3.0-blue?style=for-the-badge)](LICENSE)
@@ -36,7 +36,7 @@
 - **Strategy Lab (Лаборатория поиска)**: инструмент изолированного поиска неизвестных работающих стратегий на базе алгоритмов BlockCheck2. Применяет строгий фильтр WinDivert `--wf-raw-filter` только к IP-адресам тестируемой цели (нулевое влияние на остальной трафик ПК) и валидирует результаты через Connectivity Engine с возможностью сохранения в пользовательский профиль.
 - **Адаптивный профиль (Adaptive Experimental)**: динамическая оркестрация на базе `zapret-auto.lua` (`circular`), плавно переключающая стратегии для конкретных доменов по подтверждённым сбоям без глобального захвата лишнего трафика.
 - **AutoHostlist**: динамическое пополнение списка заблокированных доменов по обратной связи сети (`--hostlist-auto` в `autodetect.txt`) с управлением, очисткой и переносом доменов в постоянные списки через интерфейс.
-- **AutoTune vNext**: доказательный замкнутый цикл для одного нормализованного hostname и его ограниченной текущей DNS-области. Использует свежую проверку каждого edge, точный управляемый захват, транзакционные Apply/Suspend/Revert и редактированную историю результатов, которая может менять порядок допустимых кандидатов, но не может выдавать допустимость или полномочия Apply. Полное многохостовое/video-покрытие YouTube и доказательства QUIC/UDP vNext не заявляются.
+- **AutoTune vNext**: доказательный замкнутый цикл для одного нормализованного hostname и его ограниченной текущей DNS-области, а также инфраструктура ограниченного проверенного ServiceGraph (до 4 явных точных узлов-хостов, до 8 текущих точных адресов на хост) с независимой привязкой каждого хоста, Apply/ManagedHealth, сохранением и перезапуском. Автоматическое обнаружение сервисного графа и браузерный discovery не реализованы. Использует свежую проверку каждого edge, точный управляемый захват, транзакционные Apply/Suspend/Revert и редактированную историю результатов, которая может менять порядок допустимых кандидатов, но не может выдавать допустимость или полномочия Apply. Полное многохостовое/video-покрытие YouTube и доказательства QUIC/UDP vNext не заявляются.
 - **Central Operation Coordinator**: центральный координатор исключительных операций, защищающий от параллельного запуска конфликтующих сетевых задач (Doctor, AutoTune, Lab, A/B).
 - **UNBOUND Doctor**: двухуровневая асинхронная диагностика (быстрая и расширенная) состояния ядра, системных привилегий, сетевого стека, конфликтующих программ и сервисов YouTube, Discord (включая проверку WebSocket Gateway без токенов) и Steam.
 - **Сравнение A/B (Bypass Comparison)**: транзакционный тест эффективности профиля относительно прямого доступа без обхода с гарантированным откатом состояния.
@@ -76,8 +76,8 @@
 | **Windows 11 x64 (`windows/amd64`)** | `WinDivert` + Zapret 2 `winws2.exe` | ✅ Проверены runtime и сеть |
 | **macOS Apple Silicon (`darwin/arm64`)** | `pf` redirect + Zapret `dvtws` / `tpws` | ✅ Проверен runtime |
 | **macOS Intel (`darwin/amd64`)** | `pf` redirect + Zapret `dvtws` / `tpws` | ⚠️ Не проверено |
-| **Linux amd64 (`linux/amd64`)** | `NFQUEUE` + `nftables` / `iptables` + `nfqws2` | 🟡 Экспериментальный; проверены lifecycle/NFQUEUE/cleanup, бинарный артефакт v0.7.0 отсутствует |
-| **Linux arm64 (`linux/arm64`)** | `NFQUEUE` + `nftables` / `iptables` + `nfqws2` | 🟡 Экспериментальный; бинарный артефакт v0.7.0 отсутствует |
+| **Linux amd64 (`linux/amd64`)** | `NFQUEUE` + `nftables` / `iptables` + `nfqws2` | 🟡 Экспериментальный; физически принят NFQUEUE/nft runtime и multi-host graph; публичный CLI-only артефакт `unbound-v0.8.0-linux-amd64.tar.gz` |
+| **Linux arm64 (`linux/arm64`)** | `NFQUEUE` + `nftables` / `iptables` + `nfqws2` | 🟡 Экспериментальный; публичный артефакт не собирается и не публикуется |
 
 ## ⚡ Как работает движок
 
@@ -114,9 +114,9 @@ sudo ./unbound --cli --profile ultimate   # macOS/Linux
 sudo ./unbound --cli --profile rec        # Windows: Recommended
 ```
 
-### Экспериментальный Linux `amd64` архив следующего релиза
+### Экспериментальный Linux `amd64` архив
 
-Следующий релиз будет готовить CLI-only архив `unbound-v<VERSION>-linux-amd64.tar.gz`; Linux GUI в него не входит. Для перехвата нужны `x86_64` Linux, root, ядро с `NFQUEUE` и предпочтительно `nft` (`iptables` — fallback). После распаковки сначала проверьте `./unbound --version --json` и `./unbound --list-profiles --json`; запуск профиля выполняйте только из повышенного терминала. Linux-артефакт остаётся **EXPERIMENTAL** и не гарантирует доступность конкретного сервиса или дистрибутива.
+Релиз `v0.8.0` — первый, в котором публикуется CLI-only архив `unbound-v0.8.0-linux-amd64.tar.gz`; Linux GUI в него не входит. Для перехвата нужны `x86_64` Linux, root, ядро с `NFQUEUE` и предпочтительно `nft` (`iptables` — fallback). После распаковки сначала проверьте `./unbound --version --json` и `./unbound --list-profiles --json`; запуск профиля выполняйте только из повышенного терминала. Linux-артефакт остаётся **EXPERIMENTAL** и не гарантирует доступность конкретного сервиса или дистрибутива.
 
 ---
 

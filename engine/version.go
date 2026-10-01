@@ -7,7 +7,7 @@ import (
 )
 
 // Version is the application version. Release builds override it at link time.
-var Version = "0.7.0"
+var Version = "0.8.0"
 
 // BuildCommit, BuildDirty, and BuildChannel are injected at build time. They
 // deliberately never consult a packaged .git directory at runtime.
