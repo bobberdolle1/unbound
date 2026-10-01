@@ -62,6 +62,14 @@ go test ./engine/autotunevnext/... -run 'ServiceGraph|Revalidation|ActiveGraph|S
 
 Физическая приёмка multi-host capture на Windows и multi-node nft на Linux в этой миссии **не выполнялась**; см. [`PLATFORMS.md`](PLATFORMS.md). Герметичные тесты не заменяют физическую приёмку и не заявляют её результат.
 
+Исполнение графа, Apply-гейт и health покрыты отдельно:
+
+```bash
+go test ./engine/autotunevnext/... -run 'ServiceGraphExperiment|PrepareServiceGraph|ApplyServiceGraph|ServiceGraphHealth' -v
+```
+
+Покрытие: одна активация на двухузловой граф и точный порядок вызовов executor'а; restore при сбое активации; приоритет провала restore; отмена во время наблюдения с входом в restore; остановка на регрессии protected control с последующим restore; запрет ложного `VERIFIED_FIXED`; Apply без изменений допустим; отказ при новом адресе, новом node и исчезновении required node; использование только ACTIVE nodes; отказ section с чужим host и с wildcard/list authority; отказ пустого validated graph; гейт останавливает Apply до касания executor'а; успешный Apply восстанавливает состояние и сохраняет обязанность отката; `HEALTHY`; мёртвый процесс как `FAULT`; сбой резолвера fail-closed; новый адрес и новый node как `NEEDS_REVALIDATION`; урок PR59 — node вне активного capture не авторизуется; отсутствие активного capture не здоровье; health snapshot без адресов.
+
 ---
 
 ## 3. Пошаговый Чек-лист Ручного Тестирования (Manual QA)
