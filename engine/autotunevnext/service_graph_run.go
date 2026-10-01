@@ -35,8 +35,11 @@ const (
 // ServiceGraphActivation is the complete exact candidate handed to an executor.
 // UnionEdges is current evidence and is never serialized.
 type ServiceGraphActivation struct {
-	Backend    backendcap.Backend
-	Capture    backendcap.CapturePlan
+	Backend backendcap.Backend
+	Capture backendcap.CapturePlan
+	// Plan is the deterministically compiled exact plan. The executor derives
+	// EngineArgv from it and never invents executable arguments itself.
+	Plan       backendcap.Plan
 	Graph      ServiceGraph
 	Sections   []ServiceGraphSection
 	UnionEdges []ServiceScopeEdge `json:"-"`
