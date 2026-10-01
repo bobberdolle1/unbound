@@ -199,16 +199,23 @@ func managedLifetimeRequest(t *testing.T, id string) (ManagedRequest, *fakeObser
 	if err != nil {
 		t.Fatal(err)
 	}
-	return ManagedRequest{
-			Target:      Target{URL: "https://blocked.test/"},
-			Strategy:    strategy,
-			Fingerprint: fingerprint,
-			Backend:     backendcap.Zapret2Windows,
-		}, &fakeObserver{results: []observatory.ObservationResult{
-			observation("baseline", false, "192.0.2.1", "https://blocked.test/"),
-			observation("before", false, "192.0.2.1", "https://blocked.test/"),
-			observation("active", true, "192.0.2.1", "https://blocked.test/"),
-		}}
+	// Built as named locals rather than returned as a multi-value composite
+	// literal: the indentation of a trailing composite literal in a multi-value
+	// return differs between gofmt releases, which left this file dirty under one
+	// toolchain version and clean under another. Locals are unambiguous to every
+	// version.
+	request := ManagedRequest{
+		Target:      Target{URL: "https://blocked.test/"},
+		Strategy:    strategy,
+		Fingerprint: fingerprint,
+		Backend:     backendcap.Zapret2Windows,
+	}
+	observer := &fakeObserver{results: []observatory.ObservationResult{
+		observation("baseline", false, "192.0.2.1", "https://blocked.test/"),
+		observation("before", false, "192.0.2.1", "https://blocked.test/"),
+		observation("active", true, "192.0.2.1", "https://blocked.test/"),
+	}}
+	return request, observer
 }
 
 func TestApplyVerifiedCommittedProcessSurvivesValidationReturn(t *testing.T) {
