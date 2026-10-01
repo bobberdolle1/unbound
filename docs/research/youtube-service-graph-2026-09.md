@@ -503,3 +503,92 @@ Drift проверяется независимо от intervention и пото�
 
 Следствие для интерпретации: ENTRY product DNS не дрейфует, тогда как media hostname полностью ротируется per session (нулевое пересечение между arms). Поэтому недостижимость intervention **не может быть объяснена** ENTRY DNS drift, и `SERVICE_GRAPH_SHAPE=INSUFFICIENT_EVIDENCE` не артефакт resolver drift. Это отделяет измеренную нестабильность media edge от стабильного admission path.
 
+## PHASE 4 — non-SABR client, exact media provenance, causal dynamic host test
+
+### Owner decisions applied
+
+Provenance до SABR-level **не ослаблялся**. Media URL получен от авторизованного non-SABR research-клиента, требует `logged-out`, без персональных cookies и без аккаунта. Ни один URL, path, query, signature, itag, PO token, cookie, header, video ID или raw IP не попал ни в один файл evidence. В persistent evidence остались только hostname, агрегатные счётчики, status enum и template ID.
+
+### Phase 0 — tooling и preflight
+
+Guard: `DESKTOP-MNEHCPT`, `desktop-mnehcpt\unbound-lab`, Windows 10 19045. Инвентарь: Node v24.21.0, `curl.exe`, Edge 154; Python и ffmpeg отсутствуют. `yt-dlp` отсутствовал — установлен официальный standalone build: версия **2026.08.19**, 17 840 399 байт, SHA256 `66674953fe251b89f4d08c5f0e35e0728679bd67ab3d7d05c0562af101dd3e7a`. Бинарь не попал в репозиторий и не коммитится.
+
+### Direct HTTPS baseline — блокировка специфична для YouTube
+
+Первая попытка прогнать client matrix дала `EXTRACT_FAILED` у **всех десяти** клиентов одинаково. Это не свойство клиентов: `yt-dlp` выполнялся без активного bypass. Диагностика без extractor'а:
+
+- `cloudflare.com` → HTTP 301; `www.google.com` → HTTP 200 — общий интернет работает.
+- `www.youtube.com` → `code=000` (~15 с), `youtubei.googleapis.com` → `code=000` (~15 с).
+- `yt-dlp` stderr: `ConnectionResetError(10054)` («connection forcibly closed by remote host») и на webpage, и на API page — характерный DPI RST.
+
+**DNS для googlevideo не заблокирован.** `googlevideo.com`, `redirector.googlevideo.com` и синтетический `rr1---sn-4g5ednsz.googlevideo.com` резолвятся нормально. Более ранний `LOOKUP_FAILED` на `rr3---sn-aigl6nz1.googlevideo.com` объясняется тем, что googlevideo-имена session-scoped и этот конкретный host просто не существует. Media delivery блокируется не на DNS, а на TLS, и поэтому per-host packet strategy в принципе применима.
+
+Следствие: client matrix должен выполняться **при активном extraction graph**, иначе он измеряет не клиент, а отсутствие bypass.
+
+### Phase 1–4 — non-SABR client matrix (при активном graph)
+
+Прогон при `extraction_graph` (`OWNED_PROCESS_COUNT=1`, `CAPTURE_READY=true`), TEST_VIDEO_A, logged out:
+
+| Client | FORMAT_COUNT | DIRECT_HTTPS | AUDIO_ONLY | ERROR_CLASS |
+|---|---|---|---|---|
+| `tv` | 0 | 0 | 0 | `NO_DIRECT_HTTPS_FORMATS` |
+| `ios` | 0 | 0 | 0 | `NO_DIRECT_HTTPS_FORMATS` |
+| `android` | 5 | 5 | 4 | `NONE` |
+
+**Выбран `android`**: 5 direct HTTPS representations, 4 audio-only, 1 muxed, `LOGIN_REQUIRED=false`, PO token **не требуется**. Это самый простой воспроизводимый вариант без ослабления гарантий; `tv`/`ios` direct delivery не дали вовсе.
+
+Важный побочный факт: `yt-dlp` требует доступности и `www.youtube.com`, и `youtubei.googleapis.com`. Текущий ENTRY scope покрывает только `www.youtube.com` (8 endpoint). Извлечение provenance возможно только при добавлении InnerTube API host в scope — это отдельное архитектурное наблюдение, а не следствие SABR.
+
+### Phase 5–7 — извлечение и допуск scope
+
+- TEST_VIDEO_A → `rr4---sn-jvhnu5g-n8ve7.googlevideo.com`
+- TEST_VIDEO_B → `rr6---sn-jvhnu5g-n8vk.googlevideo.com`
+- Product-equivalent scope каждого media host: **1 IPv4, 0 IPv6, status OK, overflow false** — допустимо (`<=8`).
+
+Тот же самый `p3Scope` = `autotunevnext.DefaultScopeResolver.ResolveServiceScope`, что и в Phase 3B. `/admit` endpoint намеренно **не** использовался: он требует browser discovery token, то есть ровно тот gate, который в Phase 3B не проходил. Owner decision 2 авторизует media host от независимого non-SABR клиента, поэтому переиспользован только шаг разрешения, а не цепочка browser provenance.
+
+### Phase 8–13 — media A/B/A на фактической доставке байтов
+
+Один и тот же подписанный media request, одна и та же logical format, четыре arms. Ни один payload не сохранён — байты считались и сразу сбрасывались в `io.Discard`:
+
+| Arm | Граф | BYTES | STATUS | ELAPSED_MS |
+|---|---|---|---|---|
+| `A1` | нет стратегии | **0** | `NETWORK_ERROR` / `TIMEOUT` | 10013 |
+| `B_ENTRY_ONLY` | только ENTRY host | **0** | `NETWORK_ERROR` / `TIMEOUT` | 10017 |
+| `B_MEDIA_BOUND` | + точный media host | **65536** | `HTTP2XX`, HTTP **206**, `ACCEPTS_RANGES=true`, `DELIVERED` | **57** |
+| `A2` | стратегия снята | **0** | `NETWORK_ERROR` / `TIMEOUT` | 10013 |
+
+Это `DIRECT FAIL / ACTIVE PASS / DIRECT FAIL` на **реальной доставке медиа**, а не на TLS/TCP-probe: HTTP 206, ненулевой byte range, чистое завершение. Критерий Phase 13 выполнен — media delivery, а не connect-only.
+
+### Phase 14–16 — ENTRY против MEDIA
+
+Ключевой отрицательный результат: **`B_ENTRY_ONLY` дал 0 байт**. Та же самая стратегия `prod-tls-hostfakesplit-v1`, связанная только с `www.youtube.com`, **не переносит** доставку медиа. Помогает только связывание с точным media host.
+
+`STRATEGY_RELATION = PER_HOST_STRATEGY`, `VERIFIED_FIXED = true`, `MEDIA_TEMPLATE = prod-tls-hostfakesplit-v1`.
+
+Template ID тот же, но семантика привязки разная, поэтому сравнение идёт по поведению, а не по canonical fingerprint: hostname selector входит в fingerprint и сделал бы сравнение бессмысленным. `render()` из Phase 3B дополнительно проверяет, что перепривязанный к media host шаблон сохраняет идентичные `Operations`, `Safety` и `Range` — то есть это буквально тот же стратег, а не перенабранный argv.
+
+### Phase 17–18 — повторы и класс host
+
+Пять успешных A/B/A прогонов: три на video A host, два на video B host. Во всех `B_MEDIA_BYTES=65536`, `B_ENTRY_BYTES=0`, `A1_BYTES=0`, `A2_BYTES=0`. Оба media host принадлежат одному структурному классу (`rr{n}---sn-jvhnu5g-n8v*.googlevideo.com`), но являются разными edges с разными product scope.
+
+`DYNAMIC_MEDIA_HOST_CLASS_CAUSAL = YES`: причинность воспроизводится на структурном классе dynamic media host, а не на одном конкретном имени.
+
+Один прогон из шести **не дошёл до media и fail-closed на ENTRY authority**: product vNext вернул `COMPLETED_NO_VERIFIED_CANDIDATE` (0 verified edges), поэтому `equality=FAIL`, `admitted=false`, `state_restored=true`. Это отказ guard'а, а не media-провал; он показывает, что ENTRY authority admission не является 100% воспроизводимым и сам по себе требует внимания.
+
+### Privacy
+
+Независимый аудит Phase 3B (`audit-evidence.mjs`) по всем 10 файлам Phase 4 evidence: **PASS**, ни одного URL, query, адреса или запрещённого поля. Дополнительно сам emitter имеет allowlist и второй независимый контроль по сериализованным байтам (`://`, `?`, `googlevideo.com/`); отклонение любой записи — `panic`, то есть молчаливая потеря evidence невозможна. Allowlist Phase 3B не расширялся и не ослаблялся — для Phase 4 написан отдельный emitter с не меньшей строгостью.
+
+### Что НЕ выполнялось
+
+Browser graph causal run (Phase 20–25) **не выполнялся**. Причина установлена и не является допуском: Phase 3B измерил, что web/SABR player не отдаёт `/youtubei/v1/player` XHR и рекламирует только server-described форматы без `url`/`signatureCipher`, поэтому browser-side addressable media provenance по-прежнему недоступен. Media-стратегия доказана независимо, но связать её с host'ом конкретной browser-сессии через SABR-путь нельзя, не ослабляя authority. Это ровно случай `MEDIA_STRATEGY_PROVEN_BUT_WEB_DISCOVERY_AUTHORITY_UNRESOLVED` из Phase 24, и он остаётся открытым следующей миссией.
+
+### Архитектурный вывод
+
+`ARCHITECTURE_RESULT = PER_HOST_STRATEGY_GRAPH_REQUIRED`, при этом `DYNAMIC_MEDIA_HOST_CLASS_CAUSAL = YES`.
+
+Продуктовая стратегия, доказанная для ENTRY, **не является** стратегией для сервиса: медиа требует per-host привязки. Это меняет требование к графу — сервисный граф обязан нести отдельный media node на каждый текущий session media host, а не один ENTRY node на `www.youtube.com`. Второй практический вывод: текущий ENTRY scope недостаточен даже для non-SABR извлечения, поскольку не покрывает `youtubei.googleapis.com`.
+
+`FULL_YOUTUBE_SERVICE_EFFECTIVENESS` остаётся `NOT_ESTABLISHED`: доказана доставка отдельного media request по causal A/B/A, но не воспроизведён полный browser playback graph.
+
