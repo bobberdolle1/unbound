@@ -9,20 +9,27 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"net"
+	"strings"
 	"testing"
+	"time"
 
 	"unbound/engine"
 	"unbound/engine/autotunevnext"
+	"unbound/engine/backendcap"
 	"unbound/engine/observatory"
 )
 
 type fakeGraphExecutor struct {
-	calls []string
-	// activation failure injection
-	activateErr     error
-	verifyActiveErr error
-	alive           bool
+	calls             []string
+	activateErr       error
+	verifyActiveErr   error
+	deactivateErr     error
+	restoreErr        error
+	verifyRestoredErr error
+	commitErr         error
+	alive             bool
 }
 
 func (f *fakeGraphExecutor) record(call string) { f.calls = append(f.calls, call) }
@@ -53,18 +60,26 @@ func (f *fakeGraphExecutor) VerifyActiveGraph(context.Context, autotunevnext.Ser
 
 func (f *fakeGraphExecutor) Deactivate(context.Context) error {
 	f.record("deactivate")
+	if f.deactivateErr != nil {
+		return f.deactivateErr
+	}
 	f.alive = false
 	return nil
 }
 
+func (f *fakeGraphExecutor) CommitGraph(autotunevnext.ServiceGraphActivation) error {
+	f.record("commit")
+	return f.commitErr
+}
+
 func (f *fakeGraphExecutor) Restore(context.Context, autotunevnext.StateSnapshot) error {
 	f.record("restore")
-	return nil
+	return f.restoreErr
 }
 
 func (f *fakeGraphExecutor) VerifyRestored(context.Context, autotunevnext.StateSnapshot) error {
 	f.record("verify_restored")
-	return nil
+	return f.verifyRestoredErr
 }
 
 func (f *fakeGraphExecutor) saw(call string) bool {
@@ -87,7 +102,7 @@ func graphLifecycleFixture(t *testing.T) (*graphManagedService, *fakeGraphExecut
 // A committed Apply must leave the runtime alive after it returns.
 func TestGraphManagedApplyCommitsAndKeepsRuntimeAlive(t *testing.T) {
 	service, exec := graphLifecycleFixture(t)
-	if err := service.ApplyGraph(context.Background(), autotunevnext.ServiceGraphActivation{}, validGraphState()); err != nil {
+	if err := service.ApplyGraph(context.Background(), graphActivation(), graphIntent()); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 	if !exec.alive {
@@ -105,7 +120,7 @@ func TestGraphManagedApplyCommitsAndKeepsRuntimeAlive(t *testing.T) {
 // rebuild it from fresh authority instead of replaying it.
 func TestGraphManagedSuspendRestoresAndRetainsIntent(t *testing.T) {
 	service, exec := graphLifecycleFixture(t)
-	if err := service.ApplyGraph(context.Background(), autotunevnext.ServiceGraphActivation{}, validGraphState()); err != nil {
+	if err := service.ApplyGraph(context.Background(), graphActivation(), graphIntent()); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 	if err := service.Suspend(context.Background()); err != nil {
@@ -128,7 +143,7 @@ func TestGraphManagedSuspendRestoresAndRetainsIntent(t *testing.T) {
 // Revert clears the intent entirely.
 func TestGraphManagedRevertRestoresAndClearsIntent(t *testing.T) {
 	service, exec := graphLifecycleFixture(t)
-	if err := service.ApplyGraph(context.Background(), autotunevnext.ServiceGraphActivation{}, validGraphState()); err != nil {
+	if err := service.ApplyGraph(context.Background(), graphActivation(), graphIntent()); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 	if err := service.Revert(context.Background()); err != nil {
@@ -151,7 +166,7 @@ func TestGraphManagedRevertRestoresAndClearsIntent(t *testing.T) {
 // Manual user action wins: the managed graph yields completely.
 func TestGraphManagedManualTakeoverYieldsRuntime(t *testing.T) {
 	service, exec := graphLifecycleFixture(t)
-	if err := service.ApplyGraph(context.Background(), autotunevnext.ServiceGraphActivation{}, validGraphState()); err != nil {
+	if err := service.ApplyGraph(context.Background(), graphActivation(), graphIntent()); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 	if err := service.YieldToManualAction(context.Background()); err != nil {
@@ -173,7 +188,7 @@ func TestGraphManagedManualTakeoverYieldsRuntime(t *testing.T) {
 func TestGraphManagedApplyFailureLeavesNoIntent(t *testing.T) {
 	service, exec := graphLifecycleFixture(t)
 	exec.activateErr = errFake
-	if err := service.ApplyGraph(context.Background(), autotunevnext.ServiceGraphActivation{}, validGraphState()); err == nil {
+	if err := service.ApplyGraph(context.Background(), graphActivation(), graphIntent()); err == nil {
 		t.Fatal("an activation failure must fail the apply")
 	}
 	if _, ok, _ := loadVNextGraphState(); ok {
@@ -191,7 +206,7 @@ func TestGraphManagedApplyFailureLeavesNoIntent(t *testing.T) {
 func TestGraphManagedVerifyActiveFailureDoesNotCommit(t *testing.T) {
 	service, exec := graphLifecycleFixture(t)
 	exec.verifyActiveErr = errFake
-	if err := service.ApplyGraph(context.Background(), autotunevnext.ServiceGraphActivation{}, validGraphState()); err == nil {
+	if err := service.ApplyGraph(context.Background(), graphActivation(), graphIntent()); err == nil {
 		t.Fatal("a VerifyActive failure must fail the apply")
 	}
 	if exec.alive {
@@ -211,7 +226,7 @@ func TestGraphManagedApplyCancellationRestores(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	exec.activateErr = ctx.Err()
-	if err := service.ApplyGraph(ctx, autotunevnext.ServiceGraphActivation{}, validGraphState()); err == nil {
+	if err := service.ApplyGraph(ctx, graphActivation(), graphIntent()); err == nil {
 		t.Fatal("a cancelled apply must fail")
 	}
 	if !exec.saw("restore") {
@@ -226,10 +241,10 @@ func TestGraphManagedApplyCancellationRestores(t *testing.T) {
 // runtimes.
 func TestGraphManagedRejectsSecondApplyWhileActive(t *testing.T) {
 	service, _ := graphLifecycleFixture(t)
-	if err := service.ApplyGraph(context.Background(), autotunevnext.ServiceGraphActivation{}, validGraphState()); err != nil {
+	if err := service.ApplyGraph(context.Background(), graphActivation(), graphIntent()); err != nil {
 		t.Fatalf("first apply: %v", err)
 	}
-	if err := service.ApplyGraph(context.Background(), autotunevnext.ServiceGraphActivation{}, validGraphState()); err == nil {
+	if err := service.ApplyGraph(context.Background(), graphActivation(), graphIntent()); err == nil {
 		t.Fatal("a second apply must be refused while a graph is active")
 	}
 }
@@ -237,15 +252,22 @@ func TestGraphManagedRejectsSecondApplyWhileActive(t *testing.T) {
 // The product status must never leak an address, filter, or argv.
 func TestGraphManagedStatusCarriesOnlyLogicalFields(t *testing.T) {
 	service, _ := graphLifecycleFixture(t)
-	if err := service.ApplyGraph(context.Background(), autotunevnext.ServiceGraphActivation{}, validGraphState()); err != nil {
+	if err := service.ApplyGraph(context.Background(), graphActivation(), graphIntent()); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 	status := service.status
-	if status.ServiceID != "svc-1" || status.Backend != "zapret2/windows" || status.NodeCount != 2 {
+	if status.ServiceID != "svc-1" || status.Backend != "zapret2/windows" || status.NodeCount != 1 {
 		t.Fatalf("status missing logical fields: %+v", status)
 	}
-	if status.EdgeCount != 0 {
-		t.Fatalf("status must not report edge counts from a logical intent, got %d", status.EdgeCount)
+	// The status carries no address, filter, or argv field at all.
+	blob, err := json.Marshal(status)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	for _, forbidden := range []string{"192.0.2", "198.51.100", "edge", "filter", "argv"} {
+		if strings.Contains(strings.ToLower(string(blob)), forbidden) {
+			t.Fatalf("graph status leaked %q: %s", forbidden, blob)
+		}
 	}
 }
 
@@ -271,13 +293,13 @@ func healthGraphFor(t *testing.T, ip string) autotunevnext.ServiceGraph {
 // A dead owned process is a lifecycle FAULT, not a network condition.
 func TestGraphManagedHealthFaultWhenProcessDead(t *testing.T) {
 	service, _ := graphLifecycleFixture(t)
-	if err := service.ApplyGraph(context.Background(), autotunevnext.ServiceGraphActivation{}, validGraphState()); err != nil {
+	if err := service.ApplyGraph(context.Background(), graphActivation(), graphIntent()); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 	graph := healthGraphFor(t, "192.0.2.1")
 	dead := newGraphManagedService(&deadProcessExecutor{})
 	dead.state = GraphManagedActive
-	if got := dead.EvaluateHealth(graph, graph, false); got != GraphManagedFault {
+	if got := dead.EvaluateHealth(graph, graph, false, false); got != GraphManagedFault {
 		t.Fatalf("health = %q, want GRAPH_FAULT when the owned process is dead", got)
 	}
 	if service.state != GraphManagedActive {
@@ -289,12 +311,12 @@ func TestGraphManagedHealthFaultWhenProcessDead(t *testing.T) {
 // not stay healthy.
 func TestGraphManagedHealthRevalidatesOnNewEdge(t *testing.T) {
 	service, _ := graphLifecycleFixture(t)
-	if err := service.ApplyGraph(context.Background(), autotunevnext.ServiceGraphActivation{}, validGraphState()); err != nil {
+	if err := service.ApplyGraph(context.Background(), graphActivation(), graphIntent()); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 	active := healthGraphFor(t, "192.0.2.1")
 	moved := healthGraphFor(t, "203.0.113.9")
-	if got := service.EvaluateHealth(active, moved, true); got != GraphManagedRevalidation {
+	if got := service.EvaluateHealth(active, moved, true, false); got != GraphManagedRevalidation {
 		t.Fatalf("health = %q, want revalidation on a new edge", got)
 	}
 }
@@ -302,11 +324,11 @@ func TestGraphManagedHealthRevalidatesOnNewEdge(t *testing.T) {
 // Unchanged state stays healthy.
 func TestGraphManagedHealthStaysHealthyWhenUnchanged(t *testing.T) {
 	service, _ := graphLifecycleFixture(t)
-	if err := service.ApplyGraph(context.Background(), autotunevnext.ServiceGraphActivation{}, validGraphState()); err != nil {
+	if err := service.ApplyGraph(context.Background(), graphActivation(), graphIntent()); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 	graph := healthGraphFor(t, "192.0.2.1")
-	if got := service.EvaluateHealth(graph, graph, true); got != GraphManagedActive {
+	if got := service.EvaluateHealth(graph, graph, true, false); got != GraphManagedActive {
 		t.Fatalf("health = %q, want GRAPH_MANAGED when unchanged", got)
 	}
 }
@@ -319,3 +341,115 @@ var errFake = errTestFailure{}
 type errTestFailure struct{}
 
 func (errTestFailure) Error() string { return "injected lifecycle failure" }
+
+// Shutdown must still run a FULL cleanup after health moved the state to
+// revalidation. Gating cleanup on GraphManagedActive left the machine with a live
+// capture and an un-cleanable lifecycle.
+func TestGraphManagedShutdownCleansUpAfterRevalidation(t *testing.T) {
+	service, exec := graphLifecycleFixture(t)
+	if err := service.ApplyGraph(context.Background(), graphActivation(), graphIntent()); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	active := healthGraphFor(t, "192.0.2.1")
+	moved := healthGraphFor(t, "203.0.113.9")
+	if got := service.EvaluateHealth(active, moved, true, false); got != GraphManagedRevalidation {
+		t.Fatalf("health = %q, want revalidation", got)
+	}
+	exec.calls = nil
+	if err := service.Shutdown(context.Background()); err != nil {
+		t.Fatalf("shutdown: %v", err)
+	}
+	if !exec.saw("deactivate") || !exec.saw("restore") || !exec.saw("verify_restored") {
+		t.Fatalf("shutdown must run full cleanup regardless of state; calls=%v", exec.calls)
+	}
+}
+
+// A failed Deactivate must not abort the remaining cleanup steps.
+func TestGraphManagedSuspendContinuesAfterDeactivateFailure(t *testing.T) {
+	service, exec := graphLifecycleFixture(t)
+	if err := service.ApplyGraph(context.Background(), graphActivation(), graphIntent()); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	exec.deactivateErr = errFake
+	if err := service.Suspend(context.Background()); err == nil {
+		t.Fatal("a failed deactivate must surface")
+	}
+	if !exec.saw("restore") || !exec.saw("verify_restored") {
+		t.Fatalf("a failed deactivate must still attempt restore; calls=%v", exec.calls)
+	}
+}
+
+// A committed Apply must detach the bounded activation context, otherwise a
+// caller-side cancel kills the managed process the instant Apply returns.
+func TestGraphManagedApplyCommitsDetachedContext(t *testing.T) {
+	service, exec := graphLifecycleFixture(t)
+	if err := service.ApplyGraph(context.Background(), graphActivation(), graphIntent()); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if !exec.saw("commit") {
+		t.Fatalf("a committed apply must detach the activation context; calls=%v", exec.calls)
+	}
+}
+
+// The durable intent must describe the graph actually being installed.
+func TestGraphManagedRejectsMismatchedIntent(t *testing.T) {
+	service, _ := graphLifecycleFixture(t)
+	mismatched := graphIntent()
+	mismatched.GraphFingerprint = "some-other-graph"
+	if err := service.ApplyGraph(context.Background(), graphActivation(), mismatched); err == nil {
+		t.Fatal("an intent describing a different graph must be refused")
+	}
+}
+
+// A cleanup failure during a failed Apply must not silently discard the intent:
+// that would leave a live capture with no durable record of it.
+func TestGraphManagedFailedApplyKeepsIntentWhenCleanupFails(t *testing.T) {
+	service, exec := graphLifecycleFixture(t)
+	exec.activateErr = errFake
+	exec.deactivateErr = errFake
+	if err := service.ApplyGraph(context.Background(), graphActivation(), graphIntent()); err == nil {
+		t.Fatal("a failed apply must surface")
+	}
+	if _, ok, _ := loadVNextGraphState(); !ok {
+		t.Fatal("when cleanup itself fails the intent must be retained so a retry can find it")
+	}
+	if service.state != GraphManagedFault {
+		t.Fatalf("state = %q, want GRAPH_FAULT", service.state)
+	}
+}
+
+// graphActivation builds a real two-node graph with exact addresses.
+func graphActivation() autotunevnext.ServiceGraphActivation {
+	target := autotunevnext.Target{URL: "https://entry.example/"}
+	graph, err := autotunevnext.NewServiceGraph([]autotunevnext.ServiceNode{
+		{
+			ID: "ENTRY", Role: autotunevnext.ServiceNodeRoleEntry, Required: true,
+			Target: target, Validation: autotunevnext.ServiceNodeActive,
+			Strategy: "s1", StrategyFingerprint: "fp1", TemplateIdentity: "t1",
+			Scope: autotunevnext.ServiceScopeSnapshot{
+				Target: target,
+				Edges:  []autotunevnext.ServiceScopeEdge{{IP: net.ParseIP("192.0.2.1"), Family: observatory.AddressFamilyIPv4}},
+			},
+		},
+	})
+	if err != nil {
+		panic(err)
+	}
+	return autotunevnext.ServiceGraphActivation{Backend: backendcap.Zapret2Windows, Graph: graph}
+}
+
+// graphIntent is the durable logical intent that actually describes graphActivation.
+func graphIntent() persistedVNextGraphState {
+	return persistedVNextGraphState{
+		SchemaVersion:    vNextGraphSchema,
+		Enabled:          true,
+		ServiceID:        "svc-1",
+		Backend:          "zapret2/windows",
+		GraphFingerprint: graphActivation().Graph.Fingerprint(),
+		CatalogIdentity:  "catalog1",
+		SavedAt:          time.Now().UTC().Format(time.RFC3339Nano),
+		Nodes: []persistedGraphNode{
+			{NodeID: "ENTRY", Role: "ENTRY", Required: true, Target: "https://entry.example/", StrategyID: "s1", TemplateIdentity: "t1", Fingerprint: "fp1"},
+		},
+	}
+}

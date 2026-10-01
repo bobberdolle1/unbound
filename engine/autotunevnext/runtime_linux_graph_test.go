@@ -11,6 +11,7 @@ package autotunevnext
 
 import (
 	"net"
+	"strings"
 	"testing"
 
 	"unbound/engine/backendcap"
@@ -81,6 +82,21 @@ func TestLinuxGraphSpecMixedFamilyKeepsFamiliesSeparate(t *testing.T) {
 	}
 	if spec.IPv6Edges[0].To4() != nil {
 		t.Fatal("IPv6 set contains an IPv4-mapped address")
+	}
+	// A mixed graph must select the inet table. Without this the renderer emits
+	// IPv6 literals inside an "ip daddr" set and nft rejects the whole graph.
+	if spec.NFTFamily != "inet" {
+		t.Fatalf("mixed-family graph NFTFamily = %q, want \"inet\"", spec.NFTFamily)
+	}
+	if len(spec.Edges) != 0 {
+		t.Fatalf("mixed-family graph must not carry a combined Edges slice: %v", spec.Edges)
+	}
+	script := spec.nftScript()
+	if !strings.Contains(script, "ip daddr") || !strings.Contains(script, "ip6 daddr") {
+		t.Fatalf("mixed-family script must carry one rule per family:\n%s", script)
+	}
+	if strings.Contains(script, "{ 192.0.2.1, 2001:db8::5 }") {
+		t.Fatalf("mixed-family script merged families into one address set:\n%s", script)
 	}
 }
 

@@ -53,6 +53,11 @@ type ServiceGraphExecutor interface {
 	ActivateGraph(context.Context, ServiceGraphActivation) error
 	VerifyActiveGraph(context.Context, ServiceGraphActivation) error
 	Deactivate(context.Context) error
+	// CommitGraph detaches the bounded activation context so a committed managed
+	// runtime survives the Apply that started it. Callers MUST invoke it after a
+	// successful ActivateGraph when the graph is being committed rather than
+	// reverted; without it a caller-side context cancellation kills the process.
+	CommitGraph(ServiceGraphActivation) error
 	Restore(context.Context, StateSnapshot) error
 	VerifyRestored(context.Context, StateSnapshot) error
 }

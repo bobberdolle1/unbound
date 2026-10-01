@@ -57,6 +57,13 @@ func (g *graphExecLog) Deactivate(context.Context) error {
 	return nil
 }
 
+// CommitGraph satisfies the executor contract. The bounded experiment path never
+// commits a graph, so it only records the call.
+func (g *graphExecLog) CommitGraph(ServiceGraphActivation) error {
+	g.calls = append(g.calls, "commit")
+	return nil
+}
+
 func (g *graphExecLog) Restore(context.Context, StateSnapshot) error {
 	g.calls = append(g.calls, "restore")
 	return nil

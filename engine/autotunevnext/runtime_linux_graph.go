@@ -58,31 +58,56 @@ func BuildLinuxGraphSpec(graph ServiceGraph, capture backendcap.CapturePlan, tab
 	if err != nil {
 		return LinuxNFQueueSpec{}, err
 	}
-	// Anchor on the first edge only to obtain the validated shape (ports, family
-	// checks); the address sets themselves come from the whole graph.
-	anchor := edges[0]
-	spec, err := NewLinuxNFQueueSpec(capture, anchor.IP, familyForIP(anchor.IP), table, queue, marker)
+	// Mirror the proven single-host scope constructor: a mixed-family graph must
+	// select the inet table and populate both per-family sets. Leaving NFTFamily
+	// empty makes nftFamily() return "ip", which emits IPv6 literals inside an
+	// "ip daddr" set and makes every dual-stack graph uninstallable.
+	var spec LinuxNFQueueSpec
+	if len(v4) > 0 && len(v6) > 0 {
+		spec, err = newLinuxDualFamilySpec(capture, v4, v6, table, queue, marker)
+	} else if len(v6) > 0 {
+		spec, err = NewLinuxNFQueueSpec(capture, v6[0], observatory.AddressFamilyIPv6, table, queue, marker)
+	} else {
+		spec, err = NewLinuxNFQueueSpec(capture, v4[0], observatory.AddressFamilyIPv4, table, queue, marker)
+	}
 	if err != nil {
 		return LinuxNFQueueSpec{}, err
 	}
-	// Every family's address set must be independently representable, and every
-	// edge must be a literal address. A missing family is an error rather than a
-	// silently narrower capture.
+	// Every family's address set must be independently representable. A family
+	// the compiled capture cannot express is an error, not a narrower capture.
 	if len(v4) > 0 && !captureIncludesFamily(capture.IPFamilies, observatory.AddressFamilyIPv4) {
 		return LinuxNFQueueSpec{}, fmt.Errorf("graph contains IPv4 edges the compiled capture cannot express")
 	}
 	if len(v6) > 0 && !captureIncludesFamily(capture.IPFamilies, observatory.AddressFamilyIPv6) {
 		return LinuxNFQueueSpec{}, fmt.Errorf("graph contains IPv6 edges the compiled capture cannot express")
 	}
+	// Always populate BOTH the per-family sets and Edges. Verification compares
+	// the per-family sets, while the single-family renderer consumes Edges.
 	spec.IPv4Edges = v4
 	spec.IPv6Edges = v6
-	spec.Edges = allGraphEdges(v4, v6)
-	spec.Edge = v4[0]
-	if len(v4) == 0 {
-		spec.Edge = v6[0]
-		spec.Family = observatory.AddressFamilyIPv6
-		spec.NFTFamily = "ip6"
+	if len(v4) > 0 && len(v6) > 0 {
+		// The inet renderer consumes the per-family sets directly; a combined
+		// Edges slice here is what previously corrupted the rule set.
+		spec.Edges = nil
+		spec.Edge = v4[0]
+		spec.Family = observatory.AddressFamilyAny
+	} else {
+		spec.Edges = allGraphEdges(v4, v6)
 	}
+	return spec, nil
+}
+
+// newLinuxDualFamilySpec builds the inet-family spec for a mixed graph. It
+// derives the shape from the proven IPv4 constructor and then switches the
+// table family to inet, which is what makes nft emit one ip and one ip6 rule.
+func newLinuxDualFamilySpec(capture backendcap.CapturePlan, v4, v6 []net.IP, table string, queue uint16, marker string) (LinuxNFQueueSpec, error) {
+	spec, err := NewLinuxNFQueueSpec(capture, v4[0], observatory.AddressFamilyIPv4, table, queue, marker)
+	if err != nil {
+		return LinuxNFQueueSpec{}, err
+	}
+	spec.NFTFamily = "inet"
+	spec.IPv4Edges = v4
+	spec.IPv6Edges = v6
 	return spec, nil
 }
 
@@ -99,6 +124,26 @@ func partitionGraphEdges(edges []ServiceScopeEdge) ([]net.IP, []net.IP, error) {
 		v4 = append(v4, edge.IP)
 	}
 	return v4, v6, nil
+}
+
+// specAsScopeEdges projects a compiled spec's exact address set back into the
+// scope-edge shape the exact-plan compiler expects. No address is invented.
+func specAsScopeEdges(spec LinuxNFQueueSpec) []ServiceScopeEdge {
+	// A mixed-family inet spec carries its addresses in the per-family sets and
+	// deliberately leaves Edges empty, so both sources must be considered.
+	addresses := spec.Edges
+	if len(addresses) == 0 {
+		addresses = allGraphEdges(spec.IPv4Edges, spec.IPv6Edges)
+	}
+	out := make([]ServiceScopeEdge, 0, len(addresses))
+	for _, ip := range addresses {
+		family := observatory.AddressFamilyIPv4
+		if familyForIP(ip) == observatory.AddressFamilyIPv6 {
+			family = observatory.AddressFamilyIPv6
+		}
+		out = append(out, ServiceScopeEdge{IP: ip, Family: family})
+	}
+	return out
 }
 
 func allGraphEdges(v4, v6 []net.IP) []net.IP {
@@ -249,20 +294,6 @@ func (e *LinuxGraphExecutor) Deactivate(ctx context.Context) error {
 	}
 	e.runtime.mu.Unlock()
 	return e.runtime.Deactivate(cleanupCtx)
-}
-
-// specAsScopeEdges projects a compiled spec's exact address set back into the
-// scope-edge shape the exact-plan compiler expects. No address is invented.
-func specAsScopeEdges(spec LinuxNFQueueSpec) []ServiceScopeEdge {
-	out := make([]ServiceScopeEdge, 0, len(spec.Edges))
-	for _, ip := range spec.Edges {
-		family := observatory.AddressFamilyIPv4
-		if familyForIP(ip) == observatory.AddressFamilyIPv6 {
-			family = observatory.AddressFamilyIPv6
-		}
-		out = append(out, ServiceScopeEdge{IP: ip, Family: family})
-	}
-	return out
 }
 
 func (e *LinuxGraphExecutor) Restore(ctx context.Context, snapshot StateSnapshot) error {

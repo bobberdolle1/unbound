@@ -110,9 +110,11 @@ func (e *WindowsGraphExecutor) ActivateGraph(ctx context.Context, activation Ser
 		return fmt.Errorf("exact graph plan: %w", err)
 	}
 
+	// CaptureArgv already carries --wf-raw-filter for the exact union, matching
+	// the single-host convention. Appending it again would emit a duplicate
+	// option and leave winws2 to resolve conflicting values on its own.
 	args := trustedLuaInitArgs(e.opts.Assets.LuaDir)
 	args = append(args, plan.CaptureArgv...)
-	args = append(args, "--wf-raw-filter="+plan.RawFilter)
 	args = append(args, exact.EngineArgv...)
 	args = append(args, plan.SectionArgv...)
 
@@ -265,13 +267,17 @@ func (e *WindowsGraphExecutor) Deactivate(ctx context.Context) error {
 			}
 		}
 	}
+	// The job handle must be released regardless of the WinDivert result, or a
+	// failed stop leaks one kernel handle per occurrence and disarms the crash
+	// guard for that job.
+	if proc.job != 0 {
+		_ = windows.CloseHandle(proc.job)
+		proc.job = 0
+	}
 	if proc.driverOwned {
 		if err := windowsStopWinDivert(5 * time.Second); err != nil {
 			return fmt.Errorf("stop owned graph WinDivert: %w", err)
 		}
-	}
-	if proc.job != 0 {
-		_ = windows.CloseHandle(proc.job)
 	}
 	return nil
 }
