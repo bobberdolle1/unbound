@@ -301,6 +301,7 @@ const (
 	ReasonCapabilityMissing          Reason      = "CAPABILITY_IDENTITY_REQUIRED_FOR_POSITIVE_REUSE"
 	ReasonContextChanged             Reason      = "CONTEXT_CHANGED"
 	ReasonContextMissing             Reason      = "CONTEXT_REQUIRED_FOR_POSITIVE_REUSE"
+	ReasonBackendMissing             Reason      = "BACKEND_IDENTITY_REQUIRED_FOR_POSITIVE_REUSE"
 )
 
 type Query struct {
@@ -397,6 +398,11 @@ func MatchEntry(entry OutcomeEntry, query Query) Match {
 			match.Reasons = []Reason{ReasonCapabilityChanged}
 			return match
 		}
+	}
+	if entry.Outcome == autotunevnext.OutcomeVerifiedFixed && entry.BackendFingerprint == "" {
+		match.Status = MatchStale
+		match.Reasons = []Reason{ReasonBackendMissing}
+		return match
 	}
 	if entry.Outcome == autotunevnext.OutcomeVerifiedFixed && entry.ContextKey == "" {
 		match.Status = MatchStale
