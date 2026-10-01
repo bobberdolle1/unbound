@@ -52,6 +52,18 @@ const (
 	ServiceNodeRoleAuxiliary ServiceNodeRole = "AUXILIARY"
 )
 
+// Validate enforces the closed role vocabulary. The vocabulary is closed on
+// purpose: an unknown role is never treated as a safe default, because role
+// only ever annotates a node and never grants authority.
+func (r ServiceNodeRole) Validate() error {
+	switch r {
+	case ServiceNodeRoleEntry, ServiceNodeRoleAPI, ServiceNodeRoleMedia, ServiceNodeRoleAuxiliary:
+		return nil
+	default:
+		return fmt.Errorf("%w: %q", ErrServiceGraphRole, string(r))
+	}
+}
+
 // ServiceNodeValidationState tracks what a node has actually proven.
 //
 // DISCOVERED means a caller supplied the node. It carries no authority at all.
@@ -152,10 +164,8 @@ func (g ServiceGraph) Validate() error {
 			return fmt.Errorf("%w: id %q", ErrServiceGraphDuplicate, n.ID)
 		}
 		seenID[n.ID] = struct{}{}
-		switch n.Role {
-		case ServiceNodeRoleEntry, ServiceNodeRoleAPI, ServiceNodeRoleMedia, ServiceNodeRoleAuxiliary:
-		default:
-			return fmt.Errorf("%w: %q", ErrServiceGraphRole, n.Role)
+		if err := n.Role.Validate(); err != nil {
+			return err
 		}
 		if strings.TrimSpace(n.Target.URL) == "" {
 			return fmt.Errorf("%w: node %q has no target", ErrServiceGraphTarget, n.ID)
