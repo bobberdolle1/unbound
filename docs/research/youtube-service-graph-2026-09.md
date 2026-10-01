@@ -1,6 +1,17 @@
 # YouTube: исследование bounded service graph, сентябрь 2026
 
-Разделы до «PHASE 2» сохраняют результат Phase 1. Актуальный вывод Phase 2 и следующая миссия приведены в конце документа; отрицательные результаты Phase 1 не пересмотрены.
+Разделы до «PHASE 2» сохраняют результат Phase 1, «PHASE 2» и «PHASE 3» — промежуточные отрицательные результаты, «PHASE 3B» — разрешение provenance-bound discovery. Отрицательные результаты предыдущих фаз не пересмотрены и не переписаны.
+
+**Актуальный вывод — Phase 4.** `ARCHITECTURE_RESULT=DYNAMIC_VALIDATED_SERVICE_GRAPH_REQUIRED`. Не-SABR research-клиент (logged out, без аккаунта) дал настоящую media provenance; на одном и том же подписанном media request доказано `DIRECT FAIL / ACTIVE PASS / DIRECT FAIL` на фактической доставке байтов (HTTP 206, 65536 байт). Ключевое уточнение терминологии: ENTRY и MEDIA использовали **один и тот же** strategy template `prod-tls-hostfakesplit-v1`, поэтому доказано требование per-host **exact binding**, а не гетерогенный per-host выбор стратегий.
+
+```
+PER_HOST_EXACT_BINDING_REQUIRED=YES
+SAME_STRATEGY_TEMPLATE_CURRENTLY_SUFFICIENT=YES
+PER_HOST_DIFFERENT_STRATEGY_REQUIRED=NOT_PROVEN
+DYNAMIC_MEDIA_HOST_CLASS_CAUSAL=YES
+WEB_SABR_DISCOVERY_AUTHORITY=INSUFFICIENT
+FULL_YOUTUBE_SERVICE_EFFECTIVENESS=NOT_ESTABLISHED
+```
 
 ## Решение
 
@@ -551,12 +562,14 @@ Guard: `DESKTOP-MNEHCPT`, `desktop-mnehcpt\unbound-lab`, Windows 10 19045. Ин�
 
 Один и тот же подписанный media request, одна и та же logical format, четыре arms. Ни один payload не сохранён — байты считались и сразу сбрасывались в `io.Discard`:
 
-| Arm | Граф | BYTES | STATUS | ELAPSED_MS |
-|---|---|---|---|---|
-| `A1` | нет стратегии | **0** | `NETWORK_ERROR` / `TIMEOUT` | 10013 |
-| `B_ENTRY_ONLY` | только ENTRY host | **0** | `NETWORK_ERROR` / `TIMEOUT` | 10017 |
-| `B_MEDIA_BOUND` | + точный media host | **65536** | `HTTP2XX`, HTTP **206**, `ACCEPTS_RANGES=true`, `DELIVERED` | **57** |
-| `A2` | стратегия снята | **0** | `NETWORK_ERROR` / `TIMEOUT` | 10013 |
+| Arm | Граф | ARM_EXECUTED | MEDIA_DELIVERY | BYTES | HTTP | FAILURE | ELAPSED_MS |
+|---|---|---|---|---|---|---|---|
+| `A1` | нет стратегии | PASS | **FAIL** | 0 | — | `TIMEOUT` | 10013 |
+| `B_ENTRY_ONLY` | только ENTRY host | PASS | **FAIL** | 0 | — | `TIMEOUT` | 10017 |
+| `B_MEDIA_BOUND` | + точный media host | PASS | **PASS** | 65536 | **206** | — | **57** |
+| `A2` | стратегия снята | PASS | **FAIL** | 0 | — | `TIMEOUT` | 10013 |
+
+`ARM_EXECUTED=PASS` означает, что arm был корректно выполнен и его результат записан; это не утверждение о сети. `MEDIA_DELIVERY` — отдельное утверждение о фактической доставке байтов. Ожидаемый direct-arm результат здесь — `FAIL`: без стратегии доставки нет. Валидная метрика зелёного arm — `B_MEDIA_BOUND`, где доставка фактически произошла.
 
 Это `DIRECT FAIL / ACTIVE PASS / DIRECT FAIL` на **реальной доставке медиа**, а не на TLS/TCP-probe: HTTP 206, ненулевой byte range, чистое завершение. Критерий Phase 13 выполнен — media delivery, а не connect-only.
 
@@ -564,7 +577,7 @@ Guard: `DESKTOP-MNEHCPT`, `desktop-mnehcpt\unbound-lab`, Windows 10 19045. Ин�
 
 Ключевой отрицательный результат: **`B_ENTRY_ONLY` дал 0 байт**. Та же самая стратегия `prod-tls-hostfakesplit-v1`, связанная только с `www.youtube.com`, **не переносит** доставку медиа. Помогает только связывание с точным media host.
 
-`STRATEGY_RELATION = PER_HOST_STRATEGY`, `VERIFIED_FIXED = true`, `MEDIA_TEMPLATE = prod-tls-hostfakesplit-v1`.
+Сырое поле измерения `STRATEGY_RELATION = PER_HOST_STRATEGY` сохранено как историческое evidence. Читать его следует как **per-host exact binding**, а не как «разные hosts требуют разных templates»: `MEDIA_TEMPLATE` и `ENTRY_TEMPLATE` — один и тот же `prod-tls-hostfakesplit-v1`. Итог: `VERIFIED_FIXED = true`, `PER_HOST_EXACT_BINDING_REQUIRED = YES`, `SAME_STRATEGY_TEMPLATE_CURRENTLY_SUFFICIENT = YES`, `PER_HOST_DIFFERENT_STRATEGY_REQUIRED = NOT_PROVEN`.
 
 Template ID тот же, но семантика привязки разная, поэтому сравнение идёт по поведению, а не по canonical fingerprint: hostname selector входит в fingerprint и сделал бы сравнение бессмысленным. `render()` из Phase 3B дополнительно проверяет, что перепривязанный к media host шаблон сохраняет идентичные `Operations`, `Safety` и `Range` — то есть это буквально тот же стратег, а не перенабранный argv.
 
@@ -586,9 +599,17 @@ Browser graph causal run (Phase 20–25) **не выполнялся**. Прич
 
 ### Архитектурный вывод
 
-`ARCHITECTURE_RESULT = PER_HOST_STRATEGY_GRAPH_REQUIRED`, при этом `DYNAMIC_MEDIA_HOST_CLASS_CAUSAL = YES`.
+`ARCHITECTURE_RESULT = DYNAMIC_VALIDATED_SERVICE_GRAPH_REQUIRED`.
 
-Продуктовая стратегия, доказанная для ENTRY, **не является** стратегией для сервиса: медиа требует per-host привязки. Это меняет требование к графу — сервисный граф обязан нести отдельный media node на каждый текущий session media host, а не один ENTRY node на `www.youtube.com`. Второй практический вывод: текущий ENTRY scope недостаточен даже для non-SABR извлечения, поскольку не покрывает `youtubei.googleapis.com`.
+Терминология уточнена после независимого review. Phase 4 **не** доказывает, что разным hosts нужны разные strategy templates: в ENTRY и в MEDIA использовался один и тот же `prod-tls-hostfakesplit-v1`. Доказано иное:
+
+- `PER_HOST_EXACT_BINDING_REQUIRED=YES` — authority стратегии host-scoped; привязка только к ENTRY не влияет на MEDIA, поэтому каждый активный service host требует собственной exact host binding.
+- `SAME_STRATEGY_TEMPLATE_CURRENTLY_SUFFICIENT=YES` — один template, независимо связанный с несколькими hosts, воспроизводит причинный результат.
+- `PER_HOST_DIFFERENT_STRATEGY_REQUIRED=NOT_PROVEN` — гетерогенный per-host выбор стратегий не требуется и не доказан.
+- `DYNAMIC_MEDIA_HOST_CLASS_CAUSAL=YES` — причинность воспроизводится на структурном классе dynamic media host.
+- `WEB_SABR_DISCOVERY_AUTHORITY=INSUFFICIENT` — см. раздел «Что НЕ выполнялось».
+
+Архитектура может поддерживать разные стратегии per node для общности, но текущее доказательство такой потребности не создаёт. Практическое требование к графу: сервисный граф обязан нести отдельный media node на каждый текущий session media host с собственной exact binding и независимой fresh DNS authority, а не один ENTRY node на `www.youtube.com`. Второй практический вывод: текущий ENTRY scope недостаточен даже для non-SABR извлечения, поскольку не покрывает `youtubei.googleapis.com`.
 
 `FULL_YOUTUBE_SERVICE_EFFECTIVENESS` остаётся `NOT_ESTABLISHED`: доказана доставка отдельного media request по causal A/B/A, но не воспроизведён полный browser playback graph.
 
