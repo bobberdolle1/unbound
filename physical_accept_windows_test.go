@@ -101,6 +101,13 @@ func TestPhysicalWindowsGraphAcceptance(t *testing.T) {
 		t.Fatalf("refusing to mutate a foreign host: COMPUTERNAME=%q", got)
 	}
 
+	// The extracted runtime is process-scoped; a run must never leave it behind.
+	defer func() {
+		if err := engine.CleanupExtractedAssets(); err != nil {
+			t.Logf("harness cleanup of extracted assets: %v", err)
+		}
+	}()
+
 	// Hermetic config dir so a real run never touches an installed profile.
 	tmp, err := os.MkdirTemp("", "unbound-physical-")
 	if err != nil {

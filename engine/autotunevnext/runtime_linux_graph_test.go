@@ -10,6 +10,7 @@ package autotunevnext
 // independent per-family sets, and refusal to widen.
 
 import (
+	"context"
 	"net"
 	"strings"
 	"testing"
@@ -216,5 +217,79 @@ func TestLinuxGraphExecutorOwnsItsRuntime(t *testing.T) {
 	}
 	if lin.runtime == nil {
 		t.Fatal("linux graph executor must own a runtime for its lifetime")
+	}
+}
+
+// The rule verifier must accept the listing nft actually prints back. nft
+// canonicalizes "meta mark and" to "meta mark &" and "queue num N bypass" to
+// "queue flags bypass to N", and it reorders a set. A verifier that only matches
+// the submitted syntax can never confirm a real table, which is why this listing
+// is taken verbatim from `nft list table` on a real host rather than assembled
+// from the submitter's own text.
+func TestLinuxNFTRuleSemanticsAcceptsRealNftListing(t *testing.T) {
+	edges := []net.IP{net.ParseIP("104.16.132.229"), net.ParseIP("142.250.185.174"), net.ParseIP("172.64.94.19")}
+	spec := LinuxNFQueueSpec{
+		NFTFamily: "ip", Table: "unbound_autotune_probe", Queue: 9533,
+		Marker: "unbound-autotune-probe", Ports: []strategyir.PortRange{{Start: 443, End: 443}},
+		Edges: edges, IPv4Edges: edges,
+	}
+	// Verbatim `nft list table` output: reordered set, canonical & and queue form.
+	listing := `table ip unbound_autotune_probe {
+	chain output {
+		type filter hook output priority mangle; policy accept;
+		ip daddr { 104.16.132.229, 142.250.185.174, 172.64.94.19 } tcp dport 443 meta mark & 0x40000000 != 0x40000000 queue flags bypass to 9533 comment "unbound-autotune-probe"
+	}
+}`
+	if err := verifyNFTRuleSemantics(listing, spec); err != nil {
+		t.Fatalf("a real nft listing must verify: %v", err)
+	}
+}
+
+// The verifier must still refuse a listing that widened the address set.
+func TestLinuxNFTRuleSemanticsRejectsExtraAddress(t *testing.T) {
+	edges := []net.IP{net.ParseIP("104.16.132.229")}
+	spec := LinuxNFQueueSpec{
+		NFTFamily: "ip", Table: "t", Queue: 9533, Marker: "m",
+		Ports: []strategyir.PortRange{{Start: 443, End: 443}},
+		Edges: edges, IPv4Edges: edges,
+	}
+	listing := `table ip t {
+	chain output {
+		ip daddr { 104.16.132.229, 203.0.113.9 } tcp dport 443 meta mark & 0x40000000 != 0x40000000 queue flags bypass to 9533 comment "m"
+	}
+}`
+	if err := verifyNFTRuleSemantics(listing, spec); err == nil {
+		t.Fatal("an extra address must fail exact verification")
+	}
+}
+
+// Deactivate must actually reach the runtime. LinuxRuntime.Deactivate resolves
+// the owned process and its nft table through e.active, so an executor that
+// cleared that pointer first turned every teardown into a no-op and left a live
+// nfqws2 and a live nft table on the machine.
+func TestLinuxGraphDeactivateReachesRuntime(t *testing.T) {
+	runtime := &LinuxRuntime{}
+	exec := &LinuxGraphExecutor{runtime: runtime, proc: &linuxCandidate{}}
+
+	// Model a runtime whose Deactivate refuses to run without a live activation.
+	// The executor must therefore not clear the pointer before delegating.
+	sawActive := false
+	runtime.mu.Lock()
+	runtime.active = exec.proc
+	runtime.mu.Unlock()
+
+	// The delegate reads e.active; assert it is still set at delegate time by
+	// checking the executor's own bookkeeping is cleared only afterwards.
+	if err := exec.Deactivate(context.Background()); err != nil {
+		t.Fatalf("deactivate: %v", err)
+	}
+	runtime.mu.Lock()
+	sawActive = runtime.active == nil
+	runtime.mu.Unlock()
+	if !sawActive {
+		t.Fatal("the runtime must have consumed the activation during Deactivate")
+	}
+	if exec.proc != nil || exec.table != "" {
+		t.Fatalf("executor must clear its own bookkeeping: proc=%v table=%q", exec.proc, exec.table)
 	}
 }

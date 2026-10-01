@@ -287,13 +287,14 @@ func (e *LinuxGraphExecutor) Deactivate(ctx context.Context) error {
 	}
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), e.runtime.cleanupTimeout())
 	defer cancel()
+	// The runtime must tear the activation down BEFORE any pointer is cleared.
+	// LinuxRuntime.Deactivate resolves the owned process and its nft table
+	// through e.active; clearing e.active first made the delegate a no-op, so
+	// Suspend, Revert and every rollback path left a live nfqws2 and a live nft
+	// table behind on an ordinary working machine.
+	err := e.runtime.Deactivate(cleanupCtx)
 	e.proc, e.table = nil, ""
-	e.runtime.mu.Lock()
-	if e.runtime.active == active {
-		e.runtime.active = nil
-	}
-	e.runtime.mu.Unlock()
-	return e.runtime.Deactivate(cleanupCtx)
+	return err
 }
 
 func (e *LinuxGraphExecutor) Restore(ctx context.Context, snapshot StateSnapshot) error {
