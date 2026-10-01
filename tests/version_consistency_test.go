@@ -59,14 +59,29 @@ func TestReleaseVisibleVersionsMatchWailsMetadata(t *testing.T) {
 		t.Errorf("frontend/package-lock.json version = %q/%q, want canonical %q", lock.Version, lock.Packages[""].Version, version)
 	}
 
-	for _, path := range []string{"README.md", "CHANGELOG.md"} {
-		contents, err := os.ReadFile(filepath.Join(root, path))
+	// The release-VISIBLE version strings are asserted ANCHORED, not by a
+	// whole-file substring search. A substring check cannot tell a correct version
+	// buried in prose from a wrong one in the document's title, and that is
+	// exactly where drift ships: the README header and badge can advertise the
+	// previous release while some unrelated line still contains the current one.
+	anchored := []struct {
+		path   string
+		anchor string
+	}{
+		{"README.md", "# UNBOUND `v" + version + "`"},
+		{"README.md", "badge/Version-v" + version + "-"},
+		{"CHANGELOG.md", "## [" + version + "] - "},
+		{"docs/PLATFORMS.md", "unbound-v" + version + "-linux-amd64"},
+		{"docs/PLATFORMS.md", "**EXPERIMENTAL** CLI `tar.gz`"},
+	}
+	for _, want := range anchored {
+		contents, err := os.ReadFile(filepath.Join(root, want.path))
 		if err != nil {
-			t.Errorf("read %s: %v", path, err)
+			t.Errorf("read %s: %v", want.path, err)
 			continue
 		}
-		if !strings.Contains(string(contents), version) {
-			t.Errorf("%s does not contain canonical version %q", path, version)
+		if !strings.Contains(string(contents), want.anchor) {
+			t.Errorf("%s does not contain release-visible anchor %q", want.path, want.anchor)
 		}
 	}
 

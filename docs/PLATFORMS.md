@@ -40,11 +40,11 @@ Windows YouTube evidence from 2026-09-22 resolved `www.youtube.com` to Google ed
 
 **Требования:** `x86_64` Linux, ядро с `NFQUEUE`, root для перехвата и `nft`; `iptables` используется как fallback там, где его поддерживает runtime.
 
-- Релиз `v0.8.0` — первый, публикующий **EXPERIMENTAL** CLI-архив `linux/amd64` в `tar.gz`. Wails GUI, `linux/arm64` и distro package formats в этот target не входят.
+- Релиз `v0.8.0` — первый, выпускающий **EXPERIMENTAL** CLI-архив `linux/amd64` в `tar.gz`. Wails GUI, `linux/arm64` и distro package formats в этот target не входят.
 - Упакованный `nfqws2` создаёт NFQUEUE-процесс, а UNBOUND устанавливает изолированные правила `nftables` с фолбэком на `iptables`. Перед запуском CLI проверяет `BUNDLE_SHA256SUMS.txt`.
 - 2026-09-29 на выделенном хосте (`DEDICATED_BARE_METAL`) подтверждены жизненный цикл `nfqws2`/NFQUEUE, продвижение счётчиков правил, штатная очистка (SIGTERM/SIGINT), откат при сбое, второй запуск и сохранность сторонних правил. Непривилегированные команды `--version`, `--help`, `--list-profiles --json` и `--test` не требуют перехвата; запуск профиля требует root.
-- Архитектура Linux-бинарника впервые публикуется в `v0.8.0`. Подробная запись физической приёмки: [`release/linux-next-release-packaging.md`](release/linux-next-release-packaging.md); архивная v0.6.9: [`release/linux-v0.6.9-acceptance.md`](release/linux-v0.6.9-acceptance.md).
-- Bounded service graph на Linux использует тот же exact-authority контракт: одна executor-owned `nft`-таблица с per-family правилами по точным адресам, `NFQUEUE`, mark exclusion и bypass. Смешанная семантика семейств по-прежнему проверяется после применения, а существующая верификация не ослабляется. Физическая приёмка multi-node графа на выделенном Linux-хосте **пройдена**: реальный `nfqws2`, реальная таблица `nft` с точным union-адресным набором, нормальная очистка, откат при сбое, второй запуск и сохранность сторонних правил.
+- Архитектура Linux-бинарника впервые выходит в `v0.8.0`; на дату подготовки релиза архив ещё не собран и не опубликован. Запись физической приёмки single-host Linux-тарджета: [`release/linux-next-release-packaging.md`](release/linux-next-release-packaging.md); архивная v0.6.9: [`release/linux-v0.6.9-acceptance.md`](release/linux-v0.6.9-acceptance.md).
+- Bounded service graph на Linux использует тот же exact-authority контракт: одна executor-owned `nft`-таблица с per-family правилами по точным адресам, `NFQUEUE`, mark exclusion и bypass. Смешанная семантика семейств по-прежнему проверяется после применения, а существующая верификация не ослабляется. Физическая приёмка multi-node графа на выделенном Linux-хосте **пройдена из исходного дерева релиза**: реальный `nfqws2`, реальная таблица `nft` с точным union-адресным набором, нормальная очистка, откат при сбое, второй запуск и сохранность сторонних правил. Приёмка упакованного артефакта `v0.8.0` ещё не выполнялась.
 
 ## 🍎 macOS
 

@@ -11,7 +11,7 @@
 - Единый процесс `winws2` (Windows) и единый процесс `nfqws2` с одной таблицей `nft` (Linux) несут один точный union-захват и по одной секции на хост.
 - Добавлены эксперимент графа, Apply графа, `ManagedHealth`, транзакционные Suspend/Revert/shutdown и ручной захват управления; исходное состояние машины всегда восстанавливается и проверяется.
 - Граф сохраняется как логическое намерение без адресов и перезапускается только по свежему разрешению: сохранённые edge не дают полномочий захвата.
-- Windows и Linux приняты физически на выделенных лабораториях через реальный asset pipeline, реальный `winws2`/WinDivert и реальную таблицу `nft` с NFQUEUE.
+- Bounded ServiceGraph принят физически на выделенных лабораториях **из исходного дерева релиза**: Windows — реальный asset pipeline, один `winws2` и реальный WinDivert-захват с точным union по нескольким хостам; Linux — реальный `nfqws2` и реальная таблица `nft` с NFQUEUE. Приёмка **упакованного артефакта** `v0.8.0` ещё не выполнялась: сборка macOS заблокирована недоступностью лаборатории.
 
 ### AutoTune history identities
 
@@ -25,7 +25,7 @@
 ### Linux experimental release target
 
 - Добавлены локальные reproducible build/package/coordinator для CLI-only `linux/amd64` `tar.gz`, проверка release identity, `BUNDLE_SHA256SUMS.txt`, provenance и распакованного smoke.
-- NFQUEUE/`nft` runtime и multi-host graph приняты физически на выделенном bare-metal Linux.
+- NFQUEUE/`nft` runtime и bounded multi-host graph приняты физически на выделенном bare-metal Linux из исходного дерева релиза; приёмка упакованного артефакта ещё не выполнялась.
 - Локальные `SHA256SUMS.txt` и `RELEASE_MANIFEST.json` принимают Linux-артефакт с `experimental=true`.
 - Linux GUI и `linux/arm64` в release surface не добавлены; Linux остаётся **EXPERIMENTAL**.
 

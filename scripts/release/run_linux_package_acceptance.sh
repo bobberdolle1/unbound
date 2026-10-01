@@ -23,7 +23,7 @@ foreign="unbound_foreign_acceptance_${$}"
 cleanup_all() {
     # Match any released Linux bundle path, not one pinned version: a pattern
     # naming a single release would silently fail to clean up the next one.
-    pkill -9 -f "unbound-v0.*-linux-amd64/unbound" 2>/dev/null || true
+    pkill -9 -f "unbound-v[0-9.]*-linux-amd64/unbound" 2>/dev/null || true
     pkill -9 -f nfqws2 2>/dev/null || true
     nft delete table inet "$foreign" 2>/dev/null || true
     rm -rf "$work" 2>/dev/null || true

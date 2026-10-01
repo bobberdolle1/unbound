@@ -76,7 +76,7 @@
 | **Windows 11 x64 (`windows/amd64`)** | `WinDivert` + Zapret 2 `winws2.exe` | ✅ Проверены runtime и сеть |
 | **macOS Apple Silicon (`darwin/arm64`)** | `pf` redirect + Zapret `dvtws` / `tpws` | ✅ Проверен runtime |
 | **macOS Intel (`darwin/amd64`)** | `pf` redirect + Zapret `dvtws` / `tpws` | ⚠️ Не проверено |
-| **Linux amd64 (`linux/amd64`)** | `NFQUEUE` + `nftables` / `iptables` + `nfqws2` | 🟡 Экспериментальный; физически принят NFQUEUE/nft runtime и multi-host graph; публичный CLI-only артефакт `unbound-v0.8.0-linux-amd64.tar.gz` |
+| **Linux amd64 (`linux/amd64`)** | `NFQUEUE` + `nftables` / `iptables` + `nfqws2` | 🟡 Экспериментальный; NFQUEUE/nft runtime и bounded multi-host graph приняты физически из исходного дерева; в `v0.8.0` выходит публичный CLI-only артефакт `unbound-v0.8.0-linux-amd64.tar.gz` |
 | **Linux arm64 (`linux/arm64`)** | `NFQUEUE` + `nftables` / `iptables` + `nfqws2` | 🟡 Экспериментальный; публичный артефакт не собирается и не публикуется |
 
 ## ⚡ Как работает движок
@@ -116,7 +116,7 @@ sudo ./unbound --cli --profile rec        # Windows: Recommended
 
 ### Экспериментальный Linux `amd64` архив
 
-Релиз `v0.8.0` — первый, в котором публикуется CLI-only архив `unbound-v0.8.0-linux-amd64.tar.gz`; Linux GUI в него не входит. Для перехвата нужны `x86_64` Linux, root, ядро с `NFQUEUE` и предпочтительно `nft` (`iptables` — fallback). После распаковки сначала проверьте `./unbound --version --json` и `./unbound --list-profiles --json`; запуск профиля выполняйте только из повышенного терминала. Linux-артефакт остаётся **EXPERIMENTAL** и не гарантирует доступность конкретного сервиса или дистрибутива.
+Релиз `v0.8.0` — первый, в котором выходит CLI-only архив `unbound-v0.8.0-linux-amd64.tar.gz`; Linux GUI в него не входит. На дату подготовки релиза архив ещё не собран и не опубликован. Для перехвата нужны `x86_64` Linux, root, ядро с `NFQUEUE` и предпочтительно `nft` (`iptables` — fallback). После распаковки сначала проверьте `./unbound --version --json` и `./unbound --list-profiles --json`; запуск профиля выполняйте только из повышенного терминала. Linux-артефакт остаётся **EXPERIMENTAL** и не гарантирует доступность конкретного сервиса или дистрибутива.
 
 ---
 
