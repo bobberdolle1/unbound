@@ -95,10 +95,11 @@ func TestVerifiedRuntimeAssetIdentityKeysEntriesByLogicalName(t *testing.T) {
 	paths := fakeExtractedAssets(t, engineContent, lua, "0.0.0.0/0\n")
 
 	want := expectedRuntimeIdentity(map[string]string{
-		"engine":                   digestOf(engineContent),
-		"lua:init_vars.lua":        digestOf("vars"),
-		"lua:unbound_adaptive.lua": digestOf("adaptive"),
-		"lua:zapret-lib.lua":       digestOf("lib"),
+		"engine":                        digestOf(engineContent),
+		"bin:" + platformEngineBinary(): digestOf(engineContent),
+		"lua:init_vars.lua":             digestOf("vars"),
+		"lua:unbound_adaptive.lua":      digestOf("adaptive"),
+		"lua:zapret-lib.lua":            digestOf("lib"),
 	})
 	if got := mustRuntimeIdentity(t, paths); got != want {
 		t.Fatalf("identity = %q, want %q", got, want)
@@ -161,9 +162,10 @@ func TestVerifiedRuntimeAssetIdentityIncludesNestedLuaScripts(t *testing.T) {
 		t.Fatalf("a nested lua script was ignored, identity stayed %q", flat)
 	}
 	want := expectedRuntimeIdentity(map[string]string{
-		"engine":           digestOf("engine"),
-		"lua:a.lua":        digestOf("one"),
-		"lua:nested/b.lua": digestOf("two"),
+		"engine":                        digestOf("engine"),
+		"bin:" + platformEngineBinary(): digestOf("engine"),
+		"lua:a.lua":                     digestOf("one"),
+		"lua:nested/b.lua":              digestOf("two"),
 	})
 	if nested != want {
 		t.Fatalf("nested identity = %q, want %q", nested, want)

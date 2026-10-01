@@ -1147,3 +1147,31 @@ func TestHistoryIdentityCohortIsSelfConsistent(t *testing.T) {
 	}
 	t.Fatalf("executed candidate is not a catalog strategy: %q", executed)
 }
+
+// A VERIFIED_FIXED recorded while one of the identities was unavailable must not
+// be reused. Context and capability both had a "missing means stale" guard; the
+// backend dimension had none, so a positive could be reused across an engine
+// transition that neither side recorded.
+func TestEmptyHistoryIdentityIsNotTrustedForPositiveReuse(t *testing.T) {
+	base := historyIdentityDefaultCohort()
+	recorded := historyIdentityEntry(t, base)
+
+	cases := []struct {
+		name   string
+		mutate func(*outcomeledger.OutcomeEntry)
+	}{
+		{"backend fingerprint missing", func(e *outcomeledger.OutcomeEntry) { e.BackendFingerprint = "" }},
+		{"capability fingerprint missing", func(e *outcomeledger.OutcomeEntry) { e.CapabilityFingerprint = "" }},
+		{"context key missing", func(e *outcomeledger.OutcomeEntry) { e.ContextKey = "" }},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			entry := recorded
+			testCase.mutate(&entry)
+			query := historyIdentityQuery(entry, recorded.RecordedAt.Add(time.Hour))
+			if match := outcomeledger.MatchEntry(entry, query); match.Status == outcomeledger.MatchCompatible {
+				t.Fatalf("a VERIFIED_FIXED with %s must not be compatible (got %v)", testCase.name, match.Status)
+			}
+		})
+	}
+}

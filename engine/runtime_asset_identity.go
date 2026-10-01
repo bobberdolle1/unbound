@@ -44,20 +44,35 @@ func VerifiedRuntimeAssetIdentity(paths *AssetPaths) (string, error) {
 		return "", fmt.Errorf("verified assets do not contain the %s engine binary", platformEngineBinary())
 	}
 
+	// Coverage is deliberately broad over anything that can change what the engine
+	// puts on the wire: the engine binary, the fake-payload blobs it references by
+	// logical id, the capture driver and its runtime libraries, and the Lua runtime.
+	// A strategy's payload ref is resolved by the engine at execution time, so
+	// replacing fake_tls_8.bin or swapping the driver changes the executed bytes
+	// while every logical fingerprint in the IR stays identical - that is the
+	// dangerous direction, and under-invalidating history is worse than
+	// over-invalidating it.
+	//
+	// Managed host/ips lists are excluded: they are data the user curates, not
+	// engine semantics, and folding them in would invalidate history on ordinary
+	// list edits.
+	binDir := filepath.Clean(paths.BinDir)
 	luaDir := filepath.Clean(paths.LuaDir)
 	entries := map[string]string{"engine": engineHash}
 	for path, hash := range paths.extractedFiles {
 		if hash == "" {
 			return "", fmt.Errorf("verified asset %q has no recorded hash", filepath.Base(path))
 		}
-		relative, err := filepath.Rel(luaDir, path)
-		if err != nil || relative == "." || filepath.IsAbs(relative) {
-			continue
+		switch {
+		case withinDir(path, binDir):
+			entries["bin:"+filepath.Base(path)] = hash
+		case withinDir(path, luaDir):
+			relative, err := filepath.Rel(luaDir, path)
+			if err != nil {
+				continue
+			}
+			entries["lua:"+filepath.ToSlash(relative)] = hash
 		}
-		if relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-			continue
-		}
-		entries["lua:"+filepath.ToSlash(relative)] = hash
 	}
 
 	names := make([]string, 0, len(entries))
@@ -76,4 +91,18 @@ func VerifiedRuntimeAssetIdentity(paths *AssetPaths) (string, error) {
 		b.WriteByte('\n')
 	}
 	return sha256Hex([]byte(b.String())), nil
+}
+
+// withinDir reports whether path lives inside dir. It exists so the digest can
+// classify a verified asset by LOGICAL role without ever exposing the temporary
+// extraction path it happened to land on.
+func withinDir(path, dir string) bool {
+	relative, err := filepath.Rel(dir, path)
+	if err != nil || relative == "." || filepath.IsAbs(relative) {
+		return false
+	}
+	if relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return false
+	}
+	return true
 }

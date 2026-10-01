@@ -168,7 +168,11 @@ func TestContextIdentityNeverContainsRawNetworkFacts(t *testing.T) {
 	// from the identity by confirming the identity is not the plain digest of
 	// the canonical bytes, which is what an unkeyed or echoing implementation
 	// would return.
-	plain := sha256.Sum256(source.canonical())
+	canonicalBytes, err := source.canonical()
+	if err != nil {
+		t.Fatalf("canonical: %v", err)
+	}
+	plain := sha256.Sum256(canonicalBytes)
 	if identity.String() == formatIdentity(contextPrefix, plain[:]) {
 		t.Fatalf("identity is an unkeyed digest of the canonical source: %q", identity)
 	}
@@ -667,7 +671,11 @@ func TestContextIdentityRejectsWeakKeys(t *testing.T) {
 			// An identity derived from a guessable key is guessable offline,
 			// so the failure must not be silently repaired by any fallback.
 			mac := hmac.New(sha256.New, key)
-			mac.Write(source.canonical())
+			canonicalBytes, canonicalErr := source.canonical()
+			if canonicalErr != nil {
+				t.Fatalf("canonical: %v", canonicalErr)
+			}
+			mac.Write(canonicalBytes)
 			if identity == NetworkContextIdentity(formatIdentity(contextPrefix, mac.Sum(nil))) {
 				t.Fatalf("identity was derived from the weak key: %q", identity)
 			}
@@ -822,9 +830,17 @@ func TestLoadOrCreateContextKeyRecoversFromAHalfCreatedKeyFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ContextKeyFileName)
 
-	// Exactly the state left behind between O_EXCL create and the first write.
+	// Exactly the state left behind between O_EXCL create and the first write,
+	// backdated so it is unambiguously a crash remnant rather than a creator that
+	// is still running. A FRESH empty file must be left alone: it belongs to a
+	// concurrent creator, and removing it would let two processes end up with two
+	// different keys, silently splitting one local history namespace.
 	if err := os.WriteFile(path, nil, 0o600); err != nil {
 		t.Fatalf("seed half-created key file: %v", err)
+	}
+	stale := time.Now().Add(-contextKeyStaleAfter - time.Minute)
+	if err := os.Chtimes(path, stale, stale); err != nil {
+		t.Fatalf("backdate half-created key file: %v", err)
 	}
 
 	key, err := LoadOrCreateContextKey(dir)
@@ -930,5 +946,60 @@ func TestLoadOrCreateContextKeyRequiresAnOwnedConfigDirectory(t *testing.T) {
 		if _, statErr := os.Stat(ContextKeyFileName); !errors.Is(statErr, os.ErrNotExist) {
 			t.Fatalf("a key file was created in the working directory (%v)", statErr)
 		}
+	}
+}
+
+// A raw value containing a line break would break the line-oriented canonical
+// form, so it must be refused rather than silently altering the structure.
+func TestContextIdentityRefusesUnencodableSourceValues(t *testing.T) {
+	key := bytes.Repeat([]byte{0x5A}, 32)
+	for _, name := range []string{"line\nbreak", "carriage\rreturn", "both\r\n"} {
+		source := contextSource{Platform: "linux", DefaultInterface: []string{name}}
+		identity, err := ContextKey(key, source)
+		if err == nil {
+			t.Fatalf("source value %q was accepted and produced %q", name, identity)
+		}
+		var unavailable *ErrUnavailable
+		if !errors.As(err, &unavailable) {
+			t.Fatalf("source value %q produced %v, want *ErrUnavailable", name, err)
+		}
+		if identity != "" {
+			t.Fatalf("refused source %q must produce an empty identity, got %q", name, identity)
+		}
+	}
+}
+
+// An interface NAME containing the format's own separator would make "x|1"
+// ambiguous, so it must be refused. The index half is validated too: it must be a
+// plain non-negative integer.
+func TestContextIdentityRefusesAmbiguousInterfaceEntries(t *testing.T) {
+	key := bytes.Repeat([]byte{0x5A}, 32)
+	for _, entry := range []string{"x|1|2", "noindex", "eth0|", "eth0|abc", "eth0|-1"} {
+		source := contextSource{Platform: "linux", DefaultInterface: []string{entry}}
+		if identity, err := ContextKey(key, source); err == nil {
+			t.Fatalf("interface entry %q was accepted and produced %q", entry, identity)
+		}
+	}
+	// A legitimate entry must still be accepted: the pipe is this format's own
+	// separator and the real producer always emits it.
+	good := contextSource{Platform: "linux", DefaultInterface: []string{"eth0|7"}}
+	if identity, err := ContextKey(key, good); err != nil || !identity.Available() {
+		t.Fatalf("a well-formed interface entry was refused: %q %v", identity, err)
+	}
+}
+
+// A profile value that breaks the line-oriented encoding must be refused. A pipe
+// is NOT refused: the Windows profile legitimately joins adapter names with it.
+func TestContextIdentityRefusesUnencodableProfile(t *testing.T) {
+	key := bytes.Repeat([]byte{0x5A}, 32)
+	for _, profile := range []string{"adapter\nx", "adapter\r"} {
+		source := contextSource{Platform: "linux", DefaultInterface: []string{"eth0|1"}, Profile: profile}
+		if identity, err := ContextKey(key, source); err == nil {
+			t.Fatalf("profile %q was accepted and produced %q", profile, identity)
+		}
+	}
+	withPipe := contextSource{Platform: "linux", DefaultInterface: []string{"eth0|1"}, Profile: "adapter:intel|wi-fi"}
+	if identity, err := ContextKey(key, withPipe); err != nil || !identity.Available() {
+		t.Fatalf("a profile containing a pipe must be accepted: %q %v", identity, err)
 	}
 }

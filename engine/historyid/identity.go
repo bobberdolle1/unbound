@@ -118,27 +118,73 @@ type contextSource struct {
 //
 // The output contains raw local network facts and MUST NOT be persisted,
 // logged, or shown to a user. It exists only as the HMAC input.
-func (c contextSource) canonical() []byte {
+func (c contextSource) canonical() ([]byte, error) {
+	if err := canonicalValueEncodable(c.Platform); err != nil {
+		return nil, err
+	}
+	if err := canonicalValueEncodable(c.Profile); err != nil {
+		return nil, err
+	}
 	var b strings.Builder
 	b.WriteString("context-source-v1\n")
-	writeSet := func(name string, values []string) {
-		b.WriteString(name)
-		b.WriteByte('=')
+	b.WriteString("platform=" + c.Platform + "\n")
+
+	// Each member is written on its OWN line rather than comma-joined. That removes
+	// the comma ambiguity entirely: a value containing a comma or a pipe can no
+	// longer imitate a separator, because no separator is relied upon to delimit
+	// members. Only a newline could still break the format, so that is refused.
+	writeSet := func(name string, values []string, validate func(string) error) error {
 		sorted := sortedUnique(values)
+		b.WriteString(name + "=")
 		if len(sorted) == 0 {
 			// Explicit absent marker. Never omit the field entirely.
-			b.WriteString("<none>")
-		} else {
-			b.WriteString(strings.Join(sorted, ","))
+			b.WriteString("<none>\n")
+			return nil
 		}
-		b.WriteByte('\n')
+		for _, value := range sorted {
+			if err := validate(value); err != nil {
+				return fmt.Errorf("%s: %w", name, err)
+			}
+			b.WriteString(value)
+			b.WriteByte('\n')
+		}
+		return nil
 	}
-	b.WriteString("platform=" + c.Platform + "\n")
-	writeSet("default_interface", c.DefaultInterface)
-	writeSet("gateway", c.Gateway)
-	writeSet("resolver", c.Resolver)
+
+	if err := writeSet("default_interface", c.DefaultInterface, canonicalInterfaceEncodable); err != nil {
+		return nil, err
+	}
+	if err := writeSet("gateway", c.Gateway, canonicalValueEncodable); err != nil {
+		return nil, err
+	}
+	if err := writeSet("resolver", c.Resolver, canonicalValueEncodable); err != nil {
+		return nil, err
+	}
 	b.WriteString("profile=" + c.Profile + "\n")
-	return []byte(b.String())
+	return []byte(b.String()), nil
+}
+
+// canonicalInterfaceEncodable validates one "<name>|<index>" interface entry.
+//
+// The pipe is THIS format's own separator, so it is validated per component
+// rather than rejected wholesale: the name must not itself contain a pipe, which
+// would make "x|1" ambiguous, and the index must be a plain non-negative integer.
+// Rejecting the pipe in the joined value would instead refuse every real
+// interface, because readContextSource always builds the entry that way.
+func canonicalInterfaceEncodable(value string) error {
+	name, index, found := strings.Cut(value, "|")
+	if !found || name == "" || strings.ContainsAny(name, "|\n\r") {
+		return fmt.Errorf("interface entry is not canonically encodable")
+	}
+	if index == "" {
+		return fmt.Errorf("interface entry has no index")
+	}
+	for _, r := range index {
+		if r < '0' || r > '9' {
+			return fmt.Errorf("interface index is not a plain integer")
+		}
+	}
+	return nil
 }
 
 // sufficient reports whether these facts are strong enough to identify a
@@ -148,6 +194,21 @@ func (c contextSource) canonical() []byte {
 // behaviour this package must never have.
 func (c contextSource) sufficient() bool {
 	return len(sortedUnique(c.DefaultInterface)) > 0
+}
+
+// canonicalValueEncodable rejects any value that could break the line-oriented,
+// comma-separated encoding. This mirrors the equivalent guard in the capability
+// and backend canonicalizers, so all three share one encoding contract.
+// Only a line break is refused: set members are written one per line, so a
+// newline is the sole remaining way a value could alter the structure. Commas and
+// pipes are NOT refused here, because neither is a delimiter any more and both
+// occur legitimately - the pipe is this format own interface separator and the
+// Windows profile joins user-settable adapter names with it.
+func canonicalValueEncodable(value string) error {
+	if strings.ContainsAny(value, "\r\n") {
+		return fmt.Errorf("context source value is not canonically encodable")
+	}
+	return nil
 }
 
 func sortedUnique(values []string) []string {
@@ -178,8 +239,12 @@ func ContextKey(key []byte, source contextSource) (NetworkContextIdentity, error
 	if !source.sufficient() {
 		return "", &ErrUnavailable{Identity: "context", Reason: "insufficient local network facts"}
 	}
+	canonical, err := source.canonical()
+	if err != nil {
+		return "", &ErrUnavailable{Identity: "context", Reason: "local network facts are not canonically encodable"}
+	}
 	mac := hmac.New(sha256.New, key)
-	mac.Write(source.canonical())
+	mac.Write(canonical)
 	return NetworkContextIdentity(formatIdentity(contextPrefix, mac.Sum(nil))), nil
 }
 

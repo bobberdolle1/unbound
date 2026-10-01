@@ -36,13 +36,23 @@ type Bundle struct {
 // No single failure aborts the bundle. Each identity is attempted
 // independently so a partial cohort is normal and expected, not an error.
 func ForRun(ctx context.Context, backend backendcap.Backend, assets *engine.AssetPaths, configDir string) Bundle {
+	return forRunWithProvider(ctx, backend, assets, configDir, nil)
+}
+
+// ForRunWithProvider is ForRun with an explicit context provider seam, used by
+// tests that must not read the live host. A nil provider means the real,
+// read-only system provider.
+func ForRunWithProvider(ctx context.Context, backend backendcap.Backend, assets *engine.AssetPaths, configDir string, provider NetworkContextProvider) Bundle {
+	return forRunWithProvider(ctx, backend, assets, configDir, provider)
+}
+
+func forRunWithProvider(ctx context.Context, backend backendcap.Backend, assets *engine.AssetPaths, configDir string, provider NetworkContextProvider) Bundle {
 	var bundle Bundle
 
 	// Context identity. The key is local HMAC material and never leaves the
-	// machine except as the opaque fingerprint. A test may supply its own
-	// provider; it then owns its own key handling entirely.
-	if bundle.ContextProviderOverride != nil {
-		bundle.ContextKey, bundle.ContextErr = bundle.ContextProviderOverride.Identity(ctx)
+	// machine except as the opaque fingerprint.
+	if provider != nil {
+		bundle.ContextKey, bundle.ContextErr = provider.Identity(ctx)
 	} else {
 		key, keyErr := CachedContextKey(configDir)
 		if keyErr != nil {

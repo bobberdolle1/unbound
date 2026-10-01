@@ -31,6 +31,10 @@ const (
 	contextKeyCreateRetryDelay = 40 * time.Millisecond
 )
 
+// contextKeyStaleAfter is strictly greater than the whole retry budget, so an
+// empty file younger than this still belongs to a creator that is running.
+const contextKeyStaleAfter = contextKeyCreateAttempts*contextKeyCreateRetryDelay + 200*time.Millisecond
+
 // errContextKeyCorrupt marks a key file that exists but is not exactly the
 // expected 32 raw bytes.
 var errContextKeyCorrupt = errors.New("context key file is corrupt")
@@ -87,12 +91,19 @@ func loadOrCreateContextKeyOnce(configDir, path string) ([]byte, error) {
 		// replace a key the user actually had.
 		return nil, fmt.Errorf("%w: %v", errContextKeyCorrupt, err)
 	}
-	// A zero-length file provably holds no key, so completing it cannot
-	// reinterpret any history namespace - it can only start a fresh one, which
-	// makes history reuse more conservative. This is the recovery path for a
-	// crash between create and write, and it is deliberately narrower than the
-	// corrupt-key path above, which never removes anything.
-	if info, statErr := os.Stat(path); statErr == nil && info.Size() == 0 {
+	// A zero-length file means "not yet written". It may be a live creator
+	// mid-window, or the residue of a crash between create and write, and those
+	// are indistinguishable by size alone. Removing it unconditionally would
+	// unlink a concurrent creator's live file: that creator would then keep
+	// writing to an unlinked inode and return ITS key while the remover installs
+	// a different one, silently splitting one local history namespace into two.
+	//
+	// Age separates the two cases. A file younger than the entire bounded retry
+	// budget belongs to a creator that is still running, so it is left alone and
+	// the retry re-reads it. An older empty file provably holds no key - no
+	// process is still writing after the full budget elapsed - so completing it
+	// can only start a fresh namespace, never reinterpret one.
+	if info, statErr := os.Stat(path); statErr == nil && info.Size() == 0 && time.Since(info.ModTime()) > contextKeyStaleAfter {
 		_ = os.Remove(path)
 	}
 	// ATOMICITY. Creating the destination with O_CREATE|O_EXCL and only then
@@ -169,10 +180,15 @@ func installContextKeyByExclusiveCreate(configDir, path string, key []byte) (boo
 		}
 		return false, err
 	}
-	// A second window remains here, but only on filesystems that cannot hard
-	// link. A zero-length file is therefore reported as "not yet written" by
-	// readContextKeyFile rather than as corruption, so a loser re-reads rather
-	// than failing closed permanently.
+	// Harden BEFORE the secret reaches the disk. On Windows the create mode does
+	// not produce a DACL, so writing first would briefly expose the key under the
+	// parent directory's inherited ACL. The atomic path already hardens its temp
+	// file before publishing the name; this mirrors that ordering.
+	if err := hardenContextKeyFile(path); err != nil {
+		_ = file.Close()
+		_ = os.Remove(path)
+		return false, err
+	}
 	if _, err := file.WriteString(hex.EncodeToString(key)); err != nil {
 		_ = file.Close()
 		_ = os.Remove(path)
@@ -184,10 +200,6 @@ func installContextKeyByExclusiveCreate(configDir, path string, key []byte) (boo
 		return false, err
 	}
 	if err := file.Close(); err != nil {
-		_ = os.Remove(path)
-		return false, err
-	}
-	if err := hardenContextKeyFile(path); err != nil {
 		_ = os.Remove(path)
 		return false, err
 	}
@@ -225,29 +237,31 @@ func readContextKeyFile(path string) ([]byte, error) {
 // process. It never changes key material.
 var (
 	keyCacheMu sync.Mutex
-	keyCache   []byte
+	keyCache   = map[string][]byte{}
 )
 
 // CachedContextKey returns the process-local context key, loading or creating
 // it exactly once per process.
 func CachedContextKey(configDir string) ([]byte, error) {
+	// The cache is keyed by config directory. A single process-wide cache that
+	// ignored this argument would silently hand one directory's key to another.
 	keyCacheMu.Lock()
 	defer keyCacheMu.Unlock()
-	if len(keyCache) == contextKeyBytes {
-		return append([]byte(nil), keyCache...), nil
+	if cached, ok := keyCache[configDir]; ok && len(cached) == contextKeyBytes {
+		return append([]byte(nil), cached...), nil
 	}
 	key, err := LoadOrCreateContextKey(configDir)
 	if err != nil {
 		return nil, err
 	}
-	keyCache = append([]byte(nil), key...)
+	keyCache[configDir] = append([]byte(nil), key...)
 	return append([]byte(nil), key...), nil
 }
 
 // ForgetCachedContextKey clears the in-process cache. It exists for tests only.
 func ForgetCachedContextKey() {
 	keyCacheMu.Lock()
-	keyCache = nil
+	keyCache = map[string][]byte{}
 	keyCacheMu.Unlock()
 }
 
