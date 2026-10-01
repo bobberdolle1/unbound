@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unbound/engine/historyid"
 
 	"unbound/engine"
 	"unbound/engine/autotunevnext"
@@ -28,7 +29,7 @@ func TestProductOutcomeLedgerUnavailableIsReadOnly(t *testing.T) {
 		if err := os.WriteFile(path, contents, 0600); err != nil {
 			t.Fatal(err)
 		}
-		history := loadProductOutcomeLedger()
+		history := loadProductOutcomeLedger(historyid.Bundle{})
 		if history.writable {
 			t.Fatalf("unavailable history became writable: %#v", history)
 		}
@@ -36,7 +37,7 @@ func TestProductOutcomeLedgerUnavailableIsReadOnly(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		limitation := persistProductOutcomes(autotunevnext.Result{OutcomeEvidence: []autotunevnext.OutcomeEvidence{{}}}, history)
+		limitation := persistProductOutcomes(autotunevnext.Result{OutcomeEvidence: []autotunevnext.OutcomeEvidence{{}}}, history, historyid.Bundle{})
 		if limitation != "HISTORY_PERSIST_SKIPPED_HISTORY_UNAVAILABLE" {
 			t.Fatalf("limitation=%q", limitation)
 		}
@@ -53,7 +54,7 @@ func TestProductOutcomeLedgerUnavailableIsReadOnly(t *testing.T) {
 func TestProductOutcomeEntryRejectionIsReported(t *testing.T) {
 	history := productOutcomeLedger{writable: true}
 	result := autotunevnext.Result{OutcomeEvidence: []autotunevnext.OutcomeEvidence{{}}}
-	if limitation := persistProductOutcomes(result, history); limitation != "HISTORY_ENTRY_REJECTED" {
+	if limitation := persistProductOutcomes(result, history, historyid.Bundle{}); limitation != "HISTORY_ENTRY_REJECTED" {
 		t.Fatalf("entry rejection was silent: %q", limitation)
 	}
 }
@@ -70,7 +71,7 @@ func TestProductHistoryAdvisorSnapshotsClockOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	calls := 0
-	advisor := productHistoryAdvisor{ledger: loadProductOutcomeLedger().ledger, probe: probe, backend: backendcap.Zapret2Windows, now: func() time.Time { calls++; return time.Date(2026, 1, 2, 3, 4, calls, 0, time.UTC) }}
+	advisor := productHistoryAdvisor{ledger: loadProductOutcomeLedger(historyid.Bundle{}).ledger, probe: probe, backend: backendcap.Zapret2Windows, now: func() time.Time { calls++; return time.Date(2026, 1, 2, 3, 4, calls, 0, time.UTC) }}
 	context := autotunevnext.AdvisorContext{Diagnosis: diagnosis.Report{DiagnosisID: "diagnosis", AttributionID: "attribution", Kind: diagnosis.KindTCPPathFailure}, Planner: planner.PlannerReport{AttributionID: "attribution", Disposition: planner.DispositionCandidatesAvailable, Candidates: []planner.CandidateAssessment{{StrategyID: "a", StrategyFingerprint: testFingerprint("a"), Status: planner.StatusEligible}, {StrategyID: "b", StrategyFingerprint: testFingerprint("b"), Status: planner.StatusEligible}}}, Family: observatory.AddressFamilyIPv4, Eligible: []autotunevnext.CandidateIdentity{{StrategyID: "a", StrategyFingerprint: testFingerprint("a")}, {StrategyID: "b", StrategyFingerprint: testFingerprint("b")}}}
 	advice := advisor.Advise(context)
 	if calls != 1 || advice.Disposition != autotunevnext.RecommendationExperimentCandidates {
@@ -100,11 +101,11 @@ func TestProductPersistenceWritesFreshOutcome(t *testing.T) {
 	if len(result.OutcomeEvidence) != 1 || len(result.OutcomeEvidence[0].Validation) == 0 {
 		t.Fatalf("fresh run did not produce evidence-linked outcome: %#v", result)
 	}
-	history := loadProductOutcomeLedger()
+	history := loadProductOutcomeLedger(historyid.Bundle{})
 	if !history.writable {
 		t.Fatalf("empty product ledger is not writable: %#v", history)
 	}
-	if limitation := persistProductOutcomes(result, history); limitation != "" {
+	if limitation := persistProductOutcomes(result, history, historyid.Bundle{}); limitation != "" {
 		t.Fatalf("fresh persistence limitation=%q", limitation)
 	}
 	path, err := getVNextOutcomeLedgerPath()

@@ -12,6 +12,7 @@ import (
 	"unbound/engine/attribution"
 	"unbound/engine/autotunevnext"
 	"unbound/engine/backendcap"
+	"unbound/engine/historyid"
 	"unbound/engine/observatory"
 	"unbound/engine/providers"
 	"unbound/engine/strategyir"
@@ -235,7 +236,13 @@ func (s *productVNextService) Run(ctx context.Context, input AutoTuneVNextReques
 	if err != nil {
 		return productVNextFailureWithCatalog(autotunevnext.StatusPreflightFailed, publicTarget, string(runtimeBinding.backend), "PRODUCT_PROBE_CONTRACT_INVALID", productVNextCatalogStatus)
 	}
-	history := loadProductOutcomeLedger()
+	// One run has ONE coherent history identity cohort. The same bundle is used
+	// for the history query below AND for the outcome persistence at the end, so
+	// entries are never written under a namespace the query never consulted.
+	configDir, _ := engine.GetConfigDir()
+	identities := historyid.ForRun(ctx, runtimeBinding.backend, s.assets, configDir)
+
+	history := loadProductOutcomeLedger(identities)
 	request := autotunevnext.Request{
 		Target:        target,
 		Controls:      controls,
@@ -244,7 +251,7 @@ func (s *productVNextService) Run(ctx context.Context, input AutoTuneVNextReques
 		NetworkLabel:  "product-autotune-vnext",
 		TargetProbe:   &targetProbe,
 		ControlProbes: controlProbes,
-		Advisor:       productHistoryAdvisor{ledger: history.ledger, probe: targetProbe, backend: runtimeBinding.backend, now: time.Now},
+		Advisor:       productHistoryAdvisor{ledger: history.ledger, probe: targetProbe, backend: runtimeBinding.backend, identities: identities, now: time.Now},
 	}
 	var result autotunevnext.Result
 	if s.deps.scopeResolver != nil {
@@ -260,7 +267,7 @@ func (s *productVNextService) Run(ctx context.Context, input AutoTuneVNextReques
 		return productVNextFailureWithCatalog(autotunevnext.StatusInconclusive, publicTarget, string(runtimeBinding.backend), "OPERATION_CONFLICT", productVNextCatalogStatus)
 	}
 	mapped := mapAutoTuneVNextResult(result, publicTarget)
-	if persistenceLimitation := persistProductOutcomes(result, history); persistenceLimitation != "" {
+	if persistenceLimitation := persistProductOutcomes(result, history, identities); persistenceLimitation != "" {
 		mapped.Limitations = append(mapped.Limitations, persistenceLimitation)
 	}
 	mapped.Limitations = append(mapped.Limitations, history.limitations...)
