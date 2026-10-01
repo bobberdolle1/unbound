@@ -79,6 +79,12 @@ func LoadOrCreateContextKey(configDir string) ([]byte, error) {
 		_ = os.Remove(path)
 		return nil, err
 	}
+	// The key is what makes the context identity non-guessable, so an
+	// un-hardened key is not silently accepted: report it instead.
+	if err := hardenContextKeyFile(path); err != nil {
+		_ = os.Remove(path)
+		return nil, err
+	}
 	return key, nil
 }
 
