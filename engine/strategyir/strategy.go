@@ -666,6 +666,37 @@ func Fingerprint(s Strategy) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
+// TemplateIdentity is the semantic identity of a strategy independent of any
+// host binding.
+//
+// Canonical Fingerprint deliberately includes Selector.Scope.Host, so the same
+// template bound to two hosts yields two different fingerprints. That is correct
+// for execution identity and useless for answering "are these the same strategy
+// template?". TemplateIdentity answers only the latter, by clearing the bound host
+// list and host-derived list id before hashing. It is never used to authorize
+// execution; Fingerprint remains the execution identity.
+func TemplateIdentity(s Strategy) (string, error) {
+	c, err := Canonicalize(s)
+	if err != nil {
+		return "", err
+	}
+	c.Selector.Scope.Host.Hosts = nil
+	c.Selector.Scope.Host.ID = ""
+	data, err := json.Marshal(semanticStrategy{
+		SchemaVersion: c.SchemaVersion,
+		Transport:     c.Transport,
+		Selector:      c.Selector,
+		Range:         c.Range,
+		Operations:    c.Operations,
+		Safety:        c.Safety,
+	})
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
+}
+
 // Marshal emits canonical semantic ordering, while preserving presentation fields.
 func Marshal(s Strategy) ([]byte, error) {
 	c, err := Canonicalize(s)

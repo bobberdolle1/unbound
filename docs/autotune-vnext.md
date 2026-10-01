@@ -47,6 +47,26 @@ The snapshot is ephemeral. It is neither persisted in managed intent nor retaine
 
 Apply resolves again immediately. A current scope may be a subset of the short-lived validated scope, but any new endpoint returns `SERVICE_SCOPE_CHANGED_REVALIDATION_REQUIRED`; it is never captured automatically. Managed health compares fresh DNS only to the active capture scope, not the larger original validation grant, before bounded exact-edge active observations. An edge validated by the experiment but absent at Apply therefore requires fresh revalidation if it reappears. Windows renders only exact address alternatives in the WinDivert filter; Linux nft mode uses one executor-owned ephemeral table with exact family rules and refuses multi-edge iptables capture.
 
+## Bounded validated service graph
+
+Single-host service scope связывает один нормализованный target с одним ограниченным exact DNS scope и одной validated strategy. Исследование Phase 4 доказало, что для сервиса этого недостаточно: связывание доказанной стратегии только с ENTRY host не влияет на доставку MEDIA, потому что authority стратегии host-scoped. Каждый активный service host требует собственной exact binding и независимой свежей DNS authority.
+
+Сервисный граф — это небольшой явный набор host nodes. Каждый node независимо владеет: нормализованным exact hostname, ролью, собственным свежим ограниченным DNS scope, validated strategy binding и состоянием валидации. Узлы не могут читать scope или результат валидации друг друга; scope node обязан совпадать с его own target.
+
+Границы жёсткие и не усекаются: `MaxServiceScopeEdges = 8` на hostname и `MaxServiceGraphHosts = 4` на граф. Четыре — evidence-backed консервативное значение, покрывающее наблюдавшуюся форму (ENTRY, возможная API-зависимость, один-два dynamic media host). Переполнение графа или node scope — fail closed, а не молчаливое усечение.
+
+Роль node не создаёт packet authority и не даёт валидации. `DISCOVERED` означает лишь, что node предоставлен вызывающим кодом, и не несёт никакой authority. `VALIDATED` означает, что именно этот target прошёл текущий контролируемый эксперимент. `ACTIVE` — что validated node реально связан в действующем capture. `NEEDS_REVALIDATION` — fail-closed состояние, а не более мягкий успех. Discovery в этой модели не реализован: production API принимает явные nodes от доверенного кода.
+
+Ревалидация асимметрична и следует принципу `IsSubsetOf`. Исчезающие адреса безвредны. Всё, что расширяет capture или появляется без собственной валидации, требует свежего эксперимента: `NEW_EDGE`, `NEW_NODE`, `NODE_DISAPPEARED` для required node, `NODE_REAPPEARED_UNVALIDATED`, `TARGET_CHANGED`, `STRATEGY_CHANGED`, `NODE_NOT_ACTIVE`. Node, вернувшийся после исчезновения, никогда не считается доверенным автоматически, и исчезнувший node никогда не подменяется другим host.
+
+Одна стратегия может быть связана с несколькими hosts независимо — это доказанный случай Phase 4, где ENTRY и MEDIA использовали один и тот же template. Для сравнения template используется `StrategyTemplateIdentity`, игнорирующий host binding: canonical `Fingerprint` включает host selector, поэтому он остаётся execution identity и не годится для ответа на вопрос «это тот же template?». Разные стратегии на разных nodes архитектура допускает для общности, но текущие доказательства такой потребности не создают.
+
+Capture рендерится только из ACTIVE nodes. Активный capture graph — это подмножество validated/experiment graph, и ничего выведенное из него не авторизует более широкий набор позже: node, проверенный экспериментом, но не активированный Apply, не считается разрешённым. Каждая section должна нести ровно один exact host selector собственного node; section с wildcard, host list, ipset или capture-level аргументом отвергается. Union filter строится только из validated exact addresses, TCP/443, без CIDR, без suffix-derived диапазонов и без wildcard. Никакой pattern не создаёт authority.
+
+Ни один remote IP, DNS scope, apply token, PID, filter или argv не персистится. Долговременная проекция графа содержит только логические node identities, роли, requiredness, состояния валидации и strategy/template identity. При restart каждый node разрешается заново; сохранённые адреса не воспроизводятся. История не может создать node, провалидировать адрес или авторизовать Apply.
+
+Полная эффективность YouTube по-прежнему **не установлена**: browser discovery authority для web/SABR player остаётся нерешённым, поэтому автоматическое обнаружение media host не реализовано и является отдельной миссией.
+
 ## Gates and policy
 
 Planner is the only eligibility authority. The core recompiles an eligible StrategyIR candidate and fails closed if its compile status, backend, or fingerprint disagrees with Planner. A narrow host-preflight boundary checks factual runtime readiness, including logical assets and capture requirements, without making a network-effectiveness probe.
