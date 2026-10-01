@@ -50,6 +50,26 @@ version="$(node -p "require('./wails.json').info.productVersion")"
 
 Скрипт создаёт локальный archive, извлекает его в временную директорию, проверяет `BUNDLE_SHA256SUMS.txt`, identity, права и команды `--version`, `--version --json`, `--help`, `--list-profiles --json`, `--test`. Для будущего release candidate используйте только чистый checkout и `scripts/release/local_release_linux.sh <VERSION> <COMMIT>`.
 
+### Bounded service graph (герметичные тесты)
+
+Тесты графа в `engine/autotunevnext/service_graph_test.go` полностью герметичны: ни один из них не выполняет DNS, не запускает процесс и не обращается к сети. Все scope собираются литерально, поэтому набор детерминирован и ничего не может «доказать» о живой сети.
+
+```bash
+go test ./engine/autotunevnext/... -run 'ServiceGraph|Revalidation|ActiveGraph|StrategyTemplateIdentity|RenderWindowsGraph' -v
+```
+
+Покрытие: одноузловой граф, эквивалентный существующему single-host scope; два node с одним template (доказанный случай Phase 4); два node с разными bindings; per-node лимит в 8 адресов; переполнение графа сверх 4 hosts; запрет двух node на один target; обязательное совпадение scope с own target; обязательный strategy binding для validated node; `DISCOVERED` node не даёт active capture; ревалидация при `NEW_EDGE`, `NEW_NODE`, исчезновении required node, безвредном исчезновении optional node и возврате непровалидированного node; active capture graph уже experiment graph; отсутствие raw edges в сериализации; независимость логического identity графа от текущих DNS-ответов; независимость `StrategyTemplateIdentity` от host binding при сохранении различия разных стратегий; multi-section рендеринг двух host с одним template; отказ section, связанной с чужим host; отказ wildcard/list/capture-level authority; исключение не-ACTIVE node.
+
+Физическая приёмка multi-host capture на Windows и multi-node nft на Linux в этой миссии **не выполнялась**; см. [`PLATFORMS.md`](PLATFORMS.md). Герметичные тесты не заменяют физическую приёмку и не заявляют её результат.
+
+Исполнение графа, Apply-гейт и health покрыты отдельно:
+
+```bash
+go test ./engine/autotunevnext/... -run 'ServiceGraphExperiment|PrepareServiceGraph|ApplyServiceGraph|ServiceGraphHealth' -v
+```
+
+Покрытие: одна активация на двухузловой граф и точный порядок вызовов executor'а; restore при сбое активации; приоритет провала restore; отмена во время наблюдения с входом в restore; остановка на регрессии protected control с последующим restore; запрет ложного `VERIFIED_FIXED`; Apply без изменений допустим; отказ при новом адресе, новом node и исчезновении required node; использование только ACTIVE nodes; отказ section с чужим host и с wildcard/list authority; отказ пустого validated graph; гейт останавливает Apply до касания executor'а; успешный Apply восстанавливает состояние и сохраняет обязанность отката; `HEALTHY`; мёртвый процесс как `FAULT`; сбой резолвера fail-closed; новый адрес и новый node как `NEEDS_REVALIDATION`; урок PR59 — node вне активного capture не авторизуется; отсутствие активного capture не здоровье; health snapshot без адресов.
+
 ---
 
 ## 3. Пошаговый Чек-лист Ручного Тестирования (Manual QA)

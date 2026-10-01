@@ -34,6 +34,7 @@ Windows YouTube evidence from 2026-09-22 resolved `www.youtube.com` to Google ed
 - GUI, CLI, Control Center, Task Scheduler autostart и `.cmd`-запускатели входят в релиз.
 - GUI при необходимости сам запрашивает UAC. Консольные команды запускаются без принудительного UAC: `--version`, `--list-profiles` и `--test` работают без повышения, а запуск движка/Control Center/управление службой требует уже повышенный терминал или комплект `.cmd`-запускателей.
 - Microsoft Defender может эвристически блокировать неподписанные сетевые инструменты. Исключение добавляется только явным действием пользователя; это не цифровая подпись и не гарантия доверия.
+- Bounded service graph на Windows рендерит **один** process-global `--wf-raw-filter` над union точных validated адресов всех ACTIVE nodes плюс отдельную host-scoped Zapret2 section на каждый node, разделённую `--new`. Filter ограничен TCP/443 и содержит только точные адреса: без wildcard, без CIDR, без ASN/IPSet и без диапазонов, выведенных из суффикса домена. Section, несущая host list, ipset или capture-level аргумент, отвергается.
 
 ## 🐧 Linux
 
@@ -43,6 +44,7 @@ Windows YouTube evidence from 2026-09-22 resolved `www.youtube.com` to Google ed
 - Упакованный `nfqws2` создаёт NFQUEUE-процесс, а UNBOUND устанавливает изолированные правила `nftables` с фолбэком на `iptables`. Перед запуском CLI проверяет `BUNDLE_SHA256SUMS.txt`.
 - 2026-09-29 на выделенном хосте (`DEDICATED_BARE_METAL`) подтверждены жизненный цикл `nfqws2`/NFQUEUE, продвижение счётчиков правил, штатная очистка (SIGTERM/SIGINT), откат при сбое, второй запуск и сохранность сторонних правил. Непривилегированные команды `--version`, `--help`, `--list-profiles --json` и `--test` не требуют перехвата; запуск профиля требует root.
 - Для v0.7.0 Linux-бинарник не публикуется. Подробная запись физической приёмки следующего тарджета: [`release/linux-next-release-packaging.md`](release/linux-next-release-packaging.md); архивная v0.6.9: [`release/linux-v0.6.9-acceptance.md`](release/linux-v0.6.9-acceptance.md).
+- Bounded service graph на Linux использует тот же exact-authority контракт: одна executor-owned `nft`-таблица с per-family правилами по точным адресам, `NFQUEUE`, mark exclusion и bypass. Смешанная семантика семейств по-прежнему проверяется после применения, а существующая верификация не ослабляется. Физическая приёмка multi-node графа на Linux-хосте в этой миссии **не выполнялась** и не заявляется.
 
 ## 🍎 macOS
 

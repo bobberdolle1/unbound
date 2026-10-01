@@ -235,11 +235,20 @@ func nftRuleHasExpectedPorts(rule string, spec LinuxNFQueueSpec) bool {
 }
 
 func nftRuleHasCompleteSemantics(rule, family string, edges []net.IP, spec LinuxNFQueueSpec) bool {
+	// nft rewrites the rule when it lists it back, so the verifier must match the
+	// listing nft actually prints, not the syntax the product submitted. nft
+	// canonicalizes "meta mark and" to "meta mark &", and "queue num N bypass" to
+	// "queue flags bypass to N". Matching the submitted form here made every real
+	// activation unverifiable while hermetic tests, which fed the submitted text
+	// straight back, still passed.
 	normalized := strings.ReplaceAll(strings.ToLower(rule), " ", "")
+	markOK := strings.Contains(normalized, "metamark&0x40000000!=0x40000000") ||
+		strings.Contains(normalized, "metamarkand0x40000000!=0x40000000")
+	queueOK := strings.Contains(normalized, fmt.Sprintf("queueflagsbypassto%d", spec.Queue)) ||
+		strings.Contains(normalized, fmt.Sprintf("queuenum%dbypass", spec.Queue))
 	return nftRuleHasExpectedAddresses(rule, family, edges) &&
 		nftRuleHasExpectedPorts(rule, spec) &&
-		strings.Contains(normalized, "metamarkand0x40000000!=0x40000000") &&
-		strings.Contains(normalized, fmt.Sprintf("queuenum%dbypass", spec.Queue)) &&
+		markOK && queueOK &&
 		strings.Contains(rule, fmt.Sprintf("comment %q", spec.Marker))
 }
 
