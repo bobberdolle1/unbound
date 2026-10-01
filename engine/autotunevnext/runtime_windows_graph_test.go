@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 	"unbound/engine"
+	"unbound/engine/strategyir"
 )
 
 func TestRenderGraphActivationBindsEachNodeToItsOwnHost(t *testing.T) {
@@ -150,4 +151,44 @@ func TestWindowsGraphReadinessLatches(t *testing.T) {
 		}
 	}
 	_ = exec
+}
+
+// RenderGraphActivation lives in a windows-only file, so tests that exercise
+// it must live here too. In an untagged test file they compile only on Windows
+// and break `go vet` on every other platform.
+// The graph capture must come from the compiled CapturePlan, never from a
+// hardcoded 443. A strategy compiled for other ports would otherwise install a
+// capture that never sees the traffic the strategy actually targets.
+func TestRenderWindowsGraphCaptureUsesCompiledPorts(t *testing.T) {
+	capture := graphTestCapture()
+	capture.TCPPorts = []strategyir.PortRange{{Start: 5222, End: 5223}, {Start: 5228, End: 5228}}
+	activation := ServiceGraphActivation{Graph: twoNodeGraph(t), Sections: graphSections(), Capture: capture}
+	plan, err := RenderGraphActivation(activation)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	joined := strings.Join(plan.CaptureArgv, "\n")
+	if !strings.Contains(joined, "5222") || !strings.Contains(joined, "5223") || !strings.Contains(joined, "5228") {
+		t.Fatalf("capture argv must carry the compiled ports, got %q", joined)
+	}
+	if !strings.Contains(plan.RawFilter, "tcp.DstPort >= 5222") || !strings.Contains(plan.RawFilter, "tcp.DstPort <= 5223") {
+		t.Fatalf("raw filter must carry the compiled port range, got %q", plan.RawFilter)
+	}
+	if !strings.Contains(plan.RawFilter, "tcp.DstPort == 5228") {
+		t.Fatalf("raw filter must carry the compiled single port, got %q", plan.RawFilter)
+	}
+	// The inbound clause must mirror the outbound one.
+	if !strings.Contains(plan.RawFilter, "tcp.SrcPort >= 5222") {
+		t.Fatalf("raw filter inbound clause must mirror the compiled ports, got %q", plan.RawFilter)
+	}
+}
+
+// A capture with no TCP ports must be refused rather than silently widened.
+func TestRenderWindowsGraphCaptureRejectsEmptyPortSet(t *testing.T) {
+	capture := graphTestCapture()
+	capture.TCPPorts = nil
+	activation := ServiceGraphActivation{Graph: twoNodeGraph(t), Sections: graphSections(), Capture: capture}
+	if _, err := RenderGraphActivation(activation); err == nil {
+		t.Fatal("an empty compiled port set must be refused")
+	}
 }
