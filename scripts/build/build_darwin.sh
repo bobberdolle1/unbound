@@ -44,7 +44,7 @@ test -f engine/core_bin/darwin/tpws || {
     exit 1
 }
 
-VERSION="${UNBOUND_VERSION:-$(node -e "try { console.log(require('./wails.json').info.productVersion); } catch(e) { console.log('0.7.0'); }")}"
+VERSION="${UNBOUND_VERSION:-$(node -e "try { console.log(require('./wails.json').info.productVersion); } catch(e) { console.error(e); process.exit(1); }")}"
 BUILD_COMMIT="${UNBOUND_BUILD_COMMIT:-$(git rev-parse --verify HEAD 2>/dev/null || printf 'unknown')}"
 if [ -n "${UNBOUND_BUILD_DIRTY:-}" ]; then
     BUILD_DIRTY="$UNBOUND_BUILD_DIRTY"
