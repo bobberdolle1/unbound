@@ -15,6 +15,12 @@ package main
 // no IP field, no DNS field, no filter field, no argv field, no PID or queue
 // field, and no Apply token. A saved graph intent can never become packet
 // authority, because it physically cannot express packet authority.
+//
+// The Target string is a user-authored HTTPS URL, not packet authority. It may
+// name a literal host and a non-default port, and the only address-bearing data
+// in a live capture is the freshly resolved edge set, which exists solely in
+// memory and is never persisted. A restart always re-resolves every node, so a
+// stale or literal Target cannot become a stale or literal capture.
 
 import (
 	"encoding/json"

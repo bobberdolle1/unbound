@@ -127,7 +127,11 @@ func graphIntentMatchesActivation(intent persistedVNextGraphState, activation au
 // It never stops early: every step is attempted and the first error wins, so a
 // failed Deactivate still gets a restore attempt.
 func (s *graphManagedService) cleanupOwnedRuntime(ctx context.Context) error {
-	cleanup := context.WithoutCancel(ctx)
+	// Detach from the caller's cancellation, but keep our own deadline:
+	// context.WithoutCancel reports no deadline, so a stuck runtime would
+	// otherwise be able to hang exit indefinitely.
+	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), graphShutdownTimeout)
+	defer cancel()
 	var firstErr error
 	if err := s.executor.Deactivate(cleanup); err != nil {
 		firstErr = err
@@ -140,7 +144,14 @@ func (s *graphManagedService) cleanupOwnedRuntime(ctx context.Context) error {
 			firstErr = err
 		}
 	}
-	s.dirty = false
+	// The flag is the only gate on every later cleanup, so it must be cleared
+	// ONLY when the whole sequence succeeded. Clearing it after a failed
+	// cleanup turned the service into a permanent no-op: state FAULT with a
+	// live capture, a stale nft table, or a running WinDivert, and no Suspend,
+	// Revert or Shutdown that could ever retry.
+	if firstErr == nil {
+		s.dirty = false
+	}
 	return firstErr
 }
 
@@ -169,9 +180,10 @@ func (s *graphManagedService) ApplyGraph(ctx context.Context, activation autotun
 	s.direct, s.haveDir = snapshot, true
 	s.dirty = true
 	if err := s.executor.EstablishDirect(ctx, snapshot); err != nil {
-		s.dirty = false
-		_ = clearVNextGraphState()
-		return err
+		// EstablishDirect already stopped the provider, so failing here can still
+		// have changed the machine. It must go through the same full cleanup as
+		// every other failure, or the user's original profile stays stopped.
+		return s.failApply(ctx, err)
 	}
 	if err := s.executor.ActivateGraph(ctx, activation); err != nil {
 		return s.failApply(ctx, err)

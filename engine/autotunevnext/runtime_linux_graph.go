@@ -221,7 +221,10 @@ func (e *LinuxGraphExecutor) ActivateGraph(ctx context.Context, activation Servi
 	}
 	args := append([]string{"--qnum=" + fmt.Sprint(queue)}, trustedLuaInitArgs(e.runtime.opts.Assets.LuaDir)...)
 	args = append(args, exact.EngineArgv...)
-	candidateCtx, cancel := candidateExecutionContext(ctx)
+	// Detach from the caller's context at start: exec watches whatever context
+	// it is given, so a committed graph started on a child of ctx would still die
+	// when the caller cancelled. See the Windows graph executor for the same fix.
+	candidateCtx, cancel := candidateExecutionContext(context.WithoutCancel(ctx))
 	active.cancel = cancel
 	cmd, err := e.runtime.startProcess(candidateCtx, filepath.Join(e.runtime.opts.Assets.BinDir, "nfqws2"), args, e.runtime.opts.Assets.BinDir, linuxCandidateSysProcAttr())
 	if err != nil {

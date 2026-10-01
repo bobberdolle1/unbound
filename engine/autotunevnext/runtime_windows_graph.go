@@ -87,7 +87,7 @@ func (e *WindowsGraphExecutor) EstablishDirect(ctx context.Context, snapshot Sta
 func RenderGraphActivation(activation ServiceGraphActivation) (WindowsServiceGraphPlan, error) {
 	// Sections are supplied by the product, derived from the compiled plan. The
 	// executor renders them but never invents a host selector of its own.
-	plan, err := RenderWindowsServiceGraphCapture(activation.Graph, activation.Sections)
+	plan, err := RenderWindowsServiceGraphCapture(activation.Graph, activation.Sections, activation.Capture)
 	if err != nil {
 		return WindowsServiceGraphPlan{}, err
 	}
@@ -138,7 +138,13 @@ func (e *WindowsGraphExecutor) ActivateGraph(ctx context.Context, activation Ser
 		e.mu.Unlock()
 		return fmt.Errorf("owned AutoTune graph is already active")
 	}
-	candidateCtx, cancel := candidateExecutionContext(ctx)
+	// The engine process must NOT descend from the caller's context. exec
+	// installs its own watcher on whatever context it is given, so a committed
+	// graph started on a child of ctx would still be killed the moment the
+	// caller cancelled - which is exactly what `defer cancel()` does in every
+	// real Apply. Detaching here, at start, is what actually gives the managed
+	// process a lifetime; CommitGraph only marks it as committed.
+	candidateCtx, cancel := candidateExecutionContext(context.WithoutCancel(ctx))
 	cmd := exec.CommandContext(candidateCtx, binary, args...)
 	cmd.Dir = e.opts.Assets.BinDir
 	stdout, err := cmd.StdoutPipe()
@@ -264,14 +270,27 @@ func (e *WindowsGraphExecutor) Deactivate(ctx context.Context) error {
 	if proc.cancel != nil {
 		proc.cancel()
 	}
+	// A committed process has a no-op cancel, so waiting first would always burn
+	// the full timeout before anything could end the process. Stop the owned
+	// process FIRST, then wait for it, keeping the bound as an escalation path.
+	if proc.pid != 0 {
+		e.mu.Lock()
+		_, owned := e.ownedPIDs[proc.pid]
+		e.mu.Unlock()
+		if owned {
+			_ = exec.Command("taskkill", "/F", "/PID", fmt.Sprint(proc.pid)).Run()
+		}
+	}
 	select {
 	case <-proc.done:
 	case <-time.After(10 * time.Second):
-		if proc.pid != 0 {
-			if _, owned := e.ownedPIDs[proc.pid]; owned {
-				_ = exec.Command("taskkill", "/F", "/PID", fmt.Sprint(proc.pid)).Run()
-			}
-		}
+	}
+	// Retire the ownership record once the process is factually gone, so "owned"
+	// keeps meaning "currently owned" and the set cannot grow without bound.
+	if proc.pid != 0 {
+		e.mu.Lock()
+		delete(e.ownedPIDs, proc.pid)
+		e.mu.Unlock()
 	}
 	// The job handle must be released regardless of the WinDivert result, or a
 	// failed stop leaks one kernel handle per occurrence and disarms the crash

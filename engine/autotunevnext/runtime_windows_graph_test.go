@@ -19,6 +19,7 @@ func TestRenderGraphActivationBindsEachNodeToItsOwnHost(t *testing.T) {
 	activation := ServiceGraphActivation{
 		Graph:    twoNodeGraph(t),
 		Sections: graphSections(),
+		Capture:  graphTestCapture(),
 	}
 	plan, err := RenderGraphActivation(activation)
 	if err != nil {
@@ -43,6 +44,7 @@ func TestRenderGraphActivationNeverEmitsWildcardOrListAuthority(t *testing.T) {
 	activation := ServiceGraphActivation{
 		Graph:    twoNodeGraph(t),
 		Sections: graphSections(),
+		Capture:  graphTestCapture(),
 	}
 	plan, err := RenderGraphActivation(activation)
 	if err != nil {

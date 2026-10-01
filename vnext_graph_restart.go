@@ -131,33 +131,38 @@ func PlanGraphRestart(saved persistedVNextGraphState, fresh []freshGraphNode) (G
 			plan.AbsentOptional = append(plan.AbsentOptional, node.NodeID)
 			continue
 		}
+		// Validate every freshly resolved address first. This is a pure
+		// validation pass: one ServiceNode per NODE, never per EDGE. Building
+		// inside this loop emitted one node per address, so any host resolving
+		// to more than one address produced duplicate node IDs and the whole
+		// restart was rejected as an invalid graph.
 		for _, edge := range resolved.Edges {
 			if edge.IP == nil || net.ParseIP(edge.IP.String()) == nil {
 				return rejectGraphRestart("node has a malformed address: "+node.NodeID, autotunevnext.GraphRevalidationNone), nil
 			}
-			// An optional node that reappears is VALIDATED, never ACTIVE: it has
-			// just come back and has not proven itself in this run.
-			state := autotunevnext.ServiceNodeActive
-			if !node.Required {
-				state = autotunevnext.ServiceNodeValidated
-			}
-			nodeTarget := restartNodeTarget(resolved.Target)
-			built = append(built, autotunevnext.ServiceNode{
-				ID:       node.NodeID,
-				Role:     resolved.Role,
-				Required: node.Required,
-				Target:   nodeTarget,
-				Scope: autotunevnext.ServiceScopeSnapshot{
-					Target:     nodeTarget,
-					ResolvedAt: time.Now(),
-					Edges:      resolved.Edges,
-				},
-				Validation:          state,
-				Strategy:            node.StrategyID,
-				StrategyFingerprint: node.Fingerprint,
-				TemplateIdentity:    node.TemplateIdentity,
-			})
 		}
+		// An optional node that reappears is VALIDATED, never ACTIVE: it has
+		// just come back and has not proven itself in this run.
+		state := autotunevnext.ServiceNodeActive
+		if !node.Required {
+			state = autotunevnext.ServiceNodeValidated
+		}
+		nodeTarget := restartNodeTarget(resolved.Target)
+		built = append(built, autotunevnext.ServiceNode{
+			ID:       node.NodeID,
+			Role:     resolved.Role,
+			Required: node.Required,
+			Target:   nodeTarget,
+			Scope: autotunevnext.ServiceScopeSnapshot{
+				Target:     nodeTarget,
+				ResolvedAt: time.Now(),
+				Edges:      resolved.Edges,
+			},
+			Validation:          state,
+			Strategy:            node.StrategyID,
+			StrategyFingerprint: node.Fingerprint,
+			TemplateIdentity:    node.TemplateIdentity,
+		})
 		plan.Accepted = append(plan.Accepted, node.NodeID)
 	}
 

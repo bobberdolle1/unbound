@@ -453,3 +453,28 @@ func graphIntent() persistedVNextGraphState {
 		},
 	}
 }
+
+// A failed cleanup must leave the service dirty so later Suspend/Shutdown retry.
+// Clearing the flag on failure made the service a permanent no-op: FAULT state
+// with a live capture that no cleanup call could ever reach again.
+func TestGraphManagedFailedCleanupKeepsRetrying(t *testing.T) {
+	service, exec := graphLifecycleFixture(t)
+	if err := service.ApplyGraph(context.Background(), graphActivation(), graphIntent()); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	exec.deactivateErr = errFake
+	if err := service.Suspend(context.Background()); err == nil {
+		t.Fatal("a failed deactivate must surface")
+	}
+	if !service.dirty {
+		t.Fatal("a failed cleanup must leave the service dirty so cleanup can be retried")
+	}
+	// Clearing the injected error must let a later cleanup succeed and clear it.
+	exec.deactivateErr = nil
+	if err := service.Suspend(context.Background()); err != nil {
+		t.Fatalf("retry after a transient cleanup failure: %v", err)
+	}
+	if service.dirty {
+		t.Fatal("a successful cleanup must clear the dirty flag")
+	}
+}

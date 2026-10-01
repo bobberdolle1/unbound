@@ -11,7 +11,7 @@ import (
 	"net"
 	"strings"
 	"testing"
-
+	"unbound/engine/backendcap"
 	"unbound/engine/observatory"
 	"unbound/engine/strategyir"
 )
@@ -375,7 +375,7 @@ func twoNodeGraph(t *testing.T) ServiceGraph {
 }
 
 func TestRenderWindowsGraphCaptureTwoHostsOneTemplate(t *testing.T) {
-	plan, err := RenderWindowsServiceGraphCapture(twoNodeGraph(t), graphSections())
+	plan, err := RenderWindowsServiceGraphCapture(twoNodeGraph(t), graphSections(), graphTestCapture())
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -411,8 +411,14 @@ func TestRenderWindowsGraphCaptureTwoHostsOneTemplate(t *testing.T) {
 			t.Fatalf("union filter contains wildcard or range authority %q", forbidden)
 		}
 	}
-	if len(plan.CaptureArgv) != 3 {
-		t.Fatalf("capture argv = %v, want exactly three process-global arguments", plan.CaptureArgv)
+	// Every capture argument is process-global and comes from the compiled
+	// CapturePlan. The test capture is bidirectional, so both directions must
+	// be present, and nothing may be per-node.
+	if len(plan.CaptureArgv) != 4 {
+		t.Fatalf("capture argv = %v, want the four process-global arguments derived from the compiled capture", plan.CaptureArgv)
+	}
+	if plan.CaptureArgv[0] != "--wf-l3=ipv4,ipv6" {
+		t.Fatalf("capture families must come from the compiled capture, got %q", plan.CaptureArgv[0])
 	}
 }
 
@@ -421,7 +427,7 @@ func TestRenderWindowsGraphCaptureTwoHostsOneTemplate(t *testing.T) {
 func TestRenderWindowsGraphCaptureRejectsCrossHostSection(t *testing.T) {
 	sections := graphSections()
 	sections[1].Host = "entry.example"
-	if _, err := RenderWindowsServiceGraphCapture(twoNodeGraph(t), sections); err == nil {
+	if _, err := RenderWindowsServiceGraphCapture(twoNodeGraph(t), sections, graphTestCapture()); err == nil {
 		t.Fatal("section bound to another node's host must be rejected")
 	}
 }
@@ -437,7 +443,7 @@ func TestRenderWindowsGraphCaptureRejectsWildcardAuthority(t *testing.T) {
 	} {
 		sections := graphSections()
 		sections[1].Argv = bad
-		if _, err := RenderWindowsServiceGraphCapture(twoNodeGraph(t), sections); err == nil {
+		if _, err := RenderWindowsServiceGraphCapture(twoNodeGraph(t), sections, graphTestCapture()); err == nil {
 			t.Fatalf("section argv %v must be rejected", bad)
 		}
 	}
@@ -452,7 +458,7 @@ func TestRenderWindowsGraphCaptureOmitsInactiveNodes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("graph: %v", err)
 	}
-	plan, err := RenderWindowsServiceGraphCapture(g, graphSections())
+	plan, err := RenderWindowsServiceGraphCapture(g, graphSections(), graphTestCapture())
 	if err == nil {
 		t.Fatalf("rendering a section for a non-active node must fail, got plan %+v", plan)
 	}
@@ -496,5 +502,54 @@ func TestCanonicalGraphEdgesAgreesWithSingleHost(t *testing.T) {
 				t.Fatalf("input %d index %d: edge mismatch", i, j)
 			}
 		}
+	}
+}
+
+// graphTestCapture is a real compiled capture: TCP, both directions, IPv4 and
+// IPv6, on the standard 443. Tests that need different ports build their own.
+func graphTestCapture() backendcap.CapturePlan {
+	return backendcap.CapturePlan{
+		BackendKind: backendcap.CaptureWinDivert,
+		Transport:   backendcap.CaptureTransportTCP,
+		Direction:   strategyir.DirectionBoth,
+		IPFamilies:  []strategyir.IPFamily{strategyir.IPFamilyV4, strategyir.IPFamilyV6},
+		TCPPorts:    []strategyir.PortRange{{Start: 443, End: 443}},
+	}
+}
+
+// The graph capture must come from the compiled CapturePlan, never from a
+// hardcoded 443. A strategy compiled for other ports would otherwise install a
+// capture that never sees the traffic the strategy actually targets.
+func TestRenderWindowsGraphCaptureUsesCompiledPorts(t *testing.T) {
+	capture := graphTestCapture()
+	capture.TCPPorts = []strategyir.PortRange{{Start: 5222, End: 5223}, {Start: 5228, End: 5228}}
+	activation := ServiceGraphActivation{Graph: twoNodeGraph(t), Sections: graphSections(), Capture: capture}
+	plan, err := RenderGraphActivation(activation)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	joined := strings.Join(plan.CaptureArgv, "\n")
+	if !strings.Contains(joined, "5222") || !strings.Contains(joined, "5223") || !strings.Contains(joined, "5228") {
+		t.Fatalf("capture argv must carry the compiled ports, got %q", joined)
+	}
+	if !strings.Contains(plan.RawFilter, "tcp.DstPort >= 5222") || !strings.Contains(plan.RawFilter, "tcp.DstPort <= 5223") {
+		t.Fatalf("raw filter must carry the compiled port range, got %q", plan.RawFilter)
+	}
+	if !strings.Contains(plan.RawFilter, "tcp.DstPort == 5228") {
+		t.Fatalf("raw filter must carry the compiled single port, got %q", plan.RawFilter)
+	}
+	// The inbound clause must mirror the outbound one.
+	if !strings.Contains(plan.RawFilter, "tcp.SrcPort >= 5222") {
+		t.Fatalf("raw filter inbound clause must mirror the compiled ports, got %q", plan.RawFilter)
+	}
+}
+
+// A capture with no TCP ports must be refused rather than silently widened.
+func TestRenderWindowsGraphCaptureRejectsEmptyPortSet(t *testing.T) {
+	capture := graphTestCapture()
+	capture.TCPPorts = nil
+	activation := ServiceGraphActivation{Graph: twoNodeGraph(t), Sections: graphSections(), Capture: capture}
+	if _, err := RenderGraphActivation(activation); err == nil {
+		t.Fatal("an empty compiled port set must be refused")
 	}
 }

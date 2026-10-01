@@ -240,3 +240,29 @@ func TestGraphRestartStatusNeverClaimsActiveBeforeReady(t *testing.T) {
 		t.Fatalf("status %q does not expose %s", status, want)
 	}
 }
+
+// A node that resolves to several addresses must still produce exactly ONE
+// ServiceNode. Building one per edge emitted duplicate node IDs, so any host
+// with more than one address made the whole restart REJECTED.
+func TestGraphRestartMultiAddressNodeStaysOneNode(t *testing.T) {
+	saved := validGraphState()
+	fresh := baseRestartFresh()
+	for i := range fresh {
+		fresh[i].Edges = append(fresh[i].Edges, autotunevnext.ServiceScopeEdge{
+			IP: net.ParseIP("203.0.113.77"), Family: observatory.AddressFamilyIPv4,
+		})
+	}
+	plan, err := PlanGraphRestart(saved, fresh)
+	if err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	if plan.State == GraphRestartRejected {
+		t.Fatalf("a multi-address node must not be rejected: %s", plan.Reason)
+	}
+	if plan.State != GraphRestartReady {
+		t.Fatalf("state = %q, want READY", plan.State)
+	}
+	if got := len(plan.Validated.Nodes); got != len(saved.Nodes) {
+		t.Fatalf("built %d nodes for %d saved nodes", got, len(saved.Nodes))
+	}
+}
