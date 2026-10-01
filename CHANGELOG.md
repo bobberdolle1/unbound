@@ -10,6 +10,12 @@
 - Unified локальные `SHA256SUMS.txt` и `RELEASE_MANIFEST.json` теперь принимают Linux-артефакт как `experimental=true`; Linux GUI и `linux/arm64` в release surface не добавлены.
 
 
+### Идентичности истории AutoTune vNext
+
+- Каждый прогон получает локальный непрозрачный `ContextKey` (HMAC-SHA256 под локальным 32-байтным ключом), `BackendFingerprint` и `CapabilityFingerprint`; исторический результат переиспользуется только при совместимости всех трёх.
+- Ключ `autotune_vnext_context.key` создаётся атомарно с правами только владельца; повреждённый ключ даёт `CONTEXT_IDENTITY_UNAVAILABLE` и никогда не заменяется молча, Suspend/Revert его не трогают.
+- Сырые сетевые факты не хранятся: только канонизированный набор локальных характеристик, читаемый исключительно read-only. Подробности — в [`docs/autotune-vnext-history-identities.md`](docs/autotune-vnext-history-identities.md).
+
 ## [0.7.0] - 2026-09-29
 
 ### AutoTune vNext
