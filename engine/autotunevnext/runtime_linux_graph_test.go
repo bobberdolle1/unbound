@@ -13,6 +13,7 @@ import (
 	"net"
 	"strings"
 	"testing"
+	"unbound/engine"
 
 	"unbound/engine/backendcap"
 	"unbound/engine/observatory"
@@ -204,5 +205,16 @@ func TestLinuxGraphSpecProjectionPreservesAddresses(t *testing.T) {
 		if edge.IP == nil || familyForIP(edge.IP) != edge.Family {
 			t.Fatalf("projected edge lost its address family: %+v", edge)
 		}
+	}
+}
+
+// The real executor must own a runtime for its lifetime, not build one per call.
+func TestLinuxGraphExecutorOwnsItsRuntime(t *testing.T) {
+	lin, err := NewLinuxGraphExecutor(RuntimeOptions{Assets: &engine.AssetPaths{BinDir: t.TempDir()}})
+	if err != nil {
+		t.Skipf("linux runtime unavailable on this host: %v", err)
+	}
+	if lin.runtime == nil {
+		t.Fatal("linux graph executor must own a runtime for its lifetime")
 	}
 }

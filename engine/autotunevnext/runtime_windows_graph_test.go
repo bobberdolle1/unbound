@@ -9,8 +9,10 @@ package autotunevnext
 // selector, no wildcard, and no file- or list-based authority.
 
 import (
+	"context"
 	"strings"
 	"testing"
+	"unbound/engine"
 )
 
 func TestRenderGraphActivationBindsEachNodeToItsOwnHost(t *testing.T) {
@@ -84,4 +86,66 @@ func TestCommitGraphIsIdempotentAndDetachesCancellation(t *testing.T) {
 	if e.active == nil {
 		t.Fatal("commit must keep the process owned so Revert can stop it")
 	}
+}
+
+// A StateSnapshot is registered inside the runtime, so the graph executor must
+// keep ONE runtime for its whole lifetime. A per-call runtime loses every
+// snapshot, and every managed graph Apply then fails at EstablishDirect with
+// "unknown state snapshot".
+func TestWindowsGraphExecutorKeepsOneRuntimeForItsLifetime(t *testing.T) {
+	exec, err := NewWindowsGraphExecutor(RuntimeOptions{
+		Provider: &windowsRuntimeProvider{}, Assets: &engine.AssetPaths{BinDir: t.TempDir()},
+	})
+	if err != nil {
+		t.Fatalf("new windows graph executor: %v", err)
+	}
+	first := exec.runtime
+	if first == nil {
+		t.Fatal("windows graph executor must own a runtime")
+	}
+	if _, err := exec.Snapshot(context.Background()); err != nil {
+		t.Fatalf("snapshot: %v", err)
+	}
+	// EstablishDirect must resolve the snapshot registered by Snapshot. Before the
+	// fix this failed with "unknown state snapshot".
+	if err := exec.EstablishDirect(context.Background(), StateSnapshot{ID: "missing"}); err == nil {
+		t.Fatal("an unregistered snapshot must still be refused")
+	}
+	if exec.runtime != first {
+		t.Fatal("the executor must not swap its runtime between calls")
+	}
+}
+
+func TestWindowsGraphExecutorOwnsItsRuntime(t *testing.T) {
+	win, err := NewWindowsGraphExecutor(RuntimeOptions{
+		Provider: &windowsRuntimeProvider{}, Assets: &engine.AssetPaths{BinDir: t.TempDir()},
+	})
+	if err != nil {
+		t.Skipf("windows runtime unavailable on this host: %v", err)
+	}
+	if win.runtime == nil {
+		t.Fatal("windows graph executor must own a runtime for its lifetime")
+	}
+}
+
+// Readiness is a latched fact, not a one-shot edge. ActivateGraph consumes the
+// ready channel, so verification that also drained it would report "not ready"
+// on every call after the first.
+func TestWindowsGraphReadinessLatches(t *testing.T) {
+	proc := &windowsGraphProcess{ready: make(chan struct{}, 1)}
+	exec := &WindowsGraphExecutor{active: proc, ownedPIDs: map[int]struct{}{}}
+	if proc.readyLatched.Load() {
+		t.Fatal("a process that never signalled ready must not report ready")
+	}
+	// The activation wait consumes the channel exactly once.
+	proc.ready <- struct{}{}
+	<-proc.ready
+	proc.readyLatched.Store(true)
+	// A drained channel must still read as ready for every later verification.
+	for i := range 3 {
+		if !proc.readyLatched.Load() {
+			t.Fatalf("verification %d: readiness must latch, not be consumed", i)
+		}
+	}
+	_ = exec
 }

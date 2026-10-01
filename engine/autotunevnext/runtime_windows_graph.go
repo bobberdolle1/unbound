@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/sys/windows"
@@ -33,6 +34,11 @@ import (
 // the caller returns; the product owns it until Revert, Suspend, or shutdown.
 type WindowsGraphExecutor struct {
 	opts RuntimeOptions
+
+	// runtime is held for the executor's whole lifetime. A StateSnapshot is
+	// registered inside the runtime, so a runtime constructed per call would
+	// lose every snapshot between Snapshot and EstablishDirect.
+	runtime *WindowsRuntime
 
 	mu        sync.Mutex
 	active    *windowsGraphProcess
@@ -47,6 +53,11 @@ type windowsGraphProcess struct {
 	job         windows.Handle
 	driverOwned bool
 	pid         int
+	// readyLatched records that the capture reached readiness. The ready
+	// channel is a one-shot edge used by ActivateGraph; a latched fact is what
+	// repeated verification must observe, otherwise every second verification
+	// would report "not ready" after the first one consumed the edge.
+	readyLatched atomic.Bool
 	// plan is retained so VerifyActiveGraph can prove the live process still
 	// carries exactly this graph and not something else.
 	plan    WindowsServiceGraphPlan
@@ -57,23 +68,19 @@ func NewWindowsGraphExecutor(options RuntimeOptions) (*WindowsGraphExecutor, err
 	if options.Assets == nil {
 		return nil, fmt.Errorf("windows graph executor requires asset paths")
 	}
-	return &WindowsGraphExecutor{opts: options, ownedPIDs: make(map[int]struct{})}, nil
+	runtime, err := NewWindowsRuntime(options)
+	if err != nil {
+		return nil, fmt.Errorf("windows graph runtime: %w", err)
+	}
+	return &WindowsGraphExecutor{opts: options, runtime: runtime, ownedPIDs: make(map[int]struct{})}, nil
 }
 
 func (e *WindowsGraphExecutor) Snapshot(ctx context.Context) (StateSnapshot, error) {
-	runtime, err := NewWindowsRuntime(e.opts)
-	if err != nil {
-		return StateSnapshot{}, err
-	}
-	return runtime.Snapshot(ctx)
+	return e.runtime.Snapshot(ctx)
 }
 
 func (e *WindowsGraphExecutor) EstablishDirect(ctx context.Context, snapshot StateSnapshot) error {
-	runtime, err := NewWindowsRuntime(e.opts)
-	if err != nil {
-		return err
-	}
-	return runtime.EstablishDirect(ctx, snapshot)
+	return e.runtime.EstablishDirect(ctx, snapshot)
 }
 
 // RenderGraphActivation produces the inert plan for an activation without
@@ -181,6 +188,7 @@ func (e *WindowsGraphExecutor) ActivateGraph(ctx context.Context, activation Ser
 	e.opts.emit(PhysicalLog{Backend: string(backendcap.Zapret2Windows), Phase: "GRAPH_STARTING", PID: proc.pid})
 	select {
 	case <-proc.ready:
+		proc.readyLatched.Store(true)
 		e.opts.emit(PhysicalLog{Backend: string(backendcap.Zapret2Windows), Phase: "GRAPH_CAPTURE_READY", PID: proc.pid})
 		return nil
 	case <-proc.done:
@@ -212,9 +220,7 @@ func (e *WindowsGraphExecutor) VerifyActiveGraph(ctx context.Context, activation
 	if !alive {
 		return fmt.Errorf("owned graph process %d is not alive", proc.pid)
 	}
-	select {
-	case <-proc.ready:
-	default:
+	if !proc.readyLatched.Load() {
 		return fmt.Errorf("owned graph capture is not ready")
 	}
 	want, err := RenderGraphActivation(activation)
@@ -286,17 +292,9 @@ func (e *WindowsGraphExecutor) Restore(ctx context.Context, snapshot StateSnapsh
 	if err := e.Deactivate(ctx); err != nil {
 		return err
 	}
-	runtime, err := NewWindowsRuntime(e.opts)
-	if err != nil {
-		return err
-	}
-	return runtime.Restore(ctx, snapshot)
+	return e.runtime.Restore(ctx, snapshot)
 }
 
 func (e *WindowsGraphExecutor) VerifyRestored(ctx context.Context, snapshot StateSnapshot) error {
-	runtime, err := NewWindowsRuntime(e.opts)
-	if err != nil {
-		return err
-	}
-	return runtime.VerifyRestored(ctx, snapshot)
+	return e.runtime.VerifyRestored(ctx, snapshot)
 }
