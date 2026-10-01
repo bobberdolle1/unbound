@@ -457,3 +457,44 @@ func TestRenderWindowsGraphCaptureOmitsInactiveNodes(t *testing.T) {
 		t.Fatalf("rendering a section for a non-active node must fail, got plan %+v", plan)
 	}
 }
+
+// A target that yields no hostname must be rejected: it would render an empty
+// host selector and collapse exact-host authority.
+func TestServiceGraphRejectsTargetWithoutHostname(t *testing.T) {
+	for _, raw := range []string{"entry.example", "https://", "/generate_204", "https://:443/x"} {
+		n := gNode("ENTRY", "entry.example", ServiceNodeRoleEntry, []ServiceScopeEdge{gEdge("192.0.2.1")}, ServiceNodeActive)
+		n.Target = Target{URL: raw}
+		n.Scope.Target = n.Target
+		if _, err := NewServiceGraph([]ServiceNode{n}); err == nil {
+			t.Fatalf("target %q must be rejected", raw)
+		}
+	}
+}
+
+// The graph canonicaliser duplicates the single-host one to differ only in the
+// cap. This guards them from drifting apart for inputs inside the single-host cap.
+func TestCanonicalGraphEdgesAgreesWithSingleHost(t *testing.T) {
+	inputs := [][]ServiceScopeEdge{
+		{gEdge("192.0.2.1")},
+		{gEdge("192.0.2.2"), gEdge("192.0.2.1"), gEdge("192.0.2.1")},
+		{gEdge("2001:db8::1"), gEdge("192.0.2.1")},
+	}
+	for i, in := range inputs {
+		single, singleErr := canonicalCaptureEdges(in)
+		graph, graphErr := canonicalGraphEdges(in)
+		if (singleErr == nil) != (graphErr == nil) {
+			t.Fatalf("input %d: error mismatch single=%v graph=%v", i, singleErr, graphErr)
+		}
+		if singleErr != nil {
+			continue
+		}
+		if len(single) != len(graph) {
+			t.Fatalf("input %d: length mismatch single=%d graph=%d", i, len(single), len(graph))
+		}
+		for j := range single {
+			if single[j].Family != graph[j].Family || !single[j].IP.Equal(graph[j].IP) {
+				t.Fatalf("input %d index %d: edge mismatch", i, j)
+			}
+		}
+	}
+}

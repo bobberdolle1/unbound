@@ -160,6 +160,11 @@ func (g ServiceGraph) Validate() error {
 		if strings.TrimSpace(n.Target.URL) == "" {
 			return fmt.Errorf("%w: node %q has no target", ErrServiceGraphTarget, n.ID)
 		}
+		// A target that parses to no hostname would render an empty host selector and
+		// silently collapse exact-host authority, so it is rejected here.
+		if n.Hostname() == "" {
+			return fmt.Errorf("%w: node %q target has no hostname", ErrServiceGraphTarget, n.ID)
+		}
 		if !sameTargetIdentity(n.Target, n.Scope.Target) {
 			return fmt.Errorf("%w: node %q scope target does not match node target", ErrServiceGraphScope, n.ID)
 		}
