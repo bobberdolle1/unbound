@@ -14,6 +14,10 @@ import (
 
 // TestAssetExtraction verifies that embedded assets are extracted correctly
 func TestAssetExtraction(t *testing.T) {
+	t.Setenv("APPDATA", t.TempDir())
+	restore := engine.SetConfigDirForTest(t.TempDir())
+	defer restore()
+
 	assets, err := engine.ExtractAssets()
 	if err != nil {
 		t.Fatalf("Failed to extract assets: %v", err)
@@ -39,6 +43,10 @@ func TestAssetExtraction(t *testing.T) {
 
 // TestProviderInitialization checks if Zapret2WindowsProvider initializes correctly
 func TestProviderInitialization(t *testing.T) {
+	t.Setenv("APPDATA", t.TempDir())
+	restore := engine.SetConfigDirForTest(t.TempDir())
+	defer restore()
+
 	assets, err := engine.ExtractAssets()
 	if err != nil {
 		t.Fatalf("Failed to extract assets: %v", err)
@@ -64,6 +72,10 @@ func TestProviderInitialization(t *testing.T) {
 
 // TestPrivilegeCheck verifies admin privilege detection
 func TestPrivilegeCheck(t *testing.T) {
+	t.Setenv("APPDATA", t.TempDir())
+	restore := engine.SetConfigDirForTest(t.TempDir())
+	defer restore()
+
 	assets, err := engine.ExtractAssets()
 	if err != nil {
 		t.Fatalf("Failed to extract assets: %v", err)
@@ -159,6 +171,10 @@ func TestEngineStartStop(t *testing.T) {
 
 // TestProviderManager tests the provider management system
 func TestProviderManager(t *testing.T) {
+	t.Setenv("APPDATA", t.TempDir())
+	restore := engine.SetConfigDirForTest(t.TempDir())
+	defer restore()
+
 	manager := providers.NewProviderManager()
 
 	assets, err := engine.ExtractAssets()

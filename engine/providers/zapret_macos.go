@@ -622,10 +622,9 @@ func (e *ZapretMacOSProvider) Stop() error {
 	e.setStatusLocked(StatusStopped)
 	e.mu.Unlock()
 
-	// Signal the process group to exit. If non-root cannot kill sudo process, use sudo kill.
+	// Signal the process group to exit.
 	if err := syscall.Kill(-pid, syscall.SIGTERM); err != nil {
 		_ = cmd.Process.Signal(syscall.SIGTERM)
-		_ = exec.Command("sudo", "-n", "kill", "-TERM", fmt.Sprintf("%d", pid)).Run()
 	}
 
 	// Wait up to 5 seconds for graceful shutdown.
@@ -642,7 +641,6 @@ func (e *ZapretMacOSProvider) Stop() error {
 		e.addLog("tpws не завершился за 5 секунд, принудительное завершение...")
 		if err := syscall.Kill(-pid, syscall.SIGKILL); err != nil {
 			_ = cmd.Process.Kill()
-			_ = exec.Command("sudo", "-n", "kill", "-KILL", fmt.Sprintf("%d", pid)).Run()
 		}
 	}
 	if cancel != nil {

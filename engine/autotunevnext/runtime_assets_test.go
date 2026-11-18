@@ -11,7 +11,10 @@ import (
 )
 
 func TestNewProductAssetResolverPrefersUserListsDirWithBundleFallback(t *testing.T) {
+	extractConfig := t.TempDir()
+	restoreExtract := engine.SetConfigDirForTest(extractConfig)
 	assets, err := engine.ExtractAssets()
+	restoreExtract()
 	if err != nil {
 		t.Fatalf("ExtractAssets failed: %v", err)
 	}

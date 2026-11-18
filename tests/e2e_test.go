@@ -674,6 +674,9 @@ func TestFrontend_VitestSuite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to resolve repo root: %v", err)
 	}
+	if _, err := os.Stat(filepath.Join(repoRoot, "frontend", "node_modules")); os.IsNotExist(err) {
+		t.Skip("frontend/node_modules not installed — skipping vitest suite in Go-only worktree")
+	}
 
 	cmd := exec.Command("npm", "test")
 	cmd.Dir = filepath.Join(repoRoot, "frontend")
