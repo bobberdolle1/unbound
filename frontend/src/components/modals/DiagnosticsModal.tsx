@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { cn } from '../../lib/cn';
 import { UITerminal, UISpinner, UIX, UICheck, UIZap } from '../icons';
 import { backendService } from '../../services/backend';
@@ -49,28 +49,88 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
   }>({
     runId: '',
     completed: 0,
-    total: 16, // Default Quick check total so ? is never displayed
+    total: 16,
     percent: 0,
     running: [],
     lastCompleted: '',
     elapsedMs: 0,
   });
 
+  const isAliveRef = useRef<boolean>(false);
+  isAliveRef.current = isOpen;
+
+  React.useEffect(() => {
+    return () => {
+      isAliveRef.current = false;
+    };
+  }, []);
+
+  const startAsyncDoctor = useCallback(async (mode: 'quick' | 'extended') => {
+    const defaultTotal = mode === 'extended' ? 24 : 16;
+    setIsLocalRunning(true);
+    setDoctorError(null);
+    setDoctorResult(null);
+    setProgress({
+      runId: '',
+      completed: 0,
+      total: defaultTotal,
+      percent: 0,
+      running: [],
+      lastCompleted: '',
+      elapsedMs: 0,
+    });
+    try {
+      const startInfo = await backendService.startDoctor(mode);
+      if (!isAliveRef.current) return;
+      if (startInfo) {
+        setActiveRunId(startInfo.runId || '');
+        setProgress((prev) => ({
+          ...prev,
+          runId: startInfo.runId || prev.runId,
+          total: startInfo.total || defaultTotal,
+        }));
+      }
+    } catch (err) {
+      if (!isAliveRef.current) return;
+      console.error('StartDoctor error:', err);
+      setIsLocalRunning(false);
+      setDoctorError(String(err));
+    }
+  }, []);
+
+  // Auto-start quick check once when modal opens without pre-supplied results
+  const prevOpenRef = useRef<boolean>(false);
+  React.useEffect(() => {
+    const justOpened = isOpen && !prevOpenRef.current;
+    prevOpenRef.current = isOpen;
+    if (justOpened && !initialDoctorResult && (!results || results.length === 0) && !isRunning) {
+      setActiveTab('quick');
+      void startAsyncDoctor('quick');
+    }
+    if (!isOpen) {
+      setIsLocalRunning(false);
+    }
+  }, [isOpen, initialDoctorResult, results, isRunning, startAsyncDoctor]);
+
   // Smooth elapsed timer
   React.useEffect(() => {
     let timerId: number | undefined;
-    if (isLocalRunning || isRunning) {
+    if (isOpen && (isLocalRunning || isRunning)) {
       setElapsedSeconds(0);
       timerId = window.setInterval(() => {
-        setElapsedSeconds((prev) => +(prev + 0.2).toFixed(1));
+        if (isAliveRef.current) {
+          setElapsedSeconds((prev) => +(prev + 0.2).toFixed(1));
+        }
       }, 200);
     }
     return () => {
-      window.clearInterval(timerId);
+      if (timerId !== undefined) {
+        window.clearInterval(timerId);
+      }
     };
-  }, [isLocalRunning, isRunning]);
+  }, [isOpen, isLocalRunning, isRunning]);
 
-  // Subscribe to real-time Doctor progress events via robust Wails eventBus
+  // Subscribe to real-time Doctor progress events via Wails eventBus
   React.useEffect(() => {
     if (!eventBus?.onDoctorStart) return;
 
@@ -82,6 +142,7 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
 
     try {
       unsubStart = eventBus.onDoctorStart((data: unknown) => {
+        if (!isAliveRef.current) return;
         const s = data as { runId: string; mode: string; total: number };
         if (s) {
           setActiveRunId(s.runId);
@@ -101,7 +162,16 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
       });
 
       unsubProgress = eventBus.onDoctorProgress((data: unknown) => {
-        const p = data as { runId: string; completed: number; total: number; percent: number; running: string[]; lastCompleted: string; elapsedMs: number };
+        if (!isAliveRef.current) return;
+        const p = data as {
+          runId: string;
+          completed: number;
+          total: number;
+          percent: number;
+          running: string[];
+          lastCompleted: string;
+          elapsedMs: number;
+        };
         if (p) {
           setProgress(p);
           if (p.runId) setActiveRunId(p.runId);
@@ -109,6 +179,7 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
       });
 
       unsubComplete = eventBus.onDoctorComplete((data: unknown) => {
+        if (!isAliveRef.current) return;
         const d = data as { runId: string; result: engine.DoctorResult };
         if (d?.result) {
           setDoctorResult(d.result);
@@ -118,10 +189,12 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
       });
 
       unsubCancelled = eventBus.onDoctorCancelled(() => {
+        if (!isAliveRef.current) return;
         setIsLocalRunning(false);
       });
 
       unsubError = eventBus.onDoctorError((data: unknown) => {
+        if (!isAliveRef.current) return;
         const errObj = data as { runId: string; error: string };
         setIsLocalRunning(false);
         setDoctorError(errObj?.error || 'Произошла ошибка диагностики');
@@ -145,6 +218,7 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
       setDoctorResult(initialDoctorResult);
     }
   }, [initialDoctorResult]);
+
   if (!isOpen) return null;
 
   const running = isRunning || isLocalRunning;
@@ -156,37 +230,20 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
         setIsLocalRunning(true);
         try {
           const res = await backendService.runBypassComparison();
-          setComparisonResult(res);
+          if (isAliveRef.current) {
+            setComparisonResult(res);
+          }
         } catch (err) {
           console.error('Bypass comparison error:', err);
         } finally {
-          setIsLocalRunning(false);
+          if (isAliveRef.current) {
+            setIsLocalRunning(false);
+          }
         }
       }
     } else {
       onRunMode?.(tab);
-      setIsLocalRunning(true);
-      setDoctorError(null);
-      setDoctorResult(null);
-      try {
-        const startInfo = await backendService.startDoctor(tab);
-        if (startInfo) {
-          setActiveRunId(startInfo.runId);
-          setProgress({
-            runId: startInfo.runId,
-            completed: 0,
-            total: startInfo.total || (tab === 'extended' ? 24 : 16),
-            percent: 0,
-            running: [],
-            lastCompleted: '',
-            elapsedMs: 0,
-          });
-        }
-      } catch (err) {
-        console.error('StartDoctor error:', err);
-        setIsLocalRunning(false);
-        setDoctorError(String(err));
-      }
+      await startAsyncDoctor(tab);
     }
   };
 
@@ -198,11 +255,14 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
       } else if (doctorResult) {
         reportText = await backendService.generateDiagnosticReport(doctorResult);
       } else {
-        reportText = results.map(r => `[${r.Status}] ${r.Component}: ${r.Details}`).join('\n');
+        reportText = results.map((r) => `[${r.Status}] ${r.Component}: ${r.Details}`).join('\n');
       }
       await navigator.clipboard.writeText(reportText);
+      if (!isAliveRef.current) return;
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setTimeout(() => {
+        if (isAliveRef.current) setCopied(false);
+      }, 2000);
     } catch (err) {
       console.error('Failed to copy report:', err);
     }
@@ -217,7 +277,7 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
   };
 
   const toggleProbeExpand = (id: string) => {
-    setExpandedProbes(prev => ({ ...prev, [id]: !prev[id] }));
+    setExpandedProbes((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
   const renderStatusBadge = (status: string) => {
@@ -295,7 +355,9 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
         {/* Mode Selector Tabs */}
         <div className="flex items-center gap-2 mb-3 bg-[var(--ui-surface-elevated)] p-1 rounded-xl border border-[var(--ui-border)]">
           <button
-            onClick={() => handleTabChange('quick')}
+            onClick={() => {
+              void handleTabChange('quick');
+            }}
             disabled={running}
             className={cn(
               'flex-1 py-1.5 px-3 rounded-lg text-xs font-medium transition-all text-center',
@@ -307,7 +369,9 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
             Быстрая проверка
           </button>
           <button
-            onClick={() => handleTabChange('extended')}
+            onClick={() => {
+              void handleTabChange('extended');
+            }}
             disabled={running}
             className={cn(
               'flex-1 py-1.5 px-3 rounded-lg text-xs font-medium transition-all text-center',
@@ -319,7 +383,9 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
             Расширенная проверка
           </button>
           <button
-            onClick={() => handleTabChange('comparison')}
+            onClick={() => {
+              void handleTabChange('comparison');
+            }}
             disabled={running}
             className={cn(
               'flex-1 py-1.5 px-3 rounded-lg text-xs font-medium transition-all text-center',
@@ -351,7 +417,7 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
               </div>
 
               {/* Progress bar */}
-              <div className="w-full bg-black/30 h-2 rounded-full overflow-hidden border border-white/5">
+              <div className="w-full bg-[var(--ui-bg)] h-2 rounded-full overflow-hidden border border-[var(--ui-border)]">
                 <div
                   className="bg-emerald-500 h-full transition-all duration-300 rounded-full"
                   style={{ width: `${Math.max(5, Math.min(100, progress.percent))}%` }}
@@ -364,7 +430,10 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
                   <span className="font-medium text-[var(--ui-text)]">Выполняется сейчас:</span>
                   <div className="flex flex-wrap gap-1.5 mt-1">
                     {progress.running.map((rName, idx) => (
-                      <span key={idx} className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-300 font-mono text-[10px] border border-emerald-500/20 animate-pulse">
+                      <span
+                        key={idx}
+                        className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-300 font-mono text-[10px] border border-emerald-500/20 animate-pulse"
+                      >
                         {rName}
                       </span>
                     ))}
@@ -376,7 +445,9 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
               {progress.lastCompleted && (
                 <div className="text-[11px] text-[var(--ui-text-muted)] flex items-center gap-1.5">
                   <UICheck className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Завершено: <span className="text-[var(--ui-text)] font-mono">{progress.lastCompleted}</span></span>
+                  <span>
+                    Завершено: <span className="text-[var(--ui-text)] font-mono">{progress.lastCompleted}</span>
+                  </span>
                 </div>
               )}
 
@@ -386,9 +457,7 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
                     Прошло: {elapsedSeconds > 0 ? elapsedSeconds : ((progress.elapsedMs || 0) / 1000).toFixed(1)}с
                   </span>
                   {elapsedSeconds > 10 && (
-                    <span className="text-[10px] text-amber-400">
-                      (проверка выполняется дольше обычного)
-                    </span>
+                    <span className="text-[10px] text-amber-400">(проверка выполняется дольше обычного)</span>
                   )}
                 </div>
                 <button
@@ -398,7 +467,9 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
                     } catch (err) {
                       console.error(err);
                     } finally {
-                      setIsLocalRunning(false);
+                      if (isAliveRef.current) {
+                        setIsLocalRunning(false);
+                      }
                     }
                   }}
                   className="btn-ui-secondary text-xs px-3 py-1 text-red-400 hover:text-red-300 border-red-500/30 hover:bg-red-500/10"
@@ -414,11 +485,16 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
                 <UIX className="w-4 h-4" />
                 <span>Ошибка выполнения диагностики</span>
               </div>
-              <p className="text-[11px] text-[var(--ui-text)] font-mono bg-black/30 p-2.5 rounded-xl border border-red-500/20">
+              <p className="text-[11px] text-[var(--ui-text)] font-mono bg-[var(--ui-bg)] p-2.5 rounded-xl border border-red-500/20">
                 {doctorError}
               </p>
               <div className="flex items-center gap-2 pt-1">
-                <button onClick={() => handleTabChange(activeTab)} className="btn-ui-primary text-xs px-3 py-1.5">
+                <button
+                  onClick={() => {
+                    void handleTabChange(activeTab);
+                  }}
+                  className="btn-ui-primary text-xs px-3 py-1.5"
+                >
                   Повторить проверку
                 </button>
                 <button onClick={handleOpenLogs} className="btn-ui-secondary text-xs px-3 py-1.5">
@@ -435,9 +511,7 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
                     <div className="font-semibold text-[var(--ui-text)] mb-1">
                       Результаты A/B теста для профиля «{comparisonResult.profileName}»
                     </div>
-                    <div className="text-[11px] text-[var(--ui-text-muted)]">
-                      {comparisonResult.overallSummary}
-                    </div>
+                    <div className="text-[11px] text-[var(--ui-text-muted)]">{comparisonResult.overallSummary}</div>
                   </div>
 
                   <div className="border border-[var(--ui-border)] rounded-xl overflow-hidden">
@@ -453,7 +527,7 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
                       </thead>
                       <tbody className="divide-y divide-[var(--ui-border)]">
                         {comparisonResult.items.map((item, idx) => (
-                          <tr key={idx} className="hover:bg-white/[0.02] transition-colors">
+                          <tr key={idx} className="hover:bg-[var(--ui-surface-hover)] transition-colors">
                             <td className="p-2.5 font-medium text-[var(--ui-text)]">{item.service}</td>
                             <td className="p-2.5 text-[var(--ui-text-muted)]">{item.name}</td>
                             <td className="p-2.5 text-center">{renderStatusBadge(item.baseline.status)}</td>
@@ -463,7 +537,7 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
                                 <span className="text-emerald-400 font-semibold">⭐ Восстановлено</span>
                               )}
                               {item.verdict === 'REACHABLE_DIRECTLY' && (
-                                <span className="text-zinc-300">✓ Доступно</span>
+                                <span className="text-[var(--ui-text-muted)]">✓ Доступно</span>
                               )}
                               {item.verdict === 'STILL_BLOCKED' && (
                                 <span className="text-red-400">✕ Заблокировано</span>
@@ -506,7 +580,7 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
                     {group.probes.map((probe) => {
                       const isExpanded = expandedProbes[probe.id];
                       return (
-                        <div key={probe.id} className="p-2.5 text-xs hover:bg-white/[0.015] transition-colors">
+                        <div key={probe.id} className="p-2.5 text-xs hover:bg-[var(--ui-surface-hover)] transition-colors">
                           <div
                             className="flex items-center justify-between cursor-pointer select-none"
                             onClick={() => toggleProbeExpand(probe.id)}
@@ -528,18 +602,36 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
                           </div>
 
                           {probe.details && !isExpanded && (
-                            <p className="text-[11px] text-[var(--ui-text-muted)] mt-1 truncate">
-                              {probe.details}
-                            </p>
+                            <p className="text-[11px] text-[var(--ui-text-muted)] mt-1 truncate">{probe.details}</p>
                           )}
 
                           {isExpanded && (
-                            <div className="mt-2 pt-2 border-t border-[var(--ui-border)] text-[11px] space-y-1 bg-black/20 p-2 rounded-lg font-mono">
-                              {probe.target && <div><span className="text-[var(--ui-text-muted)]">Цель:</span> {probe.target}</div>}
-                              {probe.transport && <div><span className="text-[var(--ui-text-muted)]">Протокол:</span> {probe.transport}</div>}
-                              {probe.resolvedIp && <div><span className="text-[var(--ui-text-muted)]">IP:</span> {probe.resolvedIp}</div>}
-                              {probe.details && <div><span className="text-[var(--ui-text-muted)]">Детали:</span> {probe.details}</div>}
-                              {probe.error && <div className="text-red-400"><span className="text-red-400/80">Ошибка:</span> {probe.error}</div>}
+                            <div className="mt-2 pt-2 border-t border-[var(--ui-border)] text-[11px] space-y-1 bg-[var(--ui-bg)] p-2 rounded-lg font-mono">
+                              {probe.target && (
+                                <div>
+                                  <span className="text-[var(--ui-text-muted)]">Цель:</span> {probe.target}
+                                </div>
+                              )}
+                              {probe.transport && (
+                                <div>
+                                  <span className="text-[var(--ui-text-muted)]">Протокол:</span> {probe.transport}
+                                </div>
+                              )}
+                              {probe.resolvedIp && (
+                                <div>
+                                  <span className="text-[var(--ui-text-muted)]">IP:</span> {probe.resolvedIp}
+                                </div>
+                              )}
+                              {probe.details && (
+                                <div>
+                                  <span className="text-[var(--ui-text-muted)]">Детали:</span> {probe.details}
+                                </div>
+                              )}
+                              {probe.error && (
+                                <div className="text-red-400">
+                                  <span className="text-red-400/80">Ошибка:</span> {probe.error}
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
@@ -552,7 +644,7 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
               {/* Manual Acceptance Checklist (Extended mode only) */}
               {doctorResult.manualItems && doctorResult.manualItems.length > 0 && (
                 <div className="p-3.5 border border-[var(--ui-border)] rounded-xl bg-blue-500/5 text-xs space-y-2">
-                  <div className="font-semibold text-blue-300 flex items-center gap-1.5">
+                  <div className="font-semibold text-blue-400 flex items-center gap-1.5">
                     <span>Рекомендуемый чек-лист ручной приёмки</span>
                   </div>
                   <div className="space-y-1.5 text-[11px] text-[var(--ui-text-muted)]">
@@ -603,24 +695,23 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
               {copied ? <UICheck className="w-3.5 h-3.5 text-emerald-400" /> : <UITerminal className="w-3.5 h-3.5" />}
               <span>{copied ? 'Отчёт скопирован' : 'Копировать отчёт'}</span>
             </button>
-            <button
-              onClick={handleOpenLogs}
-              className="btn-ui-secondary text-xs px-3 py-1.5"
-            >
+            <button onClick={handleOpenLogs} className="btn-ui-secondary text-xs px-3 py-1.5">
               Открыть логи
             </button>
           </div>
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => handleTabChange(activeTab)}
+              onClick={() => {
+                void handleTabChange(activeTab);
+              }}
               disabled={running}
               className="btn-ui-secondary text-xs px-3 py-1.5 flex items-center gap-1"
             >
               <UIZap className="w-3.5 h-3.5" />
               <span>Повторить</span>
             </button>
-            <button onClick={onClose} className="btn-ui-primary text-xs px-4 py-1.5">
+            <button onClick={onClose} className="btn-ui-primary text-xs px-4 py-1.5 w-auto">
               Закрыть
             </button>
           </div>
