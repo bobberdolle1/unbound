@@ -12,6 +12,8 @@ vi.mock('../services/window', () => {
     onEnginesChanged: vi.fn(),
     onPrivilegeError: vi.fn(),
     onEngineError: vi.fn(),
+    onProfileChanged: vi.fn(),
+    onProfileError: vi.fn(),
     onNotification: vi.fn(),
     onAutotuneStart: vi.fn(),
     onAutotuneProgress: vi.fn(),
@@ -20,25 +22,67 @@ vi.mock('../services/window', () => {
     onAutotuneComplete: vi.fn(),
   };
 
+  const capturedHandlers: Record<string, (...args: unknown[]) => void> = {};
+
   return {
     windowService: {
       minimise: vi.fn(),
+      toggleMaximise: vi.fn(),
       hideToTray: vi.fn(),
       quit: vi.fn(),
       showNotification: vi.fn(),
     },
     eventBus: {
-      onStatusChanged: vi.fn().mockImplementation(() => unsubFns.onStatusChanged),
-      onEnginesChanged: vi.fn().mockImplementation(() => unsubFns.onEnginesChanged),
-      onPrivilegeError: vi.fn().mockImplementation(() => unsubFns.onPrivilegeError),
-      onEngineError: vi.fn().mockImplementation(() => unsubFns.onEngineError),
-      onNotification: vi.fn().mockImplementation(() => unsubFns.onNotification),
-      onAutotuneStart: vi.fn().mockImplementation(() => unsubFns.onAutotuneStart),
-      onAutotuneProgress: vi.fn().mockImplementation(() => unsubFns.onAutotuneProgress),
-      onAutotuneLog: vi.fn().mockImplementation(() => unsubFns.onAutotuneLog),
-      onEngineLog: vi.fn().mockImplementation(() => unsubFns.onEngineLog),
-      onAutotuneComplete: vi.fn().mockImplementation(() => unsubFns.onAutotuneComplete),
+      onStatusChanged: vi.fn().mockImplementation((cb) => {
+        capturedHandlers.onStatusChanged = cb;
+        return unsubFns.onStatusChanged;
+      }),
+      onEnginesChanged: vi.fn().mockImplementation((cb) => {
+        capturedHandlers.onEnginesChanged = cb;
+        return unsubFns.onEnginesChanged;
+      }),
+      onPrivilegeError: vi.fn().mockImplementation((cb) => {
+        capturedHandlers.onPrivilegeError = cb;
+        return unsubFns.onPrivilegeError;
+      }),
+      onEngineError: vi.fn().mockImplementation((cb) => {
+        capturedHandlers.onEngineError = cb;
+        return unsubFns.onEngineError;
+      }),
+      onProfileChanged: vi.fn().mockImplementation((cb) => {
+        capturedHandlers.onProfileChanged = cb;
+        return unsubFns.onProfileChanged;
+      }),
+      onProfileError: vi.fn().mockImplementation((cb) => {
+        capturedHandlers.onProfileError = cb;
+        return unsubFns.onProfileError;
+      }),
+      onNotification: vi.fn().mockImplementation((cb) => {
+        capturedHandlers.onNotification = cb;
+        return unsubFns.onNotification;
+      }),
+      onAutotuneStart: vi.fn().mockImplementation((cb) => {
+        capturedHandlers.onAutotuneStart = cb;
+        return unsubFns.onAutotuneStart;
+      }),
+      onAutotuneProgress: vi.fn().mockImplementation((cb) => {
+        capturedHandlers.onAutotuneProgress = cb;
+        return unsubFns.onAutotuneProgress;
+      }),
+      onAutotuneLog: vi.fn().mockImplementation((cb) => {
+        capturedHandlers.onAutotuneLog = cb;
+        return unsubFns.onAutotuneLog;
+      }),
+      onEngineLog: vi.fn().mockImplementation((cb) => {
+        capturedHandlers.onEngineLog = cb;
+        return unsubFns.onEngineLog;
+      }),
+      onAutotuneComplete: vi.fn().mockImplementation((cb) => {
+        capturedHandlers.onAutotuneComplete = cb;
+        return unsubFns.onAutotuneComplete;
+      }),
       unsubFns,
+      capturedHandlers,
     },
   };
 });
@@ -65,38 +109,56 @@ describe('Hooks Lifecycle & Error Handling Tests', () => {
   });
 
   describe('useEngineEvents Lifecycle', () => {
-    it('subscribes to all eventBus channels and unsubscribes cleanly on unmount', () => {
-      const callbacks = {
-        onStatusChange: vi.fn(),
-        onEnginesChange: vi.fn(),
-        onPrivilegeError: vi.fn(),
-        onAddToast: vi.fn(),
-        onAutotuneStart: vi.fn(),
-        onAutotuneProgress: vi.fn(),
-        onAutotuneLog: vi.fn(),
-        onEngineLog: vi.fn(),
-        onAutotuneComplete: vi.fn(),
-      };
+    it('subscribes once without re-registering on re-render, handles profile events, and unsubscribes on unmount', () => {
+      const onProfileChanged1 = vi.fn();
+      const onProfileChanged2 = vi.fn();
+      const onProfileError = vi.fn();
 
-      const { unmount } = renderHook(() => useEngineEvents(callbacks));
+      const { rerender, unmount } = renderHook(
+        ({ onProf }) =>
+          useEngineEvents({
+            onStatusChange: vi.fn(),
+            onEnginesChange: vi.fn(),
+            onPrivilegeError: vi.fn(),
+            onAddToast: vi.fn(),
+            onAutotuneStart: vi.fn(),
+            onAutotuneProgress: vi.fn(),
+            onAutotuneLog: vi.fn(),
+            onEngineLog: vi.fn(),
+            onAutotuneComplete: vi.fn(),
+            onProfileChanged: onProf,
+            onProfileError,
+          }),
+        { initialProps: { onProf: onProfileChanged1 } }
+      );
 
-      // Verify all 10 event handlers were subscribed to
-      expect(eventBus.onStatusChanged).toHaveBeenCalled();
-      expect(eventBus.onEnginesChanged).toHaveBeenCalled();
-      expect(eventBus.onPrivilegeError).toHaveBeenCalled();
-      expect(eventBus.onEngineError).toHaveBeenCalled();
-      expect(eventBus.onNotification).toHaveBeenCalled();
-      expect(eventBus.onAutotuneStart).toHaveBeenCalled();
-      expect(eventBus.onAutotuneProgress).toHaveBeenCalled();
-      expect(eventBus.onAutotuneLog).toHaveBeenCalled();
-      expect(eventBus.onEngineLog).toHaveBeenCalled();
-      expect(eventBus.onAutotuneComplete).toHaveBeenCalled();
+      expect(eventBus.onStatusChanged).toHaveBeenCalledTimes(1);
+      expect(eventBus.onProfileChanged).toHaveBeenCalledTimes(1);
+      expect(eventBus.onProfileError).toHaveBeenCalledTimes(1);
 
-      // Unmount hook
+      // Re-render with fresh inline handlers: must NOT unsubscribe or re-subscribe
+      rerender({ onProf: onProfileChanged2 });
+      expect(eventBus.onStatusChanged).toHaveBeenCalledTimes(1);
+      expect(eventBus.onProfileChanged).toHaveBeenCalledTimes(1);
+
+      const unsubs = (eventBus as unknown as { unsubFns: Record<string, ReturnType<typeof vi.fn>> }).unsubFns;
+      Object.keys(unsubs).forEach((key) => {
+        expect(unsubs[key]).not.toHaveBeenCalled();
+      });
+
+      // Latest handler ref is invoked
+      const captured = (eventBus as unknown as { capturedHandlers: Record<string, (...args: unknown[]) => void> })
+        .capturedHandlers;
+      act(() => {
+        captured.onProfileChanged('new_profile_v2');
+        captured.onProfileError('Все профили заблокированы');
+      });
+      expect(onProfileChanged1).not.toHaveBeenCalled();
+      expect(onProfileChanged2).toHaveBeenCalledWith('new_profile_v2');
+      expect(onProfileError).toHaveBeenCalledWith('Все профили заблокированы');
+
       unmount();
 
-      // Verify each unsubscribe callback was invoked
-      const unsubs = (eventBus as any).unsubFns;
       Object.keys(unsubs).forEach((key) => {
         expect(unsubs[key]).toHaveBeenCalledTimes(1);
       });
@@ -104,21 +166,27 @@ describe('Hooks Lifecycle & Error Handling Tests', () => {
   });
 
   describe('usePingPolling Interval & Lifecycle', () => {
-    it('starts interval polling when status is Running and stops when status is Stopped', async () => {
-      const { rerender, unmount } = renderHook(({ status }) => usePingPolling(status), {
+    it('preserves loaded pingHistory when engine starts Stopped and polls only when Running', async () => {
+      const { result, rerender, unmount } = renderHook(({ status }) => usePingPolling(status), {
         initialProps: { status: 'Stopped' },
       });
 
-      // No interval when Stopped
+      // Flush loadPingHistory microtask while Stopped
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(result.current.pingHistory).toEqual([15, 30]);
+
+      // No live ping interval when Stopped
       act(() => {
         vi.advanceTimersByTime(10000);
       });
       expect(backendService.getLivePing).not.toHaveBeenCalled();
+      expect(result.current.pingHistory).toEqual([15, 30]);
 
       // Change status to Running
       rerender({ status: 'Running' });
 
-      // The first ping is immediate; subsequent polls occur every 4s.
       await act(async () => {
         vi.advanceTimersByTime(5000);
       });
@@ -129,7 +197,7 @@ describe('Hooks Lifecycle & Error Handling Tests', () => {
       await act(async () => {
         vi.advanceTimersByTime(10000);
       });
-      expect(backendService.getLivePing).toHaveBeenCalledTimes(2); // no extra calls
+      expect(backendService.getLivePing).toHaveBeenCalledTimes(2);
     });
 
     it('handles backend error gracefully without crashing', async () => {
@@ -147,11 +215,17 @@ describe('Hooks Lifecycle & Error Handling Tests', () => {
   });
 
   describe('useLogJournal Interval & Lifecycle', () => {
-    it('polls logs every 2s only when Running and not scanning', async () => {
-      const { rerender, unmount } = renderHook(
+    it('polls logs every 2s only when Running and not scanning, and toggles expansion', async () => {
+      const { result, rerender, unmount } = renderHook(
         ({ status, isScanning }) => useLogJournal(status, isScanning),
         { initialProps: { status: 'Stopped', isScanning: false } }
       );
+
+      expect(result.current.isExpanded).toBe(false);
+      act(() => {
+        result.current.toggleExpanded();
+      });
+      expect(result.current.isExpanded).toBe(true);
 
       // Stopped status -> no polling
       act(() => {

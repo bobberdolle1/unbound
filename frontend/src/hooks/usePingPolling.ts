@@ -16,13 +16,15 @@ export function usePingPolling(status: string, managedActive = false) {
     let isMounted = true;
     backendService
       .loadPingHistory()
-      .then((records: main.PingRecord[]) => {
-        if (isMounted && records && records.length > 0) {
+      .then((records: Array<main.PingRecord | number>) => {
+        if (isMounted && Array.isArray(records) && records.length > 0) {
           const recent = records
             .slice(-15)
-            .map((r: main.PingRecord) => r.lat || 0)
+            .map((r) => (typeof r === 'number' ? r : r?.lat || 0))
             .filter((l: number) => l > 0);
-          if (recent.length > 0) setPingHistory(recent);
+          if (recent.length > 0) {
+            setPingHistory((prev) => (prev.length > 0 ? prev : recent));
+          }
         }
       })
       .catch(() => {});
@@ -35,14 +37,15 @@ export function usePingPolling(status: string, managedActive = false) {
   useEffect(() => {
     if (status !== 'Running' && !managedActive) {
       setLivePingData({ active: false, latency: 0, status: 'stopped' });
-      setPingHistory([]);
       return;
     }
 
+    let isMounted = true;
     const poll = () => {
       backendService
         .getLivePing()
         .then((data: Record<string, unknown>) => {
+          if (!isMounted) return;
           const lat = typeof data?.latency === 'number' ? data.latency : 0;
           const stat = typeof data?.status === 'string' ? data.status : 'stopped';
           const serv: Record<string, number> = {};
@@ -57,12 +60,19 @@ export function usePingPolling(status: string, managedActive = false) {
           }
           backendService.savePingHistory(lat, stat).catch(() => {});
         })
-        .catch(() => setLivePingData({ active: false, latency: 0, status: 'error' }));
+        .catch(() => {
+          if (isMounted) {
+            setLivePingData({ active: false, latency: 0, status: 'error' });
+          }
+        });
     };
 
     poll();
     const interval = setInterval(poll, 4000);
-    return () => clearInterval(interval);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
   }, [status, managedActive]);
 
   return { livePingData, pingHistory };

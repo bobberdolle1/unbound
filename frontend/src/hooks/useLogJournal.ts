@@ -16,6 +16,10 @@ export function useLogJournal(status: string, isScanning: boolean) {
     }
   }, [isScanning, status]);
 
+  const toggleExpanded = useCallback(() => {
+    setIsExpanded((prev) => !prev);
+  }, []);
+
   const addScanLog = useCallback((msg: string) => {
     setScanLogs((prev) => [...prev, msg]);
   }, []);
@@ -48,6 +52,7 @@ export function useLogJournal(status: string, isScanning: boolean) {
     displayLogs,
     isExpanded,
     setIsExpanded,
+    toggleExpanded,
     addScanLog,
     addEngineLog,
     clearScanLogs,

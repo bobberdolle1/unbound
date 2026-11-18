@@ -6,6 +6,7 @@ import { DiscordConfirmModal } from './DiscordConfirmModal';
 import { LuaEditorModal } from './LuaEditorModal';
 import { StrategyLabModal } from './StrategyLabModal';
 import { AutoTuneVNextModal } from './AutoTuneVNextModal';
+import { engine } from '../../../wailsjs/go/models';
 
 interface ModalHostProps {
   // Conflict Overlay
@@ -21,23 +22,27 @@ interface ModalHostProps {
   // Diagnostics Modal
   isDiagOpen: boolean;
   isDiagRunning: boolean;
-  diagResults: any[];
-  doctorResult?: any;
+  diagResults: engine.DiagnosticResult[];
+  doctorResult?: engine.DoctorResult | null;
   onRunMode?: (mode: string) => void;
   onCloseDiagnosticsModal: () => void;
+
   // Discord Clean Modal
   isDiscordCleanModalOpen?: boolean;
   discordRunningProcs?: string[];
   onCancelDiscordClean?: () => void;
   onConfirmDiscordClean?: () => void;
+
   // Strategy Lab Modal
   isStrategyLabOpen?: boolean;
   onCloseStrategyLab?: () => void;
   onSaveDiscoveredProfileSuccess?: (name: string) => void;
-  // Experimental AutoTune vNext Modal
+
+  // AutoTune vNext Modal
   isAutoTuneVNextOpen?: boolean;
   onCloseAutoTuneVNext?: () => void;
   onAutoTuneVNextRunningChange?: (running: boolean) => void;
+
   // LUA Editor Modal
   isLuaOpen: boolean;
   onCloseLuaModal: () => void;
@@ -119,6 +124,7 @@ export const ModalHost: React.FC<ModalHostProps> = (props) => {
         isOpen={Boolean(props.isAutoTuneVNextOpen)}
         onClose={props.onCloseAutoTuneVNext || (() => {})}
         onRunningChange={props.onAutoTuneVNextRunningChange || (() => {})}
+        platform={props.platform}
       />
     </>
   );
