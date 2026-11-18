@@ -1,11 +1,10 @@
 #!/bin/bash
 # UNBOUND GUI Launcher for macOS
+set -euo pipefail
+
 DIR="$(cd "$(dirname "$0")" && pwd)"
 
-xattr -d com.apple.quarantine "$DIR" 2>/dev/null || true
-xattr -cr "$DIR" 2>/dev/null || true
-
-TARGET_APP=""
+APP_PATH=""
 for candidate in \
     "$DIR/Unbound.app" \
     "$DIR/unbound.app" \
@@ -14,18 +13,16 @@ for candidate in \
     "$HOME/Applications/Unbound.app"
 do
     if [ -d "$candidate" ]; then
-        TARGET_APP="$candidate"
+        APP_PATH="$candidate"
         break
     fi
 done
 
-if [ -n "$TARGET_APP" ]; then
-    xattr -dr com.apple.quarantine "$TARGET_APP" 2>/dev/null || true
-    xattr -cr "$TARGET_APP" 2>/dev/null || true
-    codesign --force --deep -s - "$TARGET_APP" 2>/dev/null || true
-    echo "✓ Атрибуты карантина сняты. Запускаем UNBOUND GUI..."
-    open "$TARGET_APP"
+if [ -n "$APP_PATH" ]; then
+    xattr -dr com.apple.quarantine "$APP_PATH" 2>/dev/null || true
+    echo "✓ Атрибут карантина снят с $APP_PATH. Запускаем UNBOUND GUI..."
+    open "$APP_PATH"
 else
     echo "[!] Ошибка: Unbound.app не найден!"
-    read -p "Нажмите Enter для выхода..."
+    read -r -p "Нажмите Enter для выхода..."
 fi
