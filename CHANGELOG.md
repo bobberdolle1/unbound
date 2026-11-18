@@ -2,7 +2,7 @@
 
 Все значимые изменения проекта документируются в этом файле.
 
-## [Unreleased]
+## [0.9.0] - 2026-11-18
 
 ### Безопасность (Security)
 
@@ -46,7 +46,10 @@
 
 ### Упаковка, CI/CD и инфраструктура (Packaging & Ops)
 
-- **Модернизация Linux-упаковки (`packaging/`)**: полностью переработаны `unbound.service` (`Type=simple`, корректные права `/tmp` для распаковки `nfqws2`, `SIGTERM`), `PKGBUILD`, `unbound-cli.spec`, `build-rpm.sh` и `build-deb.sh` под Go + Wails `v0.8.0+` (`GPL-3.0`, сборка `frontend/dist`, `CGO_ENABLED=0`).
+- **Обновление движка Zapret 2 (`v1.0.5.1` → `v1.0.7`) и зависимостей Go / Frontend**:
+  - Встроенный набор исполняемых бинарников и Lua-скриптов Zapret 2 (`winws2.exe`, `nfqws2`, `ip2net`, `mdig`, `zapret-*.lua`) обновлён до официального релиза `v1.0.7` с пересчётом `ENGINE_PROVENANCE.json` и `ENGINE_ASSETS.sha256`.
+  - Обновлены зависимости Go (`wails/v2` `v2.17.1`, `quic-go` `v0.65.0`, `golang.org/x/net` `v0.63.0`, `golang.org/x/sys` `v0.50.0`, `golang.org/x/crypto` `v0.59.0`, `golang.org/x/text` `v0.44.0`) и фронтенд-стека (`vite` `7.3.x`, `vitest` `4.1.x`, `tailwindcss` / `@tailwindcss/vite` `4.3.x`, `tailwind-merge` `3.7.x`, `@vitejs/plugin-react` `5.2.x`, `@testing-library/*`) с устранением всех исправленных upstream-уязвимостей и нулевым числом runtime-уязвимостей (`npm audit --omit=dev`: `0 vulnerabilities`).
+- **Модернизация Linux-упаковки (`packaging/`)**: полностью переработаны `unbound.service` (`Type=simple`, корректные права `/tmp` для распаковки `nfqws2`, `SIGTERM`), `PKGBUILD`, `unbound-cli.spec`, `build-rpm.sh` и `build-deb.sh` под Go + Wails `v0.9.0+` (`GPL-3.0`, сборка `frontend/dist`, `CGO_ENABLED=0`).
 - **Метаданные Windows, CI и скрипты**: `build/windows/info.json` переведён на шаблонные переменные Wails (`{{.Info.ProductVersion}}`), а `build/windows/wails.exe.manifest` — на SxS-безопасную версию `1.0.0.0`; `.buildkite/pipeline.yml` переведён на `pwsh`; в `build_macos_release.sh` исправлена инициализация переменных до `trap ... EXIT` (`set -u`); в `build_darwin.sh` обновление `Casks/unbound.rb` закрыто флагом `--update-cask`; `scripts/control_linux/*.sh` определяют `unbound-linux-amd64` и `unbound-linux-arm64`.
 - **Гигиена репозитория**: ужесточены `.gitignore` и `.dockerignore`, очищен `scripts/fetch-fonts.sh` (только `Inter`), актуализированы `README_RELEASE.txt` и `build/linux/docker-entrypoint-validation.sh`, удалены опасный `scripts/build/publish_release.ps1` и устаревшие одноразовые scratch-скрипты.
 

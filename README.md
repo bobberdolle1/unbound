@@ -2,10 +2,10 @@
 
 <img src="./build/logo.svg" alt="UNBOUND Logo" width="120" />
 
-# UNBOUND `v0.8.0`
+# UNBOUND `v0.9.0`
 **Локальный десктопный и консольный клиент десинхронизации DPI на уровне L3/L4 на базе Zapret 2 (`winws2` / `nfqws2`) и `tpws`.**
 
-[![Version](https://img.shields.io/badge/Version-v0.8.0-08090b?style=for-the-badge&logo=rocket)](#)
+[![Version](https://img.shields.io/badge/Version-v0.9.0-08090b?style=for-the-badge&logo=rocket)](#)
 [![Design](https://img.shields.io/badge/Design-Precision_Monochrome-10b981?style=for-the-badge)](#)
 [![Security](https://img.shields.io/badge/Security-SHA256_pinned-10b981?style=for-the-badge&logo=shield)](SECURITY.md)
 [![License](https://img.shields.io/badge/License-GPL--3.0-blue?style=for-the-badge)](LICENSE)
@@ -29,7 +29,7 @@
 
 ## ⚙️ Ключевые возможности
 
-- **Актуальный движок**: встроенный **Zapret 2 v1.0.5.1** (`winws2.exe` + WinDivert на Windows; `nfqws2` + NFQUEUE/`nftables` на Linux) с Lua-стратегиями; на macOS — universal **Zapret `tpws --socks`** через системный SOCKS5 активного маршрута.
+- **Актуальный движок**: встроенный **Zapret 2 v1.0.7** (`winws2.exe` + WinDivert на Windows; `nfqws2` + NFQUEUE/`nftables` на Linux) с Lua-стратегиями; на macOS — universal **Zapret `tpws --socks`** через системный SOCKS5 активного маршрута.
 - **AutoTune vNext (Single-Host & Bounded ServiceGraph)**: доказательный замкнутый цикл (`OBSERVE → DIAGNOSE → PLAN → ORDER → ACT → VALIDATE → REMEMBER → REVALIDATE`) как для отдельного hostname (до 8 точных A/AAAA endpoint), так и для встроенных мультихостовых пресетов **ServiceGraph** (`YouTube`, `Discord`, до 4 точных узлов-хостов в едином union-захвате `winws2` / `nfqws2`). Включает потоковый прогресс по стадиям, мгновенную отмену, контролируемую проверку окна передачи байт (`TransferContract` для выявления `PARTIAL_TRANSFER_ANOMALY`), транзакционные Apply/Suspend/Revert и анонимизированный журнал истории результатов (`Outcome Ledger` с HMAC-SHA256 `ContextKey`).
 - **Strategy Lab (Лаборатория поиска)**: изолированный поиск работающих стратегий на базе алгоритмов BlockCheck2 со строгим фильтром `--wf-raw-filter` только по IP тестируемой цели, проверкой возможностей стека и гарантированным возвратом исходного профиля после теста.
 - **Адаптивный профиль (Adaptive Experimental)**: динамическая оркестрация на базе `zapret-auto.lua` (`circular`), переключающая стратегии для конкретных доменов по подтверждённым сбоям.
@@ -68,7 +68,7 @@
 | **Windows 10/11 x64 (`windows/amd64`)** | `WinDivert` + Zapret 2 `winws2.exe` | ✅ Проверены runtime и сеть |
 | **macOS Apple Silicon (`darwin/arm64`)** | Universal Zapret `tpws --socks` + system SOCKS5 | ✅ Проверен runtime |
 | **macOS Intel (`darwin/amd64`)** | Universal Zapret `tpws --socks` + system SOCKS5 | ⚠️ Проверена сборка universal-бинарника |
-| **Linux amd64 (`linux/amd64`)** | `NFQUEUE` + `nftables` / `iptables` + `nfqws2` | 🟡 Экспериментальный (`unbound-v0.8.0-linux-amd64.tar.gz`, `.deb`/`.rpm`/Arch `packaging/`) |
+| **Linux amd64 (`linux/amd64`)** | `NFQUEUE` + `nftables` / `iptables` + `nfqws2` | 🟡 Экспериментальный (`unbound-v0.9.0-linux-amd64.tar.gz`, `.deb`/`.rpm`/Arch `packaging/`) |
 | **Linux arm64 (`linux/arm64`)** | `NFQUEUE` + `nftables` / `iptables` + `nfqws2` | 🟡 Экспериментальный (сборка из исходников) |
 
 Подробная матрица приёмки и ограничений платформ: [**`docs/PLATFORMS.md`**](docs/PLATFORMS.md) и [**`docs/MACOS.md`**](docs/MACOS.md).
@@ -111,7 +111,7 @@ sudo ./unbound --autotune-vnext --service-preset youtube           # Мульт�
 
 ### Экспериментальная поддержка Linux (`amd64` CLI и пакеты)
 
-Релизный таргет `unbound-v0.8.0-linux-amd64.tar.gz` поставляет самодостаточный CLI-архив с проверкой `BUNDLE_SHA256SUMS.txt`; также в каталоге `packaging/` доступны актуальные сценарии сборки `.deb`, `.rpm`, `PKGBUILD` и unit-файл `unbound.service` (`systemd`). Для перехвата трафика требуются права `root`, ядро Linux с `NFQUEUE` и `nftables` (`iptables` поддерживается как fallback). Linux-таргет остаётся **EXPERIMENTAL**.
+Релизный таргет `unbound-v0.9.0-linux-amd64.tar.gz` поставляет самодостаточный CLI-архив с проверкой `BUNDLE_SHA256SUMS.txt`; также в каталоге `packaging/` доступны актуальные сценарии сборки `.deb`, `.rpm`, `PKGBUILD` и unit-файл `unbound.service` (`systemd`). Для перехвата трафика требуются права `root`, ядро Linux с `NFQUEUE` и `nftables` (`iptables` поддерживается как fallback). Linux-таргет остаётся **EXPERIMENTAL**.
 
 ---
 

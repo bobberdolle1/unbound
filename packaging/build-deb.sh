@@ -14,7 +14,7 @@ for command in go node npm dpkg-deb; do
     fi
 done
 
-DEFAULT_VERSION="0.8.0"
+DEFAULT_VERSION="0.9.0"
 if [ -f "wails.json" ]; then
     DEFAULT_VERSION="$(node -p "require('./wails.json').info.productVersion")"
 fi

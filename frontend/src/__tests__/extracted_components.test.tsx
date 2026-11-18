@@ -118,11 +118,11 @@ describe('Extracted Components Unit Tests', () => {
       expect(windowService.hideToTray).not.toHaveBeenCalled();
     });
 
-    it('renders fallback version v0.8.0 and privilege warning badge when privilegeError is set', () => {
+    it('renders fallback version v0.9.0 and privilege warning badge when privilegeError is set', () => {
       const { rerender } = render(
         <PlatformTitlebar platform="windows" appVersion="" privilegeError="Требуются права администратора." />
       );
-      expect(screen.getByText('v0.8.0')).toBeDefined();
+      expect(screen.getByText('v0.9.0')).toBeDefined();
       expect(screen.getByText('NO ADMIN ⚠')).toBeDefined();
       expect(screen.queryByText(/^ADMIN$/)).toBeNull();
 

@@ -54,5 +54,8 @@ fi
 %doc README.md CHANGELOG.md
 
 %changelog
+* Wed Nov 18 2026 UNBOUND Contributors <https://github.com/bobberdolle1/unbound> - 0.9.0-1
+- Bump UNBOUND CLI package metadata and runtime dependencies for v0.9.0
+
 * Thu Oct 01 2026 UNBOUND Contributors <https://github.com/bobberdolle1/unbound> - 0.8.0-1
 - Modernize RPM packaging for Go + Wails v0.8.0+ runtime and Zapret 2 nfqws2
