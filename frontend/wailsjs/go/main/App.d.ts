@@ -15,7 +15,11 @@ export function AutoTune():Promise<string>;
 
 export function AutoTuneVNext(arg1:string,arg2:Array<string>):Promise<main.AutoTuneVNextResult>;
 
+export function AutoTuneVNextServiceGraph(arg1:string):Promise<main.VNextServiceGraphResult>;
+
 export function CancelAutoTune():Promise<void>;
+
+export function CancelAutoTuneVNext():Promise<boolean>;
 
 export function CancelDoctor(arg1:string):Promise<void>;
 
@@ -28,6 +32,8 @@ export function CheckDiscordRunning():Promise<boolean|Array<string>>;
 export function CheckPrivileges():Promise<boolean>;
 
 export function ClearAutoHostlist():Promise<void>;
+
+export function ClearAutoTuneVNextHistory():Promise<void>;
 
 export function ClearDiscordCache(arg1:boolean):Promise<engine.DiscordCacheCleanupResult>;
 
@@ -53,7 +59,11 @@ export function GetAutoStartTaskInfo():Promise<engine.TaskRegistrationInfo>;
 
 export function GetAutoTuneVNextExperimentConfig():Promise<main.AutoTuneVNextExperimentConfig>;
 
+export function GetAutoTuneVNextHistorySummary():Promise<main.VNextHistorySummary>;
+
 export function GetAutoTuneVNextManagedStatus():Promise<main.AutoTuneVNextManagedStatus>;
+
+export function GetAutoTuneVNextServicePresets():Promise<Array<main.VNextServicePreset>>;
 
 export function GetBypassLists():Promise<Array<string>>;
 
@@ -110,6 +120,8 @@ export function RemoveAutoHostlistDomain(arg1:string):Promise<void>;
 export function ResetAdaptiveHostState():Promise<void>;
 
 export function RevertAutoTuneVNext():Promise<main.AutoTuneVNextManagedStatus>;
+
+export function RevertAutoTuneVNextServiceGraph():Promise<void>;
 
 export function RollbackEngineUpdate():Promise<void>;
 

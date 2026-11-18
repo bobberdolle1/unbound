@@ -1134,6 +1134,68 @@ export namespace main {
 	        this.st = source["st"];
 	    }
 	}
+	export class VNextHistorySummary {
+	    record_count: number;
+	    verified_count: number;
+	    negative_count: number;
+	    updated_at: string;
+	    context_ready: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new VNextHistorySummary(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.record_count = source["record_count"];
+	        this.verified_count = source["verified_count"];
+	        this.negative_count = source["negative_count"];
+	        this.updated_at = source["updated_at"];
+	        this.context_ready = source["context_ready"];
+	    }
+	}
+	export class VNextServiceGraphResult {
+	    status: string;
+	    preset_id: string;
+	    hosts: string[];
+	    verified_hosts: string[];
+	    applied: boolean;
+	    summary: string;
+	    errors: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new VNextServiceGraphResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.status = source["status"];
+	        this.preset_id = source["preset_id"];
+	        this.hosts = source["hosts"];
+	        this.verified_hosts = source["verified_hosts"];
+	        this.applied = source["applied"];
+	        this.summary = source["summary"];
+	        this.errors = source["errors"];
+	    }
+	}
+	export class VNextServicePreset {
+	    id: string;
+	    label: string;
+	    description: string;
+	    hosts: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new VNextServicePreset(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.label = source["label"];
+	        this.description = source["description"];
+	        this.hosts = source["hosts"];
+	    }
+	}
 
 }
 

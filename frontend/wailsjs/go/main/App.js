@@ -26,8 +26,16 @@ export function AutoTuneVNext(arg1, arg2) {
   return window['go']['main']['App']['AutoTuneVNext'](arg1, arg2);
 }
 
+export function AutoTuneVNextServiceGraph(arg1) {
+  return window['go']['main']['App']['AutoTuneVNextServiceGraph'](arg1);
+}
+
 export function CancelAutoTune() {
   return window['go']['main']['App']['CancelAutoTune']();
+}
+
+export function CancelAutoTuneVNext() {
+  return window['go']['main']['App']['CancelAutoTuneVNext']();
 }
 
 export function CancelDoctor(arg1) {
@@ -52,6 +60,10 @@ export function CheckPrivileges() {
 
 export function ClearAutoHostlist() {
   return window['go']['main']['App']['ClearAutoHostlist']();
+}
+
+export function ClearAutoTuneVNextHistory() {
+  return window['go']['main']['App']['ClearAutoTuneVNextHistory']();
 }
 
 export function ClearDiscordCache(arg1) {
@@ -102,8 +114,16 @@ export function GetAutoTuneVNextExperimentConfig() {
   return window['go']['main']['App']['GetAutoTuneVNextExperimentConfig']();
 }
 
+export function GetAutoTuneVNextHistorySummary() {
+  return window['go']['main']['App']['GetAutoTuneVNextHistorySummary']();
+}
+
 export function GetAutoTuneVNextManagedStatus() {
   return window['go']['main']['App']['GetAutoTuneVNextManagedStatus']();
+}
+
+export function GetAutoTuneVNextServicePresets() {
+  return window['go']['main']['App']['GetAutoTuneVNextServicePresets']();
 }
 
 export function GetBypassLists() {
@@ -216,6 +236,10 @@ export function ResetAdaptiveHostState() {
 
 export function RevertAutoTuneVNext() {
   return window['go']['main']['App']['RevertAutoTuneVNext']();
+}
+
+export function RevertAutoTuneVNextServiceGraph() {
+  return window['go']['main']['App']['RevertAutoTuneVNextServiceGraph']();
 }
 
 export function RollbackEngineUpdate() {
