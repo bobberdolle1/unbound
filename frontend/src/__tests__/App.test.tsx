@@ -40,6 +40,7 @@ beforeEach(() => {
         GetEngineNames: vi.fn().mockResolvedValue(['zapret', 'byedpi']),
         GetProfiles: vi.fn().mockResolvedValue(['discord_preset_1', 'youtube_preset_2']),
         GetFavoriteProfiles: vi.fn().mockResolvedValue(['discord_preset_1']),
+        ToggleFavoriteProfile: vi.fn().mockResolvedValue([]),
         GetBypassLists: vi.fn().mockResolvedValue(['general.txt', 'youtube.txt']),
         GetSettings: vi.fn().mockResolvedValue({
           autoStart: false,
@@ -225,10 +226,32 @@ describe('UNBOUND App Main Integration Tests', () => {
       expect(saved.autoUpdateEnabled).toBe(false);
       expect(saved.defaultProfile).toBe('discord_preset_1');
     });
+
+    it('does not resurrect the last favoriteProfile when unstarred before saving settings', async () => {
+      render(<App />);
+
+      const unstarBtn = await screen.findByTitle('Удалить из избранного');
+      fireEvent.click(unstarBtn);
+
+      await waitFor(() => {
+        expect((window as any).go.main.App.ToggleFavoriteProfile).toHaveBeenCalledWith('discord_preset_1');
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: /Настройки/i }));
+      await screen.findByText(/Параметры системы/i);
+      fireEvent.click(document.querySelector('[role="checkbox"]#autoStart') as HTMLElement);
+
+      await waitFor(() => {
+        expect((window as any).go.main.App.SaveSettings).toHaveBeenCalledTimes(1);
+      });
+
+      const saved = (window as any).go.main.App.SaveSettings.mock.calls[0][0];
+      expect(saved.favoriteProfiles).toEqual([]);
+    });
   });
 
   describe('LogJournalDrawer & Backend Events', () => {
-    it('renders collapsed log footer bar and toggles expansion via Ctrl+J', async () => {
+    it('renders collapsed log footer bar and toggles expansion via Ctrl+J, including when showLogs starts false', async () => {
       render(<App />);
 
       await waitFor(() => {
@@ -244,6 +267,19 @@ describe('UNBOUND App Main Integration Tests', () => {
       await waitFor(() => {
         expect(screen.queryByText(/Системный журнал L3\/L4/)).toBeNull();
         expect(screen.getByText(/Журнал \(0\)/)).toBeDefined();
+      });
+
+      // Disable showLogs in Settings, then press Ctrl+J -> re-enables showLogs and expands drawer
+      fireEvent.click(screen.getByRole('button', { name: /Настройки/i }));
+      await screen.findByText(/Параметры системы/i);
+      fireEvent.click(document.querySelector('[role="checkbox"]#showLogs') as HTMLElement);
+      await waitFor(() => {
+        expect(screen.queryByText(/Журнал \(0\)/)).toBeNull();
+      });
+
+      fireEvent.keyDown(window, { key: 'j', ctrlKey: true });
+      await waitFor(() => {
+        expect(screen.getByText(/Системный журнал L3\/L4 \(0\)/)).toBeDefined();
       });
     });
 

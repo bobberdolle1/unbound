@@ -151,6 +151,15 @@ export default function App() {
     return undefined;
   }, [theme]);
 
+  const favoritesStateRef = useRef<{ loaded: boolean; list: string[] }>({
+    loaded: false,
+    list: [],
+  });
+  favoritesStateRef.current = {
+    loaded: engineState.favoritesLoaded,
+    list: engineState.favoriteProfiles,
+  };
+
   // System Checks & Settings load
   useEffect(() => {
     let active = true;
@@ -179,7 +188,12 @@ export default function App() {
       .then((s: WailsEngine.Settings) => {
         if (!active) return;
         const raw = (s || {}) as unknown as Record<string, unknown>;
-        rawSettingsRef.current = { ...raw };
+        const effectiveFavorites = favoritesStateRef.current.loaded
+          ? favoritesStateRef.current.list
+          : Array.isArray(s?.favoriteProfiles)
+          ? s.favoriteProfiles
+          : [];
+        rawSettingsRef.current = { ...raw, favoriteProfiles: effectiveFavorites };
         setSettings({
           autoStart: Boolean(s?.autoStart),
           startMinimized: Boolean(s?.startMinimized),
@@ -193,7 +207,7 @@ export default function App() {
           discordCacheAutoClean: Boolean(s?.discordCacheAutoClean),
           secureDns: Boolean(s?.secureDns),
           autoReconnect: s?.autoReconnect !== undefined ? Boolean(s.autoReconnect) : true,
-          favoriteProfiles: Array.isArray(s?.favoriteProfiles) ? s.favoriteProfiles : [],
+          favoriteProfiles: effectiveFavorites,
           autoTuneTargets: Array.isArray(s?.autoTuneTargets) ? s.autoTuneTargets : [],
           diagnosticsMode: s?.diagnosticsMode ?? 'quick',
           autoUpdatePolicy: s?.autoUpdatePolicy ?? 'notify',
@@ -211,9 +225,9 @@ export default function App() {
     };
   }, [platform]);
 
-  // Sync favoriteProfiles changes into rawSettingsRef so saving settings never clobbers favorites
+  // Sync favoriteProfiles changes (including unstarring the last favorite -> []) into rawSettingsRef & settings
   useEffect(() => {
-    if (engineState.favoriteProfiles.length > 0) {
+    if (engineState.favoritesLoaded) {
       rawSettingsRef.current = {
         ...rawSettingsRef.current,
         favoriteProfiles: engineState.favoriteProfiles,
@@ -224,7 +238,7 @@ export default function App() {
           : { ...prev, favoriteProfiles: engineState.favoriteProfiles }
       );
     }
-  }, [engineState.favoriteProfiles]);
+  }, [engineState.favoritesLoaded, engineState.favoriteProfiles]);
 
   useEffect(() => {
     let mounted = true;
@@ -315,13 +329,22 @@ export default function App() {
     []
   );
 
+  const handleShortcutToggleLogs = useCallback(() => {
+    if (!settings.showLogs) {
+      updateSettings((prev) => ({ ...prev, showLogs: true }));
+      logJournal.setIsExpanded(true);
+    } else {
+      logJournal.toggleExpanded();
+    }
+  }, [settings.showLogs, updateSettings, logJournal]);
+
   // Shortcuts Hook (Escape + Ctrl+J / Ctrl+` for Log Journal)
   useKeyboardShortcuts(
     useCallback(() => {
       setIsDiagOpen(false);
       luaActions.setIsLuaOpen(false);
     }, [luaActions]),
-    logJournal.toggleExpanded
+    handleShortcutToggleLogs
   );
 
   // Operation Handlers

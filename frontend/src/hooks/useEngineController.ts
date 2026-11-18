@@ -8,6 +8,7 @@ export function useEngineController(initialStatus: string = 'Stopped') {
   const [profiles, setProfiles] = useState<string[]>([]);
   const [selectedProfile, setSelectedProfile] = useState<string>('');
   const [favoriteProfiles, setFavoriteProfiles] = useState<string[]>([]);
+  const [favoritesLoaded, setFavoritesLoaded] = useState<boolean>(false);
   const [status, setStatus] = useState<string>(initialStatus);
 
   // AutoTune States
@@ -37,7 +38,10 @@ export function useEngineController(initialStatus: string = 'Stopped') {
     backendService
       .getFavoriteProfiles()
       .then((favs: string[]) => {
-        setFavoriteProfiles(favs || []);
+        if (Array.isArray(favs)) {
+          setFavoriteProfiles(favs);
+          setFavoritesLoaded(true);
+        }
       })
       .catch(() => {});
   }, []);
@@ -88,6 +92,7 @@ export function useEngineController(initialStatus: string = 'Stopped') {
     try {
       const favs = await backendService.toggleFavoriteProfile(selectedProfile);
       setFavoriteProfiles(favs || []);
+      setFavoritesLoaded(true);
     } catch (err) {
       console.error('ToggleFavorite failed:', err);
     }
@@ -130,6 +135,7 @@ export function useEngineController(initialStatus: string = 'Stopped') {
       selectedProfile,
       sortedProfiles,
       favoriteProfiles,
+      favoritesLoaded,
       status,
       isScanning,
       scanProgress,

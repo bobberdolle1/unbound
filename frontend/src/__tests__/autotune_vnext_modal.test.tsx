@@ -203,10 +203,15 @@ describe('primary AutoTune vNext modal', () => {
     fireEvent.click(screen.getByText('Мульти-хост (ServiceGraph)'));
     expect(screen.getByText('www.youtube.com')).toBeDefined();
 
+    vi.spyOn(backendService, 'getAutoTuneVNextManagedStatus').mockResolvedValueOnce(
+      status({ state: 'VNEXT_MANAGED_ACTIVE', active: true, strategy_id: 'prod-tls-multisplit-1-v1', target: 'https://www.youtube.com/' })
+    );
+
     fireEvent.click(screen.getByText('Запустить подбор ServiceGraph'));
     await waitFor(() => expect(runGraph).toHaveBeenCalledWith('youtube'));
 
     expect(await screen.findByText('Пакетная стратегия проверена и применена для YouTube.')).toBeDefined();
+    expect(screen.queryByText('Стратегия применена')).toBeNull();
     fireEvent.click(screen.getByText('Отключить ServiceGraph'));
     await waitFor(() => expect(revertGraph).toHaveBeenCalledTimes(1));
   });

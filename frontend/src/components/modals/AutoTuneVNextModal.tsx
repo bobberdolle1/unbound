@@ -358,6 +358,7 @@ export const AutoTuneVNextModal: React.FC<AutoTuneVNextModalProps> = ({
       const nextManaged = await backendService.revertAutoTuneVNext();
       if (isAliveRef.current) {
         setManaged(nextManaged);
+        setServiceGraphResult(null);
       }
     } finally {
       if (isAliveRef.current) {
@@ -456,7 +457,7 @@ export const AutoTuneVNextModal: React.FC<AutoTuneVNextModalProps> = ({
           </div>
         )}
 
-        {managed?.active && (
+        {managed?.active && !serviceGraphResult?.applied && (
           <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-4 space-y-2 text-sm">
             <div className="font-semibold text-emerald-400">Стратегия применена</div>
             <div className="text-xs">Стратегия: {strategyLabel(managed.strategy_id)}</div>
