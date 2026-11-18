@@ -211,9 +211,8 @@ type ResponseMeasurement struct {
 	ExpectedSemantics ResponseSemanticsStatus `json:"expected_semantics"`
 }
 
-// TransferMeasurement supports an audited, bounded transfer result. It is a
-// data contract only in V2.1; the direct observer does not implement a body
-// transfer measurement and reports it as unsupported when one is requested.
+// TransferMeasurement supports an audited, bounded transfer result measured
+// over an in-memory discarded byte window without persisting payload bytes.
 type TransferMeasurement struct {
 	Status        MeasurementStatus `json:"status"`
 	ExpectedBytes int64             `json:"expected_bytes,omitempty"`
@@ -337,13 +336,21 @@ func (o *DirectTCPHTTPSObserver) ObserveProbe(ctx context.Context, spec ProbeSpe
 	}
 	options.Transport = normalized.Transport
 	options.AddressFamily = normalized.AddressFamilyPolicy
-	observation, err := o.Observe(ctx, normalized.Target.URL, options)
+	var requestedTransfer *TransferContract
+	if normalized.Transfer != nil && input.Transfer == nil {
+		requestedTransfer = normalized.Transfer
+	}
+	observation, measuredTransfer, err := o.observe(ctx, normalized.Target.URL, options, requestedTransfer)
 	if err != nil {
 		return EvidenceRecord{}, err
 	}
 	input.Observations = append(input.Observations, observation)
 	if normalized.Transfer != nil && input.Transfer == nil {
-		input.Transfer = &TransferMeasurement{Status: MeasurementUnsupported, ExpectedBytes: normalized.Transfer.ExpectedBytes}
+		if measuredTransfer != nil {
+			input.Transfer = measuredTransfer
+		} else {
+			input.Transfer = &TransferMeasurement{Status: MeasurementFailed, ExpectedBytes: normalized.Transfer.ExpectedBytes}
+		}
 	}
 	return BuildEvidenceRecord(normalized, input)
 }

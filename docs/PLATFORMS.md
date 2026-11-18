@@ -20,7 +20,7 @@ Windows YouTube evidence from 2026-09-22 resolved `www.youtube.com` to Google ed
 | Платформа | Движок / перехват | Релизный формат | Поддерживаемый трафик |
 |-----------|-------------------|-----------------|------------------------|
 | 🪟 **Windows 10/11 x64** | Zapret 2 `winws2.exe` + WinDivert | Wails GUI + CLI | TCP и UDP/QUIC согласно профилю |
-| 🐧 **Linux amd64** | Zapret 2 `nfqws2` + NFQUEUE | **EXPERIMENTAL** CLI `tar.gz` (`unbound-v0.8.0-linux-amd64.tar.gz`) | TCP и UDP/QUIC согласно профилю |
+| 🐧 **Linux amd64** | Zapret 2 `nfqws2` + NFQUEUE | **EXPERIMENTAL** CLI `tar.gz` (`unbound-v0.9.0-linux-amd64.tar.gz`) | TCP и UDP/QUIC согласно профилю |
 | 🍎 **macOS 11+ Intel/Apple Silicon** | Zapret `tpws --socks` + system SOCKS; profile-specific PF UDP/443 fallback | Universal Wails GUI + CLI | TCP only |
 
 ---

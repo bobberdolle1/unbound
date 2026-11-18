@@ -2,10 +2,11 @@ import React from 'react';
 import { UICheckbox } from '../UICheckbox';
 import { UISelect } from '../UISelect';
 import { UIGear, UIShield, UITerminal, UIX } from '../icons';
-import { QuitApp } from '../../../wailsjs/go/main/App';
 import { backendService } from '../../services/backend';
+import { windowService } from '../../services/window';
 import { engine } from '../../../wailsjs/go/models';
 import { cn } from '../../lib/cn';
+
 export interface AppSettings {
   autoStart: boolean;
   startMinimized: boolean;
@@ -41,6 +42,20 @@ interface SettingsViewProps {
   handleClearCache: () => void;
   handleKillWinws2: () => void;
 }
+
+const THEME_LABELS: Record<string, string> = {
+  system: 'System (Авто)',
+  monolith: 'Monolith (Dark)',
+  paper: 'Paper (Warm Light)',
+  graphite: 'Graphite (Steel Dark)',
+};
+
+const LABEL_TO_THEME: Record<string, string> = {
+  'System (Авто)': 'system',
+  'Monolith (Dark)': 'monolith',
+  'Paper (Warm Light)': 'paper',
+  'Graphite (Steel Dark)': 'graphite',
+};
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
   settings,
@@ -93,10 +108,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [checkError, setCheckError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
+    let active = true;
     if (backendService?.getSystemComponentState) {
-      backendService.getSystemComponentState()
+      backendService
+        .getSystemComponentState()
         .then((state) => {
-          if (state && Array.isArray(state.components) && state.components.length > 0) {
+          if (active && state && Array.isArray(state.components) && state.components.length > 0) {
             setComponentStates(state.components);
           }
         })
@@ -104,6 +121,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           console.error('Failed to get local component versions:', err);
         });
     }
+    return () => {
+      active = false;
+    };
   }, []);
 
   const handleCheckUpdates = async () => {
@@ -134,7 +154,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         <UICheckbox
           id="autoStart"
           label="Автозапуск"
-          desc="Запускать Unbound при старте системы"
+          desc="Запускать UNBOUND при входе в систему"
           checked={settings.autoStart}
           onChange={() => setSettings({ ...settings, autoStart: !settings.autoStart })}
         />
@@ -143,7 +163,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <UICheckbox
             id="startMinimized"
             label="Тихий старт"
-            desc="При автозапуске Windows запускать UNBOUND скрыто в системном трее"
+            desc="При автозапуске системы запускать UNBOUND свёрнутым в фоновом режиме"
             checked={settings.startMinimized}
             onChange={() => setSettings({ ...settings, startMinimized: !settings.startMinimized })}
             disabled={!settings.autoStart}
@@ -153,7 +173,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         <UICheckbox
           id="autoStartProfile"
           label="Автовключение профиля"
-          desc="При запуске Unbound автоматически включать выбранный профиль"
+          desc="При запуске UNBOUND автоматически включать выбранный профиль"
           checked={settings.autoStartProfile}
           onChange={() => setSettings({ ...settings, autoStartProfile: !settings.autoStartProfile })}
         />
@@ -168,27 +188,75 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           />
         </div>
 
+        {/* Network & Engine Behavior Controls */}
+        <div className="space-y-3 pt-3 border-t border-[var(--ui-border)]">
+          <span className="text-xs font-semibold text-[var(--ui-text-muted)] uppercase block">Сеть и журнал</span>
+
+          <UICheckbox
+            id="showLogs"
+            label="Показывать системный журнал"
+            desc="Отображать нижнюю панель логов L3/L4 (горячая клавиша Ctrl+J)"
+            checked={settings.showLogs}
+            onChange={() => setSettings({ ...settings, showLogs: !settings.showLogs })}
+          />
+
+          <UICheckbox
+            id="autoReconnect"
+            label="Автопереподключение профиля"
+            desc="Автоматически переключать рабочий профиль при потере доступа к целевым сервисам"
+            checked={settings.autoReconnect}
+            onChange={() => setSettings({ ...settings, autoReconnect: !settings.autoReconnect })}
+          />
+
+          <UICheckbox
+            id="gameFilter"
+            label="Игровой фильтр (UDP)"
+            desc="Расширять перехват UDP-трафика для игровых и голосовых портов"
+            checked={settings.gameFilter}
+            onChange={() => setSettings({ ...settings, gameFilter: !settings.gameFilter })}
+          />
+
+          <UICheckbox
+            id="secureDns"
+            label="Системный DNS 1.1.1.1"
+            desc="Использовать системный DNS 1.1.1.1 / 1.0.0.1 на активном адаптере (обычный UDP/TCP 53, без DoH)"
+            checked={settings.secureDns}
+            onChange={() => setSettings({ ...settings, secureDns: !settings.secureDns })}
+          />
+
+          <UICheckbox
+            id="enableTCPTimestamps"
+            label="TCP Timestamps (RFC 1323)"
+            desc="Включать временные метки TCP в ОС для стратегий с модификацией заголовков"
+            checked={settings.enableTCPTimestamps}
+            onChange={() => setSettings({ ...settings, enableTCPTimestamps: !settings.enableTCPTimestamps })}
+          />
+
+          <UICheckbox
+            id="discordCacheAutoClean"
+            label="Автоочистка кэша Discord"
+            desc="Автоматически очищать сетевой кэш Discord при смене профиля обхода"
+            checked={settings.discordCacheAutoClean}
+            onChange={() => setSettings({ ...settings, discordCacheAutoClean: !settings.discordCacheAutoClean })}
+          />
+
+          <UICheckbox
+            id="autoUpdateEnabled"
+            label="Автопроверка обновлений"
+            desc="Проверять актуальность компонентов и списков обхода в фоновом режиме"
+            checked={settings.autoUpdateEnabled}
+            onChange={() => setSettings({ ...settings, autoUpdateEnabled: !settings.autoUpdateEnabled })}
+          />
+        </div>
+
         {/* Theme Selector */}
         <div className="flex flex-col gap-1.5 pt-2 border-t border-[var(--ui-border)]">
           <span className="text-xs font-semibold text-[var(--ui-text)]">Тема оформления</span>
           <UISelect
-            value={
-              theme === 'monolith'
-                ? 'Monolith (Dark)'
-                : theme === 'paper'
-                ? 'Paper (Warm Light)'
-                : theme === 'graphite'
-                ? 'Graphite (Steel Dark)'
-                : 'Monolith (Dark)'
-            }
-            options={['Monolith (Dark)', 'Paper (Warm Light)', 'Graphite (Steel Dark)']}
+            value={THEME_LABELS[theme] || 'Monolith (Dark)'}
+            options={['System (Авто)', 'Monolith (Dark)', 'Paper (Warm Light)', 'Graphite (Steel Dark)']}
             onChange={(val: string) => {
-              const themeMap: Record<string, string> = {
-                'Monolith (Dark)': 'monolith',
-                'Paper (Warm Light)': 'paper',
-                'Graphite (Steel Dark)': 'graphite',
-              };
-              setThemeState(themeMap[val] || 'monolith');
+              setThemeState(LABEL_TO_THEME[val] || 'monolith');
             }}
             up={false}
           />
@@ -244,6 +312,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             })}
           </div>
         </div>
+
         {/* System Actions */}
         <div className="space-y-2 pt-3 border-t border-[var(--ui-border)]">
           <span className="text-xs font-semibold text-[var(--ui-text-muted)] uppercase">Системные действия</span>
@@ -311,8 +380,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <button
             onClick={async () => {
               try {
-                await QuitApp();
-              } catch (err) {}
+                await windowService.quit();
+              } catch {}
             }}
             className="w-full mt-3 py-2 text-xs font-semibold rounded-xl bg-red-600/20 text-red-400 border border-red-500/30 hover:bg-red-600/30 transition-colors"
           >

@@ -145,6 +145,9 @@ func TestFormatMarkdownReport(t *testing.T) {
 }
 
 func TestRunDoctorQuickExecution(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping live Doctor network/system probes in short mode")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -164,6 +167,9 @@ func TestRunDoctorQuickExecution(t *testing.T) {
 }
 
 func TestRunDoctorWithProgressMonotonic(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping live Doctor network/system probes in short mode")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -203,6 +209,9 @@ func TestRunDoctorWithProgressMonotonic(t *testing.T) {
 }
 
 func TestRunDoctorWithProgressSerializesCallbacks(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping live Doctor network/system probes in short mode")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -228,6 +237,9 @@ func TestRunDoctorWithProgressSerializesCallbacks(t *testing.T) {
 }
 
 func TestRunDoctorCancellation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping live Doctor OS process probes in short mode")
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 

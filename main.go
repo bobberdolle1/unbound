@@ -42,6 +42,7 @@ func main() {
 	autoTuneMode := flag.Bool("autotune", false, "Run AutoTune benchmark in CLI mode and start the best profile")
 	autoTuneVNextMode := flag.Bool("autotune-vnext", false, "Run experimental AutoTune vNext without activating a selected strategy")
 	autoTuneVNextTarget := flag.String("autotune-vnext-target", "", "Explicit HTTPS target for --autotune-vnext")
+	servicePreset := flag.String("service-preset", "", "Bounded multi-host service preset for --autotune-vnext (youtube or discord)")
 	testMode := flag.Bool("test", false, "Run quick connectivity diagnostic probe for targets and exit")
 	observeURL := flag.String("observe", "", "Run a read-only TCP/TLS/HTTP observation for an HTTPS URL")
 	observeProtocol := flag.String("observe-protocol", "tcp", "Observation transport: tcp or quic")
@@ -71,6 +72,7 @@ func main() {
 		fmt.Println("  unbound --cli                                Run headless CLI mode")
 		fmt.Println("  unbound --cli --autotune                     Run AutoTune in CLI and start best profile")
 		fmt.Println("  unbound --cli --autotune-vnext --autotune-vnext-target https://example.com")
+		fmt.Println("  unbound --cli --autotune-vnext --service-preset youtube")
 		fmt.Println("  unbound --cli --profile=\"Alternative 2\"       Start CLI with specific profile")
 		fmt.Println("  unbound --test                               Run quick connectivity diagnostic probe")
 		fmt.Println("  unbound --observe https://example.com --json Run read-only stage observation")
@@ -150,7 +152,7 @@ func main() {
 	}
 
 	if *cliMode || *autoTuneMode || *autoTuneVNextMode {
-		runHeadlessMode(*profileName, *autoTuneMode, *autoTuneVNextMode, *autoTuneVNextTarget, autoTuneVNextControls, *debugMode, *runDuration)
+		runHeadlessMode(*profileName, *autoTuneMode, *autoTuneVNextMode, *autoTuneVNextTarget, *servicePreset, autoTuneVNextControls, *debugMode, *runDuration)
 		return
 	}
 	app := NewApp()
@@ -405,8 +407,38 @@ func runTestProbe() {
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 }
 
-func runHeadlessMode(profileName string, runAutoTune, runAutoTuneVNext bool, autoTuneVNextTarget string, autoTuneVNextControls stringList, debugMode bool, runDuration time.Duration) {
+func validateAutoTuneVNextCLIOptions(runAutoTune, runAutoTuneVNext bool, autoTuneVNextTarget, servicePreset string) error {
+	if !runAutoTuneVNext {
+		if strings.TrimSpace(servicePreset) != "" {
+			return errors.New("--service-preset requires --autotune-vnext")
+		}
+		return nil
+	}
+	if runAutoTune {
+		return errors.New("--autotune and --autotune-vnext are distinct modes")
+	}
+	hasTarget := strings.TrimSpace(autoTuneVNextTarget) != ""
+	hasPreset := strings.TrimSpace(servicePreset) != ""
+	if hasTarget && hasPreset {
+		return errors.New("--autotune-vnext-target and --service-preset are mutually exclusive")
+	}
+	if !hasTarget && !hasPreset {
+		return errors.New("--autotune-vnext requires --autotune-vnext-target or --service-preset")
+	}
+	if hasPreset {
+		if _, _, err := lookupProductServiceGraphPreset(servicePreset); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func runHeadlessMode(profileName string, runAutoTune, runAutoTuneVNext bool, autoTuneVNextTarget, servicePreset string, autoTuneVNextControls stringList, debugMode bool, runDuration time.Duration) {
 	attachConsole()
+
+	if err := validateAutoTuneVNextCLIOptions(runAutoTune, runAutoTuneVNext, autoTuneVNextTarget, servicePreset); err != nil {
+		log.Fatal(err)
+	}
 
 	fmt.Println("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	fmt.Println("🚀 UNBOUND - Headless CLI Mode")
@@ -437,13 +469,32 @@ func runHeadlessMode(profileName string, runAutoTune, runAutoTuneVNext bool, aut
 	manager, assets := newHeadlessManager(debugMode)
 	defer func() { _ = engine.CleanupExtractedAssets() }()
 	if runAutoTuneVNext {
-		if runAutoTune {
-			log.Fatal("--autotune and --autotune-vnext are distinct modes")
+		svc := newProductVNextService(manager, assets)
+		if strings.TrimSpace(servicePreset) != "" {
+			result, err := svc.RunServiceGraph(context.Background(), servicePreset, nil)
+			if err != nil {
+				log.Fatalf("AutoTune vNext service preset failed: %v", err)
+			}
+			if result.Applied {
+				if runDuration > 0 {
+					sigChan := make(chan os.Signal, 1)
+					signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+					timer := time.NewTimer(runDuration)
+					select {
+					case <-sigChan:
+					case <-timer.C:
+					}
+					timer.Stop()
+					signal.Stop(sigChan)
+				}
+				_ = svc.RevertServiceGraph(context.Background())
+			}
+			if err := json.NewEncoder(os.Stdout).Encode(result); err != nil {
+				log.Fatalf("encode AutoTune vNext service graph result: %v", err)
+			}
+			return
 		}
-		if strings.TrimSpace(autoTuneVNextTarget) == "" {
-			log.Fatal("--autotune-vnext requires --autotune-vnext-target")
-		}
-		result := newProductVNextService(manager, assets).Run(context.Background(), AutoTuneVNextRequest{Target: autoTuneVNextTarget, Controls: []string(autoTuneVNextControls)})
+		result := svc.Run(context.Background(), AutoTuneVNextRequest{Target: autoTuneVNextTarget, Controls: []string(autoTuneVNextControls)})
 		if err := json.NewEncoder(os.Stdout).Encode(result); err != nil {
 			log.Fatalf("encode AutoTune vNext result: %v", err)
 		}
@@ -729,22 +780,24 @@ func toggleSecureDNSCLI() {
 	enabled := isSecureDNSEnabledImpl()
 	newState := !enabled
 	if err := setSecureDNSImpl(newState); err != nil {
-		fmt.Printf("❌ Ошибка переключения Secure DNS: %v\n", err)
+		fmt.Printf("❌ Ошибка переключения системного DNS: %v\n", err)
 		return
 	}
+	servers := strings.Join(engine.SecureDNSServers, " / ")
 	if newState {
-		fmt.Println("✓ Secure DNS (Cloudflare DoH) успешно включён!")
+		fmt.Printf("✓ Системный DNS (%s) успешно включён!\n", servers)
 	} else {
-		fmt.Println("✓ Secure DNS выключен (возвращены системные настройки DNS).")
+		fmt.Println("✓ Системный DNS выключен (возвращены исходные настройки DNS).")
 	}
 }
 
 func runControlCenterMenu(debugMode bool) {
 	attachConsole()
 	for {
+		servers := strings.Join(engine.SecureDNSServers, " / ")
 		dnsStatus := "отключен"
 		if isSecureDNSEnabledImpl() {
-			dnsStatus = "ВКЛЮЧЁН (Cloudflare DoH)"
+			dnsStatus = fmt.Sprintf("ВКЛЮЧЁН (системный DNS %s)", servers)
 		}
 
 		fmt.Println("\n===================================================")
@@ -758,7 +811,7 @@ func runControlCenterMenu(debugMode bool) {
 		fmt.Println(" [6] Редактировать список YouTube (youtube.txt)")
 		fmt.Println(" [7] Редактировать список Discord (discord.txt)")
 		fmt.Println(" [8] Редактировать список исключений (ipset-exclude.txt)")
-		fmt.Printf(" [9] Переключить Secure DNS [Текущий статус: %s]\n", dnsStatus)
+		fmt.Printf(" [9] Переключить системный DNS (%s) [Текущий статус: %s]\n", servers, dnsStatus)
 		fmt.Println(" [10] Проверить конфликты и статус")
 		fmt.Println(" [11] Очистить кэш Discord")
 		fmt.Println(" [12] Остановить все процессы обхода и сбросить драйверы")
@@ -772,10 +825,10 @@ func runControlCenterMenu(debugMode bool) {
 
 		switch choice {
 		case "1":
-			runHeadlessMode("", true, false, "", nil, debugMode, 0)
+			runHeadlessMode("", true, false, "", "", nil, debugMode, 0)
 			return
 		case "2":
-			runHeadlessMode("", false, false, "", nil, debugMode, 0)
+			runHeadlessMode("", false, false, "", "", nil, debugMode, 0)
 			return
 		case "3":
 			runTestProbe()

@@ -28,6 +28,7 @@ type App struct {
 	startMinimized      bool
 	debugMode           bool
 	autoTuneCancel      context.CancelFunc
+	vNextCancel         context.CancelFunc
 	autoTuneWG          sync.WaitGroup
 	autoReconnectCancel context.CancelFunc
 	autoReconnectWG     sync.WaitGroup
@@ -45,6 +46,7 @@ type App struct {
 	// Tray lifecycle & cache
 	trayCtx           context.Context
 	trayCancel        context.CancelFunc
+	trayStarted       bool
 	trayUpdateTrigger chan struct{}
 	lastPingLatency   int64
 	lastPingStatus    string
@@ -63,16 +65,54 @@ const (
 
 var vNextShutdownFailsafeDelay = autotunevnext.DefaultPolicy().MaxDuration + autotunevnext.ManagedCleanupTimeout + vNextShutdownFailsafeMargin
 
+func safeWailsEventsEmit(ctx context.Context, eventName string, optionalData ...interface{}) {
+	if ctx != nil && ctx.Value("events") != nil {
+		wailsruntime.EventsEmit(ctx, eventName, optionalData...)
+	}
+}
+
+func safeWailsLogError(ctx context.Context, message string) {
+	if ctx != nil && ctx.Value("logger") != nil {
+		wailsruntime.LogError(ctx, message)
+	}
+}
+
+func safeWailsLogErrorf(ctx context.Context, format string, args ...interface{}) {
+	if ctx != nil && ctx.Value("logger") != nil {
+		wailsruntime.LogErrorf(ctx, format, args...)
+	}
+}
+
+func safeWailsLogInfo(ctx context.Context, message string) {
+	if ctx != nil && ctx.Value("logger") != nil {
+		wailsruntime.LogInfo(ctx, message)
+	}
+}
+
+func safeWailsLogInfof(ctx context.Context, format string, args ...interface{}) {
+	if ctx != nil && ctx.Value("logger") != nil {
+		wailsruntime.LogInfof(ctx, format, args...)
+	}
+}
+
+func safeWailsQuit(ctx context.Context) {
+	if ctx != nil && ctx.Value("frontend") != nil {
+		wailsruntime.Quit(ctx)
+	}
+}
+
 var (
 	appCheckAdminPrivileges     = checkAdminPrivileges
-	appRuntimeEventsEmit        = wailsruntime.EventsEmit
-	appRuntimeLogError          = wailsruntime.LogError
-	appRuntimeLogErrorf         = wailsruntime.LogErrorf
-	appRuntimeLogInfo           = wailsruntime.LogInfo
-	appRuntimeLogInfof          = wailsruntime.LogInfof
-	appRuntimeQuit              = wailsruntime.Quit
+	appRuntimeEventsEmit        = safeWailsEventsEmit
+	appRuntimeLogError          = safeWailsLogError
+	appRuntimeLogErrorf         = safeWailsLogErrorf
+	appRuntimeLogInfo           = safeWailsLogInfo
+	appRuntimeLogInfof          = safeWailsLogInfof
+	appRuntimeQuit              = safeWailsQuit
 	appScheduleShutdownFailsafe = time.AfterFunc
 	appForceProcessExit         = os.Exit
+	appSetSecureDNS             = setSecureDNSImpl
+	appResolveConflicts         = resolveConflictsImpl
 )
 
 func NewApp() *App {
@@ -171,12 +211,13 @@ func (a *App) startup(ctx context.Context) {
 	// Persisted managed intent has deterministic precedence over legacy
 	// AutoStartProfile. They are separate ownership models and never race.
 	_, managedIntentPresent, managedIntentErr := loadVNextManagedState()
-	if managedIntentPresent {
+	_, graphIntentPresent, graphIntentErr := loadVNextGraphState()
+	if managedIntentPresent || graphIntentPresent {
 		a.startManagedVNextRevalidation(ctx)
 	} else if settings != nil && settings.AutoStartProfile {
 		a.startLegacyProfileStartup(ctx, settings, engines)
-	} else if managedIntentErr != nil {
-		engine.GetLogger().Warnf("AutoTuneVNext", "managed intent ignored: %v", managedIntentErr)
+	} else if managedIntentErr != nil || graphIntentErr != nil {
+		engine.GetLogger().Warnf("AutoTuneVNext", "managed intent ignored: single=%v graph=%v", managedIntentErr, graphIntentErr)
 	}
 
 	a.setupTray()
@@ -186,11 +227,20 @@ func (a *App) startup(ctx context.Context) {
 	}
 
 	logger.Info("App", "UNBOUND initialized successfully")
-	wailsruntime.LogInfo(ctx, "UNBOUND initialized")
+	safeWailsLogInfo(ctx, "UNBOUND initialized")
+}
+
+func hasPersistedVNextIntent() bool {
+	_, singlePresent, singleErr := loadVNextManagedState()
+	_, graphPresent, graphErr := loadVNextGraphState()
+	if singleErr != nil || graphErr != nil {
+		return false
+	}
+	return singlePresent || graphPresent
 }
 
 func (a *App) startManagedVNextRevalidation(parent context.Context) {
-	if _, present, err := loadVNextManagedState(); err != nil || !present {
+	if !hasPersistedVNextIntent() {
 		return
 	}
 	a.mu.Lock()
@@ -363,6 +413,8 @@ func (a *App) shutdown(ctx context.Context) {
 	a.mu.Lock()
 	a.closing = true
 	autoTuneCancel := a.autoTuneCancel
+	vNextCancel := a.vNextCancel
+	a.vNextCancel = nil
 	autoReconnectCancel := a.autoReconnectCancel
 	startupCancel := a.startupCancel
 	managedHealthCancel := a.managedHealthCancel
@@ -372,8 +424,12 @@ func (a *App) shutdown(ctx context.Context) {
 	if trayCancel != nil {
 		trayCancel()
 	}
+	a.quitTray()
 	if doctorCancel != nil {
 		doctorCancel()
+	}
+	if vNextCancel != nil {
+		vNextCancel()
 	}
 	if autoTuneCancel != nil {
 		autoTuneCancel()
@@ -405,6 +461,37 @@ func (a *App) shutdown(ctx context.Context) {
 	_ = a.manager.Stop()
 	if err := engine.CleanupExtractedAssets(); err != nil {
 		engine.GetLogger().Warnf("App", "Runtime cleanup failed: %v", err)
+	}
+}
+
+func (a *App) isAutoTuneInFlight() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.autoTuneCancel != nil || a.vNextCancel != nil
+}
+
+func formatTrayStatusLabel(status providers.Status, profile string, autoTuning bool, managed AutoTuneVNextManagedStatus) (string, bool) {
+	switch {
+	case autoTuning:
+		return "Статус: Автоподбор...", false
+	case managed.State == "STATE_RESTORE_FAILED":
+		return "Статус: Требуется восстановление исходного состояния", true
+	case managed.Active:
+		if managed.StrategyID != "" {
+			return fmt.Sprintf("Статус: Управляемая стратегия (%s)", managed.StrategyID), true
+		}
+		return "Статус: Управляемая стратегия", true
+	case status == providers.StatusRunning:
+		if profile != "" {
+			return fmt.Sprintf("Статус: Подключено (%s)", profile), true
+		}
+		return "Статус: Подключено", true
+	case status == providers.StatusStarting:
+		return "Статус: Подключение...", false
+	case status == providers.StatusError:
+		return "Статус: Ошибка", false
+	default:
+		return "Статус: Отключено", false
 	}
 }
 
@@ -447,7 +534,11 @@ func (a *App) disableManagedVNextIntent(ctx context.Context) error {
 	service := a.vNextService
 	a.mu.Unlock()
 	if service == nil {
-		return clearVNextManagedState()
+		firstErr := clearVNextManagedState()
+		if gErr := clearVNextGraphState(); gErr != nil && firstErr == nil {
+			firstErr = gErr
+		}
+		return firstErr
 	}
 	service.InvalidateGrants()
 	state := service.Revert(ctx)
@@ -469,6 +560,8 @@ func (a *App) beginManualProfileChange() bool {
 	startupCancel := a.startupCancel
 	managedHealthCancel := a.managedHealthCancel
 	autoTuneCancel := a.autoTuneCancel
+	vNextCancel := a.vNextCancel
+	a.vNextCancel = nil
 	autoReconnectCancel := a.autoReconnectCancel
 	a.mu.Unlock()
 	if startupCancel != nil {
@@ -476,6 +569,9 @@ func (a *App) beginManualProfileChange() bool {
 	}
 	if managedHealthCancel != nil {
 		managedHealthCancel()
+	}
+	if vNextCancel != nil {
+		vNextCancel()
 	}
 	if autoTuneCancel != nil {
 		autoTuneCancel()
@@ -1097,15 +1193,27 @@ func (a *App) GetSettings() (*engine.Settings, error) {
 }
 
 func (a *App) SaveSettings(settings *engine.Settings) error {
-	if settings.EnableTCPTimestamps {
+	if settings == nil {
+		return errors.New("settings cannot be nil")
+	}
+	prev, prevErr := engine.GetSettings()
+	if settings.EnableTCPTimestamps && (prevErr != nil || prev == nil || !prev.EnableTCPTimestamps) {
 		if err := engine.EnableTCPTimestamps(); err != nil {
-			wailsruntime.LogErrorf(a.ctx, "Failed to enable TCP Timestamps: %v", err)
+			appRuntimeLogErrorf(a.ctx, "Failed to enable TCP Timestamps: %v", err)
 		}
 	}
-	if err := a.SetSecureDNS(settings.SecureDNS); err != nil {
-		wailsruntime.LogErrorf(a.ctx, "Failed to set secure DNS: %v", err)
+	shouldApplySecureDNS := false
+	if prevErr == nil && prev != nil {
+		shouldApplySecureDNS = prev.SecureDNS != settings.SecureDNS
+	} else if settings.SecureDNS {
+		shouldApplySecureDNS = true
 	}
-	return persistSettings(settings)
+	if shouldApplySecureDNS {
+		if err := a.SetSecureDNS(settings.SecureDNS); err != nil {
+			appRuntimeLogErrorf(a.ctx, "Failed to set secure DNS: %v", err)
+		}
+	}
+	return persistSettingsWithPrev(prev, settings)
 }
 
 // persistSettings writes settings and refreshes the OS autostart registration
@@ -1114,6 +1222,10 @@ func (a *App) SaveSettings(settings *engine.Settings) error {
 // and broke settings saves from non-elevated contexts.
 func persistSettings(next *engine.Settings) error {
 	prev, _ := engine.GetSettings()
+	return persistSettingsWithPrev(prev, next)
+}
+
+func persistSettingsWithPrev(prev, next *engine.Settings) error {
 	if err := engine.SaveSettings(next); err != nil {
 		return err
 	}
@@ -1288,6 +1400,13 @@ func (a *App) AutoTune() string {
 	return result.ProfileName
 }
 
+func (a *App) emitAutoTuneVNextProgress(ev VNextProgressEvent) {
+	if a == nil || a.ctx == nil {
+		return
+	}
+	appRuntimeEventsEmit(a.ctx, "autotune_vnext_progress", ev)
+}
+
 // AutoTuneVNext runs the primary product vNext experiment path.
 func (a *App) AutoTuneVNext(target string, controls []string) AutoTuneVNextResult {
 	if !a.beginManualProfileChange() {
@@ -1305,6 +1424,7 @@ func (a *App) AutoTuneVNext(target string, controls []string) AutoTuneVNextResul
 	}
 	runCtx, cancel := context.WithCancel(parent)
 	a.autoTuneCancel = cancel
+	a.vNextCancel = cancel
 	a.autoTuneWG.Add(1)
 	assets := a.assets
 	service := a.vNextService
@@ -1321,13 +1441,17 @@ func (a *App) AutoTuneVNext(target string, controls []string) AutoTuneVNextResul
 		cancel()
 		a.mu.Lock()
 		a.autoTuneCancel = nil
+		a.vNextCancel = nil
 		a.mu.Unlock()
 		a.autoTuneWG.Done()
+		a.TriggerTrayUpdate()
 	}()
 	if assets == nil || service == nil {
+		a.emitAutoTuneVNextProgress(VNextProgressEvent{Stage: "preflight", Message: "Проверка ресурсов движка...", Percent: 10})
+		a.emitAutoTuneVNextProgress(VNextProgressEvent{Stage: "complete", Message: "Ресурсы движка недоступны.", Percent: 100})
 		return productVNextFailure(autotunevnext.StatusPreflightFailed, "", "", "PRODUCT_ASSETS_UNAVAILABLE")
 	}
-	result := service.Run(runCtx, AutoTuneVNextRequest{Target: target, Controls: controls})
+	result := service.RunWithProgress(runCtx, AutoTuneVNextRequest{Target: target, Controls: controls}, a.emitAutoTuneVNextProgress)
 	engine.GetLogger().Infof("AutoTuneVNext", "status=%s backend=%s restored=%t", result.Status, result.Backend, result.StateRestored)
 	return result
 }
@@ -1346,6 +1470,131 @@ func (a *App) RunExperimentalAutoTuneVNext(presetID string, customTarget string)
 		return productVNextFailure(autotunevnext.StatusPreflightFailed, "", "", "INVALID_EXPERIMENTAL_TARGET")
 	}
 	return a.AutoTuneVNext(target, controls)
+}
+
+// CancelAutoTuneVNext cancels an in-flight single-host or ServiceGraph AutoTune
+// vNext run and reports whether an active run was cancelled.
+func (a *App) CancelAutoTuneVNext() bool {
+	a.mu.Lock()
+	cancel := a.vNextCancel
+	a.vNextCancel = nil
+	a.mu.Unlock()
+	if cancel == nil {
+		return false
+	}
+	cancel()
+	return true
+}
+
+// GetAutoTuneVNextHistorySummary returns redacted outcome-ledger statistics and
+// local context-key readiness without mutating state.
+func (a *App) GetAutoTuneVNextHistorySummary() VNextHistorySummary {
+	return readVNextHistorySummary()
+}
+
+// ClearAutoTuneVNextHistory atomically clears the local outcome ledger file.
+func (a *App) ClearAutoTuneVNextHistory() error {
+	return clearVNextHistory()
+}
+
+// GetAutoTuneVNextServicePresets returns the bounded built-in multi-host
+// ServiceGraph presets (<= 4 hosts).
+func (a *App) GetAutoTuneVNextServicePresets() []VNextServicePreset {
+	return productVNextServicePresets()
+}
+
+// AutoTuneVNextServiceGraph runs bounded multi-host ServiceGraph discovery,
+// validation, and managed activation for a built-in service preset.
+func (a *App) AutoTuneVNextServiceGraph(presetID string) (VNextServiceGraphResult, error) {
+	if _, _, err := lookupProductServiceGraphPreset(presetID); err != nil {
+		return graphFailureResult(strings.TrimSpace(presetID), []string{}, string(autotunevnext.StatusPreflightFailed), "Неизвестный пресет сервиса.", "INVALID_SERVICE_PRESET"), err
+	}
+	if !a.beginManualProfileChange() {
+		return graphFailureResult(strings.TrimSpace(presetID), []string{}, string(autotunevnext.StatusCancelled), "Приложение завершает работу.", "APPLICATION_SHUTTING_DOWN"), nil
+	}
+	defer a.endManualProfileChange()
+
+	a.mu.Lock()
+	if a.closing || a.autoTuneCancel != nil {
+		a.mu.Unlock()
+		return graphFailureResult(strings.TrimSpace(presetID), []string{}, string(autotunevnext.StatusInconclusive), "Другая операция автоподбора уже выполняется.", "OPERATION_CONFLICT"), nil
+	}
+	parent := a.ctx
+	if parent == nil {
+		parent = context.Background()
+	}
+	runCtx, cancel := context.WithCancel(parent)
+	a.autoTuneCancel = cancel
+	a.vNextCancel = cancel
+	a.autoTuneWG.Add(1)
+	assets := a.assets
+	service := a.vNextService
+	newService := a.newVNextService
+	if service == nil && assets != nil {
+		if newService == nil {
+			newService = newProductVNextService
+		}
+		service = newService(a.manager, assets)
+		a.vNextService = service
+	}
+	a.mu.Unlock()
+	defer func() {
+		cancel()
+		a.mu.Lock()
+		a.autoTuneCancel = nil
+		a.vNextCancel = nil
+		a.mu.Unlock()
+		a.autoTuneWG.Done()
+		a.TriggerTrayUpdate()
+	}()
+
+	_, hosts, _ := lookupProductServiceGraphPreset(presetID)
+	if assets == nil || service == nil {
+		a.emitAutoTuneVNextProgress(VNextProgressEvent{Stage: "preflight", Message: "Проверка ресурсов движка...", Percent: 10})
+		a.emitAutoTuneVNextProgress(VNextProgressEvent{Stage: "complete", Message: "Ресурсы движка недоступны.", Percent: 100})
+		return graphFailureResult(strings.ToLower(strings.TrimSpace(presetID)), hosts, string(autotunevnext.StatusPreflightFailed), "Ресурсы движка недоступны.", "PRODUCT_ASSETS_UNAVAILABLE"), nil
+	}
+	res, err := service.RunServiceGraph(runCtx, presetID, a.emitAutoTuneVNextProgress)
+	if res.Applied {
+		a.startManagedVNextHealthMonitor(parent, service)
+	}
+	engine.GetLogger().Infof("AutoTuneVNextGraph", "preset=%s status=%s applied=%t", res.PresetID, res.Status, res.Applied)
+	return res, err
+}
+
+// RevertAutoTuneVNextServiceGraph restores direct connectivity and clears any
+// active or persisted ServiceGraph intent.
+func (a *App) RevertAutoTuneVNextServiceGraph() error {
+	if !a.beginManualProfileChange() {
+		return errors.New("application is shutting down")
+	}
+	defer a.endManualProfileChange()
+	a.mu.Lock()
+	if a.closing || a.autoTuneCancel != nil {
+		a.mu.Unlock()
+		return errors.New("autotune operation conflict")
+	}
+	service := a.vNextService
+	parent := a.ctx
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithCancel(parent)
+	a.autoTuneCancel = cancel
+	a.autoTuneWG.Add(1)
+	a.mu.Unlock()
+	defer func() {
+		cancel()
+		a.mu.Lock()
+		a.autoTuneCancel = nil
+		a.mu.Unlock()
+		a.autoTuneWG.Done()
+		a.TriggerTrayUpdate()
+	}()
+	if service == nil {
+		return clearVNextGraphState()
+	}
+	return service.RevertServiceGraph(ctx)
 }
 
 func (a *App) ApplyAutoTuneVNextSelection(token string) AutoTuneVNextManagedStatus {
@@ -1418,6 +1667,9 @@ func (a *App) RevertAutoTuneVNext() AutoTuneVNextManagedStatus {
 		if err := clearVNextManagedState(); err != nil {
 			return AutoTuneVNextManagedStatus{State: "PERSISTENCE_UPDATE_FAILED"}
 		}
+		if err := clearVNextGraphState(); err != nil {
+			return AutoTuneVNextManagedStatus{State: "PERSISTENCE_UPDATE_FAILED"}
+		}
 		return AutoTuneVNextManagedStatus{State: "DIRECT"}
 	}
 	return service.Revert(ctx)
@@ -1431,18 +1683,43 @@ func (a *App) GetAutoTuneVNextManagedStatus() AutoTuneVNextManagedStatus {
 		return service.Status()
 	}
 	state, present, err := loadVNextManagedState()
-	if err != nil {
+	graphState, graphPresent, graphErr := loadVNextGraphState()
+	if err != nil || graphErr != nil {
 		return AutoTuneVNextManagedStatus{State: "SAVED_STRATEGY_STALE", NeedsRevalidation: true}
 	}
+	var singlePtr *persistedVNextState
 	if present {
-		return AutoTuneVNextManagedStatus{State: "SAVED_REVALIDATION_PENDING", NeedsRevalidation: true, Target: state.Target, StrategyID: state.StrategyID, Fingerprint: shortManagedFingerprint(state.Fingerprint), Backend: state.Backend}
+		singlePtr = &state
 	}
-	return AutoTuneVNextManagedStatus{State: "DIRECT"}
+	var graphPtr *persistedVNextGraphState
+	if graphPresent {
+		graphPtr = &graphState
+	}
+	owner, ownerErr := resolveManagedRuntimeOwnership(singlePtr, graphPtr)
+	if ownerErr != nil {
+		return AutoTuneVNextManagedStatus{State: "SAVED_STRATEGY_STALE", NeedsRevalidation: true}
+	}
+	switch owner {
+	case ManagedRuntimeGraphManaged:
+		return AutoTuneVNextManagedStatus{
+			State:             "SAVED_REVALIDATION_PENDING",
+			NeedsRevalidation: true,
+			Target:            primaryURLForGraphPreset(graphState.ServiceID),
+			StrategyID:        graphPrimaryStrategyID(graphState),
+			Fingerprint:       shortManagedFingerprint(graphState.GraphFingerprint),
+			Backend:           graphState.Backend,
+		}
+	case ManagedRuntimeSingleHost:
+		return AutoTuneVNextManagedStatus{State: "SAVED_REVALIDATION_PENDING", NeedsRevalidation: true, Target: state.Target, StrategyID: state.StrategyID, Fingerprint: shortManagedFingerprint(state.Fingerprint), Backend: state.Backend}
+	default:
+		return AutoTuneVNextManagedStatus{State: "DIRECT"}
+	}
 }
 
 func (a *App) CancelAutoTune() {
 	a.mu.Lock()
 	cancel := a.autoTuneCancel
+	a.vNextCancel = nil
 	a.mu.Unlock()
 	if cancel != nil {
 		cancel()
@@ -1587,21 +1864,31 @@ func (a *App) CheckConflicts() []string {
 	return checkConflictsImpl()
 }
 
-// KillConflicts terminates the processes reported by CheckConflicts.
+// KillConflicts terminates killable DPI-bypass processes reported by
+// CheckConflicts while leaving external VPN/proxy clients untouched and
+// accurately reporting any active VPNs that require manual closure.
 func (a *App) KillConflicts() error {
 	logger := engine.GetLogger()
 	notifMgr := engine.GetNotificationManager()
 
 	logger.Info("App", "Выполняем завершение конфликтующих процессов...")
 
-	if err := killConflictsImpl(); err != nil {
+	skipped, err := appResolveConflicts()
+	if err != nil {
 		logger.Errorf("App", "Failed to terminate conflicting processes: %v", err)
 		notifMgr.Error("Ошибка", fmt.Sprintf("Не удалось остановить конфликтующие процессы: %v", err))
 		return err
 	}
 
-	logger.Info("App", "Конфликтующие процессы и драйверы остановлены")
-	notifMgr.Success("Конфликты устранены", "Все конфликтующие процессы и драйверы остановлены")
+	if len(skipped) > 0 {
+		list := strings.Join(skipped, ", ")
+		logger.Warnf("App", "Конфликтующие процессы DPI остановлены; пропущены внешние VPN/прокси (требуется ручное закрытие): %s", list)
+		notifMgr.Warning("Внешние VPN не остановлены", fmt.Sprintf("Процессы обхода DPI остановлены, но активны внешние VPN/прокси (%s) — закройте их вручную.", list))
+		return nil
+	}
+
+	logger.Info("App", "Конфликтующие процессы обхода и драйверы остановлены")
+	notifMgr.Success("Конфликты устранены", "Все конфликтующие процессы обхода и драйверы остановлены")
 	return nil
 }
 
@@ -1618,12 +1905,16 @@ func (a *App) ShowNotification(title string, message string) {
 // the tray, and nothing told the user their traffic had stopped being
 // protected — the window just disappeared.
 func (a *App) HideWindowToTray() {
-	wailsruntime.WindowHide(a.ctx)
+	if a.ctx != nil && a.ctx.Value("frontend") != nil {
+		wailsruntime.WindowHide(a.ctx)
+	}
 }
 
 func (a *App) ShowWindowFromTray() {
-	wailsruntime.WindowShow(a.ctx)
-	wailsruntime.WindowUnminimise(a.ctx)
+	if a.ctx != nil && a.ctx.Value("frontend") != nil {
+		wailsruntime.WindowShow(a.ctx)
+		wailsruntime.WindowUnminimise(a.ctx)
+	}
 }
 
 var editableLists = map[string]bool{
@@ -1702,11 +1993,11 @@ func (a *App) ExportLogs(content string) (bool, error) {
 	return true, nil
 }
 
-// SetSecureDNS points the active network interfaces at Cloudflare's resolvers
-// (or restores the system defaults). The per-OS implementations live in
-// securedns_{windows,linux,darwin}.go.
+// SetSecureDNS points the active physical network interfaces at the configured
+// system DNS resolvers (1.1.1.1 / 1.0.0.1) or restores prior settings. The
+// per-OS implementations live in securedns_{windows,linux,darwin}.go.
 func (a *App) SetSecureDNS(enabled bool) error {
-	return setSecureDNSImpl(enabled)
+	return appSetSecureDNS(enabled)
 }
 
 // IsSecureDNSEnabled reports whether the active interfaces currently resolve

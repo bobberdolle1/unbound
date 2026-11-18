@@ -118,7 +118,7 @@ func RunDoctorWithProgress(ctx context.Context, mode string, activeProfile strin
 		Mode:          mode,
 		Timestamp:     startTime,
 		AppVersion:    Version,
-		EngineVersion: "1.0.5",
+		EngineVersion: BundledEngineVersion,
 		OS:            runtime.GOOS,
 		Arch:          runtime.GOARCH,
 		ActiveProfile: activeProfile,

@@ -47,6 +47,11 @@ type DirectTCPHTTPSObserver struct{}
 func NewDirectTCPHTTPSObserver() *DirectTCPHTTPSObserver { return &DirectTCPHTTPSObserver{} }
 
 func (o *DirectTCPHTTPSObserver) Observe(ctx context.Context, rawURL string, options Options) (ObservationResult, error) {
+	result, _, err := o.observe(ctx, rawURL, options, nil)
+	return result, err
+}
+
+func (o *DirectTCPHTTPSObserver) observe(ctx context.Context, rawURL string, options Options, transfer *TransferContract) (ObservationResult, *TransferMeasurement, error) {
 	started := time.Now().UTC()
 	timeouts := options.Timeouts.normalized()
 	if options.Transport == "" {
@@ -69,7 +74,7 @@ func (o *DirectTCPHTTPSObserver) Observe(ctx context.Context, rawURL string, opt
 	if err != nil || parsed.Scheme != "https" || parsed.Hostname() == "" {
 		result.FinishedAt = time.Now().UTC()
 		result.Target = Target{URL: sanitizeURL(parsed), RequestedProtocol: options.Transport}
-		return result, fmt.Errorf("observatory requires an absolute https URL")
+		return result, nil, fmt.Errorf("observatory requires an absolute https URL")
 	}
 	port := parsed.Port()
 	if port == "" {
@@ -89,11 +94,15 @@ func (o *DirectTCPHTTPSObserver) Observe(ctx context.Context, rawURL string, opt
 	if options.Transport == TransportQUIC || options.Transport == TransportUDP {
 		result = o.observeTransportUnsupported(overallCtx, result, parsed, options, emitter)
 		result.FinishedAt = time.Now().UTC()
-		return result, nil
+		var tm *TransferMeasurement
+		if transfer != nil {
+			tm = &TransferMeasurement{Status: MeasurementUnsupported, ExpectedBytes: transfer.ExpectedBytes}
+		}
+		return result, tm, nil
 	}
 	if options.Transport != TransportTCP {
 		result.FinishedAt = time.Now().UTC()
-		return result, fmt.Errorf("unsupported transport %q", options.Transport)
+		return result, nil, fmt.Errorf("unsupported transport %q", options.Transport)
 	}
 
 	addresses, resolveEvidence := resolveAddresses(overallCtx, parsed.Hostname(), options, timeouts.DNS)
@@ -109,15 +118,24 @@ func (o *DirectTCPHTTPSObserver) Observe(ctx context.Context, rawURL string, opt
 		result.Classification = resolveEvidence.Class
 		result.FinishedAt = time.Now().UTC()
 		emitter.emit(resolveEvidence)
-		return result, nil
+		var tm *TransferMeasurement
+		if transfer != nil {
+			tm = &TransferMeasurement{Status: MeasurementFailed, ExpectedBytes: transfer.ExpectedBytes}
+		}
+		return result, tm, nil
 	}
 	result.ResolvedAddresses = toResolvedAddresses(addresses)
+	attemptTransfers := make([]*TransferMeasurement, 0, len(addresses))
 	for _, ip := range addresses {
-		attempt := o.observeTCPAttempt(overallCtx, parsed, port, ip, resolveEvidence, timeouts, options.tlsConfig, emitter)
+		attempt, attemptTransfer := o.observeTCPAttempt(overallCtx, parsed, port, ip, resolveEvidence, timeouts, options.tlsConfig, transfer, emitter)
 		result.Attempts = append(result.Attempts, attempt)
+		attemptTransfers = append(attemptTransfers, attemptTransfer)
 		if result.NetworkContext.LocalAddress == "" && attempt.LocalAddress != "" {
 			result.NetworkContext.LocalAddress = attempt.LocalAddress
 			result.NetworkContext.AddressFamily = attempt.AddressFamily
+		}
+		if options.ResolvedIP == nil && len(addresses) > 1 && attemptTargetSuccessful(attempt) {
+			break
 		}
 	}
 	summary := summarizeAttempts(result.Attempts)
@@ -125,7 +143,15 @@ func (o *DirectTCPHTTPSObserver) Observe(ctx context.Context, rawURL string, opt
 	result.FinalBoundary = summary.boundary
 	result.Classification = summary.classification
 	result.FinishedAt = time.Now().UTC()
-	return result, nil
+	var selectedTransfer *TransferMeasurement
+	if transfer != nil {
+		if summary.attemptIndex >= 0 && summary.attemptIndex < len(attemptTransfers) && attemptTransfers[summary.attemptIndex] != nil {
+			selectedTransfer = attemptTransfers[summary.attemptIndex]
+		} else {
+			selectedTransfer = &TransferMeasurement{Status: MeasurementFailed, ExpectedBytes: transfer.ExpectedBytes}
+		}
+	}
+	return result, selectedTransfer, nil
 }
 
 func resolveAddresses(ctx context.Context, hostname string, options Options, timeout time.Duration) ([]net.IP, StageEvidence) {
@@ -160,10 +186,17 @@ func resolveAddresses(ctx context.Context, hostname string, options Options, tim
 	return selected, passEvidence(StageResolve, started)
 }
 
-func (o *DirectTCPHTTPSObserver) observeTCPAttempt(ctx context.Context, target *url.URL, port string, ip net.IP, resolve StageEvidence, timeouts Timeouts, fixtureTLSConfig *tls.Config, emitter *serializedEmitter) ConnectionAttempt {
+func (o *DirectTCPHTTPSObserver) observeTCPAttempt(ctx context.Context, target *url.URL, port string, ip net.IP, resolve StageEvidence, timeouts Timeouts, fixtureTLSConfig *tls.Config, transfer *TransferContract, emitter *serializedEmitter) (ConnectionAttempt, *TransferMeasurement) {
 	started := time.Now().UTC()
 	attempt := ConnectionAttempt{ResolvedIP: ip.String(), AddressFamily: familyForIP(ip), Transport: TransportTCP, Stages: []StageEvidence{resolve}}
 	emitter.emit(resolve)
+
+	failedTransfer := func() *TransferMeasurement {
+		if transfer == nil {
+			return nil
+		}
+		return &TransferMeasurement{Status: MeasurementFailed, ExpectedBytes: transfer.ExpectedBytes}
+	}
 
 	connectStarted := time.Now().UTC()
 	dialCtx, cancelDial := context.WithTimeout(ctx, timeouts.Connect)
@@ -176,7 +209,7 @@ func (o *DirectTCPHTTPSObserver) observeTCPAttempt(ctx context.Context, target *
 		attempt.Stages = append(attempt.Stages, notReachedStages(time.Now().UTC(), StageHello, StageHandshake, StageHTTP)...)
 		attempt.Stages = append(attempt.Stages, carryEvidence(time.Now().UTC()))
 		attempt.ElapsedMS = elapsedMS(started)
-		return attempt
+		return attempt, failedTransfer()
 	}
 	defer conn.Close()
 	attempt.LocalAddress = conn.LocalAddr().String()
@@ -207,21 +240,21 @@ func (o *DirectTCPHTTPSObserver) observeTCPAttempt(ctx context.Context, target *
 		attempt.Stages = append(attempt.Stages, notReachedStages(time.Now().UTC(), StageHTTP)...)
 		attempt.Stages = append(attempt.Stages, carryEvidence(time.Now().UTC()))
 		attempt.ElapsedMS = elapsedMS(started)
-		return attempt
+		return attempt, failedTransfer()
 	}
 	handshake := handshakeSuccess(handshakeStarted, tlsConn.ConnectionState(), target.Hostname())
 	attempt.Stages = append(attempt.Stages, handshake)
 	emitter.emit(handshake)
 
-	httpEvidence := observeHTTP(ctx, tlsConn, target, timeouts.HTTP)
+	httpEvidence, transferEvidence := observeHTTP(ctx, tlsConn, target, timeouts.HTTP, transfer)
 	attempt.Stages = append(attempt.Stages, httpEvidence)
 	emitter.emit(httpEvidence)
 	attempt.Stages = append(attempt.Stages, carryEvidence(time.Now().UTC()))
 	attempt.ElapsedMS = elapsedMS(started)
-	return attempt
+	return attempt, transferEvidence
 }
 
-func observeHTTP(ctx context.Context, conn *tls.Conn, target *url.URL, timeout time.Duration) StageEvidence {
+func observeHTTP(ctx context.Context, conn *tls.Conn, target *url.URL, timeout time.Duration, transfer *TransferContract) (StageEvidence, *TransferMeasurement) {
 	started := time.Now().UTC()
 	request := &http.Request{Method: http.MethodGet, URL: target, Host: target.Host, Header: make(http.Header), Close: true}
 	request.Header.Set("User-Agent", engine.UserAgent())
@@ -231,11 +264,19 @@ func observeHTTP(ctx context.Context, conn *tls.Conn, target *url.URL, timeout t
 	cancelClose := closeOnCancel(ctx, conn)
 	defer cancelClose()
 	if err := request.Write(conn); err != nil {
-		return httpFailure(started, err)
+		var tm *TransferMeasurement
+		if transfer != nil {
+			tm = &TransferMeasurement{Status: MeasurementFailed, ExpectedBytes: transfer.ExpectedBytes}
+		}
+		return httpFailure(started, err), tm
 	}
 	response, err := http.ReadResponse(bufio.NewReader(conn), request)
 	if err != nil {
-		return httpFailure(started, err)
+		var tm *TransferMeasurement
+		if transfer != nil {
+			tm = &TransferMeasurement{Status: MeasurementFailed, ExpectedBytes: transfer.ExpectedBytes}
+		}
+		return httpFailure(started, err), tm
 	}
 	defer response.Body.Close()
 	class := Classification("")
@@ -246,7 +287,75 @@ func observeHTTP(ctx context.Context, conn *tls.Conn, target *url.URL, timeout t
 	if location := response.Header.Get("Location"); location != "" {
 		evidence.Redirect = boundedDetail(location)
 	}
-	return evidence
+	var tm *TransferMeasurement
+	if transfer != nil {
+		tm = readBoundedTransferWindow(conn, response.Body, timeout, transfer)
+	}
+	return evidence, tm
+}
+
+// readBoundedTransferWindow reads at most contract.ExpectedBytes from body into
+// a discarded fixed scratch slice under a dedicated stage deadline. Response
+// payload bytes are never retained in memory or written to disk.
+func readBoundedTransferWindow(conn *tls.Conn, body io.Reader, timeout time.Duration, contract *TransferContract) *TransferMeasurement {
+	if contract == nil || contract.ExpectedBytes <= 0 {
+		return &TransferMeasurement{Status: MeasurementNotRequested}
+	}
+	transferStarted := time.Now()
+	_ = conn.SetReadDeadline(transferStarted.Add(timeout))
+
+	var actualBytes int64
+	var firstByteMS *int64
+	var scratch [8192]byte
+
+	for actualBytes < contract.ExpectedBytes {
+		want := int64(len(scratch))
+		if rem := contract.ExpectedBytes - actualBytes; rem < want {
+			want = rem
+		}
+		n, readErr := body.Read(scratch[:want])
+		if n > 0 {
+			if firstByteMS == nil {
+				fb := time.Since(transferStarted).Milliseconds()
+				if fb < 0 {
+					fb = 0
+				}
+				firstByteMS = &fb
+			}
+			actualBytes += int64(n)
+		}
+		if actualBytes >= contract.ExpectedBytes || readErr != nil {
+			break
+		}
+	}
+
+	totalMS := time.Since(transferStarted).Milliseconds()
+	if totalMS < 0 {
+		totalMS = 0
+	}
+	if firstByteMS != nil && *firstByteMS > totalMS {
+		totalMS = *firstByteMS
+	}
+
+	if actualBytes == contract.ExpectedBytes {
+		return &TransferMeasurement{
+			Status:        MeasurementCompleted,
+			ExpectedBytes: contract.ExpectedBytes,
+			ActualBytes:   contract.ExpectedBytes,
+			Completed:     true,
+			FirstByteMS:   firstByteMS,
+			TotalMS:       &totalMS,
+		}
+	}
+
+	return &TransferMeasurement{
+		Status:        MeasurementPartial,
+		ExpectedBytes: contract.ExpectedBytes,
+		ActualBytes:   actualBytes,
+		Completed:     false,
+		FirstByteMS:   firstByteMS,
+		TotalMS:       &totalMS,
+	}
 }
 
 func (o *DirectTCPHTTPSObserver) observeTransportUnsupported(ctx context.Context, result ObservationResult, target *url.URL, options Options, emitter *serializedEmitter) ObservationResult {

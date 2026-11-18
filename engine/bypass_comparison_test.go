@@ -169,3 +169,107 @@ func TestBypassComparisonFormatMarkdown(t *testing.T) {
 		t.Error("Missing verdict in markdown")
 	}
 }
+
+type catalogProviderController struct {
+	mockProviderController
+	profiles []string
+}
+
+func (c *catalogProviderController) GetProfiles() []string {
+	return append([]string(nil), c.profiles...)
+}
+
+func (c *catalogProviderController) Start(ctx context.Context, profile string) error {
+	c.startCalls++
+	if c.startErr != nil {
+		return c.startErr
+	}
+	if profile == "" && len(c.profiles) > 0 {
+		profile = c.profiles[0]
+	}
+	found := false
+	for _, p := range c.profiles {
+		if p == profile {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return errors.New("профиль не найден: " + profile)
+	}
+	c.profile = profile
+	c.status = providers.StatusRunning
+	return nil
+}
+
+func TestSelectComparisonProfileFallback(t *testing.T) {
+	// 1. Prefers Recommended (hostfakesplit) when registered in catalog.
+	winCtrl := &catalogProviderController{
+		profiles: []string{"Disabled", "Alternative 1 (multisplit)", "Recommended (hostfakesplit)", "Custom Profile"},
+	}
+	if got := selectComparisonProfileForOS(winCtrl, "", "windows"); got != "Recommended (hostfakesplit)" {
+		t.Errorf("got %q, want Recommended (hostfakesplit)", got)
+	}
+
+	// 2. Falls back to first non-disabled built-in profile when default name is absent.
+	linuxCtrl := &catalogProviderController{
+		profiles: []string{"Disabled", "Custom Profile", "Ultimate Bypass (Multi-Strategy)", "Standard HTTPS/QUIC"},
+	}
+	if got := selectComparisonProfileForOS(linuxCtrl, "", "linux"); got != "Ultimate Bypass (Multi-Strategy)" {
+		t.Errorf("got %q, want Ultimate Bypass (Multi-Strategy)", got)
+	}
+
+	// 3. Without GetProfiles(), non-Windows OS catalogs still avoid Windows-only profile name.
+	plainCtrl := &mockProviderController{}
+	if got := selectComparisonProfileForOS(plainCtrl, "", "linux"); got != "Ultimate Bypass (Multi-Strategy)" {
+		t.Errorf("linux fallback got %q, want Ultimate Bypass (Multi-Strategy)", got)
+	}
+	if got := selectComparisonProfileForOS(plainCtrl, "", "darwin"); got != "Ultimate Bypass (Multi-Strategy)" {
+		t.Errorf("darwin fallback got %q, want Ultimate Bypass (Multi-Strategy)", got)
+	}
+	if got := selectComparisonProfileForOS(plainCtrl, "", "windows"); got != "Recommended (hostfakesplit)" {
+		t.Errorf("windows default got %q, want Recommended (hostfakesplit)", got)
+	}
+
+	// 4. Preserves explicit initialProfile when active.
+	if got := selectComparisonProfileForOS(linuxCtrl, "Standard HTTPS/QUIC", "linux"); got != "Standard HTTPS/QUIC" {
+		t.Errorf("explicit profile got %q, want Standard HTTPS/QUIC", got)
+	}
+}
+
+func TestRunBypassComparisonFallsBackWhenDefaultProfileAbsent(t *testing.T) {
+	ctrl := &catalogProviderController{
+		mockProviderController: mockProviderController{
+			status: providers.StatusStopped,
+		},
+		profiles: []string{"Disabled", "Ultimate Bypass (Multi-Strategy)", "Standard HTTPS/QUIC", "Custom Profile"},
+	}
+
+	probes := []ProbeDefinition{
+		{
+			ID:      "p1",
+			Service: "YouTube",
+			Name:    "YouTube Web",
+			Run: func(ctx context.Context, ce *ConnectivityEngine) ProbeResult {
+				if ctrl.GetStatus() == providers.StatusRunning {
+					return ProbeResult{Status: StatusPass}
+				}
+				return ProbeResult{Status: StatusFail}
+			},
+		},
+	}
+
+	res, err := RunBypassComparison(context.Background(), ctrl, probes)
+	if err != nil {
+		t.Fatalf("RunBypassComparison failed when Recommended (hostfakesplit) is absent: %v", err)
+	}
+	if res.ProfileName != "Ultimate Bypass (Multi-Strategy)" {
+		t.Errorf("ProfileName = %q, want Ultimate Bypass (Multi-Strategy)", res.ProfileName)
+	}
+	if res.FixedCount != 1 {
+		t.Errorf("FixedCount = %d, want 1", res.FixedCount)
+	}
+	if ctrl.GetStatus() != providers.StatusStopped {
+		t.Errorf("Status after rollback = %s, want Stopped", ctrl.GetStatus())
+	}
+}

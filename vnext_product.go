@@ -21,9 +21,114 @@ import (
 const (
 	productVNextCatalogStatus            = "READY"
 	productVNextCatalogStatusUnavailable = "UNAVAILABLE"
+	maxProductionVNextCatalogCandidates  = 6
+	productVNextCatalogIdentity          = "production-vnext-catalog-v2"
 )
 
 var errVNextMeasurementPathUnsupported = errors.New("MEASUREMENT_PATH_UNSUPPORTED")
+
+// VNextProgressEvent is the live stage payload emitted on Wails event
+// "autotune_vnext_progress".
+type VNextProgressEvent struct {
+	Stage   string `json:"stage"`
+	Message string `json:"message"`
+	Percent int    `json:"percent"`
+}
+
+type vNextProgressTracker struct {
+	mu      sync.Mutex
+	onEvent func(VNextProgressEvent)
+	highest int
+}
+
+func newVNextProgressTracker(onEvent func(VNextProgressEvent)) *vNextProgressTracker {
+	return &vNextProgressTracker{onEvent: onEvent}
+}
+
+func (t *vNextProgressTracker) emit(stage, message string, percent int) {
+	if t == nil || t.onEvent == nil {
+		return
+	}
+	t.mu.Lock()
+	if percent < t.highest || (percent == t.highest && stage != "complete") {
+		t.mu.Unlock()
+		return
+	}
+	if percent == 100 && t.highest == 100 {
+		t.mu.Unlock()
+		return
+	}
+	t.highest = percent
+	cb := t.onEvent
+	t.mu.Unlock()
+	cb(VNextProgressEvent{Stage: stage, Message: message, Percent: percent})
+}
+
+type vNextProgressObserver struct {
+	inner            autotunevnext.Observer
+	tracker          *vNextProgressTracker
+	expectedBaseline int
+	mu               sync.Mutex
+	observed         int
+}
+
+func (o *vNextProgressObserver) Observe(ctx context.Context, rawURL string, opts observatory.Options) (observatory.ObservationResult, error) {
+	res, err := o.inner.Observe(ctx, rawURL, opts)
+	if err == nil {
+		o.mu.Lock()
+		o.observed++
+		count := o.observed
+		o.mu.Unlock()
+		if count >= o.expectedBaseline {
+			o.tracker.emit("diagnosis", "Анализ сбоя и диагностика маршрута...", 40)
+		}
+	}
+	return res, err
+}
+
+type vNextProgressPreflight struct {
+	inner   autotunevnext.HostPreflight
+	tracker *vNextProgressTracker
+}
+
+func (p vNextProgressPreflight) Check(ctx context.Context, req autotunevnext.HostPreflightRequest) autotunevnext.HostPreflightResult {
+	p.tracker.emit("planning", "Подбор и проверка совместимости стратегий...", 55)
+	return p.inner.Check(ctx, req)
+}
+
+type vNextProgressExecutor struct {
+	inner   autotunevnext.Executor
+	tracker *vNextProgressTracker
+}
+
+func (e vNextProgressExecutor) Snapshot(ctx context.Context) (autotunevnext.StateSnapshot, error) {
+	return e.inner.Snapshot(ctx)
+}
+
+func (e vNextProgressExecutor) EstablishDirect(ctx context.Context, snapshot autotunevnext.StateSnapshot) error {
+	return e.inner.EstablishDirect(ctx, snapshot)
+}
+
+func (e vNextProgressExecutor) Activate(ctx context.Context, candidate autotunevnext.ExecutableCandidate) error {
+	e.tracker.emit("applying", "Проверка и валидация стратегии: "+candidate.Strategy.ID, 80)
+	return e.inner.Activate(ctx, candidate)
+}
+
+func (e vNextProgressExecutor) VerifyActive(ctx context.Context, candidate autotunevnext.ExecutableCandidate) error {
+	return e.inner.VerifyActive(ctx, candidate)
+}
+
+func (e vNextProgressExecutor) Deactivate(ctx context.Context) error {
+	return e.inner.Deactivate(ctx)
+}
+
+func (e vNextProgressExecutor) Restore(ctx context.Context, snapshot autotunevnext.StateSnapshot) error {
+	return e.inner.Restore(ctx, snapshot)
+}
+
+func (e vNextProgressExecutor) VerifyRestored(ctx context.Context, snapshot autotunevnext.StateSnapshot) error {
+	return e.inner.VerifyRestored(ctx, snapshot)
+}
 
 type AutoTuneVNextRequest struct {
 	Target   string   `json:"target"`
@@ -152,12 +257,19 @@ type productVNextRuntime struct {
 	backend   backendcap.Backend
 }
 
+type productVNextGraphRuntime struct {
+	executor  autotunevnext.ServiceGraphExecutor
+	preflight autotunevnext.HostPreflight
+	backend   backendcap.Backend
+}
+
 type productVNextDependencies struct {
-	newRuntime    func(autotunevnext.RuntimeProvider, *engine.AssetPaths, func(autotunevnext.PhysicalLog)) (productVNextRuntime, error)
-	newResolver   func(*engine.AssetPaths) (autotunevnext.AssetResolver, error)
-	scopeResolver autotunevnext.ScopeResolver
-	observer      autotunevnext.Observer
-	run           func(context.Context, autotunevnext.Request, autotunevnext.Observer, autotunevnext.Executor, autotunevnext.HostPreflight, autotunevnext.AssetResolver) (autotunevnext.Result, error)
+	newRuntime      func(autotunevnext.RuntimeProvider, *engine.AssetPaths, func(autotunevnext.PhysicalLog)) (productVNextRuntime, error)
+	newGraphRuntime func(autotunevnext.RuntimeProvider, *engine.AssetPaths, func(autotunevnext.PhysicalLog)) (productVNextGraphRuntime, error)
+	newResolver     func(*engine.AssetPaths) (autotunevnext.AssetResolver, error)
+	scopeResolver   autotunevnext.ScopeResolver
+	observer        autotunevnext.Observer
+	run             func(context.Context, autotunevnext.Request, autotunevnext.Observer, autotunevnext.Executor, autotunevnext.HostPreflight, autotunevnext.AssetResolver) (autotunevnext.Result, error)
 }
 
 type productVNextService struct {
@@ -165,17 +277,20 @@ type productVNextService struct {
 	assets  *engine.AssetPaths
 	deps    productVNextDependencies
 
-	mu      sync.Mutex
-	grants  map[string]verifiedSelectionGrant
-	active  *managedVNextActivation
-	health  ManagedHealthState
-	fault   AutoTuneVNextManagedStatus
-	dormant AutoTuneVNextManagedStatus
+	mu              sync.Mutex
+	grants          map[string]verifiedSelectionGrant
+	active          *managedVNextActivation
+	graphManaged    *graphManagedService
+	graphActivation *autotunevnext.ServiceGraphActivation
+	health          ManagedHealthState
+	fault           AutoTuneVNextManagedStatus
+	dormant         AutoTuneVNextManagedStatus
 }
 
 func newProductVNextService(manager *providers.ProviderManager, assets *engine.AssetPaths) *productVNextService {
 	return newProductVNextServiceWith(manager, assets, productVNextDependencies{
-		newRuntime: newPlatformVNextRuntime,
+		newRuntime:      newPlatformVNextRuntime,
+		newGraphRuntime: newPlatformVNextGraphRuntime,
 		newResolver: func(paths *engine.AssetPaths) (autotunevnext.AssetResolver, error) {
 			return autotunevnext.NewProductAssetResolver(paths)
 		},
@@ -186,12 +301,23 @@ func newProductVNextService(manager *providers.ProviderManager, assets *engine.A
 }
 
 func newProductVNextServiceWith(manager *providers.ProviderManager, assets *engine.AssetPaths, deps productVNextDependencies) *productVNextService {
+	if deps.newGraphRuntime == nil {
+		deps.newGraphRuntime = newPlatformVNextGraphRuntime
+	}
 	return &productVNextService{manager: manager, assets: assets, deps: deps, grants: make(map[string]verifiedSelectionGrant)}
 }
 
 func (s *productVNextService) Run(ctx context.Context, input AutoTuneVNextRequest) AutoTuneVNextResult {
+	return s.RunWithProgress(ctx, input, nil)
+}
+
+func (s *productVNextService) RunWithProgress(ctx context.Context, input AutoTuneVNextRequest, onProgress func(VNextProgressEvent)) AutoTuneVNextResult {
+	tracker := newVNextProgressTracker(onProgress)
+	defer tracker.emit("complete", "Проверка завершена.", 100)
+	tracker.emit("preflight", "Проверка среды и подготовка ресурсов...", 10)
+
 	s.mu.Lock()
-	managedActive := s.active != nil
+	managedActive := s.active != nil || (s.graphManaged != nil && s.graphManaged.isActiveOrDirty())
 	s.mu.Unlock()
 	if managedActive {
 		return productVNextFailure(autotunevnext.StatusInconclusive, "", "", "MANAGED_ACTIVATION_ACTIVE")
@@ -243,25 +369,57 @@ func (s *productVNextService) Run(ctx context.Context, input AutoTuneVNextReques
 	identities := historyid.ForRun(ctx, runtimeBinding.backend, s.assets, configDir)
 
 	history := loadProductOutcomeLedger(identities)
+	advisor := productHistoryAdvisor{
+		ledger:     history.ledger,
+		probe:      targetProbe,
+		backend:    runtimeBinding.backend,
+		identities: identities,
+		now:        time.Now,
+		onAdvise: func() {
+			tracker.emit("planning", "Подбор и ранжирование стратегий...", 55)
+		},
+	}
 	request := autotunevnext.Request{
 		Target:        target,
 		Controls:      controls,
 		Strategies:    catalog,
 		Backend:       runtimeBinding.backend,
 		NetworkLabel:  "product-autotune-vnext",
+		Policy:        autotunevnext.Policy{MaxCandidates: len(catalog)},
 		TargetProbe:   &targetProbe,
 		ControlProbes: controlProbes,
-		Advisor:       productHistoryAdvisor{ledger: history.ledger, probe: targetProbe, backend: runtimeBinding.backend, identities: identities, now: time.Now},
+		Advisor:       advisor,
 	}
+
+	observer := s.deps.observer
+	executor := runtimeBinding.executor
+	preflight := runtimeBinding.preflight
+	if onProgress != nil {
+		if observer != nil {
+			observer = &vNextProgressObserver{
+				inner:            observer,
+				tracker:          tracker,
+				expectedBaseline: 1 + len(controls),
+			}
+		}
+		if executor != nil {
+			executor = vNextProgressExecutor{inner: executor, tracker: tracker}
+		}
+		if preflight != nil {
+			preflight = vNextProgressPreflight{inner: preflight, tracker: tracker}
+		}
+	}
+
+	tracker.emit("baseline", "Измерение прямого соединения и контрольного узла...", 25)
 	var result autotunevnext.Result
 	if s.deps.scopeResolver != nil {
 		scope, scopeErr := s.deps.scopeResolver.ResolveServiceScope(ctx, target)
 		if scopeErr != nil {
 			return productVNextFailureWithCatalog(autotunevnext.StatusPreflightFailed, publicTarget, string(runtimeBinding.backend), serviceScopeLimitation(scopeErr), productVNextCatalogStatus)
 		}
-		result, err = autotunevnext.RunServiceScopeCoordinated(ctx, request, scope, s.deps.observer, runtimeBinding.executor, runtimeBinding.preflight, resolver)
+		result, err = autotunevnext.RunServiceScopeCoordinated(ctx, request, scope, observer, executor, preflight, resolver)
 	} else {
-		result, err = s.deps.run(ctx, request, s.deps.observer, runtimeBinding.executor, runtimeBinding.preflight, resolver)
+		result, err = s.deps.run(ctx, request, observer, executor, preflight, resolver)
 	}
 	if err != nil {
 		return productVNextFailureWithCatalog(autotunevnext.StatusInconclusive, publicTarget, string(runtimeBinding.backend), "OPERATION_CONFLICT", productVNextCatalogStatus)
@@ -346,6 +504,13 @@ func productionVNextStrategyCatalog(hostname string) ([]strategyir.Strategy, err
 		return nil, err
 	}
 	one, two, overlap := 1, 2, 652
+	outboundCutoff := func() *strategyir.Cutoff {
+		return &strategyir.Cutoff{
+			Direction: strategyir.RangeDirectionOut,
+			Counter:   strategyir.RangeCounterDataPacketNumber,
+			Limit:     8,
+		}
+	}
 	selector := func() strategyir.TrafficSelector {
 		return strategyir.TrafficSelector{
 			ApplicationProtocols: []strategyir.ApplicationProtocol{strategyir.ApplicationTLS},
@@ -364,9 +529,17 @@ func productionVNextStrategyCatalog(hostname string) ([]strategyir.Strategy, err
 			Metadata:   strategyir.Metadata{Description: "LOW: one target-local TLS segmentation point without fake payload or overlap.", Source: "Production vNext V1; reviewed target-local TLS multisplit semantic"},
 		},
 		{
+			SchemaVersion: strategyir.SchemaVersion, ID: "prod-tls-sniext-split-v1", Name: "Production TLS SNI record-extension split",
+			Transport: []strategyir.Transport{strategyir.TransportTCP}, Selector: selector(),
+			Range:      outboundCutoff(),
+			Operations: []strategyir.Operation{{Type: strategyir.OperationMultiSplit, Positions: []strategyir.PositionExpr{{Absolute: &one}, {Anchor: strategyir.AnchorSNIExt, Offset: 1}}}},
+			Safety:     strategyir.SafetyPolicy{Aggressiveness: "LOW", TargetOnly: true},
+			Metadata:   strategyir.Metadata{Description: "LOW: target-local TLS record and SNI-extension boundary segmentation without fake packets.", Source: "Production vNext V2; reviewed target-local TLS SNI-extension split semantic"},
+		},
+		{
 			SchemaVersion: strategyir.SchemaVersion, ID: "prod-tls-multisplit-overlap-v1", Name: "Production TLS overlap multisplit",
 			Transport: []strategyir.Transport{strategyir.TransportTCP}, Selector: selector(),
-			Range:      &strategyir.Cutoff{Direction: strategyir.RangeDirectionOut, Counter: strategyir.RangeCounterDataPacketNumber, Limit: 8},
+			Range:      outboundCutoff(),
 			Operations: []strategyir.Operation{{Type: strategyir.OperationMultiSplit, Positions: []strategyir.PositionExpr{{Absolute: &two}}, SequenceOverlap: &overlap, OverlapPatternRef: "tls-google"}},
 			Safety:     strategyir.SafetyPolicy{Aggressiveness: "MEDIUM", TargetOnly: true},
 			Metadata:   strategyir.Metadata{Description: "MEDIUM: target-local TLS segmentation with sequence overlap.", Source: "Production vNext V1; reviewed from RepresentativeFixtures alternative-multisplit packet-operation semantics"},
@@ -374,13 +547,32 @@ func productionVNextStrategyCatalog(hostname string) ([]strategyir.Strategy, err
 		{
 			SchemaVersion: strategyir.SchemaVersion, ID: "prod-tls-hostfakesplit-v1", Name: "Production TLS host fake split",
 			Transport: []strategyir.Transport{strategyir.TransportTCP}, Selector: selector(),
-			Range:      &strategyir.Cutoff{Direction: strategyir.RangeDirectionOut, Counter: strategyir.RangeCounterDataPacketNumber, Limit: 8},
+			Range:      outboundCutoff(),
 			Operations: []strategyir.Operation{{Type: strategyir.OperationHostFakeSplit, Positions: []strategyir.PositionExpr{{Anchor: strategyir.AnchorMidSLD}}, HostTemplate: "ozon.ru", Fake: &strategyir.FakeModifiers{Repeat: 4, TCPMD5: true, TCPTimestamp: true}}},
 			Safety:     strategyir.SafetyPolicy{Aggressiveness: "MEDIUM", TargetOnly: true},
 			Metadata:   strategyir.Metadata{Description: "MEDIUM: repeated target-local host fake split with TCP modifiers.", Source: "Production vNext V1; reviewed from RepresentativeFixtures recommended-hostfakesplit packet-operation semantics"},
 		},
+		{
+			SchemaVersion: strategyir.SchemaVersion, ID: "prod-tls-multidisorder-midsld-v1", Name: "Production TLS multidisorder at byte 1 and mid-SLD",
+			Transport: []strategyir.Transport{strategyir.TransportTCP}, Selector: selector(),
+			Range:      outboundCutoff(),
+			Operations: []strategyir.Operation{{Type: strategyir.OperationMultiDisorder, Positions: []strategyir.PositionExpr{{Absolute: &one}, {Anchor: strategyir.AnchorMidSLD}}}},
+			Safety:     strategyir.SafetyPolicy{Aggressiveness: "MEDIUM", TargetOnly: true},
+			Metadata:   strategyir.Metadata{Description: "MEDIUM: target-local out-of-order TLS ClientHello delivery across record header and mid-SLD.", Source: "Production vNext V2; reviewed target-local multidisorder semantic"},
+		},
+		{
+			SchemaVersion: strategyir.SchemaVersion, ID: "prod-tls-fake-multisplit-sni-v1", Name: "Production TLS fake ClientHello + mid-SLD split",
+			Transport: []strategyir.Transport{strategyir.TransportTCP}, Selector: selector(),
+			Range: outboundCutoff(),
+			Operations: []strategyir.Operation{
+				{Type: strategyir.OperationFakeInjection, PayloadRef: "tls-clienthello-default", Fake: &strategyir.FakeModifiers{Repeat: 6, TCPMD5: true, TCPTimestamp: true}},
+				{Type: strategyir.OperationMultiSplit, Positions: []strategyir.PositionExpr{{Absolute: &one}, {Anchor: strategyir.AnchorMidSLD}}},
+			},
+			Safety:   strategyir.SafetyPolicy{Aggressiveness: "MEDIUM", TargetOnly: true},
+			Metadata: strategyir.Metadata{Description: "MEDIUM: target-local TCP-timestamp/MD5 fake ClientHello paired with mid-SLD segmentation.", Source: "Production vNext V2; reviewed target-local fake+multisplit semantic"},
+		},
 	}
-	if len(catalog) == 0 || len(catalog) > autotunevnext.DefaultPolicy().MaxCandidates {
+	if len(catalog) == 0 || len(catalog) > maxProductionVNextCatalogCandidates {
 		return nil, errors.New("invalid production catalog size")
 	}
 	ids := make(map[string]struct{}, len(catalog))

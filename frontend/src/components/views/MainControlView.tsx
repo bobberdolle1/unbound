@@ -21,11 +21,17 @@ interface MainControlViewProps {
   vNextRunning: boolean;
   isScanning: boolean;
   scanProgress: string;
-  autotuneProgress: { percent?: number; msg?: string } | null;
+  autotuneProgress: { percent?: number; progress?: number; msg?: string } | null;
   handleCancelAutoTune: () => void;
   livePingData: { active: boolean; latency: number; status: string };
   pingHistory: number[];
-  managedState?: { state: string; active: boolean; needs_revalidation: boolean; strategy_id?: string; target?: string };
+  managedState?: {
+    state: string;
+    active: boolean;
+    needs_revalidation: boolean;
+    strategy_id?: string;
+    target?: string;
+  };
   revertManaged?: () => void;
 }
 
@@ -57,15 +63,42 @@ export const MainControlView: React.FC<MainControlViewProps> = ({
   const managedActive = managedState.active;
   const managedRestoreFailure = managedState.state === 'STATE_RESTORE_FAILED';
   const managedDormant = !managedActive && managedState.state === 'SAVED_NOT_CURRENTLY_NEEDED';
+  const managedPendingRevalidation = !managedActive && managedState.state === 'SAVED_REVALIDATION_PENDING';
+  const managedStale = !managedActive && managedState.state === 'SAVED_STRATEGY_STALE';
+  const managedNoVerified = !managedActive && managedState.state === 'NO_VERIFIED_STRATEGY';
+  const managedPersistenceFailed = !managedActive && managedState.state === 'PERSISTENCE_UPDATE_FAILED';
+  const managedScopeChanged =
+    managedState.state === 'SERVICE_SCOPE_CHANGED_REVALIDATION_REQUIRED' ||
+    (managedState.needs_revalidation &&
+      !managedDormant &&
+      !managedPendingRevalidation &&
+      !managedStale &&
+      !managedNoVerified);
+
+  const progressPct = autotuneProgress?.percent ?? autotuneProgress?.progress ?? 0;
+
   return (
     <div className="flex-1 flex flex-col gap-4">
       {/* CONNECTION CARD */}
       <div className="bg-[var(--ui-surface-elevated)] border border-[var(--ui-border)] rounded-[var(--ui-radius)] p-5 flex flex-col items-center gap-4 text-center">
         <div className="flex items-center gap-2 text-xs font-semibold text-[var(--ui-text-muted)]">
-          <span className={cn('status-dot-led', managedActive ? 'connected' : managedRestoreFailure ? 'error' : statusLedState)} />
+          <span
+            className={cn(
+              'status-dot-led',
+              managedRestoreFailure || managedPersistenceFailed
+                ? 'error'
+                : managedActive
+                ? 'connected'
+                : managedPendingRevalidation || managedStale || managedNoVerified
+                ? 'connecting'
+                : statusLedState
+            )}
+          />
           <span>
             {managedRestoreFailure
               ? 'Не подтверждено восстановление исходного состояния'
+              : managedPersistenceFailed
+              ? 'Ошибка сохранения параметров управляемой стратегии'
               : managedActive
               ? 'Управляемая стратегия активна'
               : statusLedState === 'connected'
@@ -83,7 +116,17 @@ export const MainControlView: React.FC<MainControlViewProps> = ({
           className="btn-ui-primary max-w-[280px]"
         >
           <UINetwork className="w-4 h-4" />
-          <span>{managedRestoreFailure ? 'Повторить восстановление' : managedActive ? 'Отключить управляемую стратегию' : isConnected ? 'Отключить' : isConnecting ? 'Подключение...' : 'Подключить'}</span>
+          <span>
+            {managedRestoreFailure
+              ? 'Повторить восстановление'
+              : managedActive
+              ? 'Отключить управляемую стратегию'
+              : isConnected
+              ? 'Отключить'
+              : isConnecting
+              ? 'Подключение...'
+              : 'Подключить'}
+          </span>
         </button>
 
         <div className="text-xs text-[var(--ui-text-muted)] truncate max-w-full">
@@ -92,9 +135,112 @@ export const MainControlView: React.FC<MainControlViewProps> = ({
             {managedActive ? managedState.strategy_id || 'Проверенная стратегия' : selectedProfile || 'Автоматическая'}
           </strong>
         </div>
-        {managedActive && <div className="text-xs text-[var(--ui-text-muted)] truncate max-w-full">Цель: {managedState.target || '—'}</div>}
-        {managedDormant && <div className="text-xs text-amber-300">Сохранённая стратегия сейчас не требуется и будет перепроверена при следующем запуске.</div>}
-        {managedRestoreFailure && <div className="text-xs text-red-300">Критично: требуется подтвердить восстановление исходного состояния.</div>}
+        {managedActive && (
+          <div className="text-xs text-[var(--ui-text-muted)] truncate max-w-full">
+            Цель: {managedState.target || '—'}
+          </div>
+        )}
+        {managedDormant && (
+          <div className="text-xs text-amber-400">
+            Сохранённая стратегия сейчас не требуется и будет перепроверена при следующем запуске.
+          </div>
+        )}
+        {managedRestoreFailure && (
+          <div className="text-xs text-red-400">
+            Критично: требуется подтвердить восстановление исходного состояния.
+          </div>
+        )}
+
+        {/* MANAGED STATE BANNERS & ACTIONS */}
+        {managedPendingRevalidation && (
+          <div className="w-full rounded-lg border border-amber-500/35 bg-amber-500/10 p-3 text-left text-xs space-y-2">
+            <div className="font-semibold text-amber-400">
+              Сохранённая стратегия ожидает повторной проверки перед включением
+            </div>
+            <div className="text-[var(--ui-text-muted)]">
+              {managedState.target ? `Цель: ${managedState.target}. ` : ''}
+              Для безопасного применения запустите проверку актуальности на текущей сети.
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={openAutoTuneVNext} disabled={disableMain} className="btn-ui-primary text-xs py-1.5 px-3 w-auto">
+                Проверить и применить
+              </button>
+              <button type="button" onClick={revertManaged} disabled={disableMain} className="btn-ui-secondary text-xs py-1.5 px-3">
+                Сбросить
+              </button>
+            </div>
+          </div>
+        )}
+
+        {managedStale && (
+          <div className="w-full rounded-lg border border-amber-500/35 bg-amber-500/10 p-3 text-left text-xs space-y-2">
+            <div className="font-semibold text-amber-400">
+              Сохранённая стратегия устарела или не совпадает с текущим каталогом
+            </div>
+            <div className="text-[var(--ui-text-muted)]">
+              Параметры сохранённой стратегии больше не актуальны. Выполните новый подбор или очистите состояние.
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={openAutoTuneVNext} disabled={disableMain} className="btn-ui-primary text-xs py-1.5 px-3 w-auto">
+                Подобрать заново
+              </button>
+              <button type="button" onClick={revertManaged} disabled={disableMain} className="btn-ui-secondary text-xs py-1.5 px-3">
+                Очистить состояние
+              </button>
+            </div>
+          </div>
+        )}
+
+        {managedNoVerified && (
+          <div className="w-full rounded-lg border border-orange-500/35 bg-orange-500/10 p-3 text-left text-xs space-y-2">
+            <div className="font-semibold text-orange-400">
+              Сохранённая стратегия не подтвердила работоспособность
+            </div>
+            <div className="text-[var(--ui-text-muted)]">
+              Повторная проверка не выявила рабочей стратегии для текущих сетевых условий.
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={openAutoTuneVNext} disabled={disableMain} className="btn-ui-primary text-xs py-1.5 px-3 w-auto">
+                Открыть автоподбор
+              </button>
+              <button type="button" onClick={revertManaged} disabled={disableMain} className="btn-ui-secondary text-xs py-1.5 px-3">
+                Сбросить
+              </button>
+            </div>
+          </div>
+        )}
+
+        {managedPersistenceFailed && (
+          <div className="w-full rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-left text-xs space-y-2">
+            <div className="font-semibold text-red-400">
+              Не удалось обновить файл состояния управляемой стратегии на диске
+            </div>
+            <div className="text-[var(--ui-text-muted)]">
+              Сетевое состояние восстановлено, но сохранение конфигурации завершилось ошибкой.
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={revertManaged} disabled={disableMain} className="btn-ui-secondary text-xs py-1.5 px-3">
+                Повторить сброс
+              </button>
+            </div>
+          </div>
+        )}
+
+        {managedScopeChanged && (
+          <div className="w-full rounded-lg border border-amber-500/35 bg-amber-500/10 p-3 text-left text-xs space-y-2">
+            <div className="font-semibold text-amber-400">
+              Требуется повторная проверка управляемой стратегии
+            </div>
+            <div className="text-[var(--ui-text-muted)]">
+              Сетевые узлы (DNS/CDN) целевого сервиса изменились. Рекомендуется перепроверить стратегию.
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={openAutoTuneVNext} disabled={disableMain} className="btn-ui-secondary text-xs py-1.5 px-3">
+                Перепроверить стратегию
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* PROFILE SELECTOR & AUTOTUNE (RESPONSIVE GRID) */}
@@ -136,7 +282,9 @@ export const MainControlView: React.FC<MainControlViewProps> = ({
       <div className="rounded-[var(--ui-radius)] border border-dashed border-[var(--ui-border)] p-3 flex items-center justify-between gap-3">
         <div>
           <div className="text-xs font-semibold">Совместимость</div>
-          <div className="mt-0.5 text-xs text-[var(--ui-text-muted)]">Legacy AutoTune остаётся доступным для существующих профилей.</div>
+          <div className="mt-0.5 text-xs text-[var(--ui-text-muted)]">
+            Legacy AutoTune остаётся доступным для существующих профилей.
+          </div>
         </div>
         <button
           onClick={handleAutoTune}
@@ -156,14 +304,14 @@ export const MainControlView: React.FC<MainControlViewProps> = ({
               <span>Автоподбор стратегии...</span>
             </div>
             {autotuneProgress && (
-              <span className="font-mono text-[var(--ui-text-muted)]">{autotuneProgress.percent}%</span>
+              <span className="font-mono text-[var(--ui-text-muted)]">{progressPct}%</span>
             )}
           </div>
 
           <div className="w-full h-2 rounded-full bg-[var(--ui-bg)] overflow-hidden border border-[var(--ui-border)]">
             <div
               className="h-full bg-[var(--ui-text)] transition-all duration-300"
-              style={{ width: `${autotuneProgress?.percent || 0}%` }}
+              style={{ width: `${progressPct}%` }}
             />
           </div>
 

@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"unbound/engine/internal/configdir"
 )
 
 var settingsMu sync.Mutex
@@ -27,44 +29,13 @@ const (
 `
 )
 
-var (
-	testConfigDir string
-	testConfigMu  sync.RWMutex
-)
-
 // SetConfigDirForTest overrides the config directory during tests.
 func SetConfigDirForTest(dir string) func() {
-	testConfigMu.Lock()
-	old := testConfigDir
-	testConfigDir = dir
-	testConfigMu.Unlock()
-	return func() {
-		testConfigMu.Lock()
-		testConfigDir = old
-		testConfigMu.Unlock()
-	}
+	return configdir.SetForTest(dir)
 }
 
 func GetConfigDir() (string, error) {
-	testConfigMu.RLock()
-	if testConfigDir != "" {
-		dir := testConfigDir
-		testConfigMu.RUnlock()
-		return dir, nil
-	}
-	testConfigMu.RUnlock()
-
-	userConfigDir, err := os.UserConfigDir()
-	if err != nil {
-		return "", err
-	}
-	configPath := filepath.Join(userConfigDir, ConfigDirName)
-
-	if err := os.MkdirAll(configPath, 0755); err != nil {
-		return "", err
-	}
-
-	return configPath, nil
+	return configdir.GetConfigDir()
 }
 
 func GetCustomScriptPath() (string, error) {

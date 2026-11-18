@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"unbound/engine/internal/configdir"
 )
 
 type HostlistSource struct {
@@ -104,13 +106,9 @@ func SyncHostlists() error {
 }
 
 func doSyncHostlists() error {
-	userConfigDir, err := os.UserConfigDir()
+	listsDir, err := configdir.GetListsDir()
 	if err != nil {
-		return fmt.Errorf("failed to get user config directory: %w", err)
-	}
-	listsDir := filepath.Join(userConfigDir, "Unbound", "lists")
-	if err := os.MkdirAll(listsDir, 0755); err != nil {
-		return fmt.Errorf("failed to create lists directory: %w", err)
+		return fmt.Errorf("failed to get lists directory: %w", err)
 	}
 
 	client := &http.Client{

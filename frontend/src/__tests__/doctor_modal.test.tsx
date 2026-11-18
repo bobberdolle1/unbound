@@ -1,16 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { DiagnosticsModal } from '../components/modals/DiagnosticsModal';
 import { DiscordConfirmModal } from '../components/modals/DiscordConfirmModal';
 import { engine } from '../../wailsjs/go/models';
 import { backendService } from '../services/backend';
+
 describe('Doctor & Diagnostics Modal Tests', () => {
   const mockDoctorResult = new engine.DoctorResult({
     overallStatus: 'HEALTHY',
     mode: 'quick',
     timestamp: '2026-09-04T12:00:00Z',
     duration: 1200000000,
-    appVersion: '0.5.0',
+    appVersion: '0.8.0',
     engineVersion: '1.0.5',
     os: 'windows',
     arch: 'amd64',
@@ -58,7 +59,9 @@ describe('Doctor & Diagnostics Modal Tests', () => {
     ],
     manualItems: ['Discord voice call test'],
   });
+
   beforeEach(() => {
+    vi.restoreAllMocks();
     (window as unknown as { runtime: unknown }).runtime = {
       EventsOnMultiple: vi.fn().mockReturnValue(() => {}),
     };
@@ -68,6 +71,7 @@ describe('Doctor & Diagnostics Modal Tests', () => {
       total: 24,
       startedAt: '2026-09-04T12:00:00Z',
     } as unknown as engine.DoctorRunStart);
+    vi.spyOn(backendService, 'runDoctor').mockResolvedValue(mockDoctorResult);
   });
 
   it('renders overall health banner and group names', () => {
@@ -105,7 +109,7 @@ describe('Doctor & Diagnostics Modal Tests', () => {
     expect(screen.getByText(/https:\/\/www.youtube.com/i)).toBeDefined();
   });
 
-  it('renders mode switch tabs and switches active tab', () => {
+  it('renders mode switch tabs and triggers only one async startDoctor call on switch', async () => {
     const onRunMode = vi.fn();
     render(
       <DiagnosticsModal
@@ -120,7 +124,40 @@ describe('Doctor & Diagnostics Modal Tests', () => {
 
     const extTab = screen.getByText('Расширенная проверка');
     fireEvent.click(extTab);
-    expect(onRunMode).toHaveBeenCalledWith('extended');
+
+    await waitFor(() => {
+      expect(onRunMode).toHaveBeenCalledWith('extended');
+      expect(backendService.startDoctor).toHaveBeenCalledTimes(1);
+      expect(backendService.startDoctor).toHaveBeenCalledWith('extended');
+      expect(screen.getByText(/0 \/ 24/)).toBeDefined();
+    });
+    expect(backendService.runDoctor).not.toHaveBeenCalled();
+  });
+
+  it('starts a single async quick check on open when no initial doctorResult is provided', async () => {
+    vi.spyOn(backendService, 'startDoctor').mockResolvedValueOnce({
+      runId: 'quick_run',
+      mode: 'quick',
+      total: 16,
+      startedAt: '2026-09-04T12:00:00Z',
+    } as unknown as engine.DoctorRunStart);
+
+    render(
+      <DiagnosticsModal
+        isOpen={true}
+        isRunning={false}
+        results={[]}
+        doctorResult={null}
+        onClose={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(backendService.startDoctor).toHaveBeenCalledTimes(1);
+      expect(backendService.startDoctor).toHaveBeenCalledWith('quick');
+      expect(screen.getByText(/0 \/ 16/)).toBeDefined();
+    });
+    expect(backendService.runDoctor).not.toHaveBeenCalled();
   });
 
   it('renders manual checklist items in extended mode', () => {

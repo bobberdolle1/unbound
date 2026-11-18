@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"unbound/engine/internal/configdir"
 )
 
 const (
@@ -65,15 +67,7 @@ var DefaultListSources = []ListSource{
 }
 
 func GetListsDir() (string, error) {
-	configDir, err := GetConfigDir()
-	if err != nil {
-		return "", err
-	}
-	listsDir := filepath.Join(configDir, "lists")
-	if err := os.MkdirAll(listsDir, 0755); err != nil {
-		return "", err
-	}
-	return listsDir, nil
+	return configdir.GetListsDir()
 }
 
 func UpdateLists() error {
@@ -104,9 +98,9 @@ func UpdateLists() error {
 			}
 			continue
 		}
-		defer resp.Body.Close()
 
 		data, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
 		if err != nil {
 			// Read error - use fallback
 			fmt.Printf("Warning: Failed to read %s: %v. Using fallback.\n", source.Name, err)

@@ -1,10 +1,10 @@
 cask "unbound" do
-  version "0.6.9"
-  sha256 "8b01ab300b1a967f4c6a9b18e1a1c03aac50d60c598f376c0b96804685489228"
+  version "0.9.0"
+  sha256 :no_check
 
   url "https://github.com/bobberdolle1/unbound/releases/download/v#{version}/unbound-v#{version}-macOS-Installer.pkg"
   name "UNBOUND"
-  desc "Ultimate DPI bypass engine for macOS"
+  desc "Local DPI packet desynchronization client for macOS"
   homepage "https://github.com/bobberdolle1/unbound"
 
   livecheck do
@@ -13,7 +13,7 @@ cask "unbound" do
   end
 
   auto_updates false
-  depends_on macos: ">= :catalina"
+  depends_on macos: ">= :big_sur"
 
   pkg "unbound-v#{version}-macOS-Installer.pkg"
 

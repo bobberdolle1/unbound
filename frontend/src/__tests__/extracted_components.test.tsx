@@ -2,10 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, renderHook, act } from '@testing-library/react';
 import { PlatformTitlebar } from '../components/shell/PlatformTitlebar';
 import { AppNavigation } from '../components/shell/AppNavigation';
-import { ConnectionStatus } from '../components/status/ConnectionStatus';
 import { MainControlView } from '../components/views/MainControlView';
 import { ModalHost } from '../components/modals/ModalHost';
-import { SettingsView } from '../components/views/SettingsView';
+import { ConflictModal } from '../components/modals/ConflictModal';
+import { SettingsView, AppSettings } from '../components/views/SettingsView';
 import { LogJournalDrawer } from '../components/terminal/LogJournalDrawer';
 import { usePingPolling } from '../hooks/usePingPolling';
 import { windowService } from '../services/window';
@@ -23,12 +23,15 @@ vi.mock('../services/window', () => ({
     onEnginesChanged: vi.fn(),
     onPrivilegeError: vi.fn(),
     onEngineError: vi.fn(),
+    onProfileChanged: vi.fn(),
+    onProfileError: vi.fn(),
     onNotification: vi.fn(),
     onAutotuneStart: vi.fn(),
     onAutotuneProgress: vi.fn(),
     onAutotuneLog: vi.fn(),
     onEngineLog: vi.fn(),
     onAutotuneComplete: vi.fn(),
+    onAutoTuneVNextProgress: vi.fn().mockReturnValue(() => {}),
     onDoctorStart: vi.fn().mockReturnValue(() => {}),
     onDoctorProgress: vi.fn().mockReturnValue(() => {}),
     onDoctorComplete: vi.fn().mockReturnValue(() => {}),
@@ -48,6 +51,23 @@ vi.mock('../services/backend', () => ({
   },
 }));
 
+const createMockSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
+  autoStart: true,
+  startMinimized: false,
+  autoStartProfile: false,
+  defaultProfile: '',
+  startupProfileMode: 'Последний использованный',
+  gameFilter: true,
+  autoUpdateEnabled: true,
+  showLogs: true,
+  enableTCPTimestamps: false,
+  discordCacheAutoClean: false,
+  secureDns: false,
+  autoReconnect: true,
+  favoriteProfiles: [],
+  ...overrides,
+});
+
 describe('Extracted Components Unit Tests', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -55,7 +75,7 @@ describe('Extracted Components Unit Tests', () => {
 
   describe('PlatformTitlebar', () => {
     it('renders macOS controls and calls hideToTray / minimise / toggleMaximise on click', () => {
-      render(<PlatformTitlebar platform="darwin" appVersion="0.3.0" />);
+      render(<PlatformTitlebar platform="darwin" appVersion="0.8.0" />);
       expect(screen.getByText('ROOT')).toBeDefined();
 
       fireEvent.click(screen.getByTitle('Закрыть в трей'));
@@ -69,14 +89,14 @@ describe('Extracted Components Unit Tests', () => {
     });
 
     it('triggers toggleMaximise on titlebar double-click', () => {
-      const { container } = render(<PlatformTitlebar platform="darwin" appVersion="0.3.0" />);
+      const { container } = render(<PlatformTitlebar platform="darwin" appVersion="0.8.0" />);
       const titlebar = container.firstChild as HTMLElement;
       fireEvent.doubleClick(titlebar);
       expect(windowService.toggleMaximise).toHaveBeenCalled();
     });
 
     it('renders Windows titlebar with maximize button and triggers handlers', () => {
-      render(<PlatformTitlebar platform="windows" appVersion="0.3.0-rc.2" />);
+      render(<PlatformTitlebar platform="windows" appVersion="0.8.0" />);
       expect(screen.getByText('UNBOUND Refresh')).toBeDefined();
 
       fireEvent.click(screen.getByTitle('Свернуть'));
@@ -89,9 +109,26 @@ describe('Extracted Components Unit Tests', () => {
       expect(windowService.hideToTray).toHaveBeenCalledTimes(1);
     });
 
-    it('renders Linux neutral titlebar as fallback', () => {
-      render(<PlatformTitlebar platform="linux" appVersion="0.3.0" />);
+    it('calls windowService.quit() instead of hideToTray() on Linux close button click', () => {
+      render(<PlatformTitlebar platform="linux" appVersion="0.8.0" />);
       expect(screen.getByText('UNBOUND')).toBeDefined();
+
+      fireEvent.click(screen.getByTitle('Закрыть'));
+      expect(windowService.quit).toHaveBeenCalledTimes(1);
+      expect(windowService.hideToTray).not.toHaveBeenCalled();
+    });
+
+    it('renders fallback version v0.9.0 and privilege warning badge when privilegeError is set', () => {
+      const { rerender } = render(
+        <PlatformTitlebar platform="windows" appVersion="" privilegeError="Требуются права администратора." />
+      );
+      expect(screen.getByText('v0.9.0')).toBeDefined();
+      expect(screen.getByText('NO ADMIN ⚠')).toBeDefined();
+      expect(screen.queryByText(/^ADMIN$/)).toBeNull();
+
+      rerender(<PlatformTitlebar platform="darwin" appVersion="" privilegeError="Требуются права root." />);
+      expect(screen.getByText('NO ROOT ⚠')).toBeDefined();
+      expect(screen.queryByText(/^ROOT$/)).toBeNull();
     });
   });
 
@@ -107,7 +144,6 @@ describe('Extracted Components Unit Tests', () => {
       expect(screen.getByText('Списки')).toBeDefined();
       expect(screen.getAllByText('Настройки').length).toBeGreaterThan(0);
 
-      // Verify no ellipsis truncation character
       expect(screen.queryByText(/…/)).toBeNull();
 
       fireEvent.click(screen.getByText('Списки обхода'));
@@ -120,22 +156,6 @@ describe('Extracted Components Unit Tests', () => {
 
       fireEvent.click(screen.getByText('Списки'));
       expect(onTabChange).toHaveBeenCalledWith('lists');
-    });
-  });
-
-  describe('ConnectionStatus', () => {
-    it('renders correct labels for all LED states', () => {
-      const { rerender } = render(<ConnectionStatus status="Stopped" onToggleEngine={vi.fn()} />);
-      expect(screen.getByText('Служба остановлена')).toBeDefined();
-
-      rerender(<ConnectionStatus status="Connecting" onToggleEngine={vi.fn()} />);
-      expect(screen.getByText('Инициализация драйвера...')).toBeDefined();
-
-      rerender(<ConnectionStatus status="Running" onToggleEngine={vi.fn()} />);
-      expect(screen.getByText('Обход активен')).toBeDefined();
-
-      rerender(<ConnectionStatus status="Error" onToggleEngine={vi.fn()} />);
-      expect(screen.getByText('Ошибка драйвера')).toBeDefined();
     });
   });
 
@@ -204,12 +224,12 @@ describe('Extracted Components Unit Tests', () => {
     });
   });
 
-  describe('ModalHost', () => {
+  describe('ModalHost & ConflictModal', () => {
     it('renders ConflictModal when conflictWarning is non-empty', () => {
       const onKillConflicts = vi.fn();
       render(
         <ModalHost
-          conflictWarning={['GoodbyeDPI.exe running']}
+          conflictWarning={['⚠️ GoodbyeDPI запущен']}
           onIgnoreConflicts={vi.fn()}
           onKillConflicts={onKillConflicts}
           privilegeError=""
@@ -240,25 +260,83 @@ describe('Extracted Components Unit Tests', () => {
       );
 
       expect(screen.getByText('Обнаружены конфликты')).toBeDefined();
+      expect(screen.getByText('Завершить все')).toBeDefined();
+    });
+
+    it('clearly separates killable DPI processes from external VPNs requiring manual closing', () => {
+      const onKill = vi.fn();
+      const onIgnore = vi.fn();
+      const { rerender } = render(
+        <ConflictModal
+          conflicts={['⚠️ GoodbyeDPI запущен', '⚠️ Clash Verge запущен', '⚠️ Cloudflare WARP запущен']}
+          onIgnore={onIgnore}
+          onKillConflicts={onKill}
+        />
+      );
+
+      expect(screen.getByText(/могут быть завершены автоматически/i)).toBeDefined();
+      expect(screen.getByText(/Внешние VPN \/ прокси \(требуют ручного закрытия\)/i)).toBeDefined();
+      expect(screen.queryByText('Завершить все')).toBeNull();
+      fireEvent.click(screen.getByText('Завершить DPI-процессы'));
+      expect(onKill).toHaveBeenCalledTimes(1);
+
+      rerender(
+        <ConflictModal
+          conflicts={['⚠️ OpenVPN запущен']}
+          onIgnore={onIgnore}
+          onKillConflicts={onKill}
+        />
+      );
+      expect(screen.getByText('Понятно, закрыть окно')).toBeDefined();
+      fireEvent.click(screen.getByText('Понятно, закрыть окно'));
+      expect(onIgnore).toHaveBeenCalledTimes(1);
     });
   });
 
   describe('LogJournalDrawer', () => {
-    it('renders log lines and handles export button', () => {
+    it('renders compact collapsed footer bar when isExpanded is false and toggles on click', () => {
+      const onToggle = vi.fn();
+      const { container } = render(
+        <LogJournalDrawer
+          logs={['[INFO] First line', '[INFO] Latest line']}
+          isExpanded={false}
+          onToggle={onToggle}
+          onExportLogs={vi.fn()}
+        />
+      );
+
+      expect(screen.getByText('Журнал (2)')).toBeDefined();
+      expect(screen.getByText(/Latest line/)).toBeDefined();
+      expect(screen.getByText('Ctrl+J')).toBeDefined();
+      expect(container.innerHTML).not.toContain('#090b0e');
+      expect(container.innerHTML).not.toContain('--ui-surface)');
+
+      fireEvent.click(screen.getByRole('button', { name: /Развернуть журнал/i }));
+      expect(onToggle).toHaveBeenCalledTimes(1);
+    });
+
+    it('renders log lines, theme variables, and handles export button when expanded', () => {
       const onExport = vi.fn();
-      render(
+      const onToggle = vi.fn();
+      const { container } = render(
         <LogJournalDrawer
           logs={['Test log entry']}
           isExpanded={true}
-          onToggle={vi.fn()}
+          onToggle={onToggle}
           onExportLogs={onExport}
         />
       );
 
       expect(screen.getByText('Test log entry')).toBeDefined();
-      const exportBtn = screen.getByRole('button', { name: /Сохранить/i });
-      fireEvent.click(exportBtn);
+      expect(container.innerHTML).not.toContain('#090b0e');
+      expect(container.innerHTML).not.toContain('#101318');
+      expect(container.innerHTML).not.toContain('var(--ui-surface)');
+
+      fireEvent.click(screen.getByRole('button', { name: /Сохранить/i }));
       expect(onExport).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(screen.getByRole('button', { name: /Свернуть журнал/i }));
+      expect(onToggle).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -267,7 +345,7 @@ describe('Extracted Components Unit Tests', () => {
       vi.useFakeTimers();
       const { unmount } = renderHook(() => usePingPolling('Running'));
 
-      act(() => {
+      await act(async () => {
         vi.advanceTimersByTime(6000);
       });
 
@@ -276,27 +354,11 @@ describe('Extracted Components Unit Tests', () => {
     });
   });
 
-  describe('SettingsView startMinimized regression', () => {
-    it('contains exactly one control for startMinimized and links to autoStart', () => {
-      const mockSettings = {
-        autoStart: true,
-        startMinimized: false,
-        autoStartProfile: false,
-        defaultProfile: '',
-        startupProfileMode: 'Последний использованный',
-        gameFilter: true,
-        autoUpdateEnabled: true,
-        showLogs: true,
-        enableTCPTimestamps: false,
-        discordCacheAutoClean: false,
-        secureDns: false,
-        autoReconnect: true,
-        favoriteProfiles: [],
-      };
-
+  describe('SettingsView controls & parity', () => {
+    it('contains cross-platform startMinimized label and links to autoStart', () => {
       const { container } = render(
         <SettingsView
-          settings={mockSettings}
+          settings={createMockSettings({ autoStart: true })}
           setSettings={vi.fn()}
           theme="monolith"
           setThemeState={vi.fn()}
@@ -316,28 +378,13 @@ describe('Extracted Components Unit Tests', () => {
       const checkboxes = container.querySelectorAll('[role="checkbox"]#startMinimized');
       expect(checkboxes.length).toBe(1);
       expect(checkboxes[0].getAttribute('aria-disabled')).toBe('false');
+      expect(screen.queryByText(/автозапуске Windows/i)).toBeNull();
     });
 
     it('disables startMinimized when autoStart is false', () => {
-      const mockSettings = {
-        autoStart: false,
-        startMinimized: true,
-        autoStartProfile: false,
-        defaultProfile: '',
-        startupProfileMode: 'Последний использованный',
-        gameFilter: true,
-        autoUpdateEnabled: true,
-        showLogs: true,
-        enableTCPTimestamps: false,
-        discordCacheAutoClean: false,
-        secureDns: false,
-        autoReconnect: true,
-        favoriteProfiles: [],
-      };
-
       const { container } = render(
         <SettingsView
-          settings={mockSettings}
+          settings={createMockSettings({ autoStart: false, startMinimized: true })}
           setSettings={vi.fn()}
           theme="monolith"
           setThemeState={vi.fn()}
@@ -356,6 +403,48 @@ describe('Extracted Components Unit Tests', () => {
       const checkboxes = container.querySelectorAll('[role="checkbox"]#startMinimized');
       expect(checkboxes.length).toBe(1);
       expect(checkboxes[0].getAttribute('aria-disabled')).toBe('true');
+    });
+
+    it('exposes toggles for all missing backend settings and system theme option', () => {
+      const setSettings = vi.fn();
+      const setThemeState = vi.fn();
+      const { container } = render(
+        <SettingsView
+          settings={createMockSettings()}
+          setSettings={setSettings}
+          theme="system"
+          setThemeState={setThemeState}
+          startupProfiles={['Recommended']}
+          handleRunDiagnostics={vi.fn()}
+          handleVerifyAssets={vi.fn()}
+          isVerifyingAssets={false}
+          handleDiagnosticReport={vi.fn()}
+          isGeneratingReport={false}
+          handleUpdateHostlists={vi.fn()}
+          isUpdatingHostlists={false}
+          handleClearCache={vi.fn()}
+          handleKillWinws2={vi.fn()}
+        />
+      );
+
+      const ids = [
+        'showLogs',
+        'autoReconnect',
+        'gameFilter',
+        'secureDns',
+        'enableTCPTimestamps',
+        'discordCacheAutoClean',
+        'autoUpdateEnabled',
+      ];
+      for (const id of ids) {
+        const el = container.querySelector(`[role="checkbox"]#${id}`) as HTMLElement;
+        expect(el).not.toBeNull();
+        fireEvent.click(el);
+      }
+      expect(setSettings).toHaveBeenCalledTimes(ids.length);
+      expect(screen.getByText('Системный DNS 1.1.1.1')).toBeDefined();
+      expect(screen.getByText(/без DoH/i)).toBeDefined();
+      expect(screen.getByText('System (Авто)')).toBeDefined();
     });
   });
 });

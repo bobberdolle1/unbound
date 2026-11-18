@@ -22,7 +22,9 @@ echo "=== GO TEST SUITE ==="
 go test ./...
 
 echo "=== NATIVE WAILS LINUX BUILD ==="
-wails build -clean -tags webkit2_41 -ldflags "-s -w -X unbound/engine.Version=0.3.0" -o Unbound-linux-amd64
+VERSION="$(node -p "require('./wails.json').info.productVersion")"
+BUILD_COMMIT="$(git rev-parse --verify HEAD 2>/dev/null || printf 'unknown')"
+wails build -clean -tags webkit2_41 -ldflags "-s -w -X unbound/engine.Version=$VERSION -X unbound/engine.BuildCommit=$BUILD_COMMIT -X unbound/engine.BuildChannel=validation" -o Unbound-linux-amd64
 
 echo "=== ARTIFACT INSPECTION ==="
 BINARY="build/bin/Unbound-linux-amd64"

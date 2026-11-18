@@ -5,6 +5,9 @@
 # UNBOUND_BUILD_CHANNEL=release
 set -euo pipefail
 
+export PATH="${GOPATH:-$HOME/go}/bin:$HOME/go/bin:/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin:$PATH"
+export CGO_LDFLAGS="-framework UniformTypeIdentifiers ${CGO_LDFLAGS:-}"
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 VERSION="${1:-$(node -p "require('$ROOT/wails.json').info.productVersion")}"
 BUILD_COMMIT="${UNBOUND_BUILD_COMMIT:-$(git -C "$ROOT" rev-parse --verify HEAD 2>/dev/null || printf 'unknown')}"
@@ -13,8 +16,19 @@ BUILD_CHANNEL="${UNBOUND_BUILD_CHANNEL:-release}"
 DIST="$ROOT/release"
 APP=""
 WORK=""
+DMG_STAGE=""
 SMOKE=""
 PKG_SMOKE=""
+
+cleanup() {
+  local exit_code=$?
+  [ -n "$WORK" ] && rm -rf "$WORK"
+  [ -n "$DMG_STAGE" ] && rm -rf "$DMG_STAGE"
+  [ -n "$SMOKE" ] && rm -rf "$SMOKE"
+  [ -n "$PKG_SMOKE" ] && rm -rf "$PKG_SMOKE"
+  exit "$exit_code"
+}
+trap cleanup EXIT
 
 require_version() {
   local expected="$1"
@@ -30,6 +44,18 @@ unsafe_xattrs() {
   xattr -rd com.apple.FinderInfo "$bundle" 2>/dev/null || true
   xattr -d com.apple.ResourceFork "$bundle" 2>/dev/null || true
   xattr -rd com.apple.ResourceFork "$bundle" 2>/dev/null || true
+  xattr -d com.apple.quarantine "$bundle" 2>/dev/null || true
+  xattr -rd com.apple.quarantine "$bundle" 2>/dev/null || true
+}
+
+require_tools() {
+  local cmd
+  for cmd in go node npm wails codesign pkgbuild productbuild hdiutil ditto xattr shasum python3 lipo; do
+    command -v "$cmd" >/dev/null 2>&1 || {
+      echo "Required macOS release build tool '$cmd' is not installed or not in PATH" >&2
+      exit 1
+    }
+  done
 }
 
 find_bundle() {
@@ -42,9 +68,17 @@ find_bundle() {
   fi
 }
 
+require_tools
 require_version "$VERSION"
 rm -rf "$DIST" "$ROOT/build/bin"
 mkdir -p "$DIST"
+
+# Install exact locked frontend dependencies cleanly via npm ci first so
+# `wails build` does not mutate frontend/package-lock.json on fresh hosts.
+(
+  cd "$ROOT/frontend"
+  npm ci --no-audit --no-fund
+)
 
 # Wails currently signs the generated app before callers can sanitize
 # FileProvider-created FinderInfo. Keep the generated bundle only when its
@@ -65,7 +99,6 @@ RAW_APP="$(find_bundle)" || {
 # reattach FinderInfo under build/bin after removal, so sign and package a
 # copied bundle in a non-FileProvider temporary directory.
 WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK" "$DMG_STAGE" "$SMOKE" "$PKG_SMOKE"' EXIT
 APP="$WORK/Unbound.app"
 ditto "$RAW_APP" "$APP"
 unsafe_xattrs "$APP"
@@ -92,7 +125,6 @@ ditto -c -k --keepParent "$BUNDLE" "$DIST/$NAME.zip"
 
 DMG_STAGE="$(mktemp -d)"
 ditto "$APP" "$DMG_STAGE/Unbound.app"
-trap 'rm -rf "$WORK" "$DMG_STAGE" "$SMOKE" "$PKG_SMOKE"' EXIT
 unsafe_xattrs "$DMG_STAGE/Unbound.app"
 ln -s /Applications "$DMG_STAGE/Applications"
 hdiutil create -volname UNBOUND -srcfolder "$DMG_STAGE" -ov -format UDZO "$DIST/$NAME.dmg"
@@ -103,6 +135,15 @@ SMOKE="$(mktemp -d)"
 ditto -x -k "$DIST/$NAME.zip" "$SMOKE"
 SMOKE_APP="$SMOKE/$NAME/Unbound.app"
 test -x "$SMOKE_APP/Contents/MacOS/Unbound"
+ARCHS="$(lipo -archs "$SMOKE_APP/Contents/MacOS/Unbound")"
+case " $ARCHS " in
+  *" x86_64 "*) ;;
+  *) echo "Universal macOS binary missing x86_64 slice (got: $ARCHS)" >&2; exit 1 ;;
+esac
+case " $ARCHS " in
+  *" arm64 "*) ;;
+  *) echo "Universal macOS binary missing arm64 slice (got: $ARCHS)" >&2; exit 1 ;;
+esac
 test -f "$SMOKE/$NAME/ZAPRET_LICENSE.txt"
 codesign --verify --deep --strict --verbose=2 "$SMOKE_APP"
 "$SMOKE_APP/Contents/MacOS/Unbound" --version | grep -F "$VERSION"

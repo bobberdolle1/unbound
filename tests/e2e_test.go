@@ -439,6 +439,8 @@ func TestEngine_SettingsRoundTrip(t *testing.T) {
 
 func TestEngine_CustomScriptRoundTrip(t *testing.T) {
 	t.Setenv("APPDATA", t.TempDir())
+	restore := engine.SetConfigDirForTest(t.TempDir())
+	defer restore()
 	script := "-- test lua\nprint('hello')\n"
 	if err := engine.SaveCustomScript(script); err != nil {
 		t.Fatalf("SaveCustomScript: %v", err)
@@ -671,6 +673,9 @@ func TestFrontend_VitestSuite(t *testing.T) {
 	repoRoot, err := filepath.Abs("..")
 	if err != nil {
 		t.Fatalf("failed to resolve repo root: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repoRoot, "frontend", "node_modules")); os.IsNotExist(err) {
+		t.Skip("frontend/node_modules not installed — skipping vitest suite in Go-only worktree")
 	}
 
 	cmd := exec.Command("npm", "test")

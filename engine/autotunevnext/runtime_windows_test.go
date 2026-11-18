@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -133,6 +134,7 @@ func TestWindowsCrashGuardKillsOwnedStuckProcess(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd := exec.Command("powershell.exe", "-NoProfile", "-Command", "Start-Sleep -Seconds 60")
+	cmd.SysProcAttr = windowsHiddenSysProcAttr()
 	if err := cmd.Start(); err != nil {
 		_ = windows.CloseHandle(job)
 		t.Fatal(err)
@@ -218,6 +220,7 @@ func TestWindowsJobAttachFailureRetainsPostStartOwnership(t *testing.T) {
 	}
 	candidateCtx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(candidateCtx, "powershell.exe", "-NoProfile", "-Command", "Start-Sleep -Seconds 60")
+	cmd.SysProcAttr = windowsHiddenSysProcAttr()
 	if err := cmd.Start(); err != nil {
 		_ = windows.CloseHandle(job)
 		t.Fatal(err)
@@ -263,5 +266,24 @@ func TestWindowsWinDivertServiceMissingRecognizesSystemErrorCode(t *testing.T) {
 	}
 	if windowsWinDivertServiceMissing("SERVICE_NAME: WinDivert\nSTATE: 4 RUNNING") {
 		t.Fatal("running WinDivert service must not be treated as absent")
+	}
+}
+
+func TestWindowsHiddenSysProcAttrPreventsConsoleFlash(t *testing.T) {
+	attr := windowsHiddenSysProcAttr()
+	if attr == nil || !attr.HideWindow || attr.CreationFlags != 0x08000000 {
+		t.Fatalf("windowsHiddenSysProcAttr() = %+v, want HideWindow=true CreationFlags=0x08000000", attr)
+	}
+	for _, file := range []string{"runtime_windows.go", "runtime_windows_graph.go"} {
+		srcBytes, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatalf("read %s: %v", file, err)
+		}
+		src := string(srcBytes)
+		cmdCount := strings.Count(src, "exec.Command")
+		sysProcCount := strings.Count(src, ".SysProcAttr = windowsHiddenSysProcAttr()")
+		if cmdCount == 0 || sysProcCount != cmdCount {
+			t.Fatalf("%s has %d exec.Command* calls vs %d windowsHiddenSysProcAttr() assignments", file, cmdCount, sysProcCount)
+		}
 	}
 }

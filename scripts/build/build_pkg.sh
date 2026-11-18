@@ -7,9 +7,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-VERSION="${3:-0.6.7}"
+VERSION="${3:-0.9.0}"
 if [ -f "$PROJECT_ROOT/wails.json" ] && [ -z "${3:-}" ]; then
-    VERSION="$(node -e "try { console.log(require('$PROJECT_ROOT/wails.json').info.productVersion); } catch(e) { console.log('0.6.7'); }")"
+    VERSION="$(node -e "try { console.log(require('$PROJECT_ROOT/wails.json').info.productVersion); } catch(e) { console.log('0.9.0'); }")"
 fi
 
 APP_PATH="${1:-}"
@@ -69,53 +69,12 @@ APP_DEST="/Applications/Unbound.app"
 
 # 1. Eliminate Gatekeeper quarantine attribute recursively from the installed app
 if [ -d "$APP_DEST" ]; then
-    xattr -cr "$APP_DEST" 2>/dev/null || true
+    xattr -dr com.apple.quarantine "$APP_DEST" 2>/dev/null || true
     chmod -R u+rwX,go+rX "$APP_DEST" 2>/dev/null || true
 fi
 
-# 2. Configure passwordless sudo for pfctl in /etc/sudoers.d/unbound_zapret
-mkdir -p /etc/sudoers.d
-SUDOERS_FILE="/etc/sudoers.d/unbound_zapret"
-cat > "$SUDOERS_FILE" << 'SUDO_EOF'
-ALL ALL=(ALL) NOPASSWD: /sbin/pfctl, ALL
-SUDO_EOF
-chmod 0440 "$SUDOERS_FILE"
-
-# 3. Ensure pf.conf anchor com.unbound.zapret is configured
-PF_CONF="/etc/pf.conf"
-if [ -f "$PF_CONF" ]; then
-    NEEDS_RDR=0
-    NEEDS_ANCHOR=0
-    grep -q 'rdr-anchor "com.unbound.zapret"' "$PF_CONF" || NEEDS_RDR=1
-    grep -q 'anchor "com.unbound.zapret"' "$PF_CONF" || NEEDS_ANCHOR=1
-
-    if [ $NEEDS_RDR -eq 1 ] || [ $NEEDS_ANCHOR -eq 1 ]; then
-        TMP_PF="$(mktemp /tmp/pf.conf.XXXXXX)"
-        RDR_INSERTED=0
-        ANCHOR_INSERTED=0
-        [ $NEEDS_RDR -eq 0 ] && RDR_INSERTED=1
-        [ $NEEDS_ANCHOR -eq 0 ] && ANCHOR_INSERTED=1
-
-        while IFS= read -r line; do
-            echo "$line" >> "$TMP_PF"
-            if [ $RDR_INSERTED -eq 0 ] && [[ "$line" == *'rdr-anchor "com.apple'* ]]; then
-                echo 'rdr-anchor "com.unbound.zapret"' >> "$TMP_PF"
-                RDR_INSERTED=1
-            fi
-            if [ $ANCHOR_INSERTED -eq 0 ] && [[ "$line" == *'anchor "com.apple'* ]] && [[ "$line" != *"load"* ]]; then
-                echo 'anchor "com.unbound.zapret"' >> "$TMP_PF"
-                ANCHOR_INSERTED=1
-            fi
-        done < "$PF_CONF"
-
-        if /sbin/pfctl -n -f "$TMP_PF" >/dev/null 2>&1; then
-            cp "$TMP_PF" "$PF_CONF"
-            chmod 0644 "$PF_CONF"
-            /sbin/pfctl -f /etc/pf.conf >/dev/null 2>&1 || true
-        fi
-        rm -f "$TMP_PF"
-    fi
-fi
+# 2. Active security remediation: remove any legacy vulnerable sudoers rule
+rm -f /etc/sudoers.d/unbound_zapret
 
 exit 0
 EOF

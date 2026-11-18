@@ -2,6 +2,57 @@
 
 Все значимые изменения проекта документируются в этом файле.
 
+## [0.9.0] - 2026-11-18
+
+### Безопасность (Security)
+
+- **`[P0 CRITICAL]` Ликвидация беспарольного `sudoers`-правила на macOS и активная очистка**:
+  - Из `scripts/build/build_pkg.sh` (`postinstall`) и `engine/providers/zapret_macos.go` полностью удалён устаревший код записи `/etc/sudoers.d/unbound_zapret` (`ALL ALL=(ALL) NOPASSWD: /sbin/pfctl, ALL`), предоставлявший локальным процессам беспарольный root-доступ.
+  - В `postinstall` macOS `.pkg`-установщика добавлена активная ремедиация `rm -f /etc/sudoers.d/unbound_zapret` при обновлении/переустановке; соответствующая документация добавлена в [`SECURITY.md`](SECURITY.md) и [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md).
+- **Безопасная обработка карантина и подписи на macOS (`scripts/control_macOS/*.command`)**:
+  - Исключены опасные вызовы `xattr -cr "$DIR"` (затрагивавшие соседние файлы при запуске из `~/Downloads`) и переподписание `codesign --force --deep -s -` без `--options runtime --entitlements`; снятие `com.apple.quarantine` строго ограничено бандлом `Unbound.app`.
+- **Точечные исключения Microsoft Defender и защита DNS**:
+  - `AddDefenderExclusion()` в `engine/sys_windows.go` переведён со старого пути `%TEMP%\clearflow` на фактические каталоги `%ProgramData%\Unbound` и `%LOCALAPPDATA%\Unbound` с безопасным экранированием PowerShell.
+  - `SaveSettings` больше не вызывает сброс системного DNS при изменении несвязанных настроек, а `securedns_windows.go` пропускает виртуальные адаптеры WSL, Hyper-V, Tailscale, WireGuard и VPN.
+
+### AutoTune vNext и ядро (Engine & Product Layer)
+
+- **Продуктовая интеграция Multi-Host `ServiceGraph`**:
+  - В Wails RPC (`GetAutoTuneVNextServicePresets`, `AutoTuneVNextServiceGraph`, `RevertAutoTuneVNextServiceGraph`) и CLI (`--autotune-vnext --service-preset <youtube|discord>`) подключены проверенные ограниченные мультихостовые пресеты `ServiceGraph` (`youtube`, `discord`).
+- **Аудируемый `TransferContract` (детекция post-header зависаний DPI)**:
+  - В `DirectTCPHTTPSObserver` реализовано ограниченное по времени и объёму чтение окна тела HTTP-ответа в памяти (без записи на диск), активирующее сквозную диагностику `PARTIAL_TRANSFER_ANOMALY` при заморозке соединения после заголовков (`ConnBytes` blackholing).
+- **Ускорение Observatory, расширение каталога `StrategyIR` и управление историей**:
+  - `DirectTCPHTTPSObserver.Observe()` завершает перебор запасных A/AAAA адресов сразу после достижения `ClassSuccess`, устраняя 5–15-секундные задержки на недоступных вторичных/IPv6 адресах.
+  - Производственный каталог `StrategyIR` (`vnext_product.go`) расширен проверенными стратегиями `multidisorder` и `tlsrec` split для Windows (`winws2`) и Linux (`nfqws2`); `NewProductAssetResolver` учитывает обновлённые пользовательские списки из `engine.GetListsDir()`.
+  - Добавлены потоковые события прогресса `autotune_vnext_progress`, отмена активного прогона `CancelAutoTuneVNext()`, сводка `GetAutoTuneVNextHistorySummary()` и безопасная очистка `ClearAutoTuneVNextHistory()`.
+
+### Исправления ошибок (Bug Fixes)
+
+- **Восстановление активного профиля и состояние провайдера**: `ProviderManager.CurrentProfileName("")` делегирует запрос активному провайдеру, исправляя возврат исходного профиля после `RunStrategyLab` и `RunBypassComparison`, а также отображение активного профиля в трее и `UNBOUND Doctor`; для не-Windows платформ добавлен безопасный fallback профиля в `RunBypassComparison`.
+- **Устранение гонки отмены в `OperationCoordinator.Acquire`**: при вытеснении текущей операции координатор дожидается фактического освобождения предыдущего процесса перед запуском нового движка.
+- **Скрытый запуск подпроцессов на Windows и надёжность `Zapret2WindowsProvider`**: во все вызовы `winws2.exe` и `sc.exe` в `autotunevnext` и провайдере добавлен флаг `CREATE_NO_WINDOW` (`0x08000000`); таймаут остановки увеличен до `4s`, добавлены очистка канала готовности, уведомления всех статусов и повторное открытие лог-файла.
+- **Честная индикация конфликтов и паритет трея/завершения**: разрешение конфликтов явно сообщает о внешних VPN-клиентах, требующих ручного закрытия; трей macOS синхронизирован со статусом управляемого AutoTune vNext; выход из меню Linux корректно вызывает `QuitApp()`.
+- **Герметичность тестов и очистка мёртвого кода**: удалён неиспользуемый V1-пакет `engine/tester`; сетевые и системные тесты изолированы для быстрого и детерминированного прогона `-short` без загрязнения реального `%APPDATA%`.
+
+### Интерфейс (Desktop UI)
+
+- **Паритет управления и исправление UX-дефектов**:
+  - Возвращена видимая панель и горячая клавиша журнала логов (`LogJournalDrawer`) с поддержкой светлой темы `Paper`.
+  - Кнопка закрытия безрамочного окна на Linux корректно завершает приложение вместо скрытия процесса без системного трея.
+  - В `DiagnosticsModal` устранён двойной параллельный запуск `RunDoctor` + `StartDoctor` и предупреждения React `act(...)`.
+  - `App.tsx` сохраняет полный объект `Settings` без затирания скрытых полей; в `SettingsView` добавлены переключатели `showLogs`, `autoReconnect`, `gameFilter`, `secureDns` (честно подписанный как системный DNS `1.1.1.1`), `enableTCPTimestamps`, `discordCacheAutoClean`, `autoUpdateEnabled` и тема `system`.
+  - Обновлён `AutoTuneVNextModal` (переключатель Single-Host / ServiceGraph, живой прогресс и кнопка отмены, русскоязычная расшифровка диагнозов, кандидатов и ограничений, управление историей и подсказка для macOS `tpws`) и баннеры всех состояний управляемого режима в `MainControlView`.
+  - Стабилизированы подписки Wails `EventsOn` (без пересоздания на каждый рендер) и подключены события `profile_changed` / `profile_error`.
+
+### Упаковка, CI/CD и инфраструктура (Packaging & Ops)
+
+- **Обновление движка Zapret 2 (`v1.0.5.1` → `v1.0.7`) и зависимостей Go / Frontend**:
+  - Встроенный набор исполняемых бинарников и Lua-скриптов Zapret 2 (`winws2.exe`, `nfqws2`, `ip2net`, `mdig`, `zapret-*.lua`) обновлён до официального релиза `v1.0.7` с пересчётом `ENGINE_PROVENANCE.json` и `ENGINE_ASSETS.sha256`.
+  - Обновлены зависимости Go (`wails/v2` `v2.17.1`, `quic-go` `v0.65.0`, `golang.org/x/net` `v0.63.0`, `golang.org/x/sys` `v0.50.0`, `golang.org/x/crypto` `v0.59.0`, `golang.org/x/text` `v0.44.0`) и фронтенд-стека (`vite` `7.3.x`, `vitest` `4.1.x`, `tailwindcss` / `@tailwindcss/vite` `4.3.x`, `tailwind-merge` `3.7.x`, `@vitejs/plugin-react` `5.2.x`, `@testing-library/*`) с устранением всех исправленных upstream-уязвимостей и нулевым числом runtime-уязвимостей (`npm audit --omit=dev`: `0 vulnerabilities`).
+- **Модернизация Linux-упаковки (`packaging/`)**: полностью переработаны `unbound.service` (`Type=simple`, корректные права `/tmp` для распаковки `nfqws2`, `SIGTERM`), `PKGBUILD`, `unbound-cli.spec`, `build-rpm.sh` и `build-deb.sh` под Go + Wails `v0.9.0+` (`GPL-3.0`, сборка `frontend/dist`, `CGO_ENABLED=0`).
+- **Метаданные Windows, CI и скрипты**: `build/windows/info.json` переведён на шаблонные переменные Wails (`{{.Info.ProductVersion}}`), а `build/windows/wails.exe.manifest` — на SxS-безопасную версию `1.0.0.0`; `.buildkite/pipeline.yml` переведён на `pwsh`; в `build_macos_release.sh` исправлена инициализация переменных до `trap ... EXIT` (`set -u`); в `build_darwin.sh` обновление `Casks/unbound.rb` закрыто флагом `--update-cask`; `scripts/control_linux/*.sh` определяют `unbound-linux-amd64` и `unbound-linux-arm64`.
+- **Гигиена репозитория**: ужесточены `.gitignore` и `.dockerignore`, очищен `scripts/fetch-fonts.sh` (только `Inter`), актуализированы `README_RELEASE.txt` и `build/linux/docker-entrypoint-validation.sh`, удалены опасный `scripts/build/publish_release.ps1` и устаревшие одноразовые scratch-скрипты.
+
 ## [0.8.0] - 2026-10-01
 
 ### Bounded ServiceGraph

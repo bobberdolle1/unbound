@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"strings"
 	"time"
 
 	"unbound/engine/providers"
 )
+
+const defaultComparisonProfileName = "Recommended (hostfakesplit)"
 
 // BypassVerdict categorizes the impact of the active profile relative to direct ISP connection.
 type BypassVerdict string
@@ -54,6 +57,94 @@ type ProviderController interface {
 	Stop() error
 }
 
+type profileCatalogProvider interface {
+	GetProfiles() []string
+}
+
+func isUsableBuiltinProfile(name string) bool {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" || strings.EqualFold(trimmed, "Custom Profile") {
+		return false
+	}
+	lower := strings.ToLower(trimmed)
+	if lower == "disabled" || lower == "none" || lower == "off" ||
+		strings.HasPrefix(lower, "disabled ") ||
+		strings.Contains(lower, "(disabled)") ||
+		strings.HasPrefix(lower, "[disabled]") {
+		return false
+	}
+	return true
+}
+
+func defaultOSBuiltinCatalog(goos string) []string {
+	switch goos {
+	case "windows":
+		profiles := GetProfiles("")
+		names := make([]string, 0, len(profiles))
+		for _, p := range profiles {
+			names = append(names, p.Name)
+		}
+		return names
+	case "linux":
+		return []string{
+			"Ultimate Bypass (Multi-Strategy)",
+			"Discord Voice Optimized",
+			"YouTube QUIC Aggressive",
+			"Telegram API Bypass",
+			"Standard HTTPS/QUIC",
+			"HTTP + HTTPS Split",
+		}
+	case "darwin":
+		return []string{
+			"Ultimate Bypass (Multi-Strategy)",
+			"Discord TCP Bypass (Web / Gateway)",
+			"YouTube QUIC Aggressive",
+			"Telegram API Bypass",
+			"Standard HTTPS/QUIC",
+			"HTTP + HTTPS Split",
+		}
+	default:
+		return []string{defaultComparisonProfileName, "Ultimate Bypass (Multi-Strategy)"}
+	}
+}
+
+func selectComparisonProfileFromCatalog(profiles []string) string {
+	for _, p := range profiles {
+		if p == defaultComparisonProfileName && isUsableBuiltinProfile(p) {
+			return p
+		}
+	}
+	for _, p := range profiles {
+		if isUsableBuiltinProfile(p) {
+			return p
+		}
+	}
+	return ""
+}
+
+func selectComparisonProfileForOS(pc ProviderController, initialProfile string, goos string) string {
+	if strings.TrimSpace(initialProfile) != "" {
+		return initialProfile
+	}
+	if catalog, ok := pc.(profileCatalogProvider); ok {
+		if chosen := selectComparisonProfileFromCatalog(catalog.GetProfiles()); chosen != "" {
+			return chosen
+		}
+	}
+	if chosen := selectComparisonProfileFromCatalog(defaultOSBuiltinCatalog(goos)); chosen != "" {
+		return chosen
+	}
+	return defaultComparisonProfileName
+}
+
+func isProfileNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	lower := strings.ToLower(err.Error())
+	return strings.Contains(lower, "profile not found") || strings.Contains(lower, "профиль не найден")
+}
+
 // RunBypassComparison performs an A/B test comparing baseline (no bypass) vs current profile.
 // It is strictly transactional: defer guarantees that the original profile and running state
 // are restored upon completion, error, panic, or cancellation.
@@ -85,10 +176,7 @@ func RunBypassComparison(ctx context.Context, pc ProviderController, probeDefs [
 		}
 	}()
 
-	profileToTest := initialProfile
-	if profileToTest == "" {
-		profileToTest = "Recommended (hostfakesplit)"
-	}
+	profileToTest := selectComparisonProfileForOS(pc, initialProfile, runtime.GOOS)
 
 	ce := NewConnectivityEngine(DefaultProbeTimeout)
 
@@ -111,7 +199,17 @@ func RunBypassComparison(ctx context.Context, pc ProviderController, probeDefs [
 
 	// Step 2: Profile measurement (with bypass active)
 	if err := pc.Start(ctx, profileToTest); err != nil {
-		return nil, fmt.Errorf("failed to start profile %q for comparison: %w", profileToTest, err)
+		if initialProfile == "" && isProfileNotFoundError(err) {
+			if fallbackErr := pc.Start(ctx, ""); fallbackErr == nil {
+				if active := pc.CurrentProfile(); active != "" {
+					profileToTest = active
+				}
+				err = nil
+			}
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to start profile %q for comparison: %w", profileToTest, err)
+		}
 	}
 	select {
 	case <-ctx.Done():

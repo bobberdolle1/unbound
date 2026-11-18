@@ -26,6 +26,12 @@ func TestWindowsPackagingLaunchers(t *testing.T) {
 	}
 
 	// Initialize manager to get actual current profiles
+	cfgDir := t.TempDir()
+	restore := engine.SetConfigDirForTest(cfgDir)
+	t.Cleanup(func() {
+		providers.CloseLogger()
+		restore()
+	})
 	manager := providers.NewProviderManager()
 	assets, _ := engine.ExtractAssets()
 	if assets != nil {
@@ -34,7 +40,7 @@ func TestWindowsPackagingLaunchers(t *testing.T) {
 			listsDir = assets.ListDir
 		}
 		wp := providers.NewZapret2WindowsProvider(
-			filepath.Join(assets.BinDir, "winws2.exe"),
+			assets.BinDir,
 			assets.LuaDir,
 			listsDir,
 			assets.EngineSHA256,

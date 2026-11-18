@@ -16,8 +16,10 @@ import (
 // nothing on the most common desktop, the same actions are exposed through the
 // application menu, which GTK renders everywhere.
 func (a *App) setupTray() {
-	runtime.LogInfo(a.ctx, "Tray not used on Linux; engine controls live in the application menu")
+	appRuntimeLogInfo(a.ctx, "Tray not used on Linux; engine controls live in the application menu")
 }
+
+func (a *App) quitTray() {}
 
 // onBeforeClose lets the window close normally.
 //
@@ -29,8 +31,10 @@ func (a *App) onBeforeClose(ctx context.Context) bool {
 }
 
 func (a *App) ShowFromTray() {
-	runtime.WindowUnminimise(a.ctx)
-	runtime.WindowShow(a.ctx)
+	if a.ctx != nil && a.ctx.Value("frontend") != nil {
+		runtime.WindowUnminimise(a.ctx)
+		runtime.WindowShow(a.ctx)
+	}
 }
 
 // defaultEngineAndProfile picks what the menu's Connect action should start:
@@ -84,12 +88,16 @@ func getAppMenu(a *App) *menu.Menu {
 		_ = a.StopEngine()
 	})
 	engineMenu.AddSeparator()
+	engineMenu.AddText("Автоподбор стратегии (vNext)", nil, func(*menu.CallbackData) {
+		a.ShowFromTray()
+		appRuntimeEventsEmit(a.ctx, "open_autotune_vnext")
+	})
 	engineMenu.AddText("Остановить конфликтующие процессы", nil, func(*menu.CallbackData) {
 		_ = a.KillConflicts()
 	})
 	engineMenu.AddSeparator()
 	engineMenu.AddText("Выход", keys.CmdOrCtrl("q"), func(*menu.CallbackData) {
-		runtime.Quit(a.ctx)
+		a.QuitApp()
 	})
 
 	helpMenu := appMenu.AddSubmenu("Справка")
@@ -105,10 +113,11 @@ func getAppMenu(a *App) *menu.Menu {
 		})
 	})
 	helpMenu.AddText("О программе", nil, func(*menu.CallbackData) {
+		statusLabel, _ := formatTrayStatusLabel(a.manager.GetStatus(), a.manager.CurrentProfileName(""), a.isAutoTuneInFlight(), a.GetAutoTuneVNextManagedStatus())
 		runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
 			Type:    runtime.InfoDialog,
 			Title:   "О программе",
-			Message: "Unbound " + a.GetAppVersion() + "\nДвижок обхода DPI\nСтатус: " + a.GetStatus(),
+			Message: "Unbound " + a.GetAppVersion() + "\nДвижок обхода DPI\n" + statusLabel,
 		})
 	})
 

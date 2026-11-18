@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { backendService } from '../services/backend';
+import { AutotuneProgressData } from '../services/window';
 
 export function useEngineController(initialStatus: string = 'Stopped') {
   const [engines, setEngines] = useState<string[]>([]);
@@ -7,12 +8,13 @@ export function useEngineController(initialStatus: string = 'Stopped') {
   const [profiles, setProfiles] = useState<string[]>([]);
   const [selectedProfile, setSelectedProfile] = useState<string>('');
   const [favoriteProfiles, setFavoriteProfiles] = useState<string[]>([]);
+  const [favoritesLoaded, setFavoritesLoaded] = useState<boolean>(false);
   const [status, setStatus] = useState<string>(initialStatus);
 
   // AutoTune States
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [scanProgress, setScanProgress] = useState<string>('');
-  const [autotuneProgress, setAutotuneProgress] = useState<{ msg?: string; progress?: number } | null>(null);
+  const [autotuneProgress, setAutotuneProgress] = useState<AutotuneProgressData | null>(null);
 
   // Load Engines on mount
   useEffect(() => {
@@ -25,7 +27,7 @@ export function useEngineController(initialStatus: string = 'Stopped') {
         } else if (retryCount < 3) {
           setTimeout(() => loadEngines(retryCount + 1), [300, 800, 1500][retryCount]);
         }
-      } catch (err) {
+      } catch {
         if (retryCount < 3) {
           setTimeout(() => loadEngines(retryCount + 1), [300, 800, 1500][retryCount]);
         }
@@ -33,9 +35,15 @@ export function useEngineController(initialStatus: string = 'Stopped') {
     };
     loadEngines();
 
-    backendService.getFavoriteProfiles().then((favs: string[]) => {
-      setFavoriteProfiles(favs || []);
-    }).catch(() => {});
+    backendService
+      .getFavoriteProfiles()
+      .then((favs: string[]) => {
+        if (Array.isArray(favs)) {
+          setFavoriteProfiles(favs);
+          setFavoritesLoaded(true);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   // Fetch Profiles when selectedEngine changes
@@ -46,13 +54,16 @@ export function useEngineController(initialStatus: string = 'Stopped') {
       setSelectedEngine(engineToUse);
     }
     if (engineToUse) {
-      backendService.getProfiles(engineToUse).then((p: string[]) => {
-        const list = p || [];
-        setProfiles(list);
-        if (list.length > 0) {
-          setSelectedProfile((prev) => (prev && list.includes(prev) ? prev : list[0]));
-        }
-      }).catch(() => {});
+      backendService
+        .getProfiles(engineToUse)
+        .then((p: string[]) => {
+          const list = p || [];
+          setProfiles(list);
+          if (list.length > 0) {
+            setSelectedProfile((prev) => (prev && list.includes(prev) ? prev : list[0]));
+          }
+        })
+        .catch(() => {});
     }
   }, [selectedEngine, engines]);
 
@@ -81,6 +92,7 @@ export function useEngineController(initialStatus: string = 'Stopped') {
     try {
       const favs = await backendService.toggleFavoriteProfile(selectedProfile);
       setFavoriteProfiles(favs || []);
+      setFavoritesLoaded(true);
     } catch (err) {
       console.error('ToggleFavorite failed:', err);
     }
@@ -123,6 +135,7 @@ export function useEngineController(initialStatus: string = 'Stopped') {
       selectedProfile,
       sortedProfiles,
       favoriteProfiles,
+      favoritesLoaded,
       status,
       isScanning,
       scanProgress,
@@ -134,6 +147,7 @@ export function useEngineController(initialStatus: string = 'Stopped') {
       setStatus,
       setEngines,
       setProfiles,
+      setFavoriteProfiles,
       setIsScanning,
       setScanProgress,
       setAutotuneProgress,

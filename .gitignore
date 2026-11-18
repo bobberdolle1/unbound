@@ -6,6 +6,9 @@
 *.dylib
 *.bin
 *.sys
+/unbound
+unbound-linux-*
+unbound-darwin-*
 
 # The bundled bypass engine assets are *deliberately* versioned. Without these
 # negations the rules above silently swallow `git add` for updated binaries.
@@ -13,14 +16,20 @@
 !engine/lists/**
 !engine/lua_scripts/**
 
-# ─── Dependencies ───────────────────────────────────────────────────────────
+# ─── Dependencies & worktrees ───────────────────────────────────────────────
 node_modules/
+/.worktrees/
+/website/
 
-# ─── Build output ───────────────────────────────────────────────────────────
+# ─── Build & packaging output ───────────────────────────────────────────────
 build/bin/
 /dist/
 /release/
 /.act-artifacts/
+/RELEASE_MANIFEST.json
+packaging/rpm-build/
+packaging/deb-staging/
+packaging/output/
 
 frontend/package.json.md5
 # Wails embeds frontend/dist, so `go build` fails on a clean clone unless the
@@ -28,7 +37,7 @@ frontend/package.json.md5
 frontend/dist/*
 !frontend/dist/.gitkeep
 
-# ─── Test artifacts ─────────────────────────────────────────────────────────
+# ─── Test & profiling artifacts ─────────────────────────────────────────────
 *.test
 test_bypass.exe
 unbound-*.exe
@@ -37,7 +46,13 @@ unbound-*.tar.gz
 scripts/test-results/
 test_output.txt
 coverage.out
+coverage*.out
+*.prof
 RELEASE_SUMMARY.txt
+
+# ─── Local runtime state guards ─────────────────────────────────────────────
+/autotune_vnext_*.json
+/autotune_vnext_*.key
 
 # ─── References & local docs ────────────────────────────────────────────────
 reference/
@@ -64,4 +79,3 @@ go.work.sum
 # ─── OS ─────────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
-
