@@ -29,25 +29,37 @@ var conflictingProcesses = []struct {
 	{"hiddify", "Hiddify", false},
 }
 
+func isDarwinProcessRunning(proc string) bool {
+	out, err := exec.Command("pgrep", "-x", proc).Output()
+	return err == nil && len(strings.TrimSpace(string(out))) > 0
+}
+
+func isDarwinExternalProxyEnabled() bool {
+	out, err := exec.Command("networksetup", "-listallglobalproxy").Output()
+	return err == nil && strings.Contains(string(out), "Enabled: Yes")
+}
+
 func checkConflictsImpl() []string {
 	conflicts := []string{}
 	for _, p := range conflictingProcesses {
-		out, err := exec.Command("pgrep", "-x", p.Proc).Output()
-		if err == nil && len(strings.TrimSpace(string(out))) > 0 {
+		if !isDarwinProcessRunning(p.Proc) {
+			continue
+		}
+		if p.Kill {
 			conflicts = append(conflicts, "⚠️ "+p.Desc+" запущен")
+		} else {
+			conflicts = append(conflicts, "⚠️ "+p.Desc+" запущен (внешний VPN — закройте вручную)")
 		}
 	}
 
-	if out, err := exec.Command("networksetup", "-listallglobalproxy").Output(); err == nil {
-		if strings.Contains(string(out), "Enabled: Yes") {
-			conflicts = append(conflicts, "⚠️ Системный прокси включён другим приложением")
-		}
+	if isDarwinExternalProxyEnabled() {
+		conflicts = append(conflicts, "⚠️ Системный прокси включён другим приложением (отключите вручную)")
 	}
 
 	return conflicts
 }
 
-func killConflictsImpl() error {
+func resolveConflictsImpl() ([]string, error) {
 	for _, p := range conflictingProcesses {
 		if !p.Kill {
 			continue
@@ -57,31 +69,32 @@ func killConflictsImpl() error {
 		_ = exec.Command("pkill", "-TERM", "-x", p.Proc).Run()
 	}
 
-	// This used to also run `networksetup -setwebproxystate Wi-Fi off`, which
-	// silently rewrote the user's proxy configuration - on the Wi-Fi service
-	// specifically, so it was simultaneously destructive and a no-op on wired
-	// Macs. Conflicting proxies are now reported by checkConflictsImpl and left
-	// for the user to decide about.
-	return nil
+	var skipped []string
+	for _, p := range conflictingProcesses {
+		if !p.Kill && isDarwinProcessRunning(p.Proc) {
+			skipped = append(skipped, p.Desc)
+		}
+	}
+	if isDarwinExternalProxyEnabled() {
+		skipped = append(skipped, "Системный прокси")
+	}
+	return skipped, nil
+}
+
+func killConflictsImpl() error {
+	_, err := resolveConflictsImpl()
+	return err
 }
 
 // killOwnEngineImpl force-stops Unbound's own engine.
-//
-// As on Linux, the engine binary shares the plain `nfqws` name with any
-// system-wide zapret install, so killing by name could take down a service the
-// user runs independently. Stop() already signals the process group we own, and
-// an orphan from an earlier crash is surfaced by CheckConflicts instead.
 func killOwnEngineImpl() error {
 	// Force-kill any orphaned tpws or nfqws processes
 	_ = exec.Command("pkill", "-KILL", "-x", "tpws").Run()
 	_ = exec.Command("pkill", "-KILL", "-x", "nfqws").Run()
 
-	// Flush our pf anchor
+	// Flush our pf anchor if running as root
 	if os.Geteuid() == 0 {
 		_ = exec.Command("pfctl", "-a", "com.unbound.zapret", "-F", "all").Run()
-	} else {
-		script := `do shell script "pfctl -a com.unbound.zapret -F all" with administrator privileges`
-		_ = exec.Command("osascript", "-e", script).Run()
 	}
 	return nil
 }

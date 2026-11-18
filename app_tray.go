@@ -5,7 +5,6 @@ package main
 import (
 	"context"
 	_ "embed"
-	"fmt"
 	"sync"
 	"time"
 
@@ -14,6 +13,8 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"unbound/engine/providers"
 )
+
+var appSystrayQuit = systray.Quit
 
 func getAppMenu(a *App) *menu.Menu {
 	return nil
@@ -58,50 +59,28 @@ func (tc *trayController) sync(current trayStateSnapshot) {
 		prev.pingText == current.pingText &&
 		prev.autoTuning == current.autoTuning &&
 		prev.managed.State == current.managed.State &&
+		prev.managed.Active == current.managed.Active &&
 		prev.managed.StrategyID == current.managed.StrategyID {
 		return
 	}
 
 	// 2. Status & action transitions (Enable/Disable only; no Hide/Show structural mutations)
-	if prev.status != current.status || prev.profile != current.profile || prev.autoTuning != current.autoTuning || prev.managed.State != current.managed.State || prev.managed.StrategyID != current.managed.StrategyID {
-		var statusTitle string
+	if prev.status != current.status || prev.profile != current.profile || prev.autoTuning != current.autoTuning || prev.managed.State != current.managed.State || prev.managed.Active != current.managed.Active || prev.managed.StrategyID != current.managed.StrategyID {
+		statusTitle, _ := formatTrayStatusLabel(current.status, current.profile, current.autoTuning, current.managed)
 		switch {
 		case current.autoTuning:
-			statusTitle = "Статус: Автоподбор..."
 			tc.mConnect.Disable()
 			tc.mDisconnect.Disable()
 			tc.mAutoTune.Disable()
-		case current.managed.State == "STATE_RESTORE_FAILED":
-			statusTitle = "Статус: Требуется восстановление исходного состояния"
-			tc.mConnect.Disable()
-			tc.mDisconnect.Enable()
-			tc.mAutoTune.Disable()
-		case current.managed.Active:
-			statusTitle = fmt.Sprintf("Статус: Управляемая стратегия (%s)", current.managed.StrategyID)
-			tc.mConnect.Disable()
-			tc.mDisconnect.Enable()
-			tc.mAutoTune.Disable()
-		case current.status == providers.StatusRunning:
-			if current.profile != "" {
-				statusTitle = fmt.Sprintf("Статус: Подключено (%s)", current.profile)
-			} else {
-				statusTitle = "Статус: Подключено"
-			}
+		case current.managed.State == "STATE_RESTORE_FAILED" || current.managed.Active || current.status == providers.StatusRunning:
 			tc.mConnect.Disable()
 			tc.mDisconnect.Enable()
 			tc.mAutoTune.Disable()
 		case current.status == providers.StatusStarting:
-			statusTitle = "Статус: Подключение..."
 			tc.mConnect.Disable()
 			tc.mDisconnect.Disable()
 			tc.mAutoTune.Disable()
-		case current.status == providers.StatusError:
-			statusTitle = "Статус: Ошибка"
-			tc.mConnect.Enable()
-			tc.mDisconnect.Disable()
-			tc.mAutoTune.Enable()
 		default:
-			statusTitle = "Статус: Отключено"
 			tc.mConnect.Enable()
 			tc.mDisconnect.Disable()
 			tc.mAutoTune.Enable()
@@ -122,15 +101,8 @@ func (a *App) getTraySnapshot() trayStateSnapshot {
 	status := a.manager.GetStatus()
 	profile := a.manager.CurrentProfileName("")
 	pingText := a.getCachedPingText()
-
-	a.mu.Lock()
-	autoTuning := a.autoTuneCancel != nil
-	service := a.vNextService
-	a.mu.Unlock()
-	managed := AutoTuneVNextManagedStatus{State: "DIRECT"}
-	if service != nil {
-		managed = service.Status()
-	}
+	autoTuning := a.isAutoTuneInFlight()
+	managed := a.GetAutoTuneVNextManagedStatus()
 
 	return trayStateSnapshot{
 		status:     status,
@@ -144,9 +116,20 @@ func (a *App) getTraySnapshot() trayStateSnapshot {
 func (a *App) setupTray() {
 	a.mu.Lock()
 	a.trayCtx, a.trayCancel = context.WithCancel(context.Background())
+	a.trayStarted = true
 	a.mu.Unlock()
 
 	go systray.Run(a.onTrayReady, a.onTrayExit)
+}
+
+func (a *App) quitTray() {
+	a.mu.Lock()
+	started := a.trayStarted
+	a.trayStarted = false
+	a.mu.Unlock()
+	if started && appSystrayQuit != nil {
+		appSystrayQuit()
+	}
 }
 
 func (a *App) onTrayReady() {
@@ -226,7 +209,7 @@ func (a *App) onTrayReady() {
 
 			case <-tc.mAutoTune.ClickedCh:
 				a.ShowFromTray()
-				runtime.EventsEmit(a.ctx, "open_autotune_vnext")
+				appRuntimeEventsEmit(a.ctx, "open_autotune_vnext")
 
 			case <-tc.mQuit.ClickedCh:
 				a.QuitApp()
@@ -237,6 +220,7 @@ func (a *App) onTrayReady() {
 
 func (a *App) onTrayExit() {
 	a.mu.Lock()
+	a.trayStarted = false
 	cancel := a.trayCancel
 	a.mu.Unlock()
 	if cancel != nil {
@@ -258,6 +242,8 @@ func (a *App) onBeforeClose(ctx context.Context) bool {
 }
 
 func (a *App) ShowFromTray() {
-	runtime.WindowShow(a.ctx)
-	runtime.WindowUnminimise(a.ctx)
+	if a.ctx != nil && a.ctx.Value("frontend") != nil {
+		runtime.WindowShow(a.ctx)
+		runtime.WindowUnminimise(a.ctx)
+	}
 }

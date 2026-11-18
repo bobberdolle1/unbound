@@ -1,9 +1,13 @@
 package main
 
 import (
+	"encoding/hex"
+	"errors"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"unbound/engine"
@@ -15,7 +19,22 @@ import (
 	"unbound/engine/recommendation"
 )
 
-const vNextOutcomeLedgerFile = outcomeledger.FileName
+const (
+	vNextOutcomeLedgerFile = outcomeledger.FileName
+	vNextContextKeyBytes   = 32
+)
+
+var vNextHistoryMu sync.Mutex
+
+// VNextHistorySummary exposes privacy-safe counts and status for the local
+// AutoTune vNext outcome ledger without mutating disk or identity state.
+type VNextHistorySummary struct {
+	RecordCount   int    `json:"record_count"`
+	VerifiedCount int    `json:"verified_count"`
+	NegativeCount int    `json:"negative_count"`
+	UpdatedAt     string `json:"updated_at"`
+	ContextReady  bool   `json:"context_ready"`
+}
 
 func getVNextOutcomeLedgerPath() (string, error) {
 	directory, err := engine.GetConfigDir()
@@ -23,6 +42,79 @@ func getVNextOutcomeLedgerPath() (string, error) {
 		return "", err
 	}
 	return filepath.Join(directory, vNextOutcomeLedgerFile), nil
+}
+
+// isVNextContextKeyReady inspects the local HMAC context key file read-only
+// without creating, rotating, or caching key material.
+func isVNextContextKeyReady(configDir string) bool {
+	if strings.TrimSpace(configDir) == "" {
+		return false
+	}
+	raw, err := os.ReadFile(filepath.Join(configDir, historyid.ContextKeyFileName))
+	if err != nil || len(raw) == 0 {
+		return false
+	}
+	if len(raw) == vNextContextKeyBytes {
+		return true
+	}
+	trimmed := strings.TrimSpace(string(raw))
+	if len(trimmed) == hex.EncodedLen(vNextContextKeyBytes) {
+		decoded, decErr := hex.DecodeString(trimmed)
+		return decErr == nil && len(decoded) == vNextContextKeyBytes
+	}
+	return false
+}
+
+func readVNextHistorySummary() VNextHistorySummary {
+	vNextHistoryMu.Lock()
+	defer vNextHistoryMu.Unlock()
+
+	configDir, err := engine.GetConfigDir()
+	if err != nil {
+		return VNextHistorySummary{}
+	}
+	summary := VNextHistorySummary{
+		ContextReady: isVNextContextKeyReady(configDir),
+	}
+	ledgerPath := filepath.Join(configDir, vNextOutcomeLedgerFile)
+	loaded := outcomeledger.Load(ledgerPath)
+	if loaded.State != outcomeledger.LoadValid {
+		return summary
+	}
+
+	summary.RecordCount = len(loaded.Ledger.Entries)
+	var latest time.Time
+	for _, entry := range loaded.Ledger.Entries {
+		if entry.RecordedAt.After(latest) {
+			latest = entry.RecordedAt
+		}
+		switch entry.Outcome {
+		case autotunevnext.OutcomeVerifiedFixed:
+			if entry.InvalidatedAt == nil {
+				summary.VerifiedCount++
+			}
+		case autotunevnext.OutcomeStillFailing, autotunevnext.OutcomeRegressionObserved, autotunevnext.OutcomeLifecycleFailure:
+			summary.NegativeCount++
+		}
+	}
+	if !latest.IsZero() {
+		summary.UpdatedAt = latest.UTC().Format(time.RFC3339)
+	}
+	return summary
+}
+
+func clearVNextHistory() error {
+	vNextHistoryMu.Lock()
+	defer vNextHistoryMu.Unlock()
+
+	path, err := getVNextOutcomeLedgerPath()
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 func productProbeContracts(rawTarget string, target autotunevnext.Target, controls []autotunevnext.Target) (observatory.ProbeSpec, []observatory.ProbeSpec, error) {
@@ -82,9 +174,13 @@ type productHistoryAdvisor struct {
 	// never short-circuits current validation.
 	identities historyid.Bundle
 	now        func() time.Time
+	onAdvise   func()
 }
 
 func (advisor productHistoryAdvisor) Advise(context autotunevnext.AdvisorContext) autotunevnext.Advice {
+	if advisor.onAdvise != nil {
+		advisor.onAdvise()
+	}
 	identity, err := advisor.probe.Identity()
 	if err != nil {
 		return autotunevnext.Advice{}
@@ -115,6 +211,9 @@ type productOutcomeLedger struct {
 // unavailable; an identity that genuinely failed must be, so a user is never
 // told history reuse is safe when it is not.
 func loadProductOutcomeLedger(identities historyid.Bundle) productOutcomeLedger {
+	vNextHistoryMu.Lock()
+	defer vNextHistoryMu.Unlock()
+
 	identityLimitations := identities.Limitations()
 	withIdentities := func(base []string) []string {
 		return append(append([]string(nil), base...), identityLimitations...)
@@ -180,6 +279,8 @@ func persistProductOutcomes(result autotunevnext.Result, history productOutcomeL
 	if !changed {
 		return ""
 	}
+	vNextHistoryMu.Lock()
+	defer vNextHistoryMu.Unlock()
 	path, err := getVNextOutcomeLedgerPath()
 	if err != nil || outcomeledger.Save(path, updated) != nil {
 		return "HISTORY_PERSIST_FAILED"
