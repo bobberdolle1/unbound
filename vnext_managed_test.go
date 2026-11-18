@@ -98,7 +98,7 @@ type managedVNextRequestedAssets struct{}
 func (managedVNextRequestedAssets) Resolve(_ context.Context, _ backendcap.Backend, ids []string) ([]autotunevnext.ResolvedAsset, error) {
 	assets := make([]autotunevnext.ResolvedAsset, 0, len(ids))
 	for _, id := range ids {
-		assets = append(assets, autotunevnext.ResolvedAsset{ID: id, EngineValue: "test-" + id})
+		assets = append(assets, autotunevnext.ResolvedAsset{ID: id, Kind: autotunevnext.AssetKindBlobSymbol, EngineValue: "test-" + id})
 	}
 	return assets, nil
 }

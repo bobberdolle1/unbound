@@ -210,7 +210,7 @@ func (s *productVNextService) resolveGrant(token string) (verifiedSelectionGrant
 		}
 		return verifiedSelectionGrant{}, errors.New("APPLY_TOKEN_INVALID")
 	}
-	if s.active != nil {
+	if s.active != nil || (s.graphManaged != nil && s.graphManaged.isActiveOrDirty()) {
 		return verifiedSelectionGrant{}, errors.New("OPERATION_CONFLICT")
 	}
 	return grant, nil
@@ -279,6 +279,7 @@ func (s *productVNextService) Apply(ctx context.Context, token string) AutoTuneV
 		}
 		return AutoTuneVNextManagedStatus{State: "NOT_APPLIED"}
 	}
+	_ = clearVNextGraphState()
 	state := persistedVNextState{SchemaVersion: vNextManagedSchema, Enabled: true, Target: grant.publicTarget, StrategyID: grant.strategyID, Fingerprint: grant.fingerprint, Backend: string(runtimeBinding.backend), SavedAt: time.Now().UTC().Format(time.RFC3339Nano)}
 	if err := saveVNextManagedState(state); err != nil {
 		if revertErr := activation.Revert(context.Background()); revertErr != nil {
@@ -310,7 +311,52 @@ func (s *productVNextService) Apply(ctx context.Context, token string) AutoTuneV
 func (s *productVNextService) DeactivateManaged(ctx context.Context, preserveIntent bool) AutoTuneVNextManagedStatus {
 	s.mu.Lock()
 	active := s.active
+	graphManaged := s.graphManaged
 	s.mu.Unlock()
+	if graphManaged != nil {
+		if preserveIntent {
+			if err := graphManaged.Shutdown(ctx); err != nil {
+				status := AutoTuneVNextManagedStatus{State: "STATE_RESTORE_FAILED"}
+				s.mu.Lock()
+				s.fault = status
+				s.mu.Unlock()
+				return status
+			}
+			s.mu.Lock()
+			if s.graphManaged == graphManaged {
+				s.graphActivation = nil
+			}
+			s.mu.Unlock()
+			if active == nil {
+				return s.Status()
+			}
+		} else {
+			if err := graphManaged.Revert(ctx); err != nil {
+				status := AutoTuneVNextManagedStatus{State: "STATE_RESTORE_FAILED"}
+				s.mu.Lock()
+				s.fault = status
+				s.mu.Unlock()
+				return status
+			}
+			s.mu.Lock()
+			if s.graphManaged == graphManaged {
+				s.graphManaged = nil
+				s.graphActivation = nil
+			}
+			s.fault = AutoTuneVNextManagedStatus{}
+			s.dormant = AutoTuneVNextManagedStatus{}
+			s.invalidateGrantsLocked()
+			s.mu.Unlock()
+			if active == nil {
+				if err := clearVNextManagedState(); err != nil {
+					status := AutoTuneVNextManagedStatus{State: "PERSISTENCE_UPDATE_FAILED"}
+					s.setDormant(status)
+					return status
+				}
+				return AutoTuneVNextManagedStatus{State: "REVERTED"}
+			}
+		}
+	}
 	if active != nil {
 		if err := active.activation.Revert(ctx); err != nil {
 			status := managedStatusForGrant("STATE_RESTORE_FAILED", false, active.grant)
@@ -344,6 +390,11 @@ func (s *productVNextService) DeactivateManaged(ctx context.Context, preserveInt
 			s.setDormant(status)
 			return status
 		}
+		status := AutoTuneVNextManagedStatus{State: "PERSISTENCE_UPDATE_FAILED"}
+		s.setDormant(status)
+		return status
+	}
+	if err := clearVNextGraphState(); err != nil {
 		status := AutoTuneVNextManagedStatus{State: "PERSISTENCE_UPDATE_FAILED"}
 		s.setDormant(status)
 		return status
@@ -382,9 +433,17 @@ func (s *productVNextService) rememberDormant(status AutoTuneVNextManagedStatus)
 	return status
 }
 
+func graphPrimaryStrategyID(state persistedVNextGraphState) string {
+	if len(state.Nodes) > 0 {
+		return state.Nodes[0].StrategyID
+	}
+	return ""
+}
+
 func (s *productVNextService) Status() AutoTuneVNextManagedStatus {
 	s.mu.Lock()
 	active := s.active
+	graphManaged := s.graphManaged
 	health := s.health
 	fault := s.fault
 	dormant := s.dormant
@@ -400,17 +459,78 @@ func (s *productVNextService) Status() AutoTuneVNextManagedStatus {
 		}
 		return managedStatusForGrant("VNEXT_MANAGED_ACTIVE", true, active.grant)
 	}
+	if graphManaged != nil {
+		gs := graphManaged.currentStatus()
+		graphManaged.mu.Lock()
+		var strategyID string
+		if graphManaged.intent != nil {
+			strategyID = graphPrimaryStrategyID(*graphManaged.intent)
+		}
+		graphManaged.mu.Unlock()
+		switch gs.State {
+		case GraphManagedFault:
+			return AutoTuneVNextManagedStatus{
+				State:       "STATE_RESTORE_FAILED",
+				Target:      primaryURLForGraphPreset(gs.ServiceID),
+				StrategyID:  strategyID,
+				Fingerprint: shortManagedFingerprint(gs.GraphFingerprint),
+				Backend:     gs.Backend,
+			}
+		case GraphManagedActive:
+			return AutoTuneVNextManagedStatus{
+				State:       string(GraphManagedActive),
+				Active:      true,
+				Target:      primaryURLForGraphPreset(gs.ServiceID),
+				StrategyID:  strategyID,
+				Fingerprint: shortManagedFingerprint(gs.GraphFingerprint),
+				Backend:     gs.Backend,
+			}
+		case GraphManagedRevalidation:
+			return AutoTuneVNextManagedStatus{
+				State:             "SAVED_REVALIDATION_PENDING",
+				NeedsRevalidation: true,
+				Target:            primaryURLForGraphPreset(gs.ServiceID),
+				StrategyID:        strategyID,
+				Fingerprint:       shortManagedFingerprint(gs.GraphFingerprint),
+				Backend:           gs.Backend,
+			}
+		}
+	}
 	if dormant.State != "" {
 		return dormant
 	}
 	state, present, err := loadVNextManagedState()
-	if err != nil {
+	graphState, graphPresent, graphErr := loadVNextGraphState()
+	if err != nil || graphErr != nil {
 		return AutoTuneVNextManagedStatus{State: "SAVED_STRATEGY_STALE", NeedsRevalidation: true}
 	}
-	if !present {
+	var singlePtr *persistedVNextState
+	if present {
+		singlePtr = &state
+	}
+	var graphPtr *persistedVNextGraphState
+	if graphPresent {
+		graphPtr = &graphState
+	}
+	owner, ownerErr := resolveManagedRuntimeOwnership(singlePtr, graphPtr)
+	if ownerErr != nil {
+		return AutoTuneVNextManagedStatus{State: "SAVED_STRATEGY_STALE", NeedsRevalidation: true}
+	}
+	switch owner {
+	case ManagedRuntimeGraphManaged:
+		return AutoTuneVNextManagedStatus{
+			State:             "SAVED_REVALIDATION_PENDING",
+			NeedsRevalidation: true,
+			Target:            primaryURLForGraphPreset(graphState.ServiceID),
+			StrategyID:        graphPrimaryStrategyID(graphState),
+			Fingerprint:       shortManagedFingerprint(graphState.GraphFingerprint),
+			Backend:           graphState.Backend,
+		}
+	case ManagedRuntimeSingleHost:
+		return AutoTuneVNextManagedStatus{State: "SAVED_REVALIDATION_PENDING", NeedsRevalidation: true, Target: state.Target, StrategyID: state.StrategyID, Fingerprint: shortManagedFingerprint(state.Fingerprint), Backend: state.Backend}
+	default:
 		return AutoTuneVNextManagedStatus{State: "DIRECT"}
 	}
-	return AutoTuneVNextManagedStatus{State: "SAVED_REVALIDATION_PENDING", NeedsRevalidation: true, Target: state.Target, StrategyID: state.StrategyID, Fingerprint: shortManagedFingerprint(state.Fingerprint), Backend: state.Backend}
 }
 
 func activeManagedCaptureScope(target autotunevnext.Target, candidate autotunevnext.ExecutableCandidate) autotunevnext.ServiceScopeSnapshot {
@@ -422,7 +542,14 @@ func activeManagedCaptureScope(target autotunevnext.Target, candidate autotunevn
 func (s *productVNextService) ManagedHealth(ctx context.Context) ManagedHealthState {
 	s.mu.Lock()
 	active := s.active
+	graphManaged := s.graphManaged
+	graphActivation := s.graphActivation
 	s.mu.Unlock()
+	if active == nil && graphManaged != nil && graphActivation != nil {
+		state := s.graphManagedHealth(ctx, graphManaged, graphActivation)
+		s.setManagedHealth(state)
+		return state
+	}
 	if active == nil || active.activation.VerifyActive(ctx) != nil {
 		s.setManagedHealth(ManagedHealthFault)
 		return ManagedHealthFault
@@ -505,8 +632,9 @@ func concreteManagedObservationEdge(observation observatory.ObservationResult) (
 func (s *productVNextService) RevalidateActive(ctx context.Context) AutoTuneVNextManagedStatus {
 	s.mu.Lock()
 	active := s.active
+	graphManaged := s.graphManaged
 	s.mu.Unlock()
-	if active == nil {
+	if active == nil && (graphManaged == nil || !graphManaged.isActiveOrDirty()) {
 		return s.Status()
 	}
 	if state := s.Suspend(ctx); state.State == "STATE_RESTORE_FAILED" {
@@ -520,11 +648,27 @@ func (s *productVNextService) RevalidateActive(ctx context.Context) AutoTuneVNex
 // process, or capture state.
 func (s *productVNextService) RevalidateSaved(ctx context.Context) AutoTuneVNextManagedStatus {
 	state, present, err := loadVNextManagedState()
-	if err != nil {
+	graphState, graphPresent, graphErr := loadVNextGraphState()
+	if err != nil || graphErr != nil {
 		return s.rememberDormant(AutoTuneVNextManagedStatus{State: "SAVED_STRATEGY_STALE", NeedsRevalidation: true})
 	}
-	if !present {
+	var singlePtr *persistedVNextState
+	if present {
+		singlePtr = &state
+	}
+	var graphPtr *persistedVNextGraphState
+	if graphPresent {
+		graphPtr = &graphState
+	}
+	owner, ownerErr := resolveManagedRuntimeOwnership(singlePtr, graphPtr)
+	if ownerErr != nil {
+		return s.rememberDormant(AutoTuneVNextManagedStatus{State: "SAVED_STRATEGY_STALE", NeedsRevalidation: true})
+	}
+	switch owner {
+	case ManagedRuntimeDirect:
 		return s.rememberDormant(AutoTuneVNextManagedStatus{State: "DIRECT"})
+	case ManagedRuntimeGraphManaged:
+		return s.RevalidateSavedGraph(ctx)
 	}
 	target, publicTarget, err := normalizeVNextTarget(state.Target)
 	if err != nil {
