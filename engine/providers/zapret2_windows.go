@@ -331,7 +331,7 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 
 	cmd := e.commandFactory(winwsPath, args...)
 	cmd.Dir = e.binPath
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		e.status = StatusError
