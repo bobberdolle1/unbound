@@ -13,7 +13,6 @@ import "C"
 import (
 	"context"
 	_ "embed"
-	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -55,7 +54,7 @@ func onTrayAction(actionTag C.int) {
 	case 1: // Show Window
 		a.ShowFromTray()
 	case 2: // Hide Window
-		if a.ctx != nil {
+		if a.ctx != nil && a.ctx.Value("frontend") != nil {
 			runtime.WindowHide(a.ctx)
 		}
 	case 3: // Connect
@@ -112,9 +111,10 @@ func (a *App) setupTray() {
 
 	a.mu.Lock()
 	a.trayCtx, a.trayCancel = context.WithCancel(context.Background())
+	a.trayStarted = true
 	a.mu.Unlock()
 
-	runtime.LogInfo(a.ctx, "macOS Native Status Bar Tray initialized")
+	appRuntimeLogInfo(a.ctx, "macOS Native Status Bar Tray initialized")
 
 	// Set up Cocoa Dock click observer and Status Bar Item
 	C.setupDockClickObserver()
@@ -133,12 +133,12 @@ func (a *App) setupTray() {
 				return
 			case <-a.trayUpdateTrigger:
 				a.syncNativeStatusBar()
-				if a.ctx != nil {
+				if a.ctx != nil && a.ctx.Value("frontend") != nil {
 					runtime.MenuSetApplicationMenu(a.ctx, getAppMenu(a))
 				}
 			case <-ticker.C:
 				a.syncNativeStatusBar()
-				if a.ctx != nil {
+				if a.ctx != nil && a.ctx.Value("frontend") != nil {
 					runtime.MenuSetApplicationMenu(a.ctx, getAppMenu(a))
 				}
 			}
@@ -146,27 +146,23 @@ func (a *App) setupTray() {
 	}()
 }
 
+func (a *App) quitTray() {
+	a.mu.Lock()
+	a.trayStarted = false
+	a.mu.Unlock()
+}
+
 func (a *App) syncNativeStatusBar() {
 	status := a.manager.GetStatus()
 	currentProfile := a.manager.CurrentProfileName("")
 	pingText := a.getCachedPingText()
+	autoTuning := a.isAutoTuneInFlight()
+	managed := a.GetAutoTuneVNextManagedStatus()
 
-	var statusLabel string
+	statusLabel, running := formatTrayStatusLabel(status, currentProfile, autoTuning, managed)
 	isRunning := 0
-	switch status {
-	case providers.StatusRunning:
+	if running {
 		isRunning = 1
-		if currentProfile != "" {
-			statusLabel = fmt.Sprintf("Статус: Подключено (%s)", currentProfile)
-		} else {
-			statusLabel = "Статус: Подключено"
-		}
-	case providers.StatusStarting:
-		statusLabel = "Статус: Подключение..."
-	case providers.StatusError:
-		statusLabel = "Статус: Ошибка"
-	default:
-		statusLabel = "Статус: Отключено"
 	}
 
 	engines := a.manager.GetEngineNames()
@@ -174,10 +170,12 @@ func (a *App) syncNativeStatusBar() {
 	activeProfileIndex := -1
 	if len(engines) > 0 {
 		profiles = a.manager.GetProfiles(engines[0])
-		for i, p := range profiles {
-			if strings.EqualFold(p, currentProfile) {
-				activeProfileIndex = i
-				break
+		if status == providers.StatusRunning && !managed.Active {
+			for i, p := range profiles {
+				if strings.EqualFold(p, currentProfile) {
+					activeProfileIndex = i
+					break
+				}
 			}
 		}
 	}
@@ -219,7 +217,7 @@ func (a *App) onBeforeClose(ctx context.Context) bool {
 	}
 
 	// Hide window to status bar tray when 'X' is clicked
-	if a.ctx != nil {
+	if a.ctx != nil && a.ctx.Value("frontend") != nil {
 		runtime.WindowHide(a.ctx)
 	}
 	return true
@@ -227,7 +225,7 @@ func (a *App) onBeforeClose(ctx context.Context) bool {
 
 func (a *App) ShowFromTray() {
 	C.showAppWindowNative()
-	if a.ctx != nil {
+	if a.ctx != nil && a.ctx.Value("frontend") != nil {
 		runtime.WindowShow(a.ctx)
 		runtime.WindowUnminimise(a.ctx)
 	}
@@ -264,6 +262,9 @@ func getAppMenu(a *App) *menu.Menu {
 	status := a.manager.GetStatus()
 	currentProfile := a.manager.CurrentProfileName("")
 	pingText := a.getCachedPingText()
+	autoTuning := a.isAutoTuneInFlight()
+	managed := a.GetAutoTuneVNextManagedStatus()
+	statusLabel, running := formatTrayStatusLabel(status, currentProfile, autoTuning, managed)
 
 	// 1. App Submenu (UNBOUND)
 	fileMenu := appMenu.AddSubmenu("UNBOUND")
@@ -271,7 +272,7 @@ func getAppMenu(a *App) *menu.Menu {
 		runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
 			Type:    runtime.InfoDialog,
 			Title:   "О программе UNBOUND",
-			Message: "UNBOUND v" + engine.Version + "\nUltimate DPI Bypass Engine for macOS\n\nСтатус: " + string(status),
+			Message: "UNBOUND v" + engine.Version + "\nUltimate DPI Bypass Engine for macOS\n\n" + statusLabel,
 		})
 	})
 	fileMenu.AddSeparator()
@@ -279,7 +280,9 @@ func getAppMenu(a *App) *menu.Menu {
 		a.ShowFromTray()
 	})
 	fileMenu.AddText("Скрыть окно", keys.CmdOrCtrl("h"), func(cbdata *menu.CallbackData) {
-		runtime.WindowHide(a.ctx)
+		if a.ctx != nil && a.ctx.Value("frontend") != nil {
+			runtime.WindowHide(a.ctx)
+		}
 	})
 	fileMenu.AddSeparator()
 	fileMenu.AddText("Завершить UNBOUND", keys.CmdOrCtrl("q"), func(cbdata *menu.CallbackData) {
@@ -288,27 +291,11 @@ func getAppMenu(a *App) *menu.Menu {
 
 	// 2. Движок (Engine controls & status)
 	engineMenu := appMenu.AddSubmenu("Движок")
-
-	var statusLabel string
-	switch status {
-	case providers.StatusRunning:
-		if currentProfile != "" {
-			statusLabel = fmt.Sprintf("Статус: Подключено (%s)", currentProfile)
-		} else {
-			statusLabel = "Статус: Подключено"
-		}
-	case providers.StatusStarting:
-		statusLabel = "Статус: Подключение..."
-	case providers.StatusError:
-		statusLabel = "Статус: Ошибка"
-	default:
-		statusLabel = "Статус: Отключено"
-	}
 	engineMenu.AddText(statusLabel, nil, nil)
 	engineMenu.AddText(pingText, nil, nil)
 	engineMenu.AddSeparator()
 
-	if status != providers.StatusRunning {
+	if !running {
 		engineMenu.AddText("Подключить", keys.CmdOrCtrl("r"), func(*menu.CallbackData) {
 			eng, prof := a.defaultEngineAndProfile()
 			if eng != "" {
@@ -322,6 +309,11 @@ func getAppMenu(a *App) *menu.Menu {
 			a.TriggerTrayUpdate()
 		})
 	}
+
+	engineMenu.AddText("Автоподбор стратегии (vNext)", nil, func(*menu.CallbackData) {
+		a.ShowFromTray()
+		appRuntimeEventsEmit(a.ctx, "open_autotune_vnext")
+	})
 
 	engineMenu.AddText("Legacy AutoTune", nil, func(*menu.CallbackData) {
 		go func() {
@@ -341,7 +333,7 @@ func getAppMenu(a *App) *menu.Menu {
 			for _, p := range profiles {
 				pName := p
 				label := pName
-				if status == providers.StatusRunning && strings.EqualFold(pName, currentProfile) {
+				if status == providers.StatusRunning && !managed.Active && strings.EqualFold(pName, currentProfile) {
 					label = "✓ " + pName
 				}
 				profMenu.AddText(label, nil, func(*menu.CallbackData) {
@@ -358,7 +350,9 @@ func getAppMenu(a *App) *menu.Menu {
 		a.ShowFromTray()
 	})
 	windowMenu.AddText("Скрыть в строку меню", nil, func(*menu.CallbackData) {
-		runtime.WindowHide(a.ctx)
+		if a.ctx != nil && a.ctx.Value("frontend") != nil {
+			runtime.WindowHide(a.ctx)
+		}
 	})
 	windowMenu.AddSeparator()
 	windowMenu.AddText("Диагностика", nil, func(*menu.CallbackData) {

@@ -44,8 +44,13 @@ func isProcessRunning(name string) bool {
 func checkConflictsImpl() []string {
 	conflicts := []string{}
 	for _, p := range conflictingProcesses {
-		if isProcessRunning(p.Proc) {
+		if !isProcessRunning(p.Proc) {
+			continue
+		}
+		if p.Kill {
 			conflicts = append(conflicts, "⚠️ "+p.Desc+" запущен")
+		} else {
+			conflicts = append(conflicts, "⚠️ "+p.Desc+" запущен (внешний VPN — закройте вручную)")
 		}
 	}
 
@@ -61,7 +66,7 @@ func checkConflictsImpl() []string {
 	return conflicts
 }
 
-func killConflictsImpl() error {
+func resolveConflictsImpl() ([]string, error) {
 	for _, p := range conflictingProcesses {
 		if !p.Kill {
 			continue
@@ -70,17 +75,22 @@ func killConflictsImpl() error {
 		// SIGKILL here would strand them and break the user's networking.
 		_ = exec.Command("pkill", "-TERM", "-x", p.Proc).Run()
 	}
-	return nil
+
+	var skipped []string
+	for _, p := range conflictingProcesses {
+		if !p.Kill && isProcessRunning(p.Proc) {
+			skipped = append(skipped, p.Desc)
+		}
+	}
+	return skipped, nil
+}
+
+func killConflictsImpl() error {
+	_, err := resolveConflictsImpl()
+	return err
 }
 
 // killOwnEngineImpl force-stops Unbound's own engine.
-//
-// On Linux the engine binary is plain `nfqws`, the same name a system-wide
-// zapret service uses, so there is no safe way to force-kill "ours" by name -
-// `pkill nfqws` would take down a service the user runs independently. The
-// provider already signals its own process group on Stop(), which covers the
-// process we started; a genuinely orphaned nfqws from an earlier crash shows up
-// in CheckConflicts, where the user can decide about it explicitly.
 func killOwnEngineImpl() error {
 	return nil
 }

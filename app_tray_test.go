@@ -4,6 +4,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"testing"
 	"unbound/engine/providers"
@@ -129,5 +130,29 @@ func TestTrayStateTransitionsStress(t *testing.T) {
 			}
 			_ = st
 		}
+	}
+}
+
+func TestShutdownQuitsStartedSystrayOnce(t *testing.T) {
+	prevQuit := appSystrayQuit
+	quitCalls := 0
+	appSystrayQuit = func() { quitCalls++ }
+	defer func() { appSystrayQuit = prevQuit }()
+
+	// Shutdown without setupTray must not invoke systray.Quit
+	app1 := NewApp()
+	app1.shutdown(context.Background())
+	if quitCalls != 0 {
+		t.Fatalf("systray.Quit called without trayStarted: %d", quitCalls)
+	}
+
+	// Shutdown with trayStarted invokes systray.Quit exactly once
+	app2 := NewApp()
+	app2.trayCtx, app2.trayCancel = context.WithCancel(context.Background())
+	app2.trayStarted = true
+	app2.shutdown(context.Background())
+	app2.quitTray()
+	if quitCalls != 1 {
+		t.Fatalf("expected 1 systray.Quit call, got %d", quitCalls)
 	}
 }

@@ -39,20 +39,45 @@ var conflictingProcesses = []struct {
 	{"shadowsocks.exe", "Shadowsocks", false},
 }
 
+func runningProcessSetWindows() map[string]struct{} {
+	cmd := exec.Command("tasklist", "/FO", "CSV", "/NH")
+	cmd.SysProcAttr = engine.GetHiddenSysProcAttr()
+	out, err := cmd.Output()
+	running := make(map[string]struct{})
+	if err != nil {
+		return running
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		first, _, _ := strings.Cut(line, ",")
+		imageName := strings.ToLower(strings.Trim(first, `"`))
+		if imageName != "" {
+			running[imageName] = struct{}{}
+		}
+	}
+	return running
+}
+
 func checkConflictsImpl() []string {
+	running := runningProcessSetWindows()
 	conflicts := []string{}
 	for _, p := range conflictingProcesses {
-		cmd := exec.Command("tasklist", "/FI", "IMAGENAME eq "+p.Exe, "/NH")
-		cmd.SysProcAttr = engine.GetHiddenSysProcAttr()
-		out, _ := cmd.Output()
-		if strings.Contains(string(out), p.Exe) {
+		if _, ok := running[strings.ToLower(p.Exe)]; !ok {
+			continue
+		}
+		if p.Kill {
 			conflicts = append(conflicts, "⚠️ "+p.Desc+" запущен")
+		} else {
+			conflicts = append(conflicts, "⚠️ "+p.Desc+" запущен (внешний VPN — закройте вручную)")
 		}
 	}
 	return conflicts
 }
 
-func killConflictsImpl() error {
+func resolveConflictsImpl() ([]string, error) {
 	for _, p := range conflictingProcesses {
 		if !p.Kill {
 			continue
@@ -69,7 +94,22 @@ func killConflictsImpl() error {
 	reset.SysProcAttr = engine.GetHiddenSysProcAttr()
 	_ = reset.Run()
 
-	return nil
+	running := runningProcessSetWindows()
+	var skipped []string
+	for _, p := range conflictingProcesses {
+		if p.Kill {
+			continue
+		}
+		if _, ok := running[strings.ToLower(p.Exe)]; ok {
+			skipped = append(skipped, p.Desc)
+		}
+	}
+	return skipped, nil
+}
+
+func killConflictsImpl() error {
+	_, err := resolveConflictsImpl()
+	return err
 }
 
 // killOwnEngineImpl force-terminates Unbound's own engine and releases the
