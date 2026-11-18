@@ -13,8 +13,19 @@ BUILD_CHANNEL="${UNBOUND_BUILD_CHANNEL:-release}"
 DIST="$ROOT/release"
 APP=""
 WORK=""
+DMG_STAGE=""
 SMOKE=""
 PKG_SMOKE=""
+
+cleanup() {
+  local exit_code=$?
+  [ -n "$WORK" ] && rm -rf "$WORK"
+  [ -n "$DMG_STAGE" ] && rm -rf "$DMG_STAGE"
+  [ -n "$SMOKE" ] && rm -rf "$SMOKE"
+  [ -n "$PKG_SMOKE" ] && rm -rf "$PKG_SMOKE"
+  exit "$exit_code"
+}
+trap cleanup EXIT
 
 require_version() {
   local expected="$1"
@@ -65,7 +76,6 @@ RAW_APP="$(find_bundle)" || {
 # reattach FinderInfo under build/bin after removal, so sign and package a
 # copied bundle in a non-FileProvider temporary directory.
 WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK" "$DMG_STAGE" "$SMOKE" "$PKG_SMOKE"' EXIT
 APP="$WORK/Unbound.app"
 ditto "$RAW_APP" "$APP"
 unsafe_xattrs "$APP"
@@ -92,7 +102,6 @@ ditto -c -k --keepParent "$BUNDLE" "$DIST/$NAME.zip"
 
 DMG_STAGE="$(mktemp -d)"
 ditto "$APP" "$DMG_STAGE/Unbound.app"
-trap 'rm -rf "$WORK" "$DMG_STAGE" "$SMOKE" "$PKG_SMOKE"' EXIT
 unsafe_xattrs "$DMG_STAGE/Unbound.app"
 ln -s /Applications "$DMG_STAGE/Applications"
 hdiutil create -volname UNBOUND -srcfolder "$DMG_STAGE" -ov -format UDZO "$DIST/$NAME.dmg"

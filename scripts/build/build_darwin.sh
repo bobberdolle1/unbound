@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build native macOS release artifacts for UNBOUND.
-# Usage: ./scripts/build/build_darwin.sh [amd64|arm64|universal] [debug]
+# Usage: ./scripts/build/build_darwin.sh [amd64|arm64|universal] [debug] [--update-cask]
 # Environment: UNBOUND_VERSION=<override>, UNBOUND_BUILD_COMMIT=<sha>,
 # UNBOUND_BUILD_DIRTY=true|false|unknown, UNBOUND_BUILD_CHANNEL=development|release
 
@@ -8,21 +8,27 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-PLATFORM="${1:-universal}"
-MODE="${2:-}"
+PLATFORM="universal"
+MODE=""
+UPDATE_CASK=0
 
-case "$PLATFORM" in
-    amd64|arm64|universal) ;;
-    *)
-        echo "[ERROR] Unsupported platform: $PLATFORM (use amd64, arm64, or universal)" >&2
-        exit 1
-        ;;
-esac
-
-if [ -n "$MODE" ] && [ "$MODE" != "debug" ]; then
-    echo "[ERROR] Unsupported mode: $MODE (leave empty for release, or pass debug)" >&2
-    exit 1
-fi
+for arg in "$@"; do
+    case "$arg" in
+        amd64|arm64|universal)
+            PLATFORM="$arg"
+            ;;
+        debug)
+            MODE="debug"
+            ;;
+        --update-cask)
+            UPDATE_CASK=1
+            ;;
+        *)
+            echo "[ERROR] Unsupported argument: $arg (usage: build_darwin.sh [amd64|arm64|universal] [debug] [--update-cask])" >&2
+            exit 1
+            ;;
+    esac
+done
 
 if [ "$(uname -s)" != "Darwin" ]; then
     echo "[ERROR] This build script must be run on macOS." >&2
@@ -190,9 +196,9 @@ echo ""
 echo "[INFO] Calculating SHA256 checksums..."
 (cd "$DIST_DIR" && shasum -a 256 "$PKG_NAME" "$DMG_NAME" "$ZIP_NAME" | tee SHA256SUMS.txt)
 
-# Update Homebrew Cask formula if present
+# Update Homebrew Cask formula only when explicitly requested via --update-cask
 CASK_FILE="$PROJECT_ROOT/Casks/unbound.rb"
-if [ -f "$CASK_FILE" ]; then
+if [ "$UPDATE_CASK" -eq 1 ] && [ -f "$CASK_FILE" ]; then
     PKG_SHA256="$(shasum -a 256 "$PKG_PATH" | cut -d' ' -f1)"
     python3 -c "
 cask_path = '$CASK_FILE'
@@ -207,4 +213,6 @@ with open(cask_path, 'w') as f:
     f.write(text)
 print('[INFO] Updated Casks/unbound.rb with sha256: $PKG_SHA256')
 "
+elif [ -f "$CASK_FILE" ]; then
+    echo "[INFO] Skipping Casks/unbound.rb in-place update (pass --update-cask to update formula)."
 fi

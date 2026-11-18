@@ -15,7 +15,7 @@ steps:
     key: windows-ci
     agents:
       queue: windows
-    command: "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/ci/windows.ps1"
+    command: "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/ci/windows.ps1"
 
   - label: ":mac: canonical CI"
     key: macos-ci
