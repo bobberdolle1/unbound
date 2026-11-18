@@ -52,41 +52,68 @@ func (o RuntimeOptions) emit(entry PhysicalLog) {
 	}
 }
 
-// NewProductAssetResolver materializes only assets extracted and hash-verified
-// from the embedded product bundle. Logical StrategyIR IDs never select paths.
+// NewProductAssetResolver materializes managed hostlist/ipset assets, checking
+// user-synced engine.GetListsDir() first (when populated with regular .txt
+// files) before falling back to hash-verified extracted paths.ListDir. Logical
+// StrategyIR IDs never select arbitrary paths.
 func NewProductAssetResolver(paths *engine.AssetPaths) (*StaticAssetResolver, error) {
 	if err := engine.VerifyExtractedAssets(paths); err != nil {
 		return nil, fmt.Errorf("verify product assets: %w", err)
 	}
-	entries, err := os.ReadDir(paths.ListDir)
-	if err != nil {
-		return nil, fmt.Errorf("read managed asset directory: %w", err)
-	}
-	assets := make([]ResolvedAsset, 0, len(entries)+5)
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".txt") {
-			continue
-		}
-		id := strings.TrimSuffix(entry.Name(), ".txt")
-		kind := AssetKindHostlistFile
-		if id == "autohostlist" {
-			kind = AssetKindAutoHostlistFile
-		} else if strings.HasPrefix(id, "ipset-") || strings.HasSuffix(id, "_ips") {
-			kind = AssetKindIPSetFile
-		}
-		assets = append(assets, ResolvedAsset{ID: id, Kind: kind, EngineValue: filepath.ToSlash(filepath.Join(paths.ListDir, entry.Name()))})
-	}
-	// These are pinned names accepted by the bundled Zapret2 Lua runtime. They
-	// are symbols, not filesystem paths supplied by a strategy.
-	for id, symbol := range map[string]string{
+
+	pinnedSymbols := map[string]string{
 		"fake-default-udp":        "fake_default_udp",
 		"quic-google":             "quic_google",
 		"stun-pat":                "stun_pat",
 		"tls-clienthello-default": "fake_default_tls",
 		"tls-google":              "tls_google",
-	} {
+	}
+
+	seen := make(map[string]struct{}, len(pinnedSymbols))
+	assets := make([]ResolvedAsset, 0, len(pinnedSymbols)+16)
+	for id, symbol := range pinnedSymbols {
+		seen[id] = struct{}{}
 		assets = append(assets, ResolvedAsset{ID: id, Kind: AssetKindBlobSymbol, EngineValue: symbol})
 	}
+
+	collectListDir := func(dir string, requireRegular bool) error {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".txt") {
+				continue
+			}
+			if requireRegular && !entry.Type().IsRegular() {
+				continue
+			}
+			id := strings.TrimSuffix(entry.Name(), ".txt")
+			if id == "" {
+				continue
+			}
+			if _, exists := seen[id]; exists {
+				continue
+			}
+			kind := AssetKindHostlistFile
+			if id == "autohostlist" {
+				kind = AssetKindAutoHostlistFile
+			} else if strings.HasPrefix(id, "ipset-") || strings.HasSuffix(id, "_ips") {
+				kind = AssetKindIPSetFile
+			}
+			seen[id] = struct{}{}
+			assets = append(assets, ResolvedAsset{ID: id, Kind: kind, EngineValue: filepath.ToSlash(filepath.Join(dir, entry.Name()))})
+		}
+		return nil
+	}
+
+	if userListsDir, err := engine.GetListsDir(); err == nil && strings.TrimSpace(userListsDir) != "" {
+		_ = collectListDir(userListsDir, true)
+	}
+	if err := collectListDir(paths.ListDir, false); err != nil {
+		return nil, fmt.Errorf("read managed asset directory: %w", err)
+	}
+
 	sort.Slice(assets, func(i, j int) bool { return assets[i].ID < assets[j].ID })
 	return NewStaticAssetResolver(assets)
 }
