@@ -5,12 +5,12 @@ import { AppNavigation, TabType } from './components/shell/AppNavigation';
 import { MainControlView } from './components/views/MainControlView';
 import { ProfilesView } from './components/views/ProfilesView';
 import { BypassListsView } from './components/views/BypassListsView';
-import { SettingsView } from './components/views/SettingsView';
+import { AppSettings, SettingsView } from './components/views/SettingsView';
 import { LogJournalDrawer } from './components/terminal/LogJournalDrawer';
 import { ModalHost } from './components/modals/ModalHost';
 
 import { backendService } from './services/backend';
-import { eventBus, windowService } from './services/window';
+import { AutotuneProgressData, eventBus, windowService } from './services/window';
 import { engine as WailsEngine, main as WailsMain } from '../wailsjs/go/models';
 
 import { usePlatform } from './hooks/usePlatform';
@@ -42,7 +42,9 @@ export default function App() {
   const engine = useEngineController(paramStatus === 'active' ? 'Running' : 'Stopped');
   const { state: engineState, actions: engineActions } = engine;
 
-  const [managedVNextState, setManagedVNextState] = useState<WailsMain.AutoTuneVNextManagedStatus>(new WailsMain.AutoTuneVNextManagedStatus({ state: 'DIRECT', active: false, needs_revalidation: false }));
+  const [managedVNextState, setManagedVNextState] = useState<WailsMain.AutoTuneVNextManagedStatus>(
+    new WailsMain.AutoTuneVNextManagedStatus({ state: 'DIRECT', active: false, needs_revalidation: false })
+  );
   const { livePingData, pingHistory } = usePingPolling(engineState.status, managedVNextState.active);
   const logJournal = useLogJournal(engineState.status, engineState.isScanning);
   const hostlistsEditor = useHostlists();
@@ -68,34 +70,21 @@ export default function App() {
   const [conflictWarning, setConflictWarning] = useState<string[]>([]);
   const [isDiagOpen, setIsDiagOpen] = useState<boolean>(false);
   const [diagResults, setDiagResults] = useState<WailsEngine.DiagnosticResult[]>([]);
-  const [isDiagRunning, setIsDiagRunning] = useState<boolean>(false);
+  const [isDiagRunning] = useState<boolean>(false);
   const [doctorResult, setDoctorResult] = useState<WailsEngine.DoctorResult | null>(null);
   const [isDiscordCleanModalOpen, setIsDiscordCleanModalOpen] = useState(false);
   const [discordRunningProcs, setDiscordRunningProcs] = useState<string[]>([]);
   const [isStrategyLabOpen, setIsStrategyLabOpen] = useState(false);
   const [isAutoTuneVNextOpen, setIsAutoTuneVNextOpen] = useState(false);
   const [isAutoTuneVNextRunning, setIsAutoTuneVNextRunning] = useState(false);
+
   // Operations States
   const [isVerifyingAssets, setIsVerifyingAssets] = useState<boolean>(false);
   const [isGeneratingReport, setIsGeneratingReport] = useState<boolean>(false);
   const [isUpdatingHostlists, setIsUpdatingHostlists] = useState<boolean>(false);
 
-  // Settings State
-  const [settings, setSettings] = useState<{
-    autoStart: boolean;
-    startMinimized: boolean;
-    autoStartProfile: boolean;
-    defaultProfile: string;
-    startupProfileMode: string;
-    gameFilter: boolean;
-    autoUpdateEnabled: boolean;
-    showLogs: boolean;
-    enableTCPTimestamps: boolean;
-    discordCacheAutoClean: boolean;
-    secureDns: boolean;
-    autoReconnect: boolean;
-    favoriteProfiles: string[];
-  }>({
+  // Full Persisted Settings State (preserves all WailsEngine.Settings fields on save)
+  const [settings, setSettings] = useState<AppSettings>({
     autoStart: false,
     startMinimized: false,
     autoStartProfile: false,
@@ -109,75 +98,143 @@ export default function App() {
     secureDns: false,
     autoReconnect: true,
     favoriteProfiles: [],
+    autoTuneTargets: [],
+    diagnosticsMode: 'quick',
+    autoUpdatePolicy: 'notify',
   });
   const initialSettingsLoaded = useRef(false);
+  const rawSettingsRef = useRef<Record<string, unknown>>({});
 
-  const updateSettings = useCallback((newSettingsOrUpdater: React.SetStateAction<typeof settings>) => {
+  const updateSettings = useCallback((newSettingsOrUpdater: React.SetStateAction<AppSettings>) => {
     setSettings((prev) => {
       const next = typeof newSettingsOrUpdater === 'function' ? newSettingsOrUpdater(prev) : newSettingsOrUpdater;
+      const mergedPayload: Record<string, unknown> = {
+        ...rawSettingsRef.current,
+        ...next,
+      };
+      rawSettingsRef.current = mergedPayload;
       if (initialSettingsLoaded.current) {
-        backendService.saveSettings(new WailsEngine.Settings(next)).catch((err) => {
+        backendService.saveSettings(new WailsEngine.Settings(mergedPayload)).catch((err) => {
           console.error('Failed to persist settings:', err);
         });
       }
-      return next;
+      return next as AppSettings;
     });
   }, []);
 
   // Theme sync
   useEffect(() => {
-    let activeTheme = theme;
-    if (theme === 'system') {
-      const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      activeTheme = isDark ? 'monolith' : 'paper';
-    }
-    const classes = Array.from(document.body.classList).filter((c) => c.startsWith('theme-'));
-    classes.forEach((c) => document.body.classList.remove(c));
-    document.body.classList.add(`theme-${activeTheme}`);
+    const applyTheme = () => {
+      let activeTheme = theme;
+      if (theme === 'system') {
+        const prefersDark =
+          typeof window.matchMedia === 'function'
+            ? window.matchMedia('(prefers-color-scheme: dark)').matches
+            : true;
+        activeTheme = prefersDark ? 'monolith' : 'paper';
+      }
+      const classes = Array.from(document.body.classList).filter((c) => c.startsWith('theme-'));
+      classes.forEach((c) => document.body.classList.remove(c));
+      document.body.classList.add(`theme-${activeTheme}`);
+    };
+
+    applyTheme();
     localStorage.setItem('unbound-theme', theme);
+
+    if (theme === 'system' && typeof window.matchMedia === 'function') {
+      const media = window.matchMedia('(prefers-color-scheme: dark)');
+      if (typeof media.addEventListener === 'function') {
+        media.addEventListener('change', applyTheme);
+        return () => media.removeEventListener('change', applyTheme);
+      }
+    }
+    return undefined;
   }, [theme]);
 
   // System Checks & Settings load
   useEffect(() => {
-    backendService.checkPrivileges().then((hasPriv) => {
-      if (!hasPriv) {
-        const msg = platform === 'darwin' ? 'Требуются права root (sudo).' : 'Требуются права администратора.';
-        setPrivilegeError(msg);
-      }
-    }).catch(() => {});
+    let active = true;
+    backendService
+      .checkPrivileges()
+      .then((hasPriv) => {
+        if (!active) return;
+        if (!hasPriv) {
+          const msg = platform === 'darwin' ? 'Требуются права root (sudo).' : 'Требуются права администратора.';
+          setPrivilegeError(msg);
+        } else {
+          setPrivilegeError('');
+        }
+      })
+      .catch(() => {});
 
-    backendService.checkConflicts().then((conflicts) => {
-      if (conflicts && conflicts.length > 0) setConflictWarning(conflicts);
-    }).catch(() => {});
+    backendService
+      .checkConflicts()
+      .then((conflicts) => {
+        if (active && conflicts && conflicts.length > 0) setConflictWarning(conflicts);
+      })
+      .catch(() => {});
 
-    backendService.getSettings().then((s: WailsEngine.Settings) => {
-      setSettings({
-        autoStart: s.autoStart || false,
-        startMinimized: s.startMinimized || false,
-        autoStartProfile: s.autoStartProfile || false,
-        defaultProfile: s.defaultProfile || '',
-        startupProfileMode: normalizeStartupProfileMode(s.startupProfileMode),
-        gameFilter: s.gameFilter !== undefined ? s.gameFilter : false,
-        autoUpdateEnabled: s.autoUpdateEnabled !== undefined ? s.autoUpdateEnabled : true,
-        showLogs: s.showLogs !== undefined ? s.showLogs : true,
-        enableTCPTimestamps: s.enableTCPTimestamps || false,
-        discordCacheAutoClean: s.discordCacheAutoClean || false,
-        secureDns: s.secureDns || false,
-        autoReconnect: s.autoReconnect !== undefined ? s.autoReconnect : true,
-        favoriteProfiles: s.favoriteProfiles || [],
+    backendService
+      .getSettings()
+      .then((s: WailsEngine.Settings) => {
+        if (!active) return;
+        const raw = (s || {}) as unknown as Record<string, unknown>;
+        rawSettingsRef.current = { ...raw };
+        setSettings({
+          autoStart: Boolean(s?.autoStart),
+          startMinimized: Boolean(s?.startMinimized),
+          autoStartProfile: Boolean(s?.autoStartProfile),
+          defaultProfile: s?.defaultProfile ?? '',
+          startupProfileMode: normalizeStartupProfileMode(s?.startupProfileMode),
+          gameFilter: s?.gameFilter !== undefined ? Boolean(s.gameFilter) : (raw.enableGameFilter !== undefined ? Boolean(raw.enableGameFilter) : false),
+          autoUpdateEnabled: s?.autoUpdateEnabled !== undefined ? Boolean(s.autoUpdateEnabled) : true,
+          showLogs: s?.showLogs !== undefined ? Boolean(s.showLogs) : true,
+          enableTCPTimestamps: Boolean(s?.enableTCPTimestamps),
+          discordCacheAutoClean: Boolean(s?.discordCacheAutoClean),
+          secureDns: Boolean(s?.secureDns),
+          autoReconnect: s?.autoReconnect !== undefined ? Boolean(s.autoReconnect) : true,
+          favoriteProfiles: Array.isArray(s?.favoriteProfiles) ? s.favoriteProfiles : [],
+          autoTuneTargets: Array.isArray(s?.autoTuneTargets) ? s.autoTuneTargets : [],
+          diagnosticsMode: s?.diagnosticsMode ?? 'quick',
+          autoUpdatePolicy: s?.autoUpdatePolicy ?? 'notify',
+        });
+        initialSettingsLoaded.current = true;
+      })
+      .catch(() => {
+        if (active) {
+          initialSettingsLoaded.current = true;
+        }
       });
-      initialSettingsLoaded.current = true;
-    }).catch(() => {
-      initialSettingsLoaded.current = true;
-    });
+
+    return () => {
+      active = false;
+    };
   }, [platform]);
+
+  // Sync favoriteProfiles changes into rawSettingsRef so saving settings never clobbers favorites
+  useEffect(() => {
+    if (engineState.favoriteProfiles.length > 0) {
+      rawSettingsRef.current = {
+        ...rawSettingsRef.current,
+        favoriteProfiles: engineState.favoriteProfiles,
+      };
+      setSettings((prev) =>
+        prev.favoriteProfiles === engineState.favoriteProfiles
+          ? prev
+          : { ...prev, favoriteProfiles: engineState.favoriteProfiles }
+      );
+    }
+  }, [engineState.favoriteProfiles]);
 
   useEffect(() => {
     let mounted = true;
-    const refresh = () => Promise.resolve()
-      .then(() => backendService.getAutoTuneVNextManagedStatus())
-      .then((status) => mounted && setManagedVNextState(status))
-      .catch(() => {});
+    const refresh = () =>
+      Promise.resolve()
+        .then(() => backendService.getAutoTuneVNextManagedStatus())
+        .then((status) => {
+          if (mounted && status) setManagedVNextState(status);
+        })
+        .catch(() => {});
     refresh();
     const interval = window.setInterval(refresh, 2000);
     return () => {
@@ -186,23 +243,20 @@ export default function App() {
     };
   }, []);
 
-  // Event Subscriptions
-  useEngineEvents({
-    onStatusChange: engineActions.setStatus,
-    onEnginesChange: engineActions.setEngines,
-    onPrivilegeError: setPrivilegeError,
-    onAddToast: addToast,
-    onAutotuneStart: engineActions.setIsScanning,
-    onAutotuneProgress: (data) => {
+  // Stable Event Callbacks
+  const handleAutotuneProgress = useCallback(
+    (data: AutotuneProgressData) => {
       engineActions.setAutotuneProgress(data);
       if (data?.msg) {
         engineActions.setScanProgress(data.msg);
         logJournal.addScanLog(data.msg);
       }
     },
-    onAutotuneLog: logJournal.addScanLog,
-    onEngineLog: logJournal.addEngineLog,
-    onAutotuneComplete: (data) => {
+    [engineActions, logJournal]
+  );
+
+  const handleAutotuneComplete = useCallback(
+    (data: { success: boolean; profile?: string; error?: string }) => {
       engineActions.setIsScanning(false);
       if (data.success && data.profile) {
         engineActions.setSelectedProfile(data.profile);
@@ -211,19 +265,63 @@ export default function App() {
         engineActions.setScanProgress(`❌ ${data.error || 'Рабочий профиль не найден'}`);
       }
     },
+    [engineActions]
+  );
+
+  const handleProfileChanged = useCallback(
+    (profile: string) => {
+      if (!profile) return;
+      engineActions.setProfiles((prev) => (prev.includes(profile) ? prev : [...prev, profile]));
+      engineActions.setSelectedProfile(profile);
+    },
+    [engineActions]
+  );
+
+  const handleProfileError = useCallback(
+    (msg: string) => {
+      const errorText = msg || 'Не удалось подобрать рабочий профиль при автопереключении.';
+      logJournal.addEngineLog(`[ERROR] ${errorText}`);
+      addToast({
+        id: Date.now() + Math.random(),
+        type: 'error',
+        title: 'Сбой переключения профиля',
+        message: errorText,
+      });
+    },
+    [addToast, logJournal]
+  );
+
+  // Event Subscriptions (stabilized inside useEngineEvents)
+  useEngineEvents({
+    onStatusChange: engineActions.setStatus,
+    onEnginesChange: engineActions.setEngines,
+    onPrivilegeError: setPrivilegeError,
+    onAddToast: addToast,
+    onAutotuneStart: engineActions.setIsScanning,
+    onAutotuneProgress: handleAutotuneProgress,
+    onAutotuneLog: logJournal.addScanLog,
+    onEngineLog: logJournal.addEngineLog,
+    onAutotuneComplete: handleAutotuneComplete,
+    onProfileChanged: handleProfileChanged,
+    onProfileError: handleProfileError,
   });
 
+  useEffect(
+    () =>
+      eventBus.onOpenAutoTuneVNext(() => {
+        setActiveTab('main');
+        setIsAutoTuneVNextOpen(true);
+      }),
+    []
+  );
 
-  useEffect(() => eventBus.onOpenAutoTuneVNext(() => {
-    setActiveTab('main');
-    setIsAutoTuneVNextOpen(true);
-  }), []);
-  // Shortcuts Hook
+  // Shortcuts Hook (Escape + Ctrl+J / Ctrl+` for Log Journal)
   useKeyboardShortcuts(
     useCallback(() => {
       setIsDiagOpen(false);
       luaActions.setIsLuaOpen(false);
-    }, [luaActions])
+    }, [luaActions]),
+    logJournal.toggleExpanded
   );
 
   // Operation Handlers
@@ -232,13 +330,28 @@ export default function App() {
     try {
       const res = await backendService.verifyEngineAssets();
       if (res.verified) {
-        addToast({ id: Date.now(), type: 'success', title: 'Безопасность подтверждена', message: `Проверено ${res.totalFiles} файлов.` });
+        addToast({
+          id: Date.now(),
+          type: 'success',
+          title: 'Безопасность подтверждена',
+          message: `Проверено ${res.totalFiles} файлов.`,
+        });
       } else {
-        addToast({ id: Date.now(), type: 'error', title: 'Ошибка целостности', message: res.error || 'Файлы повреждены.' });
+        addToast({
+          id: Date.now(),
+          type: 'error',
+          title: 'Ошибка целостности',
+          message: res.error || 'Файлы повреждены.',
+        });
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      addToast({ id: Date.now(), type: 'error', title: 'Ошибка проверки', message: msg || 'Не удалось выполнить проверку.' });
+      addToast({
+        id: Date.now(),
+        type: 'error',
+        title: 'Ошибка проверки',
+        message: msg || 'Не удалось выполнить проверку.',
+      });
     } finally {
       setIsVerifyingAssets(false);
     }
@@ -261,48 +374,25 @@ export default function App() {
     setIsUpdatingHostlists(true);
     try {
       const result = await backendService.updateHostlistsNow();
-      addToast({ id: Date.now(), type: 'success', title: 'Списки обновлены', message: result || 'Списки обхода успешно обновлены.' });
-    } catch (err) {
+      addToast({
+        id: Date.now(),
+        type: 'success',
+        title: 'Списки обновлены',
+        message: result || 'Списки обхода успешно обновлены.',
+      });
+    } catch {
       addToast({ id: Date.now(), type: 'error', title: 'Ошибка обновления', message: 'Не удалось обновить хостлисты.' });
     } finally {
       setIsUpdatingHostlists(false);
     }
   };
 
-  const handleRunDiagnostics = async (mode: string = 'quick') => {
-    setIsDiagRunning(true);
+  // Opening Diagnostics launches ONE async StartDoctor('quick') inside DiagnosticsModal
+  const handleOpenDiagnostics = useCallback(() => {
+    setDoctorResult(null);
+    setDiagResults([]);
     setIsDiagOpen(true);
-    try {
-      const dRes = await backendService.runDoctor(mode);
-      setDoctorResult(dRes);
-      const flatResults: WailsEngine.DiagnosticResult[] = [];
-      if (dRes && dRes.groups) {
-        dRes.groups.forEach((g) => {
-          g.probes.forEach((p) => {
-            flatResults.push(
-              new WailsEngine.DiagnosticResult({
-                Component: p.name || p.target,
-                Status: p.status,
-                Details: p.details || p.error || '',
-                IsError: p.status === 'FAIL',
-              })
-            );
-          });
-        });
-      }
-      setDiagResults(flatResults);
-    } catch (err) {
-      console.error('Doctor error:', err);
-      try {
-        const results = await backendService.runDiagnostics();
-        setDiagResults(Array.isArray(results) ? results : []);
-      } catch (fallbackErr) {
-        console.error('Fallback diagnostics error:', fallbackErr);
-      }
-    } finally {
-      setIsDiagRunning(false);
-    }
-  };
+  }, []);
 
   const handleClearCache = async () => {
     try {
@@ -326,7 +416,12 @@ export default function App() {
     try {
       const res = await backendService.clearDiscordCache(closeIfRunning);
       if (res && res.message) {
-        const title = res.status === 'SUCCESS' ? 'Кэш очищен' : (res.status === 'PARTIAL' ? 'Очищено частично' : 'Кэш Discord');
+        const title =
+          res.status === 'SUCCESS'
+            ? 'Кэш очищен'
+            : res.status === 'PARTIAL'
+            ? 'Очищено частично'
+            : 'Кэш Discord';
         windowService.showNotification(title, res.message);
       }
     } catch (err) {
@@ -340,7 +435,7 @@ export default function App() {
       await backendService.killWinws2();
       engineActions.setStatus('Stopped');
       windowService.showNotification('Успех', 'Движок обхода остановлен.');
-    } catch (err) {
+    } catch {
       windowService.showNotification('Ошибка', 'Не удалось остановить движок.');
     }
   };
@@ -382,7 +477,10 @@ export default function App() {
                 <div className="font-semibold text-sm mb-0.5">{toast.title}</div>
                 <div className="text-xs text-[var(--ui-text-muted)] leading-snug">{toast.message}</div>
               </div>
-              <button onClick={() => removeToast(toast.id)} className="text-[var(--ui-text-muted)] hover:text-[var(--ui-text)] text-sm">
+              <button
+                onClick={() => removeToast(toast.id)}
+                className="text-[var(--ui-text-muted)] hover:text-[var(--ui-text)] text-sm"
+              >
                 <UIX className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -391,7 +489,7 @@ export default function App() {
       </div>
 
       {/* PLATFORM AWARE TITLEBAR */}
-      <PlatformTitlebar platform={platform} appVersion={appVersion} />
+      <PlatformTitlebar platform={platform} appVersion={appVersion} privilegeError={privilegeError} />
 
       {/* MAIN CONTAINER */}
       <div className="flex-1 flex flex-col min-h-0 app-no-drag overflow-y-auto p-4 space-y-4">
@@ -465,7 +563,7 @@ export default function App() {
             theme={theme}
             setThemeState={setThemeState}
             startupProfiles={engineState.sortedProfiles}
-            handleRunDiagnostics={handleRunDiagnostics}
+            handleRunDiagnostics={handleOpenDiagnostics}
             handleVerifyAssets={handleVerifyAssets}
             isVerifyingAssets={isVerifyingAssets}
             handleDiagnosticReport={handleDiagnosticReport}
@@ -483,7 +581,7 @@ export default function App() {
         <LogJournalDrawer
           logs={logJournal.displayLogs}
           isExpanded={logJournal.isExpanded}
-          onToggle={() => logJournal.setIsExpanded(!logJournal.isExpanded)}
+          onToggle={logJournal.toggleExpanded}
           onExportLogs={logJournal.exportLogs}
         />
       )}
@@ -504,7 +602,6 @@ export default function App() {
         diagResults={diagResults}
         onCloseDiagnosticsModal={() => setIsDiagOpen(false)}
         doctorResult={doctorResult}
-        onRunMode={handleRunDiagnostics}
         isDiscordCleanModalOpen={isDiscordCleanModalOpen}
         discordRunningProcs={discordRunningProcs}
         onCancelDiscordClean={() => setIsDiscordCleanModalOpen(false)}
