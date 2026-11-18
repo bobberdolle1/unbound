@@ -68,7 +68,7 @@ func TestCompilerDeterminismAndDerivedRequirements(t *testing.T) {
 
 func TestBackendProvenanceAndNativePlaceholder(t *testing.T) {
 	windows := Get(Zapret2Windows)
-	if windows.Provenance.Tag != "v1.0.5.1" || windows.Provenance.Commit != "a1bca5a85e25ab138e9617a560c262fcf53e969a" {
+	if windows.Provenance.Tag != "v1.0.7" || windows.Provenance.Commit != "038c97e5819df10f8e8c22a2f1fffe57f2f7379b" {
 		t.Fatalf("Zapret2 provenance = %#v", windows.Provenance)
 	}
 	macOS := Get(Zapret1TPWSDarwin)
