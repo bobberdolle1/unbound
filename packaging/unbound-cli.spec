@@ -3,47 +3,56 @@
 Name:           unbound-cli
 Version:        %{version}
 Release:        1%{?dist}
-Summary:        DPI/censorship bypass daemon wrapping nfqws with nftables
+Summary:        Local L3/L4 DPI desynchronization CLI wrapping Zapret 2 nfqws2 with nftables
 
-License:        MIT
-URL:            https://github.com/unbound/unbound
+License:        GPL-3.0-only
+URL:            https://github.com/bobberdolle1/unbound
 Source0:        %{name}-%{version}.tar.gz
 
 BuildRequires:  golang
+BuildRequires:  nodejs
+BuildRequires:  npm
 Requires:       nftables
 Requires:       libnetfilter_queue
 
 %description
-Linux DPI/censorship bypass daemon. Wraps the C-based nfqws binary
-from the zapret project, managing nftables rules to route HTTP/HTTPS/QUIC
-traffic through NFQUEUE for transparent DPI bypass.
+UNBOUND headless CLI and systemd service for Linux. Extracts SHA-256-verified
+Zapret 2 nfqws2 assets at runtime and manages isolated nftables/iptables NFQUEUE
+rules for local TCP/UDP DPI packet desynchronization (`unbound --cli`,
+`unbound --control`, `unbound --autotune`).
 
 %prep
-%setup -q
+%setup -q -n %{name}-%{version}
 
 %build
-go build -trimpath -ldflags="-s -w -X unbound/engine.Version=%{version}" -o unbound-cli .
+if [ ! -f frontend/dist/index.html ] && command -v npm >/dev/null 2>&1; then
+    (cd frontend && npm ci --no-audit --no-fund && npm run build)
+fi
+CGO_ENABLED=0 go build -trimpath \
+    -ldflags="-s -w -X unbound/engine.Version=%{version} -X unbound/engine.BuildChannel=release" \
+    -o unbound .
 
 %install
-install -Dm755 unbound-cli %{buildroot}/usr/bin/unbound-cli
+install -Dm755 unbound %{buildroot}/usr/bin/unbound
+ln -s unbound %{buildroot}/usr/bin/unbound-cli
 install -Dm644 packaging/unbound.service %{buildroot}/usr/lib/systemd/system/unbound.service
 
 %post
-systemctl daemon-reload
-systemctl enable unbound.service 2>/dev/null || true
+systemctl daemon-reload 2>/dev/null || true
 
 %preun
-if [ $1 -eq 0 ]; then
+if [ "$1" -eq 0 ]; then
     systemctl stop unbound.service 2>/dev/null || true
     systemctl disable unbound.service 2>/dev/null || true
 fi
 
 %files
+/usr/bin/unbound
 /usr/bin/unbound-cli
 /usr/lib/systemd/system/unbound.service
-%license LICENSE
-%doc README.md
+%license LICENSE engine/third_party/ZAPRET2_LICENSE.txt
+%doc README.md CHANGELOG.md
 
 %changelog
-* Tue Apr 07 2026 Unbound Contributors - 0.1.0-1
-- Initial package release
+* Thu Oct 01 2026 UNBOUND Contributors <https://github.com/bobberdolle1/unbound> - 0.8.0-1
+- Modernize RPM packaging for Go + Wails v0.8.0+ runtime and Zapret 2 nfqws2

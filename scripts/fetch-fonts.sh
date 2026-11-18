@@ -15,7 +15,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FONT_DIR="$REPO_ROOT/frontend/src/fonts"
 CSS_OUT="$REPO_ROOT/frontend/src/fonts.css"
 
-QUERY='family=Inter:wght@400;500;600;700&family=Comic+Neue:wght@400;700&family=Permanent+Marker&family=VT323&display=swap'
+QUERY='family=Inter:wght@400;500;600;700&display=swap'
 # Google serves different files per User-Agent; a modern UA yields woff2.
 UA='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 
@@ -44,8 +44,7 @@ HEADER = """/* Bundled locally so the UI renders correctly offline and behind a 
    from fonts.googleapis.com also contradicted the project's "no outbound
    requests" claim.
 
-   Sources: Google Fonts. Inter, Comic Neue and VT323 are OFL-1.1;
-   Permanent Marker is Apache-2.0. Regenerate with scripts/fetch-fonts.sh -
+   Sources: Google Fonts (Inter, OFL-1.1). Regenerate with scripts/fetch-fonts.sh -
    do not hand-edit. */
 
 """

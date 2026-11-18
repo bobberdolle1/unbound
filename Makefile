@@ -81,7 +81,11 @@ gui: ## Build the native desktop app via Wails
 		[ -d "$$app" ] || app="build/bin/Unbound.app"; \
 		[ -d "$$app" ] || { echo "Wails produced no macOS app bundle"; exit 1; }; \
 		xattr -cr "$$app" 2>/dev/null || true; \
-		codesign --force --deep -s - "$$app"; \
+		if [ -f "build/darwin/entitlements.plist" ]; then \
+			codesign --force --deep --options runtime --entitlements "build/darwin/entitlements.plist" --sign - "$$app"; \
+		else \
+			codesign --force --deep --sign - "$$app"; \
+		fi; \
 		codesign --verify --deep --strict "$$app"; \
 	fi
 

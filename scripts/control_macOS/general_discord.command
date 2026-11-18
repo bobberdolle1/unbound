@@ -22,16 +22,13 @@ do
     fi
 done
 
-# Remove macOS Gatekeeper quarantine attribute if present
-xattr -dr com.apple.quarantine "$DIR" 2>/dev/null || true
-xattr -cr "$DIR" 2>/dev/null || true
+# Remove macOS Gatekeeper quarantine attribute strictly on Unbound.app / binary
 if [ -d "$DIR/Unbound.app" ]; then
     xattr -dr com.apple.quarantine "$DIR/Unbound.app" 2>/dev/null || true
-    xattr -cr "$DIR/Unbound.app" 2>/dev/null || true
-fi
-if [ -d "$DIR/unbound.app" ]; then
+elif [ -d "$DIR/unbound.app" ]; then
     xattr -dr com.apple.quarantine "$DIR/unbound.app" 2>/dev/null || true
-    xattr -cr "$DIR/unbound.app" 2>/dev/null || true
+elif [ -n "$UNBOUND" ] && [ -f "$UNBOUND" ]; then
+    xattr -d com.apple.quarantine "$UNBOUND" 2>/dev/null || true
 fi
 
 if [ "$(id -u)" -ne 0 ]; then
