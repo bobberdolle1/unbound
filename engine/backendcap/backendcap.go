@@ -114,7 +114,7 @@ func Get(backend Backend) Capabilities {
 	zapret := func(backend Backend, captureKind CaptureBackendKind) Capabilities {
 		return Capabilities{
 			Backend:    backend,
-			Provenance: Provenance{Tag: "v1.0.5.1", Commit: "a1bca5a85e25ab138e9617a560c262fcf53e969a"},
+			Provenance: Provenance{Tag: "v1.0.7", Commit: "038c97e5819df10f8e8c22a2f1fffe57f2f7379b"},
 			Profile:    zapretProfile,
 			Capture: CaptureCapabilities{
 				BackendKind: captureKind,

@@ -3,11 +3,11 @@
   "bundles": [
     {
       "name": "zapret2",
-      "tag": "v1.0.5.1",
-      "commit": "a1bca5a85e25ab138e9617a560c262fcf53e969a",
-      "releaseUrl": "https://github.com/bol-van/zapret2/releases/tag/v1.0.5.1",
-      "sourceAsset": "zapret2-v1.0.5.1.zip",
-      "sourceAssetSha256": "92212b110c4e1a2613567e2821823e058fc408a5cfcc6548e4aa568f632a6c8e",
+      "tag": "v1.0.7",
+      "commit": "038c97e5819df10f8e8c22a2f1fffe57f2f7379b",
+      "releaseUrl": "https://github.com/bol-van/zapret2/releases/tag/v1.0.7",
+      "sourceAsset": "zapret2-v1.0.7.tar.gz",
+      "sourceAssetSha256": "547a5dce3f4820721a425680ea3f7f3971b7e9c772b8c795dd2d623148da0928",
       "license": "MIT",
       "licenseFile": "third_party/ZAPRET2_LICENSE.txt",
       "paths": [

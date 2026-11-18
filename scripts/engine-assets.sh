@@ -39,13 +39,13 @@ generate() {
 #
 # Provenance
 # ----------
-#   engine/core_bin/windows/*                 Zapret 2 v1.0.5 Windows x86_64 bundle
-#   engine/core_bin/linux/{amd64,arm64}/*     Zapret 2 v1.0.5 Linux release bundle
+#   engine/core_bin/windows/*                 Zapret 2 v1.0.7 Windows x86_64 bundle
+#   engine/core_bin/linux/{amd64,arm64}/*     Zapret 2 v1.0.7 Linux release bundle
 #   engine/core_bin/darwin/tpws               Zapret commit d437963 Universal build
 #   engine/core_bin/windows/goodbyedpi.exe    https://github.com/ValdikSS/GoodbyeDPI
 #   engine/core_bin/*.bin                     fake-packet payloads from Zapret releases
 #   engine/lua_scripts/zapret-{lib,antidpi,auto,obfs,pcap,tests}.lua
-#                                               Zapret 2 v1.0.5; other Lua files are local
+#                                               Zapret 2 v1.0.7; other Lua files are local
 #   engine/windivert.filter/*                 local WinDivert filter presets
 #
 # macOS tpws snapshot
