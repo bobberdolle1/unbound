@@ -21,7 +21,10 @@ func RunServiceScopeCoordinated(ctx context.Context, request Request, scope Serv
 		return Result{}, err
 	}
 	defer release()
-	return RunServiceScope(ctx, request, scope, observer, executor, preflight, assets), nil
+	operationCtx, cancel := context.WithCancel(ctx)
+	engine.GetCoordinator().SetCancelFunc(cancel)
+	defer cancel()
+	return RunServiceScope(operationCtx, request, scope, observer, executor, preflight, assets), nil
 }
 
 // RunServiceScope keeps the existing candidate lifecycle, but evidence and
