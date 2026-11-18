@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"golang.org/x/sys/windows"
+	"unbound/engine/internal/configdir"
 )
 
 const (
@@ -26,11 +27,10 @@ const (
 )
 
 func getCustomScriptPath() (string, error) {
-	userConfigDir, err := os.UserConfigDir()
+	configPath, err := configdir.GetConfigDir()
 	if err != nil {
 		return "", err
 	}
-	configPath := filepath.Join(userConfigDir, configDirName)
 	return filepath.Join(configPath, customScriptName), nil
 }
 
@@ -57,6 +57,7 @@ type Zapret2WindowsProvider struct {
 	onStatusChange       func(Status)
 	onLogAdd             func(string)
 	logFile              *os.File
+	logFilePath          string
 	engineReady          chan bool
 	commandFactory       func(string, ...string) *exec.Cmd
 	pidAlive             func(int) bool
@@ -84,11 +85,33 @@ func (e *Zapret2WindowsProvider) logLifecycleLocked(operation, event string) {
 	))
 }
 
+func (e *Zapret2WindowsProvider) setStatusLocked(status Status) {
+	prev := e.status
+	e.status = status
+	if prev != status && e.onStatusChange != nil {
+		e.onStatusChange(status)
+	}
+}
+
+func (e *Zapret2WindowsProvider) drainEngineReady() {
+	if e.engineReady == nil {
+		return
+	}
+	for {
+		select {
+		case <-e.engineReady:
+		default:
+			return
+		}
+	}
+}
+
 func (e *Zapret2WindowsProvider) setStoppedLocked(operation string) {
 	e.cmd = nil
 	e.processDone = nil
 	e.ownedPID = 0
 	e.currentProfile = ""
+	e.drainEngineReady()
 	e.status = StatusStopped
 	e.logLifecycleLocked(operation, "transition=STOPPED")
 	if e.onStatusChange != nil {
@@ -99,9 +122,9 @@ func (e *Zapret2WindowsProvider) setStoppedLocked(operation string) {
 func NewZapret2WindowsProvider(binPath, luaDir, listDir, expectedEngineSHA256 string, debugMode bool, gameFilter bool) *Zapret2WindowsProvider {
 	InitLogger()
 
+	logPath := filepath.Join(os.TempDir(), "unbound_debug.log")
 	var logFile *os.File
 	if debugMode {
-		logPath := filepath.Join(os.TempDir(), "unbound_debug.log")
 		logFile, _ = os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	}
 
@@ -116,11 +139,12 @@ func NewZapret2WindowsProvider(binPath, luaDir, listDir, expectedEngineSHA256 st
 		profileMap:           make(map[string][]string),
 		logs:                 []string{"Zapret 2 Engine (Windows) initialized."},
 		logFile:              logFile,
+		logFilePath:          logPath,
 		engineReady:          make(chan bool, 1),
 		commandFactory:       exec.Command,
 		pidAlive:             isWindowsPIDAlive,
 		terminateTree:        terminateWindowsProcessTree,
-		stopTimeout:          time.Second,
+		stopTimeout:          4 * time.Second,
 		syncHostlists:        SyncHostlists,
 		versionProbe:         engineVersion,
 	}
@@ -314,13 +338,24 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 	if e.cmd != nil || e.processDone != nil || e.ownedPID != 0 || e.currentProfile != "" {
 		e.setStoppedLocked("start-reconcile")
 	}
+	e.drainEngineReady()
 
 	winwsPath := filepath.Join(e.binPath, "winws2.exe")
 
 	// Refuse to execute anything that does not match the pinned checksum.
 	if err := verifyFileSHA256(winwsPath, e.expectedEngineSHA256); err != nil {
-		e.status = StatusError
+		e.setStatusLocked(StatusError)
 		return fmt.Errorf("refusing to execute unverified winws2: %w", err)
+	}
+
+	if e.debugMode && e.logFile == nil {
+		logPath := e.logFilePath
+		if logPath == "" {
+			logPath = filepath.Join(os.TempDir(), "unbound_debug.log")
+		}
+		if lf, openErr := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600); openErr == nil {
+			e.logFile = lf
+		}
 	}
 
 	// Log full command for debugging.
@@ -334,18 +369,18 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		e.status = StatusError
+		e.setStatusLocked(StatusError)
 		return fmt.Errorf("create winws2 stdout pipe: %w", err)
 	}
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
-		e.status = StatusError
+		e.setStatusLocked(StatusError)
 		return fmt.Errorf("create winws2 stderr pipe: %w", err)
 	}
 
-	e.status = StatusStarting
+	e.setStatusLocked(StatusStarting)
 	if err := cmd.Start(); err != nil {
-		e.status = StatusError
+		e.setStatusLocked(StatusError)
 		return err
 	}
 	startedPID := cmd.Process.Pid
@@ -354,7 +389,7 @@ func (e *Zapret2WindowsProvider) Start(ctx context.Context, profileName string) 
 	e.processDone = processDone
 	e.ownedPID = startedPID
 	e.currentProfile = profileName
-	e.status = StatusRunning
+	e.setStatusLocked(StatusRunning)
 	e.addLog(fmt.Sprintf("[PID] %d", startedPID))
 	WriteLog(fmt.Sprintf("winws2 started, PID %d", startedPID))
 	e.logLifecycleLocked("start", fmt.Sprintf("exit profile=%q", profileName))
@@ -507,13 +542,14 @@ func (e *Zapret2WindowsProvider) stopLocked() error {
 		return nil
 	}
 	e.killedManually = true
-	e.status = StatusStopping
+	e.drainEngineReady()
+	e.setStatusLocked(StatusStopping)
 	e.logLifecycleLocked(operation, fmt.Sprintf("transition=STOPPING pid=%d", pid))
 	e.mu.Unlock()
 
 	if killErr := e.terminateTree(pid); killErr != nil && e.pidAlive(pid) {
 		e.mu.Lock()
-		e.status = StatusError
+		e.setStatusLocked(StatusError)
 		e.logLifecycleLocked(operation, fmt.Sprintf("terminate-error=%v", killErr))
 		e.mu.Unlock()
 		return fmt.Errorf("terminate owned process PID %d: %w", pid, killErr)
@@ -525,7 +561,7 @@ func (e *Zapret2WindowsProvider) stopLocked() error {
 	case <-done:
 	case <-deadline.C:
 		e.mu.Lock()
-		e.status = StatusError
+		e.setStatusLocked(StatusError)
 		e.logLifecycleLocked(operation, fmt.Sprintf("wait-timeout pid=%d", pid))
 		e.mu.Unlock()
 		return fmt.Errorf("owned process PID %d did not complete its reaper within %s", pid, e.stopTimeout)
@@ -533,7 +569,7 @@ func (e *Zapret2WindowsProvider) stopLocked() error {
 
 	if e.pidAlive(pid) {
 		e.mu.Lock()
-		e.status = StatusError
+		e.setStatusLocked(StatusError)
 		e.logLifecycleLocked(operation, fmt.Sprintf("pid-still-alive=%d", pid))
 		e.mu.Unlock()
 		return fmt.Errorf("owned process PID %d remained alive after reaper completion", pid)
@@ -546,10 +582,11 @@ func (e *Zapret2WindowsProvider) stopLocked() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.status != StatusStopped || e.cmd != nil || e.currentProfile != "" || e.ownedPID != 0 {
-		e.status = StatusError
+		e.setStatusLocked(StatusError)
 		e.logLifecycleLocked(operation, "invariant-violation-after-stop")
 		return fmt.Errorf("provider lifecycle invariant violated after stop")
 	}
+	e.drainEngineReady()
 	if e.logFile != nil {
 		e.logFile.Close()
 		e.logFile = nil

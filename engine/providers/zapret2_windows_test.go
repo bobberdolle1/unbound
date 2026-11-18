@@ -677,3 +677,82 @@ func TestZapret2WindowsProviderProfileSwitchAbortsOnStopFailure(t *testing.T) {
 	waitForProviderStopped(t, p, 2*time.Second)
 	requireStoppedChild(t, p, aPID)
 }
+
+func TestZapret2WindowsProviderHardeningStopTimeoutReadyDrainCallbacksAndLogReopen(t *testing.T) {
+	defaultProvider := NewZapret2WindowsProvider("", "", "", "", false, false)
+	if defaultProvider.stopTimeout != 4*time.Second {
+		t.Fatalf("default stopTimeout = %s, want 4s", defaultProvider.stopTimeout)
+	}
+
+	p := newLifecycleTestProvider(t, "NORMAL")
+	logPath := filepath.Join(t.TempDir(), "debug.log")
+	p.debugMode = true
+	p.logFilePath = logPath
+
+	var statusMu sync.Mutex
+	var transitions []Status
+	p.SetStatusCallback(func(s Status) {
+		statusMu.Lock()
+		transitions = append(transitions, s)
+		statusMu.Unlock()
+	})
+
+	// Seed stale engineReady signal before Start; Start must drain it.
+	p.engineReady <- true
+	if err := p.Start(context.Background(), "A"); err != nil {
+		t.Fatalf("first Start(A): %v", err)
+	}
+	if p.WaitReady(20 * time.Millisecond) {
+		t.Fatal("stale engineReady signal leaked across Start()")
+	}
+	if p.logFile == nil {
+		t.Fatal("expected debug logFile to be opened on first Start()")
+	}
+
+	// Seed engineReady while running; Stop must drain it and close logFile.
+	p.engineReady <- true
+	if err := p.Stop(); err != nil {
+		t.Fatalf("first Stop(): %v", err)
+	}
+	if p.WaitReady(20 * time.Millisecond) {
+		t.Fatal("stale engineReady signal leaked across Stop()")
+	}
+	if p.logFile != nil {
+		t.Fatal("expected logFile to be closed and nil after Stop()")
+	}
+
+	// Subsequent Start must reopen logFile cleanly.
+	if err := p.Start(context.Background(), "B"); err != nil {
+		t.Fatalf("second Start(B): %v", err)
+	}
+	if p.logFile == nil {
+		t.Fatal("expected debug logFile to be reopened on subsequent Start() after Stop()")
+	}
+	if err := p.Stop(); err != nil {
+		t.Fatalf("second Stop(): %v", err)
+	}
+
+	// Unverified SHA must trigger StatusError callback.
+	p.expectedEngineSHA256 = "0000000000000000000000000000000000000000000000000000000000000000"
+	if err := p.Start(context.Background(), "A"); err == nil {
+		t.Fatal("expected Start with mismatched SHA256 to fail")
+	}
+
+	statusMu.Lock()
+	got := append([]Status(nil), transitions...)
+	statusMu.Unlock()
+
+	wantSeq := []Status{
+		StatusStarting, StatusRunning, StatusStopping, StatusStopped,
+		StatusStarting, StatusRunning, StatusStopping, StatusStopped,
+		StatusError,
+	}
+	if len(got) != len(wantSeq) {
+		t.Fatalf("status transitions = %v, want %v", got, wantSeq)
+	}
+	for i := range wantSeq {
+		if got[i] != wantSeq[i] {
+			t.Fatalf("status transition[%d] = %s, want %s (full=%v)", i, got[i], wantSeq[i], got)
+		}
+	}
+}
