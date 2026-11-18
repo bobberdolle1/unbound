@@ -439,6 +439,8 @@ func TestEngine_SettingsRoundTrip(t *testing.T) {
 
 func TestEngine_CustomScriptRoundTrip(t *testing.T) {
 	t.Setenv("APPDATA", t.TempDir())
+	restore := engine.SetConfigDirForTest(t.TempDir())
+	defer restore()
 	script := "-- test lua\nprint('hello')\n"
 	if err := engine.SaveCustomScript(script); err != nil {
 		t.Fatalf("SaveCustomScript: %v", err)

@@ -350,6 +350,9 @@ func TestValidateStagedEngineMissingBinary(t *testing.T) {
 }
 
 func TestCheckAllComponentsReturnsOverview(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping live remote GitHub component check in short mode")
+	}
 	overview, err := CheckAllComponents(context.Background(), "0.5.0")
 	if err != nil {
 		t.Fatalf("CheckAllComponents failed: %v", err)
@@ -382,6 +385,8 @@ func TestCheckAllComponentsReturnsOverview(t *testing.T) {
 }
 
 func TestGetSystemComponentStateOffline(t *testing.T) {
+	restore := SetConfigDirForTest(t.TempDir())
+	defer restore()
 	state := GetSystemComponentState()
 	if state == nil {
 		t.Fatal("GetSystemComponentState() returned nil")

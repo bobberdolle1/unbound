@@ -85,6 +85,10 @@ func TestPrivilegeCheck(t *testing.T) {
 
 // TestCustomScriptPersistence verifies custom Lua script save/load
 func TestCustomScriptPersistence(t *testing.T) {
+	t.Setenv("APPDATA", t.TempDir())
+	restore := engine.SetConfigDirForTest(t.TempDir())
+	defer restore()
+
 	testContent := "-- Test custom script\nprint('hello')"
 
 	err := engine.SaveCustomScript(testContent)
