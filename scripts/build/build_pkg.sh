@@ -7,9 +7,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-VERSION="${3:-0.8.0}"
+VERSION="${3:-0.9.0}"
 if [ -f "$PROJECT_ROOT/wails.json" ] && [ -z "${3:-}" ]; then
-    VERSION="$(node -e "try { console.log(require('$PROJECT_ROOT/wails.json').info.productVersion); } catch(e) { console.log('0.8.0'); }")"
+    VERSION="$(node -e "try { console.log(require('$PROJECT_ROOT/wails.json').info.productVersion); } catch(e) { console.log('0.9.0'); }")"
 fi
 
 APP_PATH="${1:-}"

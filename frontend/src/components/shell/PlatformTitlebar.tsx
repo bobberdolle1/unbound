@@ -15,7 +15,7 @@ export const PlatformTitlebar: React.FC<PlatformTitlebarProps> = ({
 }) => {
   const isMac = platform === 'darwin';
   const isWin = platform === 'windows' || platform === 'win32';
-  const versionDisplay = appVersion ? `v${appVersion}` : 'v0.8.0';
+  const versionDisplay = appVersion ? `v${appVersion}` : 'v0.9.0';
   const hasPrivilegeError = Boolean(privilegeError);
 
   return (
