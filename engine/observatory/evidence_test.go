@@ -120,9 +120,135 @@ func TestObserveProbeWrapsV1TCPHTTPSEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if record.Transfer.Status != MeasurementUnsupported || record.Transfer.ExpectedBytes != 16*1024 {
-		t.Fatalf("unaudited body reader was implied: %#v", record.Transfer)
+	if record.Transfer.Status != MeasurementPartial || record.Transfer.ExpectedBytes != 16*1024 || record.Transfer.ActualBytes != 0 || record.Transfer.Completed {
+		t.Fatalf("empty 204 body against 16 KiB contract should report partial 0-byte transfer: %#v", record.Transfer)
 	}
+}
+
+func TestObserveProbeTransferContractFullStallAndReset(t *testing.T) {
+	const contractBytes = 32 * 1024
+
+	t.Run("full bounded transfer", func(t *testing.T) {
+		payload := bytes.Repeat([]byte("A"), contractBytes+8192)
+		server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/octet-stream")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(payload)
+		}))
+		server.StartTLS()
+		defer server.Close()
+
+		spec := testProbeSpec(t, server.URL, TransportTCP, AddressFamilyIPv4)
+		spec.ExpectedResponse.AllowedStatusCodes = []int{http.StatusOK}
+		spec.Transfer = &TransferContract{
+			AuditID:                  "audited-32k",
+			ResponseContractRevision: "v1",
+			ExpectedBytes:            contractBytes,
+		}
+
+		record, err := NewDirectTCPHTTPSObserver().ObserveProbe(context.Background(), spec, Options{
+			ResolvedIP:    net.ParseIP("127.0.0.1"),
+			AddressFamily: AddressFamilyIPv4,
+			Timeouts:      Timeouts{DNS: time.Second, Connect: time.Second, TLS: time.Second, HTTP: 2 * time.Second, Overall: 5 * time.Second},
+			tlsConfig:     serverTLSConfig(server),
+		}, EvidenceInput{ExperimentID: "full-transfer"})
+		if err != nil {
+			t.Fatalf("ObserveProbe failed: %v", err)
+		}
+		if err := record.Validate(); err != nil {
+			t.Fatalf("record.Validate failed: %v", err)
+		}
+		if record.Transfer.Status != MeasurementCompleted || !record.Transfer.Completed || record.Transfer.ActualBytes != contractBytes || record.Transfer.ExpectedBytes != contractBytes {
+			t.Fatalf("unexpected full transfer measurement: %#v", record.Transfer)
+		}
+		if record.Transfer.FirstByteMS == nil || record.Transfer.TotalMS == nil || *record.Transfer.FirstByteMS > *record.Transfer.TotalMS {
+			t.Fatalf("invalid transfer timing: %#v", record.Transfer)
+		}
+	})
+
+	t.Run("mid-stream ConnBytes stall freezes after 4 KiB", func(t *testing.T) {
+		unblock := make(chan struct{})
+		server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/octet-stream")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(bytes.Repeat([]byte("B"), 4096))
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+			select {
+			case <-unblock:
+			case <-time.After(2 * time.Second):
+			}
+		}))
+		server.StartTLS()
+		defer func() {
+			close(unblock)
+			server.Close()
+		}()
+
+		spec := testProbeSpec(t, server.URL, TransportTCP, AddressFamilyIPv4)
+		spec.ExpectedResponse.AllowedStatusCodes = []int{http.StatusOK}
+		spec.Transfer = &TransferContract{
+			AuditID:                  "audited-32k",
+			ResponseContractRevision: "v1",
+			ExpectedBytes:            contractBytes,
+		}
+
+		record, err := NewDirectTCPHTTPSObserver().ObserveProbe(context.Background(), spec, Options{
+			ResolvedIP:    net.ParseIP("127.0.0.1"),
+			AddressFamily: AddressFamilyIPv4,
+			Timeouts:      Timeouts{DNS: time.Second, Connect: time.Second, TLS: time.Second, HTTP: 120 * time.Millisecond, Overall: 2 * time.Second},
+			tlsConfig:     serverTLSConfig(server),
+		}, EvidenceInput{ExperimentID: "stall-transfer"})
+		if err != nil {
+			t.Fatalf("ObserveProbe failed: %v", err)
+		}
+		if err := record.Validate(); err != nil {
+			t.Fatalf("record.Validate failed: %v", err)
+		}
+		if record.Runs[0].Measurement != MeasurementCompleted || record.Runs[0].Response.ExpectedSemantics != ResponseSemanticsMatch {
+			t.Fatalf("HTTP header stage must remain completed before post-header stall: %#v", record.Runs[0])
+		}
+		if record.Transfer.Status != MeasurementPartial || record.Transfer.Completed || record.Transfer.ActualBytes != 4096 {
+			t.Fatalf("expected partial 4096-byte transfer after mid-stream stall, got: %#v", record.Transfer)
+		}
+	})
+
+	t.Run("mid-stream connection close/reset after 8 KiB", func(t *testing.T) {
+		server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			conn, buf, err := w.(http.Hijacker).Hijack()
+			if err != nil {
+				return
+			}
+			_, _ = buf.WriteString("HTTP/1.1 200 OK\r\nContent-Length: 65536\r\n\r\n")
+			_, _ = buf.Write(bytes.Repeat([]byte("C"), 8192))
+			_ = buf.Flush()
+			_ = conn.Close()
+		}))
+		server.StartTLS()
+		defer server.Close()
+
+		spec := testProbeSpec(t, server.URL, TransportTCP, AddressFamilyIPv4)
+		spec.ExpectedResponse.AllowedStatusCodes = []int{http.StatusOK}
+		spec.Transfer = &TransferContract{
+			AuditID:                  "audited-32k",
+			ResponseContractRevision: "v1",
+			ExpectedBytes:            contractBytes,
+		}
+
+		record, err := NewDirectTCPHTTPSObserver().ObserveProbe(context.Background(), spec, Options{
+			ResolvedIP:    net.ParseIP("127.0.0.1"),
+			AddressFamily: AddressFamilyIPv4,
+			Timeouts:      Timeouts{DNS: time.Second, Connect: time.Second, TLS: time.Second, HTTP: time.Second, Overall: 3 * time.Second},
+			tlsConfig:     serverTLSConfig(server),
+		}, EvidenceInput{ExperimentID: "reset-transfer"})
+		if err != nil {
+			t.Fatalf("ObserveProbe failed: %v", err)
+		}
+		if record.Transfer.Status != MeasurementPartial || record.Transfer.Completed || record.Transfer.ActualBytes != 8192 {
+			t.Fatalf("expected partial 8192-byte transfer after mid-stream close, got: %#v", record.Transfer)
+		}
+	})
 }
 
 func TestEvidencePreservesIPv4AndIPv6SelectedFamilies(t *testing.T) {

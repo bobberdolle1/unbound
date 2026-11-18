@@ -147,6 +147,7 @@ func (e *WindowsGraphExecutor) ActivateGraph(ctx context.Context, activation Ser
 	candidateCtx, cancel := candidateExecutionContext(context.WithoutCancel(ctx))
 	cmd := exec.CommandContext(candidateCtx, binary, args...)
 	cmd.Dir = e.opts.Assets.BinDir
+	cmd.SysProcAttr = windowsHiddenSysProcAttr()
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		cancel()
@@ -278,7 +279,9 @@ func (e *WindowsGraphExecutor) Deactivate(ctx context.Context) error {
 		_, owned := e.ownedPIDs[proc.pid]
 		e.mu.Unlock()
 		if owned {
-			_ = exec.Command("taskkill", "/F", "/PID", fmt.Sprint(proc.pid)).Run()
+			killCmd := exec.Command("taskkill", "/F", "/PID", fmt.Sprint(proc.pid))
+			killCmd.SysProcAttr = windowsHiddenSysProcAttr()
+			_ = killCmd.Run()
 		}
 	}
 	select {

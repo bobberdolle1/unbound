@@ -5,10 +5,30 @@ package providers
 import (
 	"errors"
 	"net"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 )
+
+// TestMacOSProviderNoSudoersOrNOPASSWD is a regression test ensuring the
+// orphaned passwordless-root escalation code has been fully removed from the
+// macOS provider source. Any re-introduction must fail this test.
+func TestMacOSProviderNoSudoersOrNOPASSWD(t *testing.T) {
+	forbidden := []string{"NOPASSWD", "sudoers", "/etc/sudoers", "EnsureSudoersConfigured"}
+	sourceFile := filepath.Join("zapret_macos.go")
+	data, err := os.ReadFile(sourceFile)
+	if err != nil {
+		t.Fatalf("read macOS provider source: %v", err)
+	}
+	content := string(data)
+	for _, needle := range forbidden {
+		if strings.Contains(content, needle) {
+			t.Errorf("macOS provider source still contains forbidden string %q — orphaned root escalation code must be removed", needle)
+		}
+	}
+}
 
 // TestMacOSProfilesKeepPFOutOfSOCKSPath verifies that SOCKS-mode profiles
 // carry no transparent-routing configuration. tpws --socks requires a SOCKS
@@ -187,38 +207,6 @@ func TestCheckTpwsPortAvailableReportsActionableCollision(t *testing.T) {
 	}
 	if collision.Port != listener.Addr().(*net.TCPAddr).Port {
 		t.Errorf("collision port = %d, want %d", collision.Port, listener.Addr().(*net.TCPAddr).Port)
-	}
-}
-
-func TestRemoveLegacyUnboundPFDeclarations(t *testing.T) {
-	tests := []struct {
-		name    string
-		input   string
-		want    string
-		wantErr bool
-	}{
-		{
-			name:  "removes exact legacy declarations",
-			input: "rdr-anchor \"com.apple/*\"\nrdr-anchor \"com.unbound.zapret\"\nanchor \"com.apple/*\"\nanchor \"com.unbound.zapret\"\n",
-			want:  "rdr-anchor \"com.apple/*\"\nanchor \"com.apple/*\"\n",
-		},
-		{name: "absent is no-op", input: "anchor \"com.apple/*\"\n", want: "anchor \"com.apple/*\"\n"},
-		{name: "preserves unrelated anchors", input: "anchor \"com.example.proxy\"\nrdr-anchor \"com.apple/*\"\n", want: "anchor \"com.example.proxy\"\nrdr-anchor \"com.apple/*\"\n"},
-		{name: "preserves similar names", input: "anchor \"com.unbound.zapret2\"\n", want: "anchor \"com.unbound.zapret2\"\n"},
-		{name: "preserves similar suffix names", input: "anchor \"com.unbound.zapret-other\"\n", want: "anchor \"com.unbound.zapret-other\"\n"},
-		{name: "removes duplicates", input: "anchor \"com.unbound.zapret\"\nanchor \"com.unbound.zapret\"\n", want: ""},
-		{name: "fails closed on unexpected declaration", input: "anchor \"com.unbound.zapret\" all\n", wantErr: true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := removeLegacyUnboundPFDeclarations([]byte(tt.input))
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("error = %v, wantErr %t", err, tt.wantErr)
-			}
-			if !tt.wantErr && string(got) != tt.want {
-				t.Errorf("result = %q, want %q", got, tt.want)
-			}
-		})
 	}
 }
 

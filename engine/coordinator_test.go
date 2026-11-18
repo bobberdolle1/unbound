@@ -1,7 +1,12 @@
 package engine
 
 import (
+	"fmt"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestOperationCoordinatorAcquireAndRelease(t *testing.T) {
@@ -41,34 +46,138 @@ func TestOperationCoordinatorAcquireAndRelease(t *testing.T) {
 	rel2()
 }
 
-func TestOperationCoordinatorCancelActive(t *testing.T) {
-	coord := &OperationCoordinator{currentOp: OpIdle}
+func TestOperationCoordinatorCancelActiveWaitsForTeardownRelease(t *testing.T) {
+	coord := &OperationCoordinator{currentOp: OpIdle, cancelWaitTimeout: 2 * time.Second}
 
-	_, err := coord.Acquire(OpDoctor, "user_1", false)
+	rel1, err := coord.Acquire(OpDoctor, "user_1", false)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	cancelled := false
+	var cancelled atomic.Bool
+	var op1CleanedUp atomic.Bool
 	coord.SetCancelFunc(func() {
-		cancelled = true
+		cancelled.Store(true)
+		go func() {
+			// Simulate async WinDivert/NFQUEUE engine teardown before Release().
+			time.Sleep(80 * time.Millisecond)
+			op1CleanedUp.Store(true)
+			rel1()
+		}()
 	})
 
-	// Preempt with cancelCurrent = true
+	start := time.Now()
 	rel2, err := coord.Acquire(OpStrategyLab, "user_2", true)
+	elapsed := time.Since(start)
 	if err != nil {
 		t.Fatalf("Failed to preempt doctor with strategy lab: %v", err)
 	}
-	if !cancelled {
+	defer rel2()
+
+	if !cancelled.Load() {
 		t.Error("Expected cancelActive function to be called on preemption")
+	}
+	if !op1CleanedUp.Load() {
+		t.Error("Acquire returned BEFORE cancelled operation finished teardown and called Release()")
+	}
+	if elapsed < 60*time.Millisecond {
+		t.Errorf("Acquire returned too early (%s), did not wait for Release()", elapsed)
 	}
 
 	op, owner := coord.CurrentOperation()
 	if op != OpStrategyLab || owner != "user_2" {
 		t.Errorf("CurrentOperation = (%s, %s); want (strategy_lab, user_2)", op, owner)
 	}
+}
 
-	rel2()
+func TestOperationCoordinatorCancelActiveTimeoutPreventsEngineCollision(t *testing.T) {
+	coord := &OperationCoordinator{currentOp: OpIdle, cancelWaitTimeout: 75 * time.Millisecond}
+
+	rel1, err := coord.Acquire(OpAutoTune, "hung_owner", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rel1()
+
+	var cancelled atomic.Bool
+	coord.SetCancelFunc(func() {
+		cancelled.Store(true)
+		// Deliberately do NOT call rel1() to simulate a wedged teardown.
+	})
+
+	_, err = coord.Acquire(OpStrategyLab, "user_2", true)
+	if err == nil {
+		t.Fatal("Expected timeout error when cancelled operation fails to release within cancelWaitTimeout")
+	}
+	if !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("Expected timeout error message, got: %v", err)
+	}
+	if !cancelled.Load() {
+		t.Error("Expected cancelActive to be invoked before timing out")
+	}
+
+	// Original wedged op still owns the lock so a second engine never collides.
+	op, owner := coord.CurrentOperation()
+	if op != OpAutoTune || owner != "hung_owner" {
+		t.Errorf("CurrentOperation = (%s, %s); want (autotune, hung_owner)", op, owner)
+	}
+}
+
+func TestOperationCoordinatorConcurrentPreemptionNeverOverlaps(t *testing.T) {
+	coord := &OperationCoordinator{currentOp: OpIdle, cancelWaitTimeout: 2 * time.Second}
+
+	var activeEngines atomic.Int32
+	var maxConcurrent atomic.Int32
+
+	const workers = 12
+	var wg sync.WaitGroup
+	wg.Add(workers)
+
+	for i := 0; i < workers; i++ {
+		workerID := i
+		go func() {
+			defer wg.Done()
+			owner := fmt.Sprintf("worker-%d", workerID)
+			rel, err := coord.Acquire(OpStrategyLab, owner, true)
+			if err != nil {
+				// Contention without registered cancel fn on another starter is acceptable,
+				// but two workers must never hold ownership concurrently.
+				return
+			}
+			stopCh := make(chan struct{})
+			var stopOnce sync.Once
+			coord.SetCancelFunc(func() {
+				stopOnce.Do(func() { close(stopCh) })
+			})
+
+			cur := activeEngines.Add(1)
+			for {
+				prev := maxConcurrent.Load()
+				if cur <= prev || maxConcurrent.CompareAndSwap(prev, cur) {
+					break
+				}
+			}
+
+			select {
+			case <-stopCh:
+				time.Sleep(10 * time.Millisecond) // teardown delay
+			case <-time.After(25 * time.Millisecond):
+			}
+
+			activeEngines.Add(-1)
+			rel()
+		}()
+		time.Sleep(3 * time.Millisecond)
+	}
+
+	wg.Wait()
+
+	if got := maxConcurrent.Load(); got > 1 {
+		t.Fatalf("Detected %d concurrent engine owners; mutual exclusion violated", got)
+	}
+	if coord.IsBusy() {
+		t.Fatalf("Coordinator remained busy after all workers exited")
+	}
 }
 
 func TestOperationCoordinatorShutdownBlocksAll(t *testing.T) {

@@ -419,6 +419,88 @@ func TestSummaryPrioritizesCompletedHTTPStatus(t *testing.T) {
 	}
 }
 
+func TestDirectObserverShortCircuitsRemainingFallbackIPsAfterPrimarySuccess(t *testing.T) {
+	var hits atomic.Int32
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		hits.Add(1)
+		writer.WriteHeader(http.StatusNoContent)
+	}))
+	server.StartTLS()
+	defer server.Close()
+	port := portFromAddress(t, server.Listener.Addr().String())
+
+	// Resolver returns working primary 127.0.0.1 followed by unreachable TEST-NET 192.0.2.1.
+	// Without short-circuiting, probing 192.0.2.1 would stall for Connect timeout (2s).
+	resolver := fixtureResolver{
+		addresses: []netip.Addr{
+			netip.MustParseAddr("127.0.0.1"),
+			netip.MustParseAddr("192.0.2.1"),
+		},
+	}
+
+	started := time.Now()
+	result, err := NewDirectTCPHTTPSObserver().Observe(context.Background(), "https://multi.example:"+port+"/generate_204", Options{
+		Resolver:  resolver,
+		Timeouts:  Timeouts{DNS: time.Second, Connect: 2 * time.Second, TLS: time.Second, HTTP: time.Second, Overall: 5 * time.Second},
+		tlsConfig: serverTLSConfig(server),
+	})
+	elapsed := time.Since(started)
+	if err != nil {
+		t.Fatalf("Observe failed: %v", err)
+	}
+	if result.Classification != ClassSuccess {
+		t.Fatalf("Classification = %s, want SUCCESS", result.Classification)
+	}
+	if len(result.ResolvedAddresses) != 2 {
+		t.Fatalf("ResolvedAddresses = %d, want 2 preserved", len(result.ResolvedAddresses))
+	}
+	if len(result.Attempts) != 1 {
+		t.Fatalf("Attempts = %d, want 1 (should short-circuit secondary IP after ClassSuccess)", len(result.Attempts))
+	}
+	if elapsed >= 1500*time.Millisecond {
+		t.Fatalf("Observe took %s; did not short-circuit unreachable secondary IP", elapsed)
+	}
+	if hits.Load() != 1 {
+		t.Fatalf("server hits = %d, want 1", hits.Load())
+	}
+}
+
+func TestDirectObserverFallsBackWhenFirstResolvedIPFails(t *testing.T) {
+	// Closed port on 127.0.0.2 vs live server on 127.0.0.1: ensure fallback still works when IP #0 fails!
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.WriteHeader(http.StatusNoContent)
+	}))
+	server.StartTLS()
+	defer server.Close()
+	port := portFromAddress(t, server.Listener.Addr().String())
+
+	// "::1" does not have server listening on IPv4-only 127.0.0.1 listener, so IP #0 fails fast and IP #1 succeeds.
+	resolver := fixtureResolver{
+		addresses: []netip.Addr{
+			netip.MustParseAddr("::1"),
+			netip.MustParseAddr("127.0.0.1"),
+			netip.MustParseAddr("192.0.2.99"),
+		},
+	}
+	result, err := NewDirectTCPHTTPSObserver().Observe(context.Background(), "https://fallback.example:"+port+"/generate_204", Options{
+		Resolver:  resolver,
+		Timeouts:  Timeouts{DNS: time.Second, Connect: 2 * time.Second, TLS: time.Second, HTTP: time.Second, Overall: 5 * time.Second},
+		tlsConfig: serverTLSConfig(server),
+	})
+	if err != nil {
+		t.Fatalf("Observe failed: %v", err)
+	}
+	if result.Classification != ClassSuccess {
+		t.Fatalf("Classification = %s, want SUCCESS via second IP", result.Classification)
+	}
+	if len(result.Attempts) != 2 {
+		t.Fatalf("Attempts = %d, want 2 (first failed, second succeeded, third skipped)", len(result.Attempts))
+	}
+	if result.PrimaryAttemptIndex == nil || *result.PrimaryAttemptIndex != 1 {
+		t.Fatalf("PrimaryAttemptIndex = %v, want 1", result.PrimaryAttemptIndex)
+	}
+}
+
 func failedAttempt(boundary Stage, class Classification) ConnectionAttempt {
 	return ConnectionAttempt{Stages: []StageEvidence{{Stage: boundary, Status: StatusTimeout, Class: class}}}
 }

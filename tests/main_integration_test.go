@@ -12,8 +12,22 @@ import (
 	"unbound/engine/providers"
 )
 
+func isolateTestConfig(t *testing.T) {
+	t.Helper()
+	appData := t.TempDir()
+	cfgDir := t.TempDir()
+	t.Setenv("APPDATA", appData)
+	restore := engine.SetConfigDirForTest(cfgDir)
+	t.Cleanup(func() {
+		providers.CloseLogger()
+		restore()
+	})
+}
+
 // TestAssetExtraction verifies that embedded assets are extracted correctly
 func TestAssetExtraction(t *testing.T) {
+	isolateTestConfig(t)
+
 	assets, err := engine.ExtractAssets()
 	if err != nil {
 		t.Fatalf("Failed to extract assets: %v", err)
@@ -39,6 +53,8 @@ func TestAssetExtraction(t *testing.T) {
 
 // TestProviderInitialization checks if Zapret2WindowsProvider initializes correctly
 func TestProviderInitialization(t *testing.T) {
+	isolateTestConfig(t)
+
 	assets, err := engine.ExtractAssets()
 	if err != nil {
 		t.Fatalf("Failed to extract assets: %v", err)
@@ -64,6 +80,8 @@ func TestProviderInitialization(t *testing.T) {
 
 // TestPrivilegeCheck verifies admin privilege detection
 func TestPrivilegeCheck(t *testing.T) {
+	isolateTestConfig(t)
+
 	assets, err := engine.ExtractAssets()
 	if err != nil {
 		t.Fatalf("Failed to extract assets: %v", err)
@@ -85,6 +103,8 @@ func TestPrivilegeCheck(t *testing.T) {
 
 // TestCustomScriptPersistence verifies custom Lua script save/load
 func TestCustomScriptPersistence(t *testing.T) {
+	isolateTestConfig(t)
+
 	testContent := "-- Test custom script\nprint('hello')"
 
 	err := engine.SaveCustomScript(testContent)
@@ -155,6 +175,8 @@ func TestEngineStartStop(t *testing.T) {
 
 // TestProviderManager tests the provider management system
 func TestProviderManager(t *testing.T) {
+	isolateTestConfig(t)
+
 	manager := providers.NewProviderManager()
 
 	assets, err := engine.ExtractAssets()

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 	"unsafe"
 
@@ -180,6 +181,7 @@ func (e *WindowsRuntime) Activate(ctx context.Context, candidate ExecutableCandi
 	candidateCtx, cancel := candidateExecutionContext(ctx)
 	cmd := exec.CommandContext(candidateCtx, binary, args...)
 	cmd.Dir = e.opts.Assets.BinDir
+	cmd.SysProcAttr = windowsHiddenSysProcAttr()
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		cancel()
@@ -442,8 +444,19 @@ func windowsWinDivertServiceMissing(output string) bool {
 	return strings.Contains(text, "FAILED 1060") || strings.Contains(text, "DOES NOT EXIST") || strings.Contains(text, "1060")
 }
 
+const windowsCreateNoWindow = 0x08000000
+
+func windowsHiddenSysProcAttr() *syscall.SysProcAttr {
+	return &syscall.SysProcAttr{
+		HideWindow:    true,
+		CreationFlags: windowsCreateNoWindow,
+	}
+}
+
 func windowsWinDivertRunning() (bool, error) {
-	output, err := exec.Command("sc.exe", "query", "WinDivert").CombinedOutput()
+	cmd := exec.Command("sc.exe", "query", "WinDivert")
+	cmd.SysProcAttr = windowsHiddenSysProcAttr()
+	output, err := cmd.CombinedOutput()
 	text := strings.ToUpper(string(output))
 	if windowsWinDivertServiceMissing(string(output)) {
 		return false, nil
@@ -455,7 +468,9 @@ func windowsWinDivertRunning() (bool, error) {
 }
 
 func windowsStopWinDivert(timeout time.Duration) error {
-	output, err := exec.Command("sc.exe", "stop", "WinDivert").CombinedOutput()
+	cmd := exec.Command("sc.exe", "stop", "WinDivert")
+	cmd.SysProcAttr = windowsHiddenSysProcAttr()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
 		running, stateErr := windowsWinDivertRunning()
 		if stateErr != nil {

@@ -217,7 +217,6 @@ func testUDPBypass(t *testing.T, profileName string) bool {
 			t.Logf("    [UDP] ❌ Failed to connect to %s: %v", server, err)
 			continue
 		}
-		defer conn.Close()
 
 		conn.SetDeadline(time.Now().Add(3 * time.Second))
 
@@ -230,12 +229,14 @@ func testUDPBypass(t *testing.T, profileName string) bool {
 
 		_, err = conn.Write(dnsQuery)
 		if err != nil {
+			conn.Close()
 			t.Logf("    [UDP] ❌ Failed to send DNS query to %s: %v", server, err)
 			continue
 		}
 
 		response := make([]byte, 512)
 		n, err := conn.Read(response)
+		conn.Close()
 		if err != nil {
 			t.Logf("    [UDP] ❌ Failed to receive DNS response from %s: %v", server, err)
 			continue
