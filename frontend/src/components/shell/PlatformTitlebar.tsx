@@ -5,25 +5,28 @@ import { windowService } from '../../services/window';
 interface PlatformTitlebarProps {
   platform: string;
   appVersion: string;
+  privilegeError?: string;
 }
 
 export const PlatformTitlebar: React.FC<PlatformTitlebarProps> = ({
   platform,
   appVersion,
+  privilegeError = '',
 }) => {
   const isMac = platform === 'darwin';
   const isWin = platform === 'windows' || platform === 'win32';
-  const versionDisplay = appVersion ? `v${appVersion}` : 'v0.3.2';
+  const versionDisplay = appVersion ? `v${appVersion}` : 'v0.8.0';
+  const hasPrivilegeError = Boolean(privilegeError);
 
   return (
     <div
       onDoubleClick={() => windowService.toggleMaximise()}
-      style={{ '--wails-draggable': 'drag' }}
+      style={{ '--wails-draggable': 'drag' } as React.CSSProperties}
       className="flex-none h-11 flex items-center justify-between px-4 z-10 border-b border-[var(--ui-border)] bg-[var(--ui-panel)] app-drag select-none"
     >
       {isMac ? (
         <>
-          <div className="flex items-center gap-2 app-no-drag" style={{ '--wails-draggable': 'no-drag' }}>
+          <div className="flex items-center gap-2 app-no-drag" style={{ '--wails-draggable': 'no-drag' } as React.CSSProperties}>
             <span
               onClick={(e) => {
                 e.stopPropagation();
@@ -49,31 +52,51 @@ export const PlatformTitlebar: React.FC<PlatformTitlebarProps> = ({
               title="Развернуть / Восстановить"
             />
           </div>
-          <div className="flex items-center gap-2 font-semibold text-xs text-[var(--ui-text)]" style={{ '--wails-draggable': 'drag' }}>
+          <div className="flex items-center gap-2 font-semibold text-xs text-[var(--ui-text)]" style={{ '--wails-draggable': 'drag' } as React.CSSProperties}>
             <UILogo className="w-4 h-4 text-[var(--ui-text)]" />
             <span>UNBOUND</span>
             <span className="text-[10px] font-mono text-[var(--ui-text-muted)]">{versionDisplay}</span>
           </div>
-          <div className="flex items-center gap-1 text-[10px] font-mono text-[var(--ui-text-dim)]" style={{ '--wails-draggable': 'drag' }}>
-            <span>ROOT</span>
-            <UICheck className="w-3 h-3 text-emerald-500" />
-          </div>
+          {hasPrivilegeError ? (
+            <div
+              className="flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30"
+              style={{ '--wails-draggable': 'drag' } as React.CSSProperties}
+              title={privilegeError}
+            >
+              <span>NO ROOT ⚠</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1 text-[10px] font-mono text-[var(--ui-text-dim)]" style={{ '--wails-draggable': 'drag' } as React.CSSProperties}>
+              <span>ROOT</span>
+              <UICheck className="w-3 h-3 text-emerald-500" />
+            </div>
+          )}
         </>
       ) : isWin ? (
         <>
-          <div className="flex items-center gap-2.5 font-semibold text-xs text-[var(--ui-text)]" style={{ '--wails-draggable': 'drag' }}>
+          <div className="flex items-center gap-2.5 font-semibold text-xs text-[var(--ui-text)]" style={{ '--wails-draggable': 'drag' } as React.CSSProperties}>
             <UILogo className="w-4 h-4 text-[var(--ui-text)]" />
             <span>UNBOUND Refresh</span>
             <span className="text-[10px] font-mono text-[var(--ui-text-muted)]">{versionDisplay}</span>
-            <div className="flex items-center gap-1 text-[10px] font-mono text-[var(--ui-text-dim)] ml-2" style={{ '--wails-draggable': 'drag' }}>
-              <span>ADMIN</span>
-              <UICheck className="w-3 h-3 text-emerald-500" />
-            </div>
+            {hasPrivilegeError ? (
+              <div
+                className="flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 ml-2"
+                style={{ '--wails-draggable': 'drag' } as React.CSSProperties}
+                title={privilegeError}
+              >
+                <span>NO ADMIN ⚠</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1 text-[10px] font-mono text-[var(--ui-text-dim)] ml-2" style={{ '--wails-draggable': 'drag' } as React.CSSProperties}>
+                <span>ADMIN</span>
+                <UICheck className="w-3 h-3 text-emerald-500" />
+              </div>
+            )}
           </div>
-          <div className="flex items-center gap-1 text-xs text-[var(--ui-text-muted)] app-no-drag" style={{ '--wails-draggable': 'no-drag' }}>
+          <div className="flex items-center gap-1 text-xs text-[var(--ui-text-muted)] app-no-drag" style={{ '--wails-draggable': 'no-drag' } as React.CSSProperties}>
             <button
               onClick={() => windowService.minimise()}
-              style={{ '--wails-draggable': 'no-drag' }}
+              style={{ '--wails-draggable': 'no-drag' } as React.CSSProperties}
               className="p-1.5 rounded hover:bg-[var(--ui-surface-hover)] hover:text-[var(--ui-text)] transition-colors"
               title="Свернуть"
             >
@@ -81,7 +104,7 @@ export const PlatformTitlebar: React.FC<PlatformTitlebarProps> = ({
             </button>
             <button
               onClick={() => windowService.toggleMaximise()}
-              style={{ '--wails-draggable': 'no-drag' }}
+              style={{ '--wails-draggable': 'no-drag' } as React.CSSProperties}
               className="p-1.5 rounded hover:bg-[var(--ui-surface-hover)] hover:text-[var(--ui-text)] transition-colors"
               title="Развернуть"
             >
@@ -89,7 +112,7 @@ export const PlatformTitlebar: React.FC<PlatformTitlebarProps> = ({
             </button>
             <button
               onClick={() => windowService.hideToTray()}
-              style={{ '--wails-draggable': 'no-drag' }}
+              style={{ '--wails-draggable': 'no-drag' } as React.CSSProperties}
               className="p-1.5 rounded hover:bg-red-500/20 hover:text-red-400 transition-colors"
               title="Закрыть"
             >
@@ -98,17 +121,25 @@ export const PlatformTitlebar: React.FC<PlatformTitlebarProps> = ({
           </div>
         </>
       ) : (
-        /* Neutral Linux Titlebar */
+        /* Neutral Linux Titlebar — no tray icon on Linux, so close button quits cleanly */
         <>
-          <div className="flex items-center gap-2 font-semibold text-xs text-[var(--ui-text)]" style={{ '--wails-draggable': 'drag' }}>
+          <div className="flex items-center gap-2 font-semibold text-xs text-[var(--ui-text)]" style={{ '--wails-draggable': 'drag' } as React.CSSProperties}>
             <UILogo className="w-4 h-4 text-[var(--ui-text)]" />
             <span>UNBOUND</span>
             <span className="text-[10px] font-mono text-[var(--ui-text-muted)]">{versionDisplay}</span>
+            {hasPrivilegeError && (
+              <span
+                className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 ml-1"
+                title={privilegeError}
+              >
+                NO ROOT ⚠
+              </span>
+            )}
           </div>
-          <div className="flex items-center gap-2 app-no-drag" style={{ '--wails-draggable': 'no-drag' }}>
+          <div className="flex items-center gap-2 app-no-drag" style={{ '--wails-draggable': 'no-drag' } as React.CSSProperties}>
             <button
               onClick={() => windowService.minimise()}
-              style={{ '--wails-draggable': 'no-drag' }}
+              style={{ '--wails-draggable': 'no-drag' } as React.CSSProperties}
               className="w-5 h-5 rounded bg-[var(--ui-border)] hover:bg-[var(--ui-border-strong)] text-xs flex items-center justify-center"
               title="Свернуть"
             >
@@ -116,16 +147,16 @@ export const PlatformTitlebar: React.FC<PlatformTitlebarProps> = ({
             </button>
             <button
               onClick={() => windowService.toggleMaximise()}
-              style={{ '--wails-draggable': 'no-drag' }}
+              style={{ '--wails-draggable': 'no-drag' } as React.CSSProperties}
               className="w-5 h-5 rounded bg-[var(--ui-border)] hover:bg-[var(--ui-border-strong)] text-xs flex items-center justify-center"
               title="Развернуть"
             >
               <UIMaximize className="w-3 h-3" />
             </button>
             <button
-              onClick={() => windowService.hideToTray()}
-              style={{ '--wails-draggable': 'no-drag' }}
-              className="w-5 h-5 rounded bg-[var(--ui-border)] hover:bg-[var(--ui-border-strong)] text-xs flex items-center justify-center"
+              onClick={() => windowService.quit()}
+              style={{ '--wails-draggable': 'no-drag' } as React.CSSProperties}
+              className="w-5 h-5 rounded bg-[var(--ui-border)] hover:bg-red-500/20 hover:text-red-400 text-xs flex items-center justify-center transition-colors"
               title="Закрыть"
             >
               <UIX className="w-3 h-3" />
