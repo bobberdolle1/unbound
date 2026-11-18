@@ -10,6 +10,8 @@ URL:            https://github.com/bobberdolle1/unbound
 Source0:        %{name}-%{version}.tar.gz
 
 BuildRequires:  golang
+BuildRequires:  nodejs
+BuildRequires:  npm
 Requires:       nftables
 Requires:       libnetfilter_queue
 
